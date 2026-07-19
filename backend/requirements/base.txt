@@ -1,0 +1,16 @@
+# Core web framework — pins per development-plans/01-architecture.md §2 (verified 2026-07-19)
+Django==6.0.7
+djangorestframework==3.17.1
+djangorestframework-simplejwt==5.5.1
+django-cors-headers==4.9.0
+django-filter==25.2
+python-decouple==3.8
+drf-spectacular==0.30.0
+celery[redis]==5.6.3
+redis==5.2.1
+django-storages[boto3]==1.14.6
+boto3==1.40.0
+psycopg[binary]==3.2.10
+dj-database-url==3.0.0
+Pillow==11.3.0
+jsonschema==4.25.0

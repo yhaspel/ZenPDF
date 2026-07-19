@@ -1,0 +1,11 @@
+# PDF engine libraries — installed in api + worker image (development-plans/01-architecture.md §2)
+# The ONLY place these libs are imported is backend/apps/pdf_engine/.
+PyMuPDF==1.28.0
+pikepdf==10.10.0
+pypdf==6.14.2
+ocrmypdf==17.8.1
+pyHanko==0.35.2
+reportlab==4.4.4
+pdf2docx==0.5.8
+pymupdf4llm==1.28.0
+requests==2.32.5

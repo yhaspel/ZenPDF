@@ -1,0 +1,73 @@
+"""Coordinate conversion — the ONLY place geometry math lives (01-architecture.md §8).
+
+Client sends normalized page coordinates in **visual space**: origin top-left of
+the page as displayed (rotation applied), x,y,w,h ∈ [0,1] relative to the displayed
+page width/height. PyMuPDF's page coordinate space (page.rect) is also top-left
+with rotation applied, so mapping to a fitz.Rect is a direct scale by displayed
+width/height. Conversion to PDF-native bottom-left space is only done where a
+library requires it (pyHanko visible-signature boxes, phase 8).
+"""
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+
+@dataclass(frozen=True)
+class NormRect:
+    """Normalized visual-space rectangle, all fields in [0, 1]."""
+
+    x: float
+    y: float
+    w: float
+    h: float
+
+    def __post_init__(self):
+        for name, val in (("x", self.x), ("y", self.y), ("w", self.w), ("h", self.h)):
+            if not isinstance(val, (int, float)):
+                raise ValueError(f"{name} must be numeric, got {val!r}")
+        if self.w <= 0 or self.h <= 0:
+            raise ValueError("width and height must be positive")
+        # Allow tiny float overshoot but reject clearly-out-of-range values.
+        eps = 1e-6
+        if self.x < -eps or self.y < -eps:
+            raise ValueError("x and y must be >= 0")
+        if self.x + self.w > 1 + 1e-3 or self.y + self.h > 1 + 1e-3:
+            raise ValueError("rectangle extends beyond the page")
+
+    @classmethod
+    def from_dict(cls, d: dict) -> NormRect:
+        try:
+            return cls(float(d["x"]), float(d["y"]), float(d["w"]), float(d["h"]))
+        except (KeyError, TypeError) as exc:
+            raise ValueError(f"invalid rect {d!r}") from exc
+
+
+def norm_to_page_rect(rect: NormRect, page_width: float, page_height: float):
+    """Map a normalized visual-space rect onto a page's displayed rect.
+
+    Returns a 4-tuple (x0, y0, x1, y1) in the page's (rotation-applied) coordinate
+    space — identical to PyMuPDF's page.rect space. Callers build a fitz.Rect from
+    it; kept as a tuple so this module has no hard fitz dependency (testable pure).
+    """
+    if page_width <= 0 or page_height <= 0:
+        raise ValueError("page dimensions must be positive")
+    x0 = rect.x * page_width
+    y0 = rect.y * page_height
+    x1 = (rect.x + rect.w) * page_width
+    y1 = (rect.y + rect.h) * page_height
+    return (x0, y0, x1, y1)
+
+
+def page_rect_to_norm(x0: float, y0: float, x1: float, y1: float,
+                      page_width: float, page_height: float) -> NormRect:
+    """Inverse of norm_to_page_rect — used to return search hits as normalized rects."""
+    if page_width <= 0 or page_height <= 0:
+        raise ValueError("page dimensions must be positive")
+    lo_x, hi_x = sorted((x0, x1))
+    lo_y, hi_y = sorted((y0, y1))
+    return NormRect(
+        x=lo_x / page_width,
+        y=lo_y / page_height,
+        w=(hi_x - lo_x) / page_width,
+        h=(hi_y - lo_y) / page_height,
+    )

@@ -1,0 +1,104 @@
+# ZenPDF prod-shaped stack (01-architecture.md §5). Railway deploy is phase 10.
+# Same images, prod targets: nginx web, gunicorn api, workers, beat.
+name: zenpdf-prod
+
+x-api-env: &api-env
+  env_file: .env.prod
+
+services:
+  db:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-zen}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-zen}
+      POSTGRES_DB: ${POSTGRES_DB:-zenpdf}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-zen} -d ${POSTGRES_DB:-zenpdf}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  redis:
+    image: redis:8-alpine
+
+  storage:
+    image: chrislusf/seaweedfs:3.97
+    command: server -s3 -dir=/data -s3.config=/etc/seaweedfs/s3-config.json -ip.bind=0.0.0.0
+    volumes:
+      - seaweed-data:/data
+      - ./seaweedfs/s3-config.json:/etc/seaweedfs/s3-config.json:ro
+
+  gotenberg:
+    image: gotenberg/gotenberg:8
+
+  api:
+    build:
+      context: ../backend
+      dockerfile: ../infra/docker/api.Dockerfile
+      target: prod
+    <<: *api-env
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+
+  worker-default:
+    build:
+      context: ../backend
+      dockerfile: ../infra/docker/api.Dockerfile
+      target: prod
+    <<: *api-env
+    command: celery -A config worker -Q default -c 4 --max-memory-per-child 1500000
+    depends_on:
+      - db
+      - redis
+
+  worker-heavy:
+    build:
+      context: ../backend
+      dockerfile: ../infra/docker/api.Dockerfile
+      target: prod
+    <<: *api-env
+    command: celery -A config worker -Q heavy -c 2 --max-memory-per-child 1500000
+    depends_on:
+      - db
+      - redis
+
+  worker-render:
+    build:
+      context: ../backend
+      dockerfile: ../infra/docker/api.Dockerfile
+      target: prod
+    <<: *api-env
+    command: celery -A config worker -Q render -c 4 --max-memory-per-child 1500000
+    depends_on:
+      - db
+      - redis
+
+  beat:
+    build:
+      context: ../backend
+      dockerfile: ../infra/docker/api.Dockerfile
+      target: prod
+    <<: *api-env
+    command: celery -A config beat -l info
+    depends_on:
+      - db
+      - redis
+
+  web:
+    build:
+      context: ../frontend
+      dockerfile: ../infra/docker/web.Dockerfile
+      target: prod
+    ports:
+      - "80:80"
+    depends_on:
+      - api
+
+volumes:
+  pgdata:
+  seaweed-data:

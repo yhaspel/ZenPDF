@@ -1,0 +1,165 @@
+# ZenPDF local dev stack (01-architecture.md §5). Run via infra/up.sh.
+name: zenpdf
+
+x-api-env: &api-env
+  env_file: .env
+
+services:
+  db:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-zen}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-zen}
+      POSTGRES_DB: ${POSTGRES_DB:-zenpdf}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-zen} -d ${POSTGRES_DB:-zenpdf}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  redis:
+    image: redis:8-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  storage:
+    image: chrislusf/seaweedfs:3.97
+    command: server -s3 -dir=/data -s3.config=/etc/seaweedfs/s3-config.json -ip.bind=0.0.0.0
+    volumes:
+      - seaweed-data:/data
+      - ./seaweedfs/s3-config.json:/etc/seaweedfs/s3-config.json:ro
+    ports:
+      - "8333:8333"
+
+  gotenberg:
+    image: gotenberg/gotenberg:8
+    command:
+      - gotenberg
+      - --chromium-disable-javascript=true
+      - --chromium-allow-list=file:///tmp/.*
+
+  mailpit:
+    image: axllent/mailpit:v1.30
+    ports:
+      - "8025:8025"
+
+  api:
+    build:
+      context: ../backend
+      dockerfile: ../infra/docker/api.Dockerfile
+      target: dev
+    <<: *api-env
+    volumes:
+      - ../backend:/app
+      - ./certs:/certs:ro
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      storage:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/api/health/', timeout=3).status==200 else 1)"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+  worker-default:
+    build:
+      context: ../backend
+      dockerfile: ../infra/docker/api.Dockerfile
+      target: dev
+    <<: *api-env
+    command: celery -A config worker -Q default -c 4 -n default@%h --max-memory-per-child 1500000
+    volumes:
+      - ../backend:/app
+      - ./certs:/certs:ro
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      storage:
+        condition: service_started
+
+  worker-heavy:
+    build:
+      context: ../backend
+      dockerfile: ../infra/docker/api.Dockerfile
+      target: dev
+    <<: *api-env
+    command: celery -A config worker -Q heavy -c 2 -n heavy@%h --max-memory-per-child 1500000
+    volumes:
+      - ../backend:/app
+      - ./certs:/certs:ro
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      storage:
+        condition: service_started
+
+  worker-render:
+    build:
+      context: ../backend
+      dockerfile: ../infra/docker/api.Dockerfile
+      target: dev
+    <<: *api-env
+    command: celery -A config worker -Q render -c 4 -n render@%h --max-memory-per-child 1500000
+    volumes:
+      - ../backend:/app
+      - ./certs:/certs:ro
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      storage:
+        condition: service_started
+
+  beat:
+    build:
+      context: ../backend
+      dockerfile: ../infra/docker/api.Dockerfile
+      target: dev
+    <<: *api-env
+    command: celery -A config beat -l info
+    volumes:
+      - ../backend:/app
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  web:
+    build:
+      context: ../frontend
+      dockerfile: ../infra/docker/web.Dockerfile
+      target: dev
+    command: npm start -- --host 0.0.0.0 --poll 2000 --proxy-config proxy.conf.json
+    volumes:
+      - ../frontend:/app
+      - web-node-modules:/app/node_modules
+    ports:
+      - "4200:4200"
+    depends_on:
+      api:
+        condition: service_started
+
+volumes:
+  pgdata:
+  seaweed-data:
+  web-node-modules:
