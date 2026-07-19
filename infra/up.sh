@@ -11,6 +11,12 @@ if [ ! -f .env ]; then
   cp .env.example .env
 fi
 
+# Host ports (overridable in .env; defaults match the plan on a clean machine).
+env_val() { grep -E "^$1=" .env 2>/dev/null | tail -1 | cut -d= -f2; }
+API_PORT="$(env_val API_PORT)"; API_PORT="${API_PORT:-8000}"
+WEB_PORT="$(env_val WEB_PORT)"; WEB_PORT="${WEB_PORT:-4200}"
+MAILPIT_PORT="$(env_val MAILPIT_PORT)"; MAILPIT_PORT="${MAILPIT_PORT:-8025}"
+
 if [ ! -f certs/zenpdf-dev.p12 ]; then
   echo "==> Generating dev signing certificate (PKCS#12)"
   mkdir -p certs
@@ -26,7 +32,7 @@ docker compose up -d --build
 echo "==> Waiting for API + database + storage to become healthy..."
 ready=0
 for _ in $(seq 1 80); do
-  out="$(curl -s http://localhost:8000/api/health/ 2>/dev/null || true)"
+  out="$(curl -s "http://localhost:${API_PORT}/api/health/" 2>/dev/null || true)"
   if echo "$out" | grep -q '"db":true' && echo "$out" | grep -q '"storage":true'; then
     ready=1; break
   fi
@@ -55,10 +61,10 @@ cat <<EOF
 ===================================================================
  ZenPDF is up.
 -------------------------------------------------------------------
-  App          http://localhost:4200
-  API          http://localhost:8000/api
-  API docs     http://localhost:8000/api/docs
-  Mailpit      http://localhost:8025
+  App          http://localhost:${WEB_PORT}
+  API          http://localhost:${API_PORT}/api
+  API docs     http://localhost:${API_PORT}/api/docs
+  Mailpit      http://localhost:${MAILPIT_PORT}
 -------------------------------------------------------------------
   Seed login   ${SEED_EMAIL:-admin@zenpdf.local} / ${SEED_PASS:-admin12345}
 ===================================================================

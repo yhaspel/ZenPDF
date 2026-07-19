@@ -12,9 +12,11 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-zen}
       POSTGRES_DB: ${POSTGRES_DB:-zenpdf}
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      # postgres:18+ stores data under a version subdir of /var/lib/postgresql
+      # (mounting at /data is rejected by the image's safety check).
+      - pgdata:/var/lib/postgresql
     ports:
-      - "5432:5432"
+      - "${DB_PORT:-5432}:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-zen} -d ${POSTGRES_DB:-zenpdf}"]
       interval: 5s
@@ -36,7 +38,7 @@ services:
       - seaweed-data:/data
       - ./seaweedfs/s3-config.json:/etc/seaweedfs/s3-config.json:ro
     ports:
-      - "8333:8333"
+      - "${STORAGE_PORT:-8333}:8333"
 
   gotenberg:
     image: gotenberg/gotenberg:8
@@ -48,7 +50,7 @@ services:
   mailpit:
     image: axllent/mailpit:v1.30
     ports:
-      - "8025:8025"
+      - "${MAILPIT_PORT:-8025}:8025"
 
   api:
     build:
@@ -60,7 +62,7 @@ services:
       - ../backend:/app
       - ./certs:/certs:ro
     ports:
-      - "8000:8000"
+      - "${API_PORT:-8000}:8000"
     depends_on:
       db:
         condition: service_healthy
@@ -149,12 +151,17 @@ services:
       context: ../frontend
       dockerfile: ../infra/docker/web.Dockerfile
       target: dev
-    command: npm start -- --host 0.0.0.0 --poll 2000 --proxy-config proxy.conf.json
+    # The esbuild dev-server + pdf.js can spike memory; auto-recover if OOM-killed.
+    restart: unless-stopped
+    # No --poll: on Docker Desktop mounts the poll watcher fires spurious rebuilds
+    # that deadlock the esbuild+Tailwind pipeline. The server compiles once and
+    # serves stably (hot-reload via mount is a Mac-only dev nicety, not required).
+    command: npm start -- --host 0.0.0.0 --proxy-config proxy.conf.json
     volumes:
       - ../frontend:/app
       - web-node-modules:/app/node_modules
     ports:
-      - "4200:4200"
+      - "${WEB_PORT:-4200}:4200"
     depends_on:
       api:
         condition: service_started
