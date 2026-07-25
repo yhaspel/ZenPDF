@@ -20,6 +20,16 @@ class FolderSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("A folder with this name already exists here.")
         if parent and parent.owner_id != owner.id:
             raise serializers.ValidationError("Invalid parent folder.")
+        if self.instance and parent:
+            # A folder may not become its own ancestor — a cycle makes the
+            # cascade-delete walk in FolderDetailView.destroy non-terminating.
+            seen = set()
+            node = parent
+            while node is not None and node.pk not in seen:
+                if node.pk == self.instance.pk:
+                    raise serializers.ValidationError("A folder cannot be moved inside itself.")
+                seen.add(node.pk)
+                node = node.parent
         return attrs
 
 
@@ -51,6 +61,13 @@ class DocumentSerializer(serializers.ModelSerializer):
         read_only_fields = ("id", "status", "page_count", "size_bytes", "is_encrypted",
                             "metadata", "current_version", "last_opened_at", "trashed_at",
                             "created_at", "updated_at")
+
+    def validate_folder(self, value):
+        # `folder` is a writable relation whose default queryset is unscoped;
+        # without this a PATCH could file a document into another user's folder.
+        if value is not None and value.owner_id != self.context["request"].user.id:
+            raise serializers.ValidationError("Invalid folder.")
+        return value
 
 
 class OperationRequestSerializer(serializers.Serializer):

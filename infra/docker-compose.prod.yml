@@ -51,7 +51,7 @@ services:
       dockerfile: ../infra/docker/api.Dockerfile
       target: prod
     <<: *api-env
-    command: celery -A config worker -Q default -c 4 --max-memory-per-child 1500000
+    command: celery -A config worker -Q default -c 4 --max-memory-per-child 1500000 --time-limit 120 --soft-time-limit 60
     depends_on:
       - db
       - redis
@@ -62,7 +62,7 @@ services:
       dockerfile: ../infra/docker/api.Dockerfile
       target: prod
     <<: *api-env
-    command: celery -A config worker -Q heavy -c 2 --max-memory-per-child 1500000
+    command: celery -A config worker -Q heavy -c 2 --max-memory-per-child 1500000 --time-limit 900 --soft-time-limit 600
     depends_on:
       - db
       - redis
@@ -73,7 +73,7 @@ services:
       dockerfile: ../infra/docker/api.Dockerfile
       target: prod
     <<: *api-env
-    command: celery -A config worker -Q render -c 4 --max-memory-per-child 1500000
+    command: celery -A config worker -Q render -c 4 --max-memory-per-child 1500000 --time-limit 60 --soft-time-limit 30
     depends_on:
       - db
       - redis

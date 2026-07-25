@@ -15,7 +15,11 @@ class SustainedUserThrottle(UserRateThrottle):
 
 
 class AuthThrottle(SimpleRateThrottle):
-    """Per-IP throttle for auth endpoints (login/register/refresh) — 10/min."""
+    """Per-IP throttle for auth endpoints (login/register/refresh) — 10/min.
+
+    `get_ident` is only trustworthy because REST_FRAMEWORK["NUM_PROXIES"] is set;
+    otherwise it keys on the whole client-supplied X-Forwarded-For chain.
+    """
 
     scope = "auth"
 

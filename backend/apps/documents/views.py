@@ -323,9 +323,11 @@ class RevertVersionView(APIView):
         document = _owned_document(request.user, pk)
         generics.get_object_or_404(document.versions, seq=seq)
         _check_concurrency(request.user)
+        current = document.current_version
         job = Job.objects.create(
             user=request.user, document=document, type="revert_version",
-            params={"seq": int(seq)}, base_version_seq=None,
+            params={"seq": int(seq)},
+            base_version_seq=current.seq if current else None,
         )
         from .tasks import revert_version
 
@@ -490,12 +492,19 @@ class FolderDetailView(generics.RetrieveUpdateDestroyAPIView):
             )
         if cascade:
             # Trash documents in this folder and its descendants, then delete the tree.
+            # `seen` keeps a cyclic folder graph from looping forever.
             stack = [folder]
+            seen = set()
             all_folders = []
             while stack:
                 f = stack.pop()
+                if f.pk in seen:
+                    continue
+                seen.add(f.pk)
                 all_folders.append(f)
                 stack.extend(list(f.children.all()))
-            Document.objects.filter(folder__in=all_folders).update(trashed_at=timezone.now())
+            Document.objects.filter(
+                owner=request.user, folder__in=all_folders
+            ).update(trashed_at=timezone.now())
         folder.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)

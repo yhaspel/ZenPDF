@@ -9,6 +9,8 @@ from .base import *  # noqa: F401,F403
 
 DEBUG = False
 
+SECRET_KEY = "test-insecure-key-for-hermetic-test-runs"
+
 # Hermetic in-memory DB — tests need no Postgres container (§18).
 DATABASES = {"default": {"ENGINE": "django.db.backends.sqlite3", "NAME": ":memory:"}}
 

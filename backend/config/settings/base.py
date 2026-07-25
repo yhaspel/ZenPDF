@@ -12,7 +12,9 @@ from decouple import Csv, config
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
 # --- Core -------------------------------------------------------------------
-SECRET_KEY = config("SECRET_KEY", default="dev-change-me")
+# No code default: it is also the JWT signing key. dev/test supply a throwaway
+# value; prod raises if the environment does not provide one.
+SECRET_KEY = config("SECRET_KEY", default="")
 DEBUG = config("DEBUG", default=False, cast=bool)
 ALLOWED_HOSTS = config("ALLOWED_HOSTS", default="*", cast=Csv())
 
@@ -130,6 +132,10 @@ REST_FRAMEWORK = {
     },
     "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
     "TEST_REQUEST_DEFAULT_FORMAT": "json",
+    # Throttle identity = the last X-Forwarded-For hop, i.e. the address our own
+    # proxy appended. Without this DRF keys on the whole client-supplied chain,
+    # which makes every rate limit trivially bypassable.
+    "NUM_PROXIES": config("NUM_PROXIES", default=1, cast=int),
 }
 
 SIMPLE_JWT = {
@@ -178,11 +184,22 @@ CELERY_TASK_ROUTES = {
     "apps.documents.tasks.run_cross_document_operation": {"queue": "heavy"},
     "apps.documents.tasks.generate_thumbnails_task": {"queue": "render"},
 }
-CELERY_TASK_TIME_LIMITS = {
-    "default": (120, 60),
-    "heavy": (900, 600),
-    "render": (60, 30),
+# Per-queue limits are applied on the worker commands (--time-limit /
+# --soft-time-limit, see infra/docker-compose*.yml, §12); these are the fallback
+# for a worker started without them. A soft limit raises SoftTimeLimitExceeded
+# inside the task, so the job is marked failed instead of hanging forever.
+CELERY_TASK_TIME_LIMIT = config("CELERY_TASK_TIME_LIMIT", default=900, cast=int)
+CELERY_TASK_SOFT_TIME_LIMIT = config("CELERY_TASK_SOFT_TIME_LIMIT", default=600, cast=int)
+
+# Beat: hard time limits kill the worker process without touching the Job row,
+# so a periodic sweep is what actually frees the user's concurrency slots (§11).
+CELERY_BEAT_SCHEDULE = {
+    "reap-stalled-jobs": {
+        "task": "apps.jobs.tasks.reap_stalled_jobs",
+        "schedule": 300.0,
+    },
 }
+JOB_STALL_TIMEOUT = config("JOB_STALL_TIMEOUT", default=1800, cast=int)
 
 # --- Redis locks (§11) ------------------------------------------------------
 DOC_LOCK_TIMEOUT = 120

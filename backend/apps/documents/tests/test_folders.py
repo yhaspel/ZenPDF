@@ -18,6 +18,18 @@ def test_duplicate_name_same_parent_rejected(api):
     assert r.status_code == 400
 
 
+def test_folder_cannot_be_its_own_parent(api):
+    # A cycle would make the cascade-delete walk non-terminating.
+    fid = api.post("/api/folders/", {"name": "Loop"}, format="json").json()["id"]
+    assert api.patch(f"/api/folders/{fid}/", {"parent": fid}, format="json").status_code == 400
+
+
+def test_folder_cannot_move_into_its_own_descendant(api):
+    top = api.post("/api/folders/", {"name": "Top"}, format="json").json()["id"]
+    sub = api.post("/api/folders/", {"name": "Sub", "parent": top}, format="json").json()["id"]
+    assert api.patch(f"/api/folders/{top}/", {"parent": sub}, format="json").status_code == 400
+
+
 def test_delete_empty_folder(api):
     fid = api.post("/api/folders/", {"name": "Temp"}, format="json").json()["id"]
     assert api.delete(f"/api/folders/{fid}/").status_code == 204

@@ -1,5 +1,6 @@
 import { CdkDrag, CdkDragDrop, CdkDropList, moveItemInArray } from '@angular/cdk/drag-drop';
 import { ChangeDetectionStrategy, Component, computed, effect, inject, signal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { NgxExtendedPdfViewerModule } from 'ngx-extended-pdf-viewer';
@@ -12,6 +13,7 @@ import { DocumentsService } from '../../core/services/documents.service';
 import { TokenService } from '../../core/services/token.service';
 import { ConfirmService } from '../../shared/confirm.service';
 import { PdfThumbnail } from '../../shared/pdf-thumbnail';
+import { saveBlob } from '../../shared/save-blob';
 import { ToastService } from '../../shared/toast.service';
 
 type Dialog = null | 'split' | 'crop' | 'scale' | 'nup' | 'compress' | 'insert';
@@ -62,13 +64,19 @@ export class Workspace {
 
   readonly contentUrl = computed(() => {
     const d = this.viewer.doc();
-    return d?.current_version ? this.docsSvc.contentUrl(d.id) : '';
+    // Pinning the URL to the version seq is what makes `src` change after an
+    // operation — without it the viewer keeps rendering the old bytes.
+    return d?.current_version ? this.docsSvc.contentUrl(d.id, d.current_version.seq) : '';
   });
   readonly authHeaders = computed(() => ({ Authorization: `Bearer ${this.tokens.access ?? ''}` }));
 
   constructor() {
-    const id = this.route.snapshot.paramMap.get('id')!;
-    this.viewer.load(id);
+    // Angular reuses this component across /app/doc/:id navigations (split and
+    // extract land on a new document), so track the param, not a snapshot.
+    this.route.paramMap.pipe(takeUntilDestroyed()).subscribe((params) => {
+      const id = params.get('id');
+      if (id) this.viewer.load(id);
+    });
     // reset organize order whenever the version changes
     effect(() => {
       const n = this.viewer.pageCount();
@@ -131,7 +139,11 @@ export class Workspace {
 
   download(): void {
     const d = this.viewer.doc();
-    if (d) window.open(this.docsSvc.downloadUrl(d.id), '_blank');
+    if (!d) return;
+    this.docsSvc.download(d.id).subscribe({
+      next: (blob) => saveBlob(blob, `${d.title}.pdf`),
+      error: () => this.toast.error('Download failed'),
+    });
   }
 
   // --- versions ---

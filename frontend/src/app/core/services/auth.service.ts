@@ -1,6 +1,6 @@
 import { HttpClient } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
-import { Observable } from 'rxjs';
+import { Observable, finalize, shareReplay } from 'rxjs';
 
 import { environment } from '../../../environments/environment';
 import { AuthTokens, User } from '../models/models';
@@ -15,6 +15,7 @@ export interface RegisterPayload {
 export class AuthService {
   private http = inject(HttpClient);
   private base = environment.apiUrl;
+  private refreshInFlight: Observable<AuthTokens> | null = null;
 
   register(payload: RegisterPayload): Observable<User> {
     return this.http.post<User>(`${this.base}/users/register/`, payload);
@@ -24,8 +25,23 @@ export class AuthService {
     return this.http.post<AuthTokens>(`${this.base}/auth/login/`, { email, password });
   }
 
-  refresh(refresh: string): Observable<{ access: string }> {
-    return this.http.post<{ access: string }>(`${this.base}/auth/refresh/`, { refresh });
+  /** Returns a rotated refresh token too — the backend blacklists the old one. */
+  refresh(refresh: string): Observable<AuthTokens> {
+    return this.http.post<AuthTokens>(`${this.base}/auth/refresh/`, { refresh });
+  }
+
+  /**
+   * Single-flight refresh. Concurrent 401s must share one request: the backend
+   * rotates and blacklists the refresh token, so a second parallel call fails.
+   */
+  refreshOnce(refresh: string): Observable<AuthTokens> {
+    if (!this.refreshInFlight) {
+      this.refreshInFlight = this.refresh(refresh).pipe(
+        finalize(() => (this.refreshInFlight = null)),
+        shareReplay(1),
+      );
+    }
+    return this.refreshInFlight;
   }
 
   logout(refresh: string): Observable<unknown> {

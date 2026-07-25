@@ -99,8 +99,9 @@ export class DocumentsService {
     return `${this.base}/documents/${id}/content/${q}`;
   }
 
-  downloadUrl(id: string): string {
-    return `${this.base}/documents/${id}/download/`;
+  /** Fetched through HttpClient so the interceptor can attach the JWT. */
+  download(id: string): Observable<Blob> {
+    return this.http.get(`${this.base}/documents/${id}/download/`, { responseType: 'blob' });
   }
 
   thumbnailBlob(id: string, page: number, w = 240, version?: number): Observable<Blob> {

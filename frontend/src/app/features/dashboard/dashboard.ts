@@ -12,6 +12,7 @@ import { JobsService } from '../../core/services/jobs.service';
 import { ConfirmService } from '../../shared/confirm.service';
 import { EmptyState } from '../../shared/empty-state';
 import { PdfThumbnail } from '../../shared/pdf-thumbnail';
+import { saveBlob } from '../../shared/save-blob';
 import { Spinner } from '../../shared/spinner';
 import { ToastService } from '../../shared/toast.service';
 import { UploadDropzone } from '../../shared/upload-dropzone';
@@ -110,8 +111,11 @@ export class Dashboard {
   }
 
   download(doc: DocumentModel): void {
-    window.open(this.docsSvc.downloadUrl(doc.id), '_blank');
     this.menuId.set(null);
+    this.docsSvc.download(doc.id).subscribe({
+      next: (blob) => saveBlob(blob, `${doc.title}.pdf`),
+      error: () => this.toast.error('Download failed'),
+    });
   }
 
   async trash(doc: DocumentModel): Promise<void> {

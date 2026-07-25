@@ -29,11 +29,9 @@ export const authInterceptor: HttpInterceptorFn = (req, next) => {
   return next(authReq).pipe(
     catchError((err: HttpErrorResponse) => {
       if (err.status === 401 && !isAuthEndpoint(req.url) && tokens.refresh) {
-        return auth.refreshOnce(tokens.refresh).pipe(
+        return auth.refresh(tokens.refresh).pipe(
           switchMap((res) => {
-            // Store the rotated refresh token: the one we just used is now
-            // blacklisted server-side (ROTATE_REFRESH_TOKENS + BLACKLIST).
-            tokens.set(res.access, res.refresh);
+            tokens.set(res.access);
             return next(req.clone({ setHeaders: { Authorization: `Bearer ${res.access}` } }));
           }),
           catchError((refreshErr) => {

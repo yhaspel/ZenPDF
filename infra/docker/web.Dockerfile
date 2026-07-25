@@ -17,5 +17,7 @@ RUN npm run build
 
 FROM nginx:1.29-alpine AS prod
 COPY --from=build /app/dist/zenpdf-web/browser /usr/share/nginx/html
-COPY ../infra/docker/nginx.conf /etc/nginx/conf.d/default.conf
+# nginx.conf lives in frontend/ because a COPY source may not sit outside the
+# build context (which is frontend/, see infra/docker-compose*.yml).
+COPY nginx.conf /etc/nginx/conf.d/default.conf
 EXPOSE 80

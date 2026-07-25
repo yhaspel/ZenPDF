@@ -1,7 +1,14 @@
 """Production settings — gunicorn behind nginx. Hardening completed in phase 10."""
+from django.core.exceptions import ImproperlyConfigured
+
 from .base import *  # noqa: F401,F403
 
 DEBUG = False
+
+# SECRET_KEY also signs every JWT — a missing one must fail loudly, not fall
+# back to a value that is public in the repository.
+if not SECRET_KEY:  # noqa: F405
+    raise ImproperlyConfigured("SECRET_KEY must be set in the environment.")
 
 STORAGE_BACKEND = "s3"
 

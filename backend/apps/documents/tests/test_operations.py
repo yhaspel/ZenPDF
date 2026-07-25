@@ -23,6 +23,20 @@ def test_page_op_creates_labeled_version(api, uploaded_doc):
     assert detail["page_count"] == 2
 
 
+def test_redelivered_task_does_not_run_twice(api, uploaded_doc):
+    """acks_late redelivers after a worker dies; a finished job must be a no-op."""
+    from apps.documents.tasks import run_operation
+
+    job = _op(api, uploaded_doc["id"], "rotate_pages", {"pages": [0], "degrees": 90})
+    before = api.get(f"/api/documents/{uploaded_doc['id']}/versions/").json()
+
+    run_operation(job["id"])
+
+    after = api.get(f"/api/documents/{uploaded_doc['id']}/versions/").json()
+    assert len(after) == len(before)
+    assert api.get(f"/api/jobs/{job['id']}/").json()["status"] == "succeeded"
+
+
 def test_base_version_conflict(api, uploaded_doc):
     job = _op(api, uploaded_doc["id"], "rotate_pages", {"pages": [0], "degrees": 90}, base_seq=99)
     assert job["status"] == "failed"
@@ -70,6 +84,20 @@ def test_merge_via_cross_document_endpoint(api, fixture_bytes):
     merged = api.get(f"/api/documents/{new_id}/").json()
     assert merged["page_count"] == 4
     assert merged["title"].startswith("Merged —")
+
+
+def test_redelivered_merge_does_not_duplicate_document(api, fixture_bytes):
+    from apps.documents.tasks import run_cross_document_operation
+
+    a = _upload(api, "a.pdf", fixture_bytes("text.pdf"))
+    b = _upload(api, "b.pdf", fixture_bytes("unicode.pdf"))
+    r = api.post("/api/operations/",
+                 {"type": "merge", "params": {"document_ids": [a["id"], b["id"]]}}, format="json")
+    count = api.get("/api/documents/").json()["count"]
+
+    run_cross_document_operation(r.json()["id"])
+
+    assert api.get("/api/documents/").json()["count"] == count
 
 
 def test_merge_rejects_single_source_via_operations(api, uploaded_doc):

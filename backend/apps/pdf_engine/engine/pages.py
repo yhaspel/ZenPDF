@@ -387,10 +387,17 @@ def _recompress_images(doc: fitz.Document, max_dim: int, quality: int, grayscale
             if not base:
                 continue
             raw = base["image"]
+            if base.get("smask"):
+                # Soft-masked image: the mask is a separate xref and JPEG cannot
+                # carry it, so recompressing would flatten the transparency.
+                continue
             try:
                 im = Image.open(io.BytesIO(raw))
                 im.load()
             except Exception:  # noqa: BLE001
+                continue
+            if im.mode in ("RGBA", "LA", "PA") or "transparency" in im.info:
+                # Same reason: converting to RGB/L composites alpha onto black.
                 continue
             target_mode = "L" if grayscale else "RGB"
             if im.mode != target_mode:

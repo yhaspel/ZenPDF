@@ -52,6 +52,11 @@ def doc_lock(document_id: str):
                 lock.release()
 
 
+def _canceled(job: Job) -> bool:
+    """Cooperative-cancel checkpoint: re-read the row the API may have updated."""
+    return Job.objects.filter(pk=job.pk, status=Job.Status.CANCELED).exists()
+
+
 def _measure(data: bytes) -> tuple[str, int, int]:
     import fitz
 
@@ -165,7 +170,9 @@ def _apply_single(op, primary_bytes, params, source_bytes):
 @shared_task(name="apps.documents.tasks.run_operation", bind=True)
 def run_operation(self, job_id: str):
     job = Job.objects.select_related("document").get(id=job_id)
-    if job.status == Job.Status.CANCELED:
+    # acks_late redelivers the message when a worker dies; a job that already
+    # reached a terminal state must never run twice (§12).
+    if job.is_terminal:
         return
     job.celery_task_id = self.request.id or ""
     job.save(update_fields=["celery_task_id"])
@@ -194,6 +201,11 @@ def run_operation(self, job_id: str):
                     source_bytes.append(_version_bytes(src_doc.current_version))
 
             kind, payload, label, report = _apply_single(op, primary_bytes, job.params, source_bytes)
+
+            # Last point before the result is committed — honour a cancel that
+            # arrived while the engine was working.
+            if _canceled(job):
+                return
 
             if kind == "version":
                 version = _save_new_version(document=document, data=payload, label=label,
@@ -225,7 +237,7 @@ def run_operation(self, job_id: str):
 def run_cross_document_operation(self, job_id: str):
     """merge / alternate_mix — inputs come entirely from params (§10, /api/operations/)."""
     job = Job.objects.get(id=job_id)
-    if job.status == Job.Status.CANCELED:
+    if job.is_terminal:  # redelivery of an already-finished job (§12)
         return
     job.celery_task_id = self.request.id or ""
     job.save(update_fields=["celery_task_id"])
@@ -253,6 +265,9 @@ def run_cross_document_operation(self, job_id: str):
             job.mark_failed("validation_error", f"Unsupported cross-doc op '{job.type}'.")
             return
 
+        if _canceled(job):
+            return
+
         new_doc = _create_document_from_bytes(
             owner=job.user, folder=folder, title=title, data=data,
             created_by=job.user, job=job,
@@ -270,6 +285,8 @@ def run_cross_document_operation(self, job_id: str):
 def revert_version(self, job_id: str):
     """Undo = copy version v{seq} blob as a new head version (§14)."""
     job = Job.objects.select_related("document").get(id=job_id)
+    if job.is_terminal:  # redelivery of an already-finished job (§12)
+        return
     job.celery_task_id = self.request.id or ""
     job.save(update_fields=["celery_task_id"])
     job.mark_running()
@@ -278,8 +295,17 @@ def revert_version(self, job_id: str):
     try:
         with doc_lock(str(document.id)):
             document.refresh_from_db()
+            current = document.current_version
+            if job.base_version_seq is not None and (
+                current is None or job.base_version_seq != current.seq
+            ):
+                job.mark_failed("version_conflict",
+                                "The document changed since you loaded it.")
+                return
             target = document.versions.get(seq=target_seq)
             data = _version_bytes(target)
+            if _canceled(job):
+                return
             version = _save_new_version(
                 document=document, data=data,
                 label=f"Reverted to v{target_seq}", created_by=job.user, job=job,

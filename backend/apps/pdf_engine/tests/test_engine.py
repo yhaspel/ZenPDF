@@ -280,6 +280,31 @@ def test_compress_already_optimized(fixture_bytes):
     assert twice == once  # original bytes returned unchanged
 
 
+def test_compress_preserves_image_transparency():
+    """Soft-masked images are left alone — JPEG cannot carry an alpha channel."""
+    import io
+
+    from PIL import Image
+
+    buf = io.BytesIO()
+    Image.new("RGBA", (600, 600), (255, 0, 0, 128)).save(buf, format="PNG")
+    doc = fitz.open()
+    doc.new_page().insert_image(fitz.Rect(0, 0, 300, 300), stream=buf.getvalue())
+    data = doc.tobytes()
+    doc.close()
+
+    out, _ = P.compress(data, preset="strong")
+
+    doc = fitz.open(stream=out, filetype="pdf")
+    try:
+        images = doc[0].get_images(full=True)
+        assert images
+        # img[1] is the soft-mask xref; 0 means the transparency was flattened.
+        assert all(img[1] for img in images)
+    finally:
+        doc.close()
+
+
 def test_encrypted_op_blocked(fixture_bytes):
     with pytest.raises(DocumentEncryptedError):
         P.rotate_pages(fixture_bytes("encrypted.pdf"), pages=[0], degrees=90)
