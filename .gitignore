@@ -28,6 +28,10 @@ htmlcov/
 .coverage.*
 coverage.xml
 
+# --- Celery ---
+celerybeat-schedule*
+celerybeat.pid
+
 # --- Node / Angular ---
 node_modules/
 frontend/dist/
