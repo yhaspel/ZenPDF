@@ -1,4 +1,5 @@
 import { Injectable, computed, inject, signal } from '@angular/core';
+import { Observable, catchError, of, tap } from 'rxjs';
 
 import { AppConfig, GuestState, TierLimits } from '../core/models/models';
 import { ConfigService } from '../core/services/config.service';
@@ -50,6 +51,24 @@ export class GuestFacade {
     const minutes = Math.max(1, Math.floor(seconds / 60));
     return `${minutes} minute${minutes === 1 ? '' : 's'} left`;
   });
+
+  /**
+   * Guarantee a principal exists before firing writes **in parallel** (§21.2).
+   *
+   * Lazy minting is per-request: two concurrent tokenless writes each mint
+   * their own session, so the files land in different sessions and a
+   * cross-document op like merge can then see only one of them. Serialising the
+   * mint once, up front, is what `POST /api/guest/session/` is for.
+   */
+  ensureSession(): Observable<unknown> {
+    if (this.principal() !== null) {
+      return of(null);
+    }
+    return this.configSvc.mintGuestSession().pipe(
+      tap(() => this._hasToken.set(this.guestTokens.hasToken)),
+      catchError(() => of(null)),
+    );
+  }
 
   loadConfig(): void {
     this.configSvc.config().subscribe({

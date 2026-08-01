@@ -1,5 +1,5 @@
 import { provideHttpClient } from '@angular/common/http';
-import { provideHttpClientTesting } from '@angular/common/http/testing';
+import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { TestBed } from '@angular/core/testing';
 
 import { GuestTokenService } from '../core/services/guest-token.service';
@@ -58,6 +58,32 @@ describe('GuestFacade', () => {
     expect(guestTokens.token).toBeNull();
     expect(localStorage.getItem('zen_guest')).toBeNull();
     expect(facade.expiredNotice()).toBe(false);
+  });
+
+  it('ensureSession mints once when there is no principal', () => {
+    const httpMock = TestBed.inject(HttpTestingController);
+    let done = false;
+    facade.ensureSession().subscribe(() => (done = true));
+    httpMock
+      .expectOne((r) => r.url.endsWith('/guest/session/'))
+      .flush({ id: 'g1' }, { headers: { 'X-Guest-Token': 'minted' } });
+    expect(done).toBe(true);
+    httpMock.verify();
+  });
+
+  it('ensureSession is a no-op once a principal exists', () => {
+    // Minting is per-request, so two concurrent tokenless writes would create
+    // two sessions and split the files across them (§21.2). Once one exists,
+    // no further round trip may happen.
+    const httpMock = TestBed.inject(HttpTestingController);
+    facade.captureToken('already-have-one');
+    httpMock.match((r) => r.url.endsWith('/config/')).forEach((r) => r.flush({}));
+
+    let done = false;
+    facade.ensureSession().subscribe(() => (done = true));
+    expect(done).toBe(true);
+    httpMock.expectNone((r) => r.url.endsWith('/guest/session/'));
+    httpMock.verify();
   });
 
   it('surfaces account_required as an upgrade prompt', () => {

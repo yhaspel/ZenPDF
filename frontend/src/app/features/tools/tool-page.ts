@@ -138,6 +138,16 @@ export class ToolPage {
     this.error.set('');
     this.results.set([]);
 
+    // Mint the guest session *before* uploading in parallel. Minting is
+    // per-request, so two concurrent tokenless uploads would create two
+    // sessions — and a merge across them would then see only one file (§21.2).
+    this.guests.ensureSession().subscribe({
+      next: () => this.uploadAll(),
+      error: (err) => this.fail(err),
+    });
+  }
+
+  private uploadAll(): void {
     const uploaded: DocumentModel[] = [];
     const files = this.picked();
     let remaining = files.length;

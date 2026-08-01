@@ -9,7 +9,8 @@
     "test": "ng test",
     "generate:seo": "node tools/generate-seo.mjs",
     "prebuild": "npm run generate:seo",
-    "prestart": "npm run generate:seo"
+    "prestart": "npm run generate:seo",
+    "verify:prerender": "node tools/verify-prerender.mjs"
   },
   "private": true,
   "packageManager": "npm@11.16.0",
