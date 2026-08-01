@@ -120,15 +120,62 @@ describe('AnnotationsFacade', () => {
     });
   });
 
-  it('keeps drafts for replay after a version conflict', () => {
-    loadWith([HIGHLIGHT]);
+  it('a reload drops only the drafts the last save actually sent', () => {
+    loadWith([]);
+    facade.add({ ...HIGHLIGHT, id: 'a1' });
+    facade.save('doc-1', 2)!.subscribe();
+    http.expectOne((r) => r.url.endsWith('/documents/doc-1/operations/'))
+      .flush({ id: 'job-1', status: 'succeeded' });
+    http.expectOne((r) => r.url.endsWith('/jobs/job-1/'))
+      .flush({ id: 'job-1', status: 'succeeded' });
+
+    // Drawn *while* the save was in flight — it must survive the reload.
     facade.add({ ...HIGHLIGHT, id: 'a2' });
-    facade.keepDraftsForReplay();
-    // The saved set is dropped, so the draft is re-sent as an `add` against the
-    // fresh version rather than an `update` of something that may have moved.
+
+    facade.load('doc-1', 3);
+    http.expectOne((r) => r.url.endsWith('/documents/doc-1/annotations/'))
+      .flush({ version: 3, annotations: [{ ...HIGHLIGHT, id: 'a1', author: 'Alice' }] });
+
+    expect(facade.count()).toBe(2);
     expect(facade.ops()).toEqual([
       { action: 'add', annotation: { ...HIGHLIGHT, id: 'a2' } },
     ]);
+  });
+
+  it('a version conflict keeps every draft across the reload that follows', () => {
+    // This is the path phase-03 §"Save model UX" specifies: no merge dialog,
+    // reload and replay. A reload that wiped the drafts would lose the user's
+    // work at exactly the moment the design promises not to.
+    loadWith([]);
+    facade.add({ ...HIGHLIGHT, id: 'a1' });
+    facade.save('doc-1', 2)!.subscribe();
+    http.expectOne((r) => r.url.endsWith('/documents/doc-1/operations/'))
+      .flush({ id: 'job-1', status: 'failed', error_code: 'version_conflict' });
+    http.expectOne((r) => r.url.endsWith('/jobs/job-1/'))
+      .flush({ id: 'job-1', status: 'failed', error_code: 'version_conflict' });
+
+    facade.keepDraftsForReplay();
+    facade.load('doc-1', 3);
+    http.expectOne((r) => r.url.endsWith('/documents/doc-1/annotations/'))
+      .flush({ version: 3, annotations: [] });
+
+    expect(facade.count()).toBe(1);
+    expect(facade.dirty()).toBe(true);
+    expect(facade.ops()).toEqual([
+      { action: 'add', annotation: { ...HIGHLIGHT, id: 'a1' } },
+    ]);
+  });
+
+  it('switching document resets the session', () => {
+    loadWith([HIGHLIGHT]);
+    facade.add({ ...HIGHLIGHT, id: 'a2' });
+    facade.load('doc-2', 1);
+    http.expectOne((r) => r.url.endsWith('/documents/doc-2/annotations/'))
+      .flush({ version: 1, annotations: [] });
+    // A draft belongs to one file; carrying it across would stamp it onto
+    // whatever the user opened next.
+    expect(facade.count()).toBe(0);
+    expect(facade.ops()).toEqual([]);
   });
 
   it('caches the text layer per page and refetches after a version change', () => {

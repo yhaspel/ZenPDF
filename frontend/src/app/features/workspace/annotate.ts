@@ -380,7 +380,7 @@ export class Annotate {
             // v1 does not attempt a merge: keep the drafts and replay them onto
             // the reloaded version (phase-03 §"Save model UX").
             this.annotations.keepDraftsForReplay();
-            this.toast.info('Document changed — your marks were kept, saving again');
+            this.toast.info('Document changed — your marks were kept. Save again to apply them.');
             this.conflict.emit();
           } else {
             this.toast.error(job.error_message || 'Could not save annotations');

@@ -33,6 +33,19 @@ export class AnnotationsFacade {
   private _selectedId = signal<string | null>(null);
   private _loading = signal(false);
 
+  /** Which document the current stores belong to, so a navigation resets them. */
+  private docId: string | null = null;
+  /**
+   * Ids in the batch currently being saved.
+   *
+   * A reload is what confirms a save landed, and `load()` must drop *exactly*
+   * those drafts — not all of them. Clearing everything would discard marks the
+   * user drew while the save was in flight, and would silently defeat the
+   * version-conflict replay path (phase-03 §"Save model UX"), which reloads the
+   * document precisely in order to re-apply the drafts it just kept.
+   */
+  private saving = new Set<string>();
+
   readonly selectedId = this._selectedId.asReadonly();
   readonly loading = this._loading.asReadonly();
 
@@ -76,14 +89,42 @@ export class AnnotationsFacade {
   // ------------------------------------------------------------------ //
   // Loading
   // ------------------------------------------------------------------ //
+  /**
+   * Refresh the *saved* set from the file.
+   *
+   * Called on every document/version change, so it must **not** discard drafts
+   * wholesale: the version-conflict path deliberately keeps them and then
+   * reloads in order to replay them. Only the ids the last save actually sent
+   * are dropped, and only once the reload confirms they are in the file.
+   * Switching document resets everything, because a draft belongs to one file.
+   */
   load(docId: string, version?: number | null): void {
+    if (this.docId !== docId) {
+      this.clear();
+      this.docId = docId;
+    }
     this._loading.set(true);
     this.docsSvc.annotations(docId, version).subscribe({
       next: (res) => {
         this._saved.set(res.annotations);
-        this._drafts.set(new Map());
-        this._removed.set(new Set());
-        this._selectedId.set(null);
+        if (this.saving.size) {
+          const confirmed = this.saving;
+          this.saving = new Set();
+          this._drafts.update((map) => {
+            const next = new Map(map);
+            for (const id of confirmed) next.delete(id);
+            return next;
+          });
+          this._removed.update((set) => {
+            const next = new Set(set);
+            for (const id of confirmed) next.delete(id);
+            return next;
+          });
+        }
+        const selected = this._selectedId();
+        if (selected && !this.all().some((a) => a.id === selected)) {
+          this._selectedId.set(null);
+        }
         this._loading.set(false);
       },
       error: () => this._loading.set(false),
@@ -164,6 +205,9 @@ export class AnnotationsFacade {
   save(docId: string, baseSeq: number | null): Observable<Job> | null {
     const ops = this.ops();
     if (!ops.length) return null;
+    // Remember exactly what went out, so the reload that follows drops these
+    // and nothing else (see `load`).
+    this.saving = new Set(ops.map((op) => op.annotation.id));
     return this.jobs.dispatch(
       this.docsSvc.operation(docId, {
         type: 'annotate_batch',
@@ -188,10 +232,15 @@ export class AnnotationsFacade {
    *
    * phase-03 is explicit that v1 does not attempt a merge dialog: the document
    * reloads and the local drafts are replayed onto the fresh version. That is
-   * safe precisely because drafts are independent objects with stable ids.
+   * safe precisely because drafts are independent objects with stable ids — and
+   * an `add` replayed for an id the other tab already wrote is applied as an
+   * update server-side, so the replay converges either way.
+   *
+   * All this has to do is forget that a save was in flight; the reload that
+   * follows must then leave every draft alone.
    */
   keepDraftsForReplay(): void {
-    this._saved.set([]);
+    this.saving = new Set();
   }
 
   clear(): void {
@@ -200,5 +249,6 @@ export class AnnotationsFacade {
     this._removed.set(new Set());
     this._words.set(new Map());
     this._selectedId.set(null);
+    this.saving = new Set();
   }
 }
