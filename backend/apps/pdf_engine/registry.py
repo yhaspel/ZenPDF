@@ -46,6 +46,9 @@ OPERATIONS: dict[str, Op] = {
                 source_id_params=("document_ids",)),
     "alternate_mix": Op("alternate_mix", "heavy", S.ALTERNATE_MIX, "documents",
                         source_id_params=("document_a", "document_b")),
+    # Phase 3 — annotations (§10, §12: both on the `default` queue)
+    "annotate_batch": Op("annotate_batch", "default", S.ANNOTATE_BATCH, "version"),
+    "flatten": Op("flatten", "default", S.FLATTEN, "version"),
 }
 
 

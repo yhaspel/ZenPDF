@@ -7,14 +7,16 @@ from drf_spectacular.utils import extend_schema
 from rest_framework import status
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
+from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 
 from apps.pdf_engine.storage import storage_healthy
 
 from . import limits as L
+from .assets import ImageRejected, store_image
 from .authentication import require_principal
 from .claim import claim_session
-from .exceptions import AccountRequired, GuestExpired
+from .exceptions import AccountRequired, FileTooLarge, GuestExpired, ValidationFailed
 from .models import GuestSession
 from .permissions import IsAccount
 from .principals import is_guest, label
@@ -125,6 +127,45 @@ class GuestClaimView(APIView):
             raise GuestExpired()
         summary = claim_session(session, request.user)
         return Response({"claimed": summary}, status=status.HTTP_200_OK)
+
+
+class ImageUploadView(APIView):
+    """`POST /api/uploads/image/` — an ephemeral image asset (§13 `uploads/…`).
+
+    Guest-accessible: a custom stamp is exactly the kind of file-in/file-out work
+    §21.1 says must never need an account. The returned `ref` is opaque and the
+    storage key is derived from the *caller's* principal, so a ref can never
+    address another principal's asset.
+    """
+
+    throttle_scope = "image_upload"
+    throttle_classes = [ScopedRateThrottle]
+
+    @extend_schema(request=OpenApiTypes.OBJECT, responses=OpenApiTypes.OBJECT, tags=["core"])
+    def post(self, request):
+        upload = request.FILES.get("file")
+        if upload is None:
+            raise ValidationFailed("No file was uploaded (field 'file').")
+        # Uploading is a write, so this is a legitimate mint point (§21.2).
+        principal = require_principal(request, mint=True)
+        if principal is None:
+            raise AccountRequired("Guest access is disabled; sign in to upload.")
+        tier = L.for_principal(principal)
+        if upload.size > tier.max_image_upload_bytes:
+            exc = FileTooLarge(
+                f"Images must be {tier.max_image_upload_bytes // (1024 * 1024)} MB or smaller."
+                + (" Create a free account to upload larger images."
+                   if is_guest(principal) else "")
+            )
+            exc.zen_details = {
+                "max_image_upload_bytes": tier.max_image_upload_bytes, "tier": tier.tier,
+            }
+            raise exc
+        try:
+            asset = store_image(principal, upload.read())
+        except ImageRejected as exc:
+            raise ValidationFailed(str(exc)) from exc
+        return Response(asset, status=status.HTTP_201_CREATED)
 
 
 class HealthView(APIView):

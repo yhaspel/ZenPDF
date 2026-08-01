@@ -34,6 +34,8 @@ class Limits:
     tier: str
     storage_bytes: int
     max_upload_bytes: int
+    # Images uploaded as stamps/watermarks/signatures (§13 `uploads/…`), not PDFs.
+    max_image_upload_bytes: int
     max_pages: int
     max_concurrent_jobs: int
     metered_ops_per_hour: int
@@ -50,6 +52,7 @@ class Limits:
             "tier": self.tier,
             "storage_mb": self.storage_bytes // (1024 * 1024),
             "max_upload_mb": self.max_upload_bytes // (1024 * 1024),
+            "max_image_upload_mb": self.max_image_upload_bytes // (1024 * 1024),
             "max_pages": self.max_pages,
             "max_concurrent_jobs": self.max_concurrent_jobs,
             "metered_ops_per_hour": self.metered_ops_per_hour,
@@ -82,6 +85,7 @@ def for_tier(tier: str) -> Limits:
         tier=tier,
         storage_bytes=row["storage_mb"] * 1024 * 1024,
         max_upload_bytes=row["max_upload_mb"] * 1024 * 1024,
+        max_image_upload_bytes=row["max_image_upload_mb"] * 1024 * 1024,
         max_pages=row["max_pages"],
         max_concurrent_jobs=row["max_concurrent_jobs"],
         metered_ops_per_hour=row["metered_ops_per_hour"],

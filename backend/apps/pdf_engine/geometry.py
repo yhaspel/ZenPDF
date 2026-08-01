@@ -58,6 +58,27 @@ def norm_to_page_rect(rect: NormRect, page_width: float, page_height: float):
     return (x0, y0, x1, y1)
 
 
+def norm_to_page_point(nx: float, ny: float, page_width: float,
+                       page_height: float) -> tuple[float, float]:
+    """Map a normalized visual-space point onto the page's displayed rect.
+
+    Ink strokes, polygon vertices and line endpoints are points, not rects, and
+    §8 is explicit that *all* conversions live here — so they get their own pair
+    rather than each caller multiplying by the page size inline.
+    """
+    if page_width <= 0 or page_height <= 0:
+        raise ValueError("page dimensions must be positive")
+    return (float(nx) * page_width, float(ny) * page_height)
+
+
+def page_point_to_norm(x: float, y: float, page_width: float,
+                       page_height: float) -> tuple[float, float]:
+    """Inverse of norm_to_page_point."""
+    if page_width <= 0 or page_height <= 0:
+        raise ValueError("page dimensions must be positive")
+    return (float(x) / page_width, float(y) / page_height)
+
+
 def page_rect_to_norm(x0: float, y0: float, x1: float, y1: float,
                       page_width: float, page_height: float) -> NormRect:
     """Inverse of norm_to_page_rect — used to return search hits as normalized rects."""

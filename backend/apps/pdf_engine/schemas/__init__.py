@@ -111,3 +111,126 @@ ALTERNATE_MIX = {
     },
     "additionalProperties": False,
 }
+
+# --------------------------------------------------------------------------- #
+# Phase 3 — annotations
+# --------------------------------------------------------------------------- #
+_COLOR = {"type": "string", "pattern": "^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$"}
+_POINT = {
+    "type": "array",
+    "items": {"type": "number", "minimum": -0.5, "maximum": 1.5},
+    "minItems": 2,
+    "maxItems": 2,
+}
+_MARKUP_TYPES = ["highlight", "underline", "strikeout", "squiggly"]
+_STAMP_NAMES = [
+    "Approved", "AsIs", "Confidential", "Departmental", "Draft", "Experimental",
+    "Expired", "Final", "ForComment", "ForPublicRelease", "NotApproved",
+    "NotForPublicRelease", "Sold", "TopSecret",
+]
+ANNOTATION_TYPES = [
+    *_MARKUP_TYPES, "note", "free_text", "square", "circle", "line", "arrow",
+    "polygon", "polyline", "ink", "stamp", "image_stamp",
+]
+
+# One schema with `if/then` branches per type, rather than a bare oneOf: a
+# failing oneOf reports "no branch matched", which tells the client nothing,
+# while if/then reports the actual missing key.
+ANNOTATION = {
+    "type": "object",
+    "required": ["id", "type", "page"],
+    "properties": {
+        # Client-generated UUID → the PDF /NM key, so batch updates and deletes
+        # address stable ids across extract→apply cycles (phase-03 §3).
+        "id": {"type": "string", "minLength": 1, "maxLength": 64},
+        "page": {"type": "integer", "minimum": 0},
+        "type": {"enum": ANNOTATION_TYPES},
+        "rect": _NORM_RECT,
+        "quads": {"type": "array", "items": _NORM_RECT, "minItems": 1, "maxItems": 2000},
+        "ink": {
+            "type": "array",
+            "items": {"type": "array", "items": _POINT, "minItems": 1, "maxItems": 5000},
+            "minItems": 1,
+            "maxItems": 500,
+        },
+        "vertices": {"type": "array", "items": _POINT, "minItems": 2, "maxItems": 500},
+        "color": _COLOR,
+        "fill": _COLOR,
+        "opacity": {"type": "number", "minimum": 0, "maximum": 1},
+        "width": {"type": "number", "minimum": 0, "maximum": 50},
+        "contents": {"type": "string", "maxLength": 5000},
+        "author": {"type": "string", "maxLength": 120},
+        "created": {"type": "string", "maxLength": 40},
+        "modified": {"type": "string", "maxLength": 40},
+        "icon": {
+            "enum": ["Note", "Comment", "Help", "Insert", "Key", "NewParagraph",
+                     "Paragraph"]
+        },
+        "font_size": {"type": "number", "minimum": 4, "maximum": 96},
+        "align": {"enum": [0, 1, 2]},
+        "stamp_name": {"enum": _STAMP_NAMES},
+        "image_ref": {"type": "string", "pattern": "^[A-Za-z0-9_-]{6,64}$"},
+    },
+    "additionalProperties": False,
+    "allOf": [
+        {"if": {"properties": {"type": {"enum": _MARKUP_TYPES}}, "required": ["type"]},
+         "then": {"required": ["quads"]}},
+        {"if": {"properties": {"type": {"const": "ink"}}, "required": ["type"]},
+         "then": {"required": ["ink"]}},
+        {"if": {"properties": {"type": {"enum": ["line", "arrow", "polygon", "polyline"]}},
+                "required": ["type"]},
+         "then": {"required": ["vertices"]}},
+        {"if": {"properties": {"type": {"enum": ["note", "free_text", "square", "circle",
+                                                 "stamp", "image_stamp"]}},
+                "required": ["type"]},
+         "then": {"required": ["rect"]}},
+        {"if": {"properties": {"type": {"const": "image_stamp"}}, "required": ["type"]},
+         "then": {"required": ["image_ref"]}},
+    ],
+}
+
+# A delete only needs the id — the client should not have to echo a whole
+# annotation back just to remove it.
+_ANNOTATION_REF = {
+    "type": "object",
+    "required": ["id"],
+    "properties": {"id": {"type": "string", "minLength": 1, "maxLength": 64}},
+}
+
+ANNOTATE_BATCH = {
+    "type": "object",
+    "required": ["ops"],
+    "properties": {
+        "ops": {
+            "type": "array",
+            "minItems": 1,
+            # A save is one job per session (phase-03 §2); 1000 ops is far above
+            # the 30-annotation acceptance target and still bounds worker time.
+            "maxItems": 1000,
+            "items": {
+                "type": "object",
+                "required": ["action", "annotation"],
+                "properties": {
+                    "action": {"enum": ["add", "update", "delete"]},
+                    "annotation": {"type": "object"},
+                },
+                "additionalProperties": False,
+                "allOf": [
+                    {"if": {"properties": {"action": {"const": "delete"}},
+                            "required": ["action"]},
+                     "then": {"properties": {"annotation": _ANNOTATION_REF}}},
+                    {"if": {"properties": {"action": {"enum": ["add", "update"]}},
+                            "required": ["action"]},
+                     "then": {"properties": {"annotation": ANNOTATION}}},
+                ],
+            },
+        },
+    },
+    "additionalProperties": False,
+}
+
+FLATTEN = {
+    "type": "object",
+    "properties": {"what": {"enum": ["annotations", "form", "all"]}},
+    "additionalProperties": False,
+}

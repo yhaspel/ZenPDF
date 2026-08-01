@@ -30,8 +30,10 @@ from apps.core.principals import (
 from apps.jobs.models import Job
 from apps.jobs.serializers import JobSerializer
 from apps.pdf_engine import registry
+from apps.pdf_engine.engine import annotations as engine_annotations
 from apps.pdf_engine.engine import render as engine_render
 from apps.pdf_engine.engine import search_text
+from apps.pdf_engine.engine import text as engine_text
 from apps.pdf_engine.engine.inspect import inspect as inspect_pdf
 from apps.pdf_engine.exceptions import EngineError
 from apps.pdf_engine.storage import get_storage
@@ -396,6 +398,59 @@ class OutlineView(APIView):
         except EngineError as exc:
             raise ValidationFailed(exc.message) from exc
         return Response({"outline": info["toc"]})
+
+
+class AnnotationListView(APIView):
+    """`GET /api/documents/{id}/annotations/?version=` (phase-03).
+
+    Annotations are read straight out of the PDF — there is no sidecar table, so
+    this is the *only* source of truth and it cannot drift from the file the user
+    downloads.
+    """
+
+    @extend_schema(tags=["annotations"], responses=OpenApiTypes.OBJECT)
+    def get(self, request, pk):
+        document = _owned_document(request, pk)
+        version = _select_version(document, request)
+        pages = None
+        page_param = request.query_params.get("page")
+        if page_param is not None:
+            try:
+                pages = [int(page_param)]
+            except ValueError:
+                pages = None
+        try:
+            blob = get_storage().get_bytes(version.storage_key)
+            items = engine_annotations.extract_annotations(blob, pages=pages)
+        except EngineError as exc:
+            raise ValidationFailed(exc.message) from exc
+        return Response({"version": version.seq, "annotations": items})
+
+
+class TextWordsView(APIView):
+    """`GET /api/documents/{id}/text-words/?page=` (phase-03).
+
+    The overlay's text layer. Text-markup tools (highlight/underline/strikeout/
+    squiggly) need the quads of a selection, and taking them from the same
+    PyMuPDF that will *apply* the annotation removes an entire class of
+    coordinate drift — including on RTL text, where each word carries its own
+    rect and visual order is what the reader sees.
+    """
+
+    @extend_schema(tags=["annotations"], responses=OpenApiTypes.OBJECT)
+    def get(self, request, pk):
+        document = _owned_document(request, pk)
+        version = _select_version(document, request)
+        try:
+            page = int(request.query_params.get("page", 0))
+        except ValueError:
+            page = 0
+        try:
+            blob = get_storage().get_bytes(version.storage_key)
+            words = engine_text.page_words(blob, page)
+        except EngineError as exc:
+            raise ValidationFailed(exc.message) from exc
+        return Response({"page": page, **words})
 
 
 class TextSearchView(APIView):

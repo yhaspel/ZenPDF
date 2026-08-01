@@ -19,6 +19,10 @@ def _endpoints(doc_id):
         ("get", f"/api/documents/{doc_id}/versions/"),
         ("get", f"/api/documents/{doc_id}/outline/"),
         ("get", f"/api/documents/{doc_id}/text-search/?q=x"),
+        # Phase 3 read models — every new per-document endpoint joins this
+        # sweep, because the failure mode it guards is one missed queryset.
+        ("get", f"/api/documents/{doc_id}/annotations/"),
+        ("get", f"/api/documents/{doc_id}/text-words/?page=0"),
         ("patch", f"/api/documents/{doc_id}/"),
         ("delete", f"/api/documents/{doc_id}/"),
         ("post", f"/api/documents/{doc_id}/restore/"),
