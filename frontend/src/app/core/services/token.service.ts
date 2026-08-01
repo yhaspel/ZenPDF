@@ -5,24 +5,41 @@ export class TokenService {
   private readonly ACCESS = 'zen_access';
   private readonly REFRESH = 'zen_refresh';
 
+  /**
+   * SSR-safe accessor: the landing and tool pages are prerendered in Node,
+   * where `localStorage` does not exist. Reading it unguarded throws during
+   * prerendering and takes the whole page down.
+   */
+  private get storage(): Storage | null {
+    try {
+      return typeof localStorage === 'undefined' ? null : localStorage;
+    } catch {
+      return null;
+    }
+  }
+
   get access(): string | null {
-    return localStorage.getItem(this.ACCESS);
+    return this.storage?.getItem(this.ACCESS) ?? null;
   }
 
   get refresh(): string | null {
-    return localStorage.getItem(this.REFRESH);
+    return this.storage?.getItem(this.REFRESH) ?? null;
   }
 
   set(access: string, refresh?: string): void {
-    localStorage.setItem(this.ACCESS, access);
+    const storage = this.storage;
+    if (!storage) return;
+    storage.setItem(this.ACCESS, access);
     if (refresh) {
-      localStorage.setItem(this.REFRESH, refresh);
+      storage.setItem(this.REFRESH, refresh);
     }
   }
 
   clear(): void {
-    localStorage.removeItem(this.ACCESS);
-    localStorage.removeItem(this.REFRESH);
+    const storage = this.storage;
+    if (!storage) return;
+    storage.removeItem(this.ACCESS);
+    storage.removeItem(this.REFRESH);
   }
 
   get isAuthenticated(): boolean {

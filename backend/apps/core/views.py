@@ -1,43 +1,130 @@
-"""Public config + health endpoints (01-architecture.md §6, §16)."""
+"""Public config + health + guest-session endpoints (§6, §16, §21)."""
 from django.conf import settings
 from django.db import connections
+from django.utils import timezone
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import extend_schema
+from rest_framework import status
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.pdf_engine.storage import storage_healthy
 
+from . import limits as L
+from .authentication import require_principal
+from .claim import claim_session
+from .exceptions import AccountRequired, GuestExpired
+from .models import GuestSession
+from .permissions import IsAccount
+from .principals import is_guest, label
+
+
+def guest_state(principal) -> dict:
+    """Session shape shared by `/api/guest/session/` and `/api/config/`."""
+    if not is_guest(principal):
+        return {}
+    return {
+        "id": str(principal.id),
+        "expires_at": principal.expires_at.isoformat(),
+        "seconds_remaining": max(
+            0, int((principal.expires_at - timezone.now()).total_seconds())
+        ),
+        "storage_bytes_used": principal.storage_bytes_used,
+    }
+
 
 class ConfigView(APIView):
-    """Public runtime config for the SPA: limits, feature flags, ads client id."""
+    """Runtime config for the SPA — **the current principal's** tier limits.
+
+    Public, but no longer principal-blind: the client can pre-empt a rejection
+    instead of discovering it at 429 (§16). An anonymous caller is quoted guest
+    limits, which is what it will get the moment it writes anything.
+    """
 
     permission_classes = [AllowAny]
-    authentication_classes = []
 
     @extend_schema(responses=OpenApiTypes.OBJECT, tags=["core"])
     def get(self, request):
+        principal = require_principal(request)  # never mints on a read (§21.2)
+        tier = L.for_principal(principal)
         return Response(
             {
-                "limits": {
-                    "max_upload_mb": settings.MAX_UPLOAD_MB,
-                    "user_storage_quota_mb": settings.USER_STORAGE_QUOTA_MB,
-                    "max_pages": settings.MAX_PAGES,
-                    "version_retention": settings.VERSION_RETENTION,
-                    "sign_requests_per_month": settings.SIGN_REQUESTS_PER_MONTH,
-                    "ocr_pages_per_month": settings.OCR_PAGES_PER_MONTH,
-                    "max_concurrent_jobs": settings.MAX_CONCURRENT_JOBS,
-                },
+                "principal": label(principal),
+                "limits": tier.as_api_dict(),
+                "guest": guest_state(principal),
                 "features": {
                     "ads_enabled": settings.ADS_ENABLED,
                     "presigned_delivery": settings.PRESIGNED_DELIVERY,
+                    "guest_access_enabled": settings.GUEST_ACCESS_ENABLED,
+                    "captcha_enabled": settings.CAPTCHA_ENABLED,
                 },
+                "guest_ttl_hours": settings.GUEST_TTL_HOURS,
+                "turnstile_site_key": (
+                    settings.TURNSTILE_SITE_KEY if settings.CAPTCHA_ENABLED else ""
+                ),
                 "ads": {
                     "client_id": settings.ADSENSE_CLIENT_ID if settings.ADS_ENABLED else "",
                 },
             }
         )
+
+
+class GuestSessionView(APIView):
+    """`POST /api/guest/session/` — mint, or inspect the current session (§21.2).
+
+    Minting is normally lazy (first write). This endpoint exists so a client can
+    mint explicitly; it is still a POST, never a side effect of a page view.
+    """
+
+    permission_classes = [AllowAny]
+
+    @extend_schema(request=None, responses=OpenApiTypes.OBJECT, tags=["guest"])
+    def post(self, request):
+        if not settings.GUEST_ACCESS_ENABLED:
+            raise AccountRequired("Guest access is currently disabled.")
+        existing = getattr(request, "guest_session", None)
+        if existing is not None:
+            principal = existing
+            code = status.HTTP_200_OK
+        else:
+            principal = require_principal(request, mint=True)
+            code = status.HTTP_201_CREATED
+        return Response(
+            {
+                **guest_state(principal),
+                "limits": L.for_principal(principal).as_api_dict(),
+            },
+            status=code,
+        )
+
+
+class GuestClaimView(APIView):
+    """`POST /api/guest/claim/` — transfer this guest token's work to the
+    authenticated account (§21.5).
+
+    The token travels in `X-Guest-Token` alongside the JWT: this is the one
+    request that legitimately carries both credentials.
+    """
+
+    permission_classes = [IsAccount]
+    account_required_message = "Sign in to claim these files."
+
+    @extend_schema(request=None, responses=OpenApiTypes.OBJECT, tags=["guest"])
+    def post(self, request):
+        # This is the one request that legitimately carries both credentials.
+        # PrincipalAuthentication tries the JWT first, so `request.principal` is
+        # the account; the guest token is read straight off the header.
+        from .authentication import raw_guest_token
+
+        token = raw_guest_token(request)
+        if not token:
+            raise GuestExpired("No guest session to claim.")
+        session = GuestSession.resolve(token)
+        if session is None:
+            raise GuestExpired()
+        summary = claim_session(session, request.user)
+        return Response({"claimed": summary}, status=status.HTTP_200_OK)
 
 
 class HealthView(APIView):

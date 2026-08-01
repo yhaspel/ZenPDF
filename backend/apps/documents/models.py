@@ -36,9 +36,19 @@ class Document(models.Model):
         ERROR = "error"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    # Exactly one of owner/guest_session is set (§21.2) — enforced by the DB
+    # CheckConstraint below, not by convention. Never assign either directly;
+    # go through apps.core.principals.owner_kwargs().
     owner = models.ForeignKey(
-        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="documents"
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, null=True, blank=True,
+        related_name="documents",
     )
+    guest_session = models.ForeignKey(
+        "core.GuestSession", on_delete=models.CASCADE, null=True, blank=True,
+        related_name="documents",
+    )
+    # Set for guest documents; cleared when an account claims them (§21.5).
+    expires_at = models.DateTimeField(null=True, blank=True)
     folder = models.ForeignKey(
         Folder, on_delete=models.SET_NULL, null=True, blank=True, related_name="documents"
     )
@@ -67,10 +77,25 @@ class Document(models.Model):
         indexes = [
             models.Index(fields=["owner", "trashed_at"]),
             models.Index(fields=["owner", "starred"]),
+            models.Index(fields=["guest_session", "trashed_at"]),
+        ]
+        constraints = [
+            models.CheckConstraint(
+                condition=(
+                    models.Q(owner__isnull=False, guest_session__isnull=True)
+                    | models.Q(owner__isnull=True, guest_session__isnull=False)
+                ),
+                name="document_exactly_one_principal",
+            ),
         ]
 
     def __str__(self) -> str:
         return self.title
+
+    @property
+    def principal(self):
+        """The owning principal — use this, never `.owner` directly (§21.2)."""
+        return self.guest_session or self.owner
 
     def next_version_seq(self) -> int:
         current = self.versions.aggregate(m=Max("seq"))["m"] or 0

@@ -1,8 +1,23 @@
+import copy
+
 import pytest
+from django.conf import settings as dj_settings
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import override_settings
 
 pytestmark = pytest.mark.django_db
+
+
+def tiers_with(tier: str, **overrides) -> dict:
+    """A copy of settings.TIERS with one tier's limits patched.
+
+    Limits resolve from `settings.TIERS` since 2B (§16), so overriding the flat
+    `MAX_UPLOAD_MB` env knob no longer changes what a call site enforces —
+    TIERS is built from it once, at settings-import time.
+    """
+    tiers = copy.deepcopy(dj_settings.TIERS)
+    tiers[tier].update(overrides)
+    return tiers
 
 
 def _upload(client, name, data, **extra):
@@ -28,7 +43,7 @@ def test_ingest_stores_metadata(api, fixture_bytes):
 
 
 def test_quota_rejected_at_boundary(api, fixture_bytes, user, settings):
-    quota_bytes = settings.USER_STORAGE_QUOTA_MB * 1024 * 1024
+    quota_bytes = settings.TIERS["free"]["storage_mb"] * 1024 * 1024
     user.storage_bytes_used = quota_bytes - 10  # any upload will exceed
     user.save()
     r = _upload(api, "text.pdf", fixture_bytes("text.pdf"))
@@ -36,9 +51,9 @@ def test_quota_rejected_at_boundary(api, fixture_bytes, user, settings):
     assert r.json()["error"]["code"] == "quota_exceeded"
 
 
-@override_settings(MAX_UPLOAD_MB=0)
 def test_file_too_large(api, fixture_bytes):
-    r = _upload(api, "text.pdf", fixture_bytes("text.pdf"))
+    with override_settings(TIERS=tiers_with("free", max_upload_mb=0)):
+        r = _upload(api, "text.pdf", fixture_bytes("text.pdf"))
     assert r.status_code == 413
     assert r.json()["error"]["code"] == "file_too_large"
 

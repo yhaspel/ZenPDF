@@ -2,7 +2,7 @@
 
 **Goal:** the scanned-document bridge (OCR), the import/export conversion matrix, PDF/A, repair as a first-class tool, and document compare. All on the heavy queue.
 
-Depends on: Phase 1 (jobs/exports); unlocks the P4 scanned-page CTA.
+Depends on: Phase 1 (jobs/exports) **and Phase 2B (principal model; OCR/convert/compare are the `METERED_OPS` set — guest rate caps and the Turnstile challenge apply here, §16/§17)**; unlocks the P4 scanned-page CTA.
 
 ## Backend
 
@@ -39,6 +39,8 @@ Golden: OCR scanned fixture → extractable text contains known strings, skip-te
 E2E: upload scan → OCR (progress bar) → select text in viewer → export Word → compare original vs OCR'd (no text changes, visual identical) → import a docx → converted doc opens.
 
 ## Acceptance criteria
+
+- [ ] **Guest parity + tool pages (§20 DoD item 9, §21.6):** every tool in this phase works end-to-end with no account, and ships its public SSR page — `/ocr-pdf` `/pdf-to-word` `/word-to-pdf` `/jpg-to-pdf` `/pdf-to-jpg` `/html-to-pdf` `/compare-pdf` `/repair-pdf` — with unique title/meta/H1 and an entry in the generated `sitemap.xml`.
 - [ ] Scanned fixture: OCR completes <60 s/10 pages, text selectable, P4 editor now allowed on it.
 - [ ] All six export formats + four import routes produce valid outputs from the UI.
 - [ ] URL→PDF refuses `http://169.254.169.254/`, `http://localhost:8000/`, `file:///etc/passwd` with clear errors (tests prove).

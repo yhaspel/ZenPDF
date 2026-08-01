@@ -38,6 +38,8 @@ Golden: edit_text replaces text (extract shows new), neighbors untouched (text +
 E2E: edit a paragraph → save → text visibly changed → find&replace 3 of 5 matches → add page numbers → set title metadata → all versions labeled and revertible.
 
 ## Acceptance criteria
+
+- [ ] **Guest parity + tool pages (§20 DoD item 9, §21.6):** every tool in this phase works end-to-end with no account, and ships its public SSR page — `/edit-pdf` `/watermark-pdf` `/add-page-numbers` — with unique title/meta/H1 and an entry in the generated `sitemap.xml`.
 - [ ] Click-to-edit works on the text fixture with visually acceptable output (side-by-side pixel diff <15% in edited block region for same-text roundtrip sanity test).
 - [ ] Scanned-page gate appears on scanned fixture with working OCR CTA (disabled until P6, tooltip "coming with OCR tool" — then enabled).
 - [ ] Find & replace with preview/deselect works across a 50-page doc in <60 s.

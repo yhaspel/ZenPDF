@@ -4,9 +4,11 @@ This document is normative for all phases. Phase docs reference it and do not re
 
 ## 1. Product definition
 
-ZenPDF: a free, ad-supported, multi-user web app. A user signs up, uploads PDFs into a private workspace, and works on them in **one integrated workspace** (viewer + tool panels): organize pages, annotate, edit content, fill/create forms, OCR, convert, secure, redact, and sign — including sending documents to external parties for legally sound e-signature. All processing is server-side on open-source engines; documents never leave the operator's infrastructure.
+ZenPDF: a free, ad-supported web app. A visitor lands on a tool page, drops in a PDF, and works on it immediately in **one integrated workspace** (viewer + tool panels) — **no account, no login, no email** — organizing pages, annotating, editing content, filling/creating forms, OCR, converting, securing, redacting, and signing. Creating an account is an *upgrade* (persistent library, higher limits, sending signature requests), never an entry fee. All processing is server-side on open-source engines; documents never leave the operator's infrastructure.
 
-Personas: (a) registered user — full workspace; (b) external signer — no account, reaches a tokenized public signing page.
+**Access model is anonymous-first — see §21, which is normative.** Monetization is advertising, and ad revenue scales with sessions, so any gate in front of a stateless tool is a direct tax on revenue. Accounts exist to capture users *after* value is delivered, not before.
+
+Personas: (a) **guest** — no account, works in a session-scoped workspace with tighter limits and auto-expiring files; (b) **registered user** — persistent library, folders, higher limits, saved signatures, may send signature requests; (c) **external signer** — no account, reaches a tokenized public signing page.
 
 ## 2. Stack (verified 2026-07-19)
 
@@ -121,17 +123,19 @@ Deviation from skill: the skill's `docker/` folder lives inside `infra/` (owner 
 ## 6. Backend conventions
 
 - Settings per skill (`base/dev/prod`), `AUTH_USER_MODEL='users.User'` **before first migrate**. `USERNAME_FIELD='email'` (login by email; `display_name` optional).
-- DRF: JWT default auth, `IsAuthenticated` default, LimitOffset pagination (default 50, max 200), django-filter backend.
-- **Error shape (all non-2xx):** `{"error": {"code": "<machine_code>", "message": "<human>", "details": {…}}}`. Implemented via a global DRF exception handler in `apps/core`. Key codes: `validation_error`, `not_found`, `version_conflict` (409), `quota_exceeded` (429), `throttled` (429), `file_too_large` (413), `unsupported_file` (415), `document_encrypted` (423), `token_invalid` (401 public sign), `token_expired` (410 public sign — expired/completed/canceled requests).
+- DRF: **dual authentication** — `PrincipalAuthentication` resolves a request to exactly one *principal*: a `User` (JWT, per skill) or a `GuestSession` (`X-Guest-Token` header, §21). Default permission is `IsPrincipal` (either identity satisfies it); endpoints that genuinely need an account declare `IsAccount` and return 403 `account_required`. LimitOffset pagination (default 50, max 200), django-filter backend.
+- **Error shape (all non-2xx):** `{"error": {"code": "<machine_code>", "message": "<human>", "details": {…}}}`. Implemented via a global DRF exception handler in `apps/core`. Key codes: `validation_error`, `not_found`, `version_conflict` (409), `quota_exceeded` (429), `throttled` (429), `file_too_large` (413), `unsupported_file` (415), `document_encrypted` (423), `token_invalid` (401 public sign), `token_expired` (410 public sign — expired/completed/canceled requests), `account_required` (403 — guest hit an account-only feature; UI turns this into a signup prompt, never a dead end), `guest_expired` (410 — guest session/document past TTL, §21), `captcha_required` (403 — heavy op needs a challenge, §17).
 - IDs are UUIDv4. All timestamps UTC ISO-8601. All list endpoints filterable/sortable via query params.
 - OpenAPI: drf-spectacular; schema at `/api/schema/`, Swagger UI `/api/docs/` (dev-only). Every endpoint annotated; the schema is part of each phase's DoD.
-- URL map (top level): `/api/auth/*` (skill), `/api/users/*`, `/api/config/` (public: feature flags, limits, ads client id), `/api/folders/`, `/api/documents/…`, `/api/operations/` (cross-document ops), `/api/jobs/…`, `/api/signatures/`, `/api/sign-requests/…`, `/api/public/sign/{token}/…` (AllowAny + throttle), `/api/verify/` (signature verification), `/api/health/`.
+- URL map (top level): `/api/auth/*` (JWT obtain/refresh) and **`/api/users/register/`** (the built route — note it is *not* `/api/auth/register/`; both accept an optional guest token to claim, §21.5), `/api/guest/session/` (mint/inspect guest session), `/api/guest/claim/` (transfer guest work to the authenticated account), `/api/users/*`, `/api/config/` (public: feature flags, **per-tier limits**, ads client id), `/api/folders/` (account-only), `/api/documents/…`, `/api/operations/` (cross-document ops), `/api/jobs/…`, `/api/signatures/`, `/api/sign-requests/…`, `/api/public/sign/{token}/…` (AllowAny + throttle), `/api/verify/` (signature verification), `/api/health/`.
 
 ## 7. Frontend conventions (Angular 22)
 
 - 3-layer per skill: **core** services are pure/stateless HTTP; **facades** own `signal()` state and orchestration; **features** are dumb OnPush components injecting facades. No NgModules; `@if/@for` control flow; zoneless — never rely on zone-based hacks; DOM work outside Angular only inside the viewer wrapper.
 - Skill's v19 snippets adapt to v22: `standalone: true` is implicit; OnPush is scaffolded by default; Signal Forms may be used for new forms (stable in v22) but Reactive Forms are acceptable — pick one per feature, don't mix within a component.
-- Routes: `/` landing (public) · `/auth/login|register` · `/app` (authed shell): `/app/dashboard`, `/app/doc/:id` (workspace), `/app/sign` (requests list) + `/app/sign/new/:docId` (wizard), `/app/settings` · `/s/:token` (public signing ceremony) · `/verify` (public) · `/legal/privacy|terms|esign-disclosure`.
+- Routes: `/` landing (public) · **`/{tool-slug}` public tool pages** (SSR/prerendered, indexable, each one a *working* tool — see §21.6) · `/auth/login|register` · `/app/doc/:id` (workspace — **open to guests**) · `/app/dashboard`, `/app/sign`, `/app/sign/new/:docId`, `/app/settings` (**account-only**, `accountGuard`) · `/s/:token` (public signing ceremony) · `/verify` (public) · `/legal/privacy|terms|esign-disclosure`.
+- **Guards:** `accountGuard` protects only the account-only routes above. There is no app-wide auth guard — `/app/doc/:id` must render for a principal of either kind. An `accountGuard` rejection routes to `/auth/register?next=…&reason=…` with the reason surfaced as copy ("Create a free account to send signature requests"), never a bare login wall.
+- **SSR:** `@angular/ssr` renders/prerenders the landing and tool pages for crawlability; `/app/**`, `/s/:token` and `/verify` stay client-rendered (no SEO value, and the ceremony must not be cached).
 - Workspace shell = viewer (ngx-extended-pdf-viewer) + left thumbnail rail + right tool panel (routed tool tabs) + **overlay layer** component: a positioned div stack over each rendered page for placement interactions (annotations, fields, redaction boxes, whiteout, crop, signatures). Built once in phase 3, reused by 4/5/7/8.
 - JWT in localStorage + interceptor per skill (tradeoff noted; CSP mitigations in phase 10). 401 → refresh flow → logout on failure.
 - Jobs UX: a single `JobsFacade` polls active jobs (500 ms ×6, then 1 s; stop on terminal state), exposes per-job progress signals; global toast on success/failure; document reload on new version.
@@ -143,13 +147,14 @@ Client sends geometry as **normalized page coordinates in visual space**: origin
 ## 9. Data model (canonical — phases may add fields only by amending this doc)
 
 **users.User**(AbstractUser): email unique (login), display_name, email_verified bool, accepted_tos_at datetime null, storage_bytes_used bigint (denormalized).
-**core.UsageCounter**: user FK, period "YYYY-MM", sign_requests int, ocr_pages int, conversions int; unique(user, period).
+**core.GuestSession** (new — §21): id UUIDv4, token_hash (sha256 of a 256-bit urlsafe token; the raw token is never stored), created_at, last_seen_at, expires_at (sliding: last_seen + `GUEST_TTL_HOURS`, capped at created_at + `GUEST_TTL_MAX_HOURS`), ip_hash (salted — abuse correlation only, not analytics), user_agent, storage_bytes_used bigint, ops_count int, claimed_by FK→User null, claimed_at null. Indexed on token_hash (unique) and expires_at.
+**core.UsageCounter**: **principal** — user FK null + guest_session FK null (exactly one non-null), period "YYYY-MM", sign_requests int, ocr_pages int, conversions int, heavy_ops int; unique(user, period) and unique(guest_session, period).
 **core.EmailSuppression**: email unique, reason ∈ {complaint, unsubscribe, bounce, manual}, created_at — honored by all outbound mail (phase 9).
-**documents.Folder**: id, owner FK, parent FK null, name; unique(owner, parent, name).
-**documents.Document**: id, owner FK, folder FK null, title, status ∈ {ready, processing, error}, page_count, size_bytes, is_encrypted bool, starred bool, metadata JSON (author/subject/keywords/dates, populated at ingest — amended 2026-07-19, P1), current_version FK→DocumentVersion null, error_message, last_opened_at, trashed_at null, created_at, updated_at.
+**documents.Folder**: id, owner FK, parent FK null, name; unique(owner, parent, name). **Account-only** — guests have a flat session workspace, no folders.
+**documents.Document**: id, **owner FK null**, **guest_session FK null** (exactly one of owner/guest_session non-null — enforced by a DB `CheckConstraint`, §21.2), **expires_at null** (set for guest documents; null once owned by a user), folder FK null, title, status ∈ {ready, processing, error}, page_count, size_bytes, is_encrypted bool, starred bool, metadata JSON (author/subject/keywords/dates, populated at ingest — amended 2026-07-19, P1), current_version FK→DocumentVersion null, error_message, last_opened_at, trashed_at null, created_at, updated_at.
 **documents.DocumentVersion**: id, document FK (`versions`), seq int (unique per document, starts 1), storage_key, size_bytes, page_count, sha256, label (e.g. "Original", "OCR", "Signed"), created_by FK user null, job FK null, created_at. Immutable.
-**jobs.Job**: id, user FK, document FK null, type (operation type, §10), params JSON, base_version_seq int null, status ∈ {queued, running, succeeded, failed, canceled}, progress 0–100, error_code, error_message, result JSON null, celery_task_id, created_at, started_at, finished_at.
-**esign.SavedSignature**: id, user FK, kind ∈ {signature, initials}, method ∈ {draw, type, upload}, storage_key (PNG, alpha), typed_text, font, is_default, created_at.
+**jobs.Job**: id, **user FK null**, **guest_session FK null** (same one-of constraint), document FK null, type (operation type, §10), params JSON, base_version_seq int null, status ∈ {queued, running, succeeded, failed, canceled}, progress 0–100, error_code, error_message, result JSON null, celery_task_id, created_at, started_at, finished_at.
+**esign.SavedSignature**: id, user FK (**account-only**; guests draw an ephemeral signature held client-side for the session), kind ∈ {signature, initials}, method ∈ {draw, type, upload}, storage_key (PNG, alpha), typed_text, font, is_default, created_at.
 **esign.SignRequest**: id, owner FK, document FK, source_version FK, title, message, status ∈ {draft, sent, completed, declined, expired, canceled}, envelope_code (human-short, stamped on pages, e.g. `ZEN-8F3KQ2`), expires_at, reminder_every_days int=3, sent_at, completed_at, final_key, certificate_key, final_sha256, created_at.
 **esign.Recipient**: id, sign_request FK (`recipients`), email, name, role ∈ {signer, approver, viewer, cc}, order int=1 (same order ⇒ parallel group; groups proceed in ascending order), status ∈ {pending, notified, viewed, consented, completed, declined}, token (urlsafe 43ch, unique), consent_at/ip/user_agent, decline_reason, last_notified_at, completed_at.
 **esign.SignField**: id, sign_request FK, recipient FK, page int, x/y/w/h floats (§8), type ∈ {signature, initials, date_signed, text, checkbox}, required bool=true, label, value, filled_at.
@@ -182,7 +187,7 @@ All document mutations/derivations run as Jobs with `type` from this registry. P
 | add_link / edit_link / delete_link | 4 | PyMuPDF | rect + uri/page target |
 | header_footer | 4 | PyMuPDF | segments (left/center/right × header/footer), tokens {page}, {total}, {date}, range, style |
 | page_numbers | 4 | PyMuPDF | position, format, start_at, range, style |
-| watermark | 4 | PyMuPDF | text|image, opacity, rotation, scale, tiling, range |
+| watermark | 4 | PyMuPDF | text\|image, opacity, rotation, scale, tiling, range |
 | bates | 4 | PyMuPDF | prefix, suffix, start, digits, position, range |
 | overlay_pdf | 4 | PyMuPDF | overlay_document_id, mode ∈ {foreground, background}, range |
 | set_metadata | 4 | PyMuPDF | title/author/subject/keywords (+clear flag) |
@@ -198,9 +203,9 @@ All document mutations/derivations run as Jobs with `type` from this registry. P
 | encrypt | 7 | pikepdf | user_password?, owner_password, permissions{} (AES-256) |
 | decrypt | 7 | pikepdf | password |
 | set_permissions | 7 | pikepdf | owner_password, permissions{} |
-| redact | 7 | PyMuPDF | areas[] (§8), patterns[] {preset|regex}, search_text?, match_case, scope, fill, dry_run bool, fork_clean_copy bool |
+| redact | 7 | PyMuPDF | areas[] (§8), patterns[] {preset\|regex}, search_text?, match_case, scope, fill, dry_run bool, fork_clean_copy bool |
 | sanitize | 7 | PyMuPDF+pikepdf | strip ∈ {metadata, javascript, attachments, hidden_layers…} |
-| self_sign | 8 | PyMuPDF | placements[]: {signature_id, page, rect §8}, include_date bool (always flattens) |
+| self_sign | 8 | PyMuPDF | placements[]: {**signature_id \| signature_upload_ref**, page, rect §8}, include_date bool (always flattens). `signature_id` → `esign.SavedSignature` (account-only); **`signature_upload_ref` → an ephemeral uploaded/drawn PNG, which is how a guest signs** (§21.3) |
 | finalize_sign_request | 8 (internal) | PyMuPDF+pyHanko+reportlab | sign_request_id (burn fields → seal → certificate) |
 | generate_thumbnails (internal) | 1 | PyMuPDF | version, pages, width |
 | revert_version | 1 | storage copy (no engine) | seq → new head version copied from v{seq} (§14) |
@@ -209,7 +214,7 @@ Version-producing ops → `result: {document_id, version_id, seq}` (split/merge/
 
 ## 11. Job pipeline
 
-`POST /api/documents/{id}/operations/ {type, params, base_version_seq}` → validate schema + quota + doc ownership → create Job(queued) → dispatch to queue by type → **202** `{job}`. Cross-document ops use `POST /api/operations/`. Poll `GET /api/jobs/{id}/`. Cancel: `POST /api/jobs/{id}/cancel/` (revokes if still queued).
+`POST /api/documents/{id}/operations/ {type, params, base_version_seq}` → validate schema + tier limits (§16) + **principal ownership** (§21.2) → create Job(queued) → dispatch to queue by type → **202** `{job}`. Cross-document ops use `POST /api/operations/`. Poll `GET /api/jobs/{id}/`. Cancel: `POST /api/jobs/{id}/cancel/` (revokes if still queued).
 
 Worker algorithm (every mutation op): acquire Redis lock `zen:doc:{id}` (blocking, 120 s timeout) → refetch document → if `base_version_seq` ≠ `current_version.seq` → fail `version_conflict` → download blob → run engine fn (pure: bytes+params→bytes) → sha256, page count → upload `docs/{doc}/v{seq+1}.pdf` → create DocumentVersion → update Document (current_version, counts, sizes, status) → release lock → job succeeded. On any exception: job failed with sanitized error, document untouched (versions are immutable → no partial states, ever).
 
@@ -225,7 +230,7 @@ Workers: prefork, `max_memory_per_child=1.5 GB`, non-root, open PDFs per-task (n
 
 ## 13. Storage
 
-Bucket `zenpdf`, all private. Keys: `docs/{document_id}/v{seq}.pdf` · `thumbs/{document_id}/{seq}/p{page}@{w}.png` · `sigs/{user_id}/{signature_id}.png` · `sign/{sign_request_id}/{final.pdf|certificate.pdf}` · `exports/{job_id}/{filename}` (TTL 24 h via beat GC).
+Bucket `zenpdf`, all private. Keys: `docs/{document_id}/v{seq}.pdf` · `thumbs/{document_id}/{seq}/p{page}@{w}.png` · `sigs/{user_id}/{signature_id}.png` · `sigs/guest/{guest_session_id}/{ref}.png` (ephemeral, purged with the session) · `sign/{sign_request_id}/{final.pdf|certificate.pdf}` · `exports/{job_id}/{filename}` (TTL 24 h via beat GC). Guest documents use the **same key layout** (keyed by document id, not principal) so claiming a session (§21.5) is a metadata-only reparent — no blob copying. Guest blobs are deleted by `guest_purge` (§15) when the session expires.
 
 **Delivery default = API proxy with HTTP Range support** (`GET /api/documents/{id}/content/?version=` streams; Range honored so PDF.js can chunk; `Cache-Control: private` + ETag=sha256). Rationale: avoids depending on SeaweedFS presign/CORS behavior locally. Optimization flag `PRESIGNED_DELIVERY=true` → 302 to presigned GET generated against `S3_PUBLIC_ENDPOINT` (browser-reachable host — signatures bind the host header; documented gotcha). Thumbnails: `GET /api/documents/{id}/pages/{n}/thumbnail/?w=240&version=` — proxied, long Cache-Control, rendered on demand + cached to storage. Uploads: multipart to API (streamed to storage; size-capped). Direct-to-storage presigned PUT = backlog optimization.
 
@@ -235,15 +240,51 @@ Every mutation ⇒ new immutable version; `Document.current_version` advances. H
 
 ## 15. Email & beat schedule
 
-Django email → SMTP env (Mailpit in dev). HTML+text templates: sign invite, reminder, declined, completed (+links), email-verification. Beat: `sign_reminders` daily 08:00 UTC (pending recipients, every `reminder_every_days`, stop at expiry) · `sign_expirations` hourly · `trash_purge` daily (trashed >30 d) · `exports_purge` daily (>24 h) · `version_retention_gc` weekly · `usage_recompute` daily 02:00.
+Django email → SMTP env (Mailpit in dev). HTML+text templates: sign invite, reminder, declined, completed (+links), email-verification. Beat: `sign_reminders` daily 08:00 UTC (pending recipients, every `reminder_every_days`, stop at expiry) · `sign_expirations` hourly · `trash_purge` daily (trashed >30 d) · `exports_purge` daily (>24 h) · **`guest_purge` hourly** (expired GuestSessions → hard-delete their documents, versions, thumbs and blobs; §21.4) · `version_retention_gc` weekly · `usage_recompute` daily 02:00.
 
-## 16. Quotas & throttles (defaults; enforced from phase 1, tightened in phase 9)
+## 16. Tiers, quotas & throttles (defaults; enforced from phase 2B, tightened in phase 9)
 
-Per user: storage 2 GB (`USER_STORAGE_QUOTA_MB`), max upload 100 MB (`MAX_UPLOAD_MB`), max pages/doc 2000, active docs unlimited, sign requests 30/month, OCR 2000 pages/month, concurrent running jobs 3. DRF throttles: anon 30/min, authed 120/min, auth endpoints 10/min, public-sign endpoints 20/min/IP. All quota rejections use `quota_exceeded` with human-readable detail. `GET /api/users/me/usage/` reports consumption; `GET /api/config/` exposes limits to the UI.
+Limits are **tier-resolved, never hardcoded at call sites**. One function is the single source of truth:
+
+```python
+core.limits.for_principal(principal) -> Limits   # principal = User | GuestSession
+```
+
+`Limits` is a frozen dataclass built from `settings.TIERS[tier]`. Tier selection: `GuestSession → "guest"`; `User → user.plan` (default `"free"`).
+
+| Limit | guest | free (account) | pro ⚠ *defined, not purchasable in v1* |
+|---|---|---|---|
+| Storage | 200 MB / session | 2 GB | 20 GB |
+| Max upload | 25 MB | 100 MB | 500 MB |
+| Max pages / doc | 300 | 2000 | 5000 |
+| Concurrent running jobs | 1 | 3 | 6 |
+| **Metered ops** (see definition below) | 5 / hour | 40 / hour | 200 / hour |
+| OCR pages | 50 / day | 2000 / month | 20 000 / month |
+| Sign requests | — → `account_required` | 30 / month | 300 / month |
+| Version retention | 10 | 50 | 200 |
+| Library, folders, saved signatures | — | ✅ | ✅ |
+| File retention | 24 h sliding, 72 h hard cap (§21.4) | until trashed (+30 d trash) | same as free |
+| Ads | shown | shown | hidden |
+
+**`pro` ships as a config row only.** There is no billing code, no payment provider, no purchase path, and no upgrade UI in v1 — `User.plan` defaults to `free` and is settable only via Django admin. Its purpose is to force every quota check through a tier lookup *now*, so introducing billing later is "add a plan field writer + a webhook", not a refactor of every call site. See §21.7.
+
+**⚠ "Metered ops" is a distinct set from the `heavy` queue (§12) — do not implement it off `op.queue`.**
+
+```python
+METERED_OPS = {"ocr", "convert_from", "convert_to", "compare"}   # genuinely expensive, low-volume
+```
+
+The `heavy` queue additionally contains `merge`, `alternate_mix`, `compress` and `repair`. Those are **flagship tool pages** (`/merge-pdf`, `/compress-pdf`) and are **never metered and never challenged** — rate-limiting or CAPTCHA-ing a guest's first merge defeats the entire strategy (§21.1). Queue membership is about worker sizing; `METERED_OPS` is about cost control. They are deliberately different sets.
+
+**Counter storage:** monthly figures (`sign_requests`, `ocr_pages`, `conversions`, `heavy_ops`) live in `core.UsageCounter`. The **short windows above (per-hour, per-day) are Redis counters** via DRF scoped throttles, *not* model rows — `UsageCounter` has month granularity only (§9). Accepted consequence: flushing Redis resets in-flight guest rate windows (it is also the broker, so a flush is already disruptive); monthly quotas survive because they are in Postgres.
+
+DRF throttles: guest 40/min, authed 120/min, auth endpoints 10/min, public-sign endpoints 20/min/IP, verify 10/min/IP. **Guest throttles are keyed on `(guest_token, ip_hash)` and the stricter of the two wins** — keying on the token alone would make clearing localStorage a free quota reset (§21.4). All quota rejections use `quota_exceeded`; tier-gated features use `account_required`. `GET /api/users/me/usage/` reports consumption for either principal; `GET /api/config/` exposes the *current principal's* limits to the UI so the client can pre-empt rejections rather than discovering them at 429.
 
 ## 17. Security model (summary — phase 10 hardens)
 
-Upload validation: size cap → magic bytes `%PDF` → `pikepdf.open` parse (repair prompt on failure) → page cap → encrypted? mark `is_encrypted`, require password to operate (423). Workers: time/memory limits (§12), non-root, untrusted parsing confined to engine libs kept current. SSRF (url→pdf): scheme allowlist http/https + deny private/link-local IPs (resolve-then-check) before handing to Gotenberg. XSS: no `innerHTML` with document-derived text, Angular default escaping. Public sign tokens: 256-bit, single-purpose, expire with request, throttled. JWT per skill (rotate+blacklist). Audit chain append-only. Admin site disabled in prod (or IP-gated). CSP + security headers in prod nginx (phase 10). PDF JS-execution: PDF.js scripting stays disabled (default).
+Upload validation: size cap → magic bytes `%PDF` → `pikepdf.open` parse (repair prompt on failure) → page cap (**⚠ not actually implemented as of Phase 2 — `MAX_PAGES` exists in settings and `/api/config/` but is never checked in `services.ingest_pdf`; Phase 2B adds the check**) → encrypted? mark `is_encrypted`, require password to operate (423). Workers: time/memory limits (§12), non-root, untrusted parsing confined to engine libs kept current. SSRF (url→pdf): scheme allowlist http/https + deny private/link-local IPs (resolve-then-check) before handing to Gotenberg. XSS: no `innerHTML` with document-derived text, Angular default escaping. Public sign tokens: 256-bit, single-purpose, expire with request, throttled. JWT per skill (rotate+blacklist). Audit chain append-only. Admin site disabled in prod (or IP-gated). CSP + security headers in prod nginx (phase 10). PDF JS-execution: PDF.js scripting stays disabled (default).
+
+**Anonymous-access hardening (§21).** Removing the login wall removes the cheapest abuse filter, so it is replaced deliberately, not dropped: (a) guest tokens are 256-bit, stored **hashed**, single-purpose, and carry no user data; (b) guest throttles key on token *and* salted IP hash, stricter wins; (c) heavy ops (ocr, convert_*, compare) from a guest require a **Cloudflare Turnstile** challenge once per session before the first heavy op, behind `CAPTCHA_ENABLED` (adapter pattern, off in dev) — cheap ops are never challenged, because friction on `merge` defeats the entire strategy; (d) tier caps (§16) bound worst-case compute per session; (e) **no anonymous party can ever choose a recipient address** — creating and sending sign requests is account-only (§21.3), so every outbound address originates from an authenticated owner. (Stated precisely, because Phase 8 legitimately *does* send system mail on actions taken by unauthenticated parties — a signer completing or declining at `/s/:token` notifies the owner and the next group, and phase-09's report-abuse endpoint mails the owner. Those are fixed, pre-existing addresses, not attacker-chosen ones. The invariant that matters for spam relay is address *selection*, not message *triggering*.) (f) guest blobs are hard-deleted on expiry (§21.4), bounding both storage cost and breach blast radius. `ip_hash` uses a rotating salt and exists only for abuse correlation — it is not analytics and must not be surfaced in any user-facing or ad-facing payload. **Rotation needs no salt-version column precisely because sessions live at most `GUEST_TTL_MAX_HOURS` (72 h): rotate no more often than that and every stored hash has already aged out.** Rotating faster silently voids the IP leg of the throttle key for in-flight sessions — if that is ever wanted, add a version column first.
 
 ## 18. Testing strategy
 
@@ -267,9 +308,14 @@ EMAIL_HOST=mailpit  EMAIL_PORT=1025  DEFAULT_FROM_EMAIL=ZenPDF <no-reply@zenpdf.
 GOTENBERG_URL=http://gotenberg:3000
 SIGNING_CERT_PATH=/certs/zenpdf-dev.p12   SIGNING_CERT_PASSWORD=devpass
 TSA_URL=            # empty ⇒ PAdES B-B in dev; set a public TSA for B-T
-# Limits (see §16)
+# Limits (see §16 — per-tier values live in settings.TIERS; these are the "free" overrides)
 MAX_UPLOAD_MB=100  USER_STORAGE_QUOTA_MB=2048  MAX_PAGES=2000  VERSION_RETENTION=50
 SIGN_REQUESTS_PER_MONTH=30  OCR_PAGES_PER_MONTH=2000
+# Anonymous access (see §21)
+GUEST_ACCESS_ENABLED=true   GUEST_TTL_HOURS=24        GUEST_TTL_MAX_HOURS=72
+GUEST_STORAGE_QUOTA_MB=200  GUEST_MAX_UPLOAD_MB=25    GUEST_MAX_PAGES=300
+CAPTCHA_ENABLED=false       TURNSTILE_SITE_KEY=       TURNSTILE_SECRET_KEY=
+GUEST_IP_HASH_SALT=dev-rotate-me
 # Ads (phase 9)
 ADS_ENABLED=false  ADSENSE_CLIENT_ID=
 # Seed
@@ -278,4 +324,115 @@ SEED_ADMIN_EMAIL=admin@zenpdf.local  SEED_ADMIN_PASSWORD=admin12345
 
 ## 20. Definition of Done (every phase)
 
-1. All acceptance criteria demonstrated on a fresh `./infra/up.sh` stack. 2. Migrations idempotent from zero. 3. Unit/integration tests green; coverage gates hold; new engine fns have golden tests. 4. Playwright happy-path for the phase green. 5. OpenAPI schema updated & accurate. 6. Lint clean (ruff, eslint). 7. No `TODO`/dead code introduced; feature flags documented. 8. `development-plans/PROGRESS.md` updated per its Update protocol (status, evidence, decisions).
+1. All acceptance criteria demonstrated on a fresh `./infra/up.sh` stack. 2. Migrations idempotent from zero. 3. Unit/integration tests green; coverage gates hold; new engine fns have golden tests. 4. Playwright happy-path for the phase green. 5. OpenAPI schema updated & accurate. 6. Lint clean (ruff, eslint). 7. No `TODO`/dead code introduced; feature flags documented. 8. `development-plans/PROGRESS.md` updated per its Update protocol (status, evidence, decisions). 9. **From Phase 2B onward:** every user-facing tool the phase ships is reachable and fully usable by a guest (or is listed in §21.3 as account-only *with a written reason*), and ships its public SSR tool page (§21.6) with title/meta/H1/FAQ copy. A tool that works only when logged in is an incomplete phase.
+
+## 21. Access model (anonymous-first) — normative
+
+Added 2026-07-31 (owner decision). **Supersedes the original "accounts + JWT, login required" model** recorded in README's locked-decisions table and in §1 as first written. Where any phase doc still assumes an authenticated-only request, this section wins.
+
+### 21.1 Principle
+
+The product is monetized by advertising. Ad revenue is a function of sessions, so **every gate is a direct multiplier on revenue** — and the highest-traffic operations (merge, split, compress, rotate, convert) are exactly the ones that are stateless and need no identity at all. The rule is therefore:
+
+> **If an operation is file-in → file-out, it must work without an account. No exceptions, no "sign up to download", no watermark-unless-registered.**
+
+Accounts are an upgrade purchased with value already delivered, not an entry toll. A guest who has done three operations and has files in a session workspace is a far better signup prospect than a cold visitor staring at a login form — see §21.5.
+
+### 21.2 Principals & ownership
+
+Every request resolves to exactly one **principal**:
+
+| Principal | Credential | Resolved by |
+|---|---|---|
+| `User` | JWT `Authorization: Bearer …` (localStorage, per skill) | `PrincipalAuthentication` |
+| `GuestSession` | `X-Guest-Token: <raw token>` (localStorage) | `PrincipalAuthentication` |
+
+**Why a header, not a cookie:** it matches the existing JWT-in-localStorage interceptor pattern, keeps the API stateless and CSRF-free, and avoids a cookie-consent conversation on a page whose entire job is to convert a first-time visitor in five seconds. Tradeoff accepted: a guest who clears site data loses access to in-flight documents (they are ephemeral by design anyway, §21.4).
+
+Minting is **lazy**: a guest token is created on the first *write* (upload or operation), never on a page view — so a bounced visitor costs zero rows. The response to that first write carries `X-Guest-Token`; the client persists it and sends it thereafter. `POST /api/guest/session/` exists for explicit mint/inspect.
+
+Ownership generalizes from `owner == request.user` to a **single choke point**:
+
+```python
+# apps/core/principals.py — the ONLY place ownership is expressed.
+def owned_by(qs, principal):        # -> filtered queryset
+def assert_owned(obj, principal):   # -> raises NotFound (404, never 403 — no existence leak)
+def principal_of(job):              # -> Job.user or Job.guest_session; NEVER read job.user directly
+def owner_kwargs(principal):        # -> {"owner": u} | {"guest_session": g}, for object creation
+```
+
+**The worker layer is part of this, and is the easy thing to miss.** Celery tasks currently resolve ownership through `job.user` (e.g. `Document.objects.get(id=…, owner=job.user)` and `_create_document_from_bytes(owner=job.user, …)` in `documents/tasks.py`). For a guest job `job.user` is `None`, which fails two ways: creating a document with `owner=None` and `guest_session=None` violates the exactly-one-of constraint, and `filter(owner=None)` compiles to `owner_id IS NULL` — i.e. a lookup that matches *any guest's* document. Both must go through `principal_of(job)` / `owner_kwargs(...)`.
+
+`Document`, `DocumentVersion` (via document), `Job`, and `UsageCounter` each carry nullable `owner`/`user` **and** nullable `guest_session`, with a DB `CheckConstraint` that exactly one is set. `Folder`, `SavedSignature`, `SignRequest`, `Recipient`, `SignField` and `AuditEvent` remain user-only.
+
+**Isolation is a test obligation, not a convention.** The existing router-wide cross-user isolation fixture (`test_isolation.py`, P1) gains a guest twin proving: guest A → 404 on guest B's documents; guest → 404 on any user's documents; user → 404 on any guest's documents; and an expired guest token → 410 `guest_expired`, not a silent 404.
+
+### 21.3 What requires an account — the complete list
+
+Account-gated features need a written reason. This is the whole list; anything not here is guest-accessible.
+
+| Feature | Why an account is genuinely required |
+|---|---|
+| Persistent library, folders, starring, trash | Inherently stateful — there is no library without a durable identity. |
+| Version history beyond session TTL | Same. Guests get full history *within* the session. |
+| Saved signatures & initials | Reusable credential-like assets; storing them against an ephemeral token is worse for the user, not better. |
+| **Sending** signature requests | ESIGN/UETA attribution requires an identified sender; and only an authenticated owner may **choose a recipient address** — otherwise the send path is a spam relay pointed at our own domain reputation (see §17e for the precise invariant: address *selection*, not message *triggering*). **Non-negotiable.** |
+| Higher tier limits (§16) | The upgrade itself. |
+| Usage **history across sessions** | Needs durable counters. Guests still see *current-session* usage via `/api/users/me/usage/` (storage, ops used, time remaining) — they just have no cross-session history. |
+
+Explicitly **guest-accessible**, including the ones that feel like they should not be: all 14 page operations · viewer, search, outline · annotations · content editing (text, images, links, watermark, headers/footers, Bates) · form fill, field creation, flatten · OCR and every conversion (rate-limited + Turnstile per §17) · encrypt/decrypt/permissions · redaction and sanitize · **self-sign** (draw/type a signature, place it, flatten — ephemeral, not saved) · `/verify` · **receiving** and completing a signature request via `/s/:token` (already tokenized and account-free).
+
+`/verify` and the signing ceremony stay account-free *and* ad-free — they are trust surfaces (see phase-09 §9A for the ad-placement rules).
+
+### 21.4 Guest lifecycle & retention
+
+`expires_at` slides to `last_seen_at + GUEST_TTL_HOURS` (24) on every authenticated-as-guest request, hard-capped at `created_at + GUEST_TTL_MAX_HOURS` (72). Beat job `guest_purge` runs hourly and **hard-deletes** expired sessions: documents, versions, thumbnails, exports, and their storage blobs. No soft-delete, no trash — for guests, expiry means gone.
+
+This is a **feature to advertise, not a limitation to hide**: "No account. Files auto-deleted within 24 hours." It is also load-bearing for cost (bounded anonymous storage) and for privacy posture (bounded breach blast radius).
+
+The UI must make expiry legible: a persistent, non-alarming banner in the guest workspace showing time remaining, with the CTA from §21.5. Guests must never lose work silently.
+
+### 21.5 Claim-on-signup — the conversion path
+
+The single most valuable moment in the funnel. `POST /api/users/register/` and `POST /api/auth/login` (the routes as actually built — **not** `/api/auth/register/`) accept the `X-Guest-Token`; `POST /api/guest/claim/` does it explicitly for an already-authenticated user.
+
+Claim is a **metadata-only reparent** (blob keys are principal-independent, §13). In one transaction, idempotent, it moves **every principal-bearing row — not just documents**:
+
+1. `Document`: set `owner`, clear `guest_session` and `expires_at`.
+2. **`Job`**: set `user`, clear `guest_session`. Non-optional — an in-flight job left guest-owned disappears from `owned_by(qs, user)` the instant the user registers, so the file they just signed up to keep stops polling. This is the exact moment the funnel is selling.
+3. **`UsageCounter`**: fold guest counters into the user's row for the same period with `get_or_create` + `F()` increments (the `unique(user, period)` constraint means merge, never insert). Rule: **sum** — work already done is work already charged; discarding it would let a user reset a monthly quota by laundering it through a guest session.
+4. `GuestSession`: set `claimed_by`/`claimed_at`, fold `storage_bytes_used` into `User.storage_bytes_used`, and expire the session so `guest_purge` cannot later cascade-delete rows the user now owns.
+
+Pre-flight: if the incoming documents would exceed the user's storage quota, respond `quota_exceeded` **listing what would be transferred and by how much it overflows** — never partially claim, and never silently drop files.
+
+**After a successful claim the client MUST discard its guest token** and use the JWT alone; a claimed token is dead server-side and replays return 410 `guest_expired`. Without this the browser keeps writing into a claimed session that `guest_purge` deletes within 72 h — losing a logged-in user's files, the worst failure this design can produce.
+
+**401 handling (amends §7).** The existing interceptor's `401 → refresh → /auth/login` path must fire **only for a JWT principal**. A guest 401 means "your session ended": clear the token, mint a new one on the next write, and surface an inline "your files expired" notice — never a redirect to a login form, which would reinstate the wall this whole section removes.
+
+Product rule: the prompt to sign up is triggered by *value*, not by *time or count* — shown when the guest has at least one successful output worth keeping, or when they hit an `account_required` feature. Never an interstitial, never before the first result renders.
+
+### 21.6 Public tool pages & SEO
+
+An ad-funded product with one landing page has no business model. Organic search *is* the acquisition channel, and the competitors rank on per-tool pages. Therefore each tool ships a **public, server-rendered, individually indexable page that is itself the working tool** — dropzone above the fold, no login prompt anywhere in the path, result downloadable in place with an "open in workspace" continuation.
+
+Route ↔ phase map (each lands with its phase, per the §20 DoD addition):
+
+| Phase | Slugs |
+|---|---|
+| **2B** | `/merge-pdf` `/split-pdf` `/compress-pdf` `/rotate-pdf` `/delete-pdf-pages` `/extract-pdf-pages` `/organize-pdf` — the Phase-2 operations, but their pages ship in 2B because Phase 2 is already ✅ |
+| 3 | `/annotate-pdf` |
+| 4 | `/edit-pdf` `/watermark-pdf` `/add-page-numbers` |
+| 5 | `/fill-pdf-form` |
+| 6 | `/ocr-pdf` `/pdf-to-word` `/word-to-pdf` `/jpg-to-pdf` `/pdf-to-jpg` `/html-to-pdf` `/compare-pdf` `/repair-pdf` |
+| 7 | `/protect-pdf` `/unlock-pdf` `/redact-pdf` |
+| 8 | `/sign-pdf` (+ `/verify`, already public) |
+
+Each page owns: unique `<title>`/meta description/H1, ~300 words of honest task copy, an FAQ block emitting `FAQPage` JSON-LD, `SoftwareApplication` JSON-LD, canonical URL, and OpenGraph tags. `sitemap.xml` is **generated from the route table**, not hand-maintained — a tool page that exists but is not in the sitemap is a bug. `robots.txt` allows all tool pages and disallows `/app/`, `/s/`, `/api/`.
+
+Ads render on tool pages (notably the post-result surface — the natural pause, and the highest-value slot); never on the viewer canvas, ceremony, or verify pages.
+
+### 21.7 Paid tier — designed for, deferred
+
+Owner decision 2026-07-31: **v1 ships free and ad-supported with no billing.** No payment provider, no checkout, no upgrade UI, no `pro` purchase path. The `pro` row in §16 exists solely so that every limit check already flows through `for_principal()`.
+
+When billing is revisited, the honest read from that decision is recorded here so it is not relitigated from scratch: **do not sell ad-removal alone.** People who dislike ads install an ad blocker for free, and ad-removal-only subscriptions convert poorly. A paid tier should sell *utility* — larger files, priority queue, batch processing, longer retention, unlimited sign requests, API access — with ad-removal as an included perk. That is why the `pro` column above is defined in terms of limits rather than "no ads".

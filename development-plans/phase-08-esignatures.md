@@ -2,7 +2,9 @@
 
 **Goal:** DocuSign-class core loop, self-hosted: saved signatures, self-signing, multi-party signature requests with roles/routing, a public no-account signing ceremony, ESIGN/UETA-sound consent + hash-chained audit trail, PAdES tamper seal, certificate of completion, and a public verification tool. (Templates, bulk send, reassign, SMS/KBA identity, QES: explicit backlog — see 02-feature-matrix.)
 
-Depends on: Phases 3 (overlay), 5 (field UX patterns). Models per 01-architecture §9; emails/beat §15; compliance model per 00-research §2.
+Depends on: Phases 2B (principals), 3 (overlay), 5 (field UX patterns). Models per 01-architecture §9; emails/beat §15; compliance model per 00-research §2.
+
+> **Access split (01-architecture §21.3, normative).** **8A self-sign is guest-accessible** — a visitor can draw or type a signature, place it and flatten it with no account; only *saving* a signature for reuse requires one (`SavedSignature` is user-only, so guests keep an ephemeral signature client-side for the session). **8B signature requests are account-only** and return 403 `account_required` to a guest: ESIGN/UETA attribution needs an identified sender, and a guest-triggerable outbound email path would be a spam relay against our own domain reputation. **8C `/verify` and the `/s/:token` ceremony stay fully public** — and, being trust surfaces, stay ad-free. `/sign-pdf` is a public SSR tool page (§21.6) whose no-account path is self-sign.
 
 ## 8A — Saved signatures & self-sign
 

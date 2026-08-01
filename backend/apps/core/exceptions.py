@@ -9,7 +9,6 @@ from typing import Any
 
 from rest_framework import status
 from rest_framework.exceptions import APIException
-from rest_framework.views import exception_handler as drf_exception_handler
 
 
 class ZenAPIException(APIException):
@@ -68,6 +67,37 @@ class TokenExpired(ZenAPIException):
     default_detail = "This link has expired or is no longer active."
 
 
+class AccountRequired(ZenAPIException):
+    """A guest hit an account-only feature (§21.3).
+
+    403, and the UI turns it into a signup prompt — never a dead end.
+    """
+
+    status_code = status.HTTP_403_FORBIDDEN
+    default_code = "account_required"
+    default_detail = "Create a free account to use this feature."
+
+
+class GuestExpired(ZenAPIException):
+    """The guest session is past its TTL or has been claimed (§21.4, §21.5).
+
+    410, deliberately distinct from 404: the client must be able to tell
+    "your session ended" from "that isn't yours".
+    """
+
+    status_code = status.HTTP_410_GONE
+    default_code = "guest_expired"
+    default_detail = "Your guest session has ended and its files were deleted."
+
+
+class CaptchaRequired(ZenAPIException):
+    """A metered op needs a one-per-session challenge first (§17c)."""
+
+    status_code = status.HTTP_403_FORBIDDEN
+    default_code = "captcha_required"
+    default_detail = "Please complete the verification challenge to continue."
+
+
 # Map DRF's built-in exception default_code values onto our stable machine codes.
 _DRF_CODE_MAP = {
     "not_authenticated": "not_authenticated",
@@ -97,6 +127,7 @@ def _extract_code(exc: Exception, response) -> str:
         404: "not_found",
         405: "method_not_allowed",
         409: "version_conflict",
+        410: "guest_expired",
         413: "file_too_large",
         415: "unsupported_file",
         423: "document_encrypted",
@@ -119,6 +150,11 @@ def _human_message(exc: Exception, data: Any) -> str:
 
 def zenpdf_exception_handler(exc, context):
     """DRF exception handler that reshapes every error into the ZenPDF shape."""
+    # Imported lazily: this module is reached from the default authentication
+    # class, which DRF resolves *while* rest_framework.views is still being
+    # imported — a module-level import here is a circular import at startup.
+    from rest_framework.views import exception_handler as drf_exception_handler
+
     response = drf_exception_handler(exc, context)
     if response is None:
         return None

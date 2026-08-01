@@ -17,8 +17,17 @@ class Job(models.Model):
     TERMINAL = {Status.SUCCEEDED, Status.FAILED, Status.CANCELED}
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    # Exactly one of user/guest_session is set (§21.2). The worker must resolve
+    # ownership via apps.core.principals.principal_of(job) — reading `job.user`
+    # directly yields None for a guest job, and `filter(owner=None)` compiles to
+    # `owner_id IS NULL`, i.e. *any* guest's rows.
     user = models.ForeignKey(
-        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="jobs"
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, null=True, blank=True,
+        related_name="jobs",
+    )
+    guest_session = models.ForeignKey(
+        "core.GuestSession", on_delete=models.CASCADE, null=True, blank=True,
+        related_name="jobs",
     )
     document = models.ForeignKey(
         "documents.Document", on_delete=models.SET_NULL, null=True, blank=True,
@@ -42,10 +51,25 @@ class Job(models.Model):
         indexes = [
             models.Index(fields=["user", "status"]),
             models.Index(fields=["document"]),
+            models.Index(fields=["guest_session", "status"]),
+        ]
+        constraints = [
+            models.CheckConstraint(
+                condition=(
+                    models.Q(user__isnull=False, guest_session__isnull=True)
+                    | models.Q(user__isnull=True, guest_session__isnull=False)
+                ),
+                name="job_exactly_one_principal",
+            ),
         ]
 
     def __str__(self) -> str:
         return f"{self.type} [{self.status}] {self.id}"
+
+    @property
+    def principal(self):
+        """The owning principal — use this, never `.user` directly (§21.2)."""
+        return self.guest_session or self.user
 
     # --- lifecycle helpers (used by the worker, §11) ---
     def mark_running(self) -> None:

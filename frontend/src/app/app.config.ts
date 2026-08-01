@@ -1,6 +1,6 @@
-import { provideHttpClient, withInterceptors } from '@angular/common/http';
+import { provideHttpClient, withFetch, withInterceptors } from '@angular/common/http';
 import { ApplicationConfig, provideBrowserGlobalErrorListeners } from '@angular/core';
-import { provideRouter } from '@angular/router';
+import { provideRouter, withComponentInputBinding } from '@angular/router';
 
 import { routes } from './app.routes';
 import { authInterceptor } from './core/interceptors/auth.interceptor';
@@ -8,7 +8,9 @@ import { authInterceptor } from './core/interceptors/auth.interceptor';
 export const appConfig: ApplicationConfig = {
   providers: [
     provideBrowserGlobalErrorListeners(),
-    provideRouter(routes),
-    provideHttpClient(withInterceptors([authInterceptor])),
+    // Tool pages take their definition from the route table via `data` (§21.6).
+    provideRouter(routes, withComponentInputBinding()),
+    // withFetch is required for HttpClient to work under server-side rendering.
+    provideHttpClient(withFetch(), withInterceptors([authInterceptor])),
   ],
 };

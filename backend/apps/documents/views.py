@@ -7,15 +7,25 @@ from django.utils import timezone
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import extend_schema
 from rest_framework import generics, status
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.exceptions import NotFound
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from apps.core import captcha
+from apps.core import limits as L
+from apps.core.authentication import require_principal
 from apps.core.exceptions import (
     DocumentEncrypted,
     FileTooLarge,
     QuotaExceeded,
     ValidationFailed,
+)
+from apps.core.permissions import IsAccount
+from apps.core.principals import (
+    assert_owned,
+    is_guest,
+    job_owner_kwargs,
+    owned_by,
 )
 from apps.jobs.models import Job
 from apps.jobs.serializers import JobSerializer
@@ -40,8 +50,20 @@ from .services import ingest_pdf
 # --------------------------------------------------------------------------- #
 # Shared helpers
 # --------------------------------------------------------------------------- #
-def _owned_document(user, pk) -> Document:
-    return generics.get_object_or_404(Document.objects.filter(owner=user), pk=pk)
+def _principal(request, *, write: bool = False):
+    """This request's principal. `write=True` lazily mints a guest session —
+    reads never do, so a bounced visitor costs zero rows (§21.2)."""
+    return require_principal(request, mint=write)
+
+
+def _owned_document(request, pk, *, write: bool = False) -> Document:
+    """Fetch a document scoped to the caller's principal.
+
+    404 for everyone else — `assert_owned` never answers 403, which would
+    confirm the id exists (§21.2).
+    """
+    document = generics.get_object_or_404(Document.objects.all(), pk=pk)
+    return assert_owned(document, _principal(request, write=write))
 
 
 def _select_version(document: Document, request) -> DocumentVersion:
@@ -53,16 +75,29 @@ def _select_version(document: Document, request) -> DocumentVersion:
     return document.current_version
 
 
-def _check_concurrency(user) -> None:
-    active = Job.objects.filter(
-        user=user, status__in=[Job.Status.QUEUED, Job.Status.RUNNING]
+def _check_concurrency(principal) -> None:
+    """Tier-resolved concurrency (1 guest / 3 free / 6 pro, §16).
+
+    Was a single global `settings.MAX_CONCURRENT_JOBS` before 2B.
+    """
+    limit = L.for_principal(principal).max_concurrent_jobs
+    active = owned_by(
+        Job.objects.filter(status__in=[Job.Status.QUEUED, Job.Status.RUNNING]), principal
     ).count()
-    if active >= settings.MAX_CONCURRENT_JOBS:
+    if active >= limit:
         exc = QuotaExceeded(
-            f"You already have {active} jobs running. Wait for one to finish."
+            f"You already have {active} job(s) running. Wait for one to finish."
+            + (" A free account raises this limit." if is_guest(principal) else "")
         )
-        exc.zen_details = {"limit": settings.MAX_CONCURRENT_JOBS}
+        exc.zen_details = {"limit": limit, "tier": L.for_principal(principal).tier}
         raise exc
+
+
+def _guard_operation(request, op_type: str, principal):
+    """Shared pre-flight for both operation entrypoints: challenge (metered ops
+    only), then tier-resolved concurrency."""
+    captcha.enforce(request, principal, op_type)
+    _check_concurrency(principal)
 
 
 def _parse_range(header: str, size: int):
@@ -132,13 +167,14 @@ def _stream_version(version: DocumentVersion, request, *, filename: str,
 # --------------------------------------------------------------------------- #
 class DocumentListCreateView(generics.ListCreateAPIView):
     serializer_class = DocumentSerializer
-    permission_classes = [IsAuthenticated]
     filterset_class = DocumentFilter
     ordering_fields = ["updated_at", "title", "size_bytes", "created_at"]
     ordering = ["-updated_at"]
 
     def get_queryset(self):
-        qs = Document.objects.filter(owner=self.request.user).select_related("current_version")
+        qs = owned_by(
+            Document.objects.select_related("current_version"), _principal(self.request)
+        )
         # Default library hides trashed docs; ?trashed=true surfaces them.
         if "trashed" not in self.request.query_params:
             qs = qs.filter(trashed_at__isnull=True)
@@ -154,15 +190,33 @@ class DocumentListCreateView(generics.ListCreateAPIView):
         if upload is None:
             raise ValidationFailed("No file was uploaded (field 'file').")
 
-        max_bytes = settings.MAX_UPLOAD_MB * 1024 * 1024
-        if upload.size > max_bytes:
-            raise FileTooLarge(f"Maximum upload size is {settings.MAX_UPLOAD_MB} MB.")
+        # Upload is a write, so this is where a guest session is minted (§21.2).
+        principal = _principal(request, write=True)
+        if principal is None:
+            raise ValidationFailed("Guest access is disabled; sign in to upload.")
+        tier = L.for_principal(principal)
 
-        user = request.user
-        quota_bytes = settings.USER_STORAGE_QUOTA_MB * 1024 * 1024
-        if user.storage_bytes_used + upload.size > quota_bytes:
-            exc = QuotaExceeded("Uploading this file would exceed your storage quota.")
-            exc.zen_details = {"quota_bytes": quota_bytes, "used_bytes": user.storage_bytes_used}
+        if upload.size > tier.max_upload_bytes:
+            exc = FileTooLarge(
+                f"Maximum upload size is {tier.max_upload_bytes // (1024 * 1024)} MB."
+                + (" Create a free account to upload larger files."
+                   if is_guest(principal) else "")
+            )
+            exc.zen_details = {
+                "max_upload_bytes": tier.max_upload_bytes, "tier": tier.tier,
+            }
+            raise exc
+
+        used = L.storage_used(principal)
+        if used + upload.size > tier.storage_bytes:
+            exc = QuotaExceeded(
+                "Uploading this file would exceed your storage quota."
+                + (" Create a free account for 2 GB of storage."
+                   if is_guest(principal) else "")
+            )
+            exc.zen_details = {
+                "quota_bytes": tier.storage_bytes, "used_bytes": used, "tier": tier.tier,
+            }
             raise exc
 
         data = upload.read()
@@ -172,19 +226,23 @@ class DocumentListCreateView(generics.ListCreateAPIView):
         folder = None
         folder_id = request.data.get("folder")
         if folder_id:
-            folder = generics.get_object_or_404(Folder.objects.filter(owner=user), pk=folder_id)
+            # Folders are account-only, so a guest simply has none to file into.
+            folder = generics.get_object_or_404(
+                owned_by(Folder.objects.all(), principal), pk=folder_id
+            )
 
-        document = ingest_pdf(user, data, title, folder=folder, want_repair=want_repair)
+        document = ingest_pdf(principal, data, title, folder=folder, want_repair=want_repair)
         return Response(DocumentSerializer(document).data, status=status.HTTP_201_CREATED)
 
 
 class DocumentDetailView(generics.RetrieveUpdateDestroyAPIView):
     serializer_class = DocumentSerializer
-    permission_classes = [IsAuthenticated]
     http_method_names = ["get", "patch", "delete", "head", "options"]
 
     def get_queryset(self):
-        return Document.objects.filter(owner=self.request.user).select_related("current_version")
+        return owned_by(
+            Document.objects.select_related("current_version"), _principal(self.request)
+        )
 
     def perform_update(self, serializer):
         # Only title, folder, starred are user-editable here.
@@ -214,12 +272,9 @@ class DocumentDetailView(generics.RetrieveUpdateDestroyAPIView):
                 storage.delete(version.storage_key)
             except Exception:  # noqa: BLE001
                 pass
-        from django.db.models import F
-
-        owner = document.owner
-        type(owner).objects.filter(pk=owner.pk).update(
-            storage_bytes_used=F("storage_bytes_used") - freed
-        )
+        # Credit the quota back to whichever principal owns it — the pre-2B
+        # code always wrote the `users` table.
+        L.bump_storage(document.principal, -freed)
         # Clear the self-referential current_version before deleting versions.
         document.current_version = None
         document.save(update_fields=["current_version"])
@@ -227,11 +282,9 @@ class DocumentDetailView(generics.RetrieveUpdateDestroyAPIView):
 
 
 class DocumentRestoreView(APIView):
-    permission_classes = [IsAuthenticated]
-
     @extend_schema(request=None, responses=DocumentSerializer, tags=["documents"])
     def post(self, request, pk):
-        document = _owned_document(request.user, pk)
+        document = _owned_document(request, pk)
         document.trashed_at = None
         document.save(update_fields=["trashed_at", "updated_at"])
         return Response(DocumentSerializer(document).data)
@@ -241,11 +294,9 @@ class DocumentRestoreView(APIView):
 # Content delivery
 # --------------------------------------------------------------------------- #
 class DocumentContentView(APIView):
-    permission_classes = [IsAuthenticated]
-
     @extend_schema(tags=["documents"], responses=OpenApiTypes.BINARY)
     def get(self, request, pk):
-        document = _owned_document(request.user, pk)
+        document = _owned_document(request, pk)
         version = _select_version(document, request)
         if settings.PRESIGNED_DELIVERY:
             try:
@@ -260,22 +311,18 @@ class DocumentContentView(APIView):
 
 
 class DocumentDownloadView(APIView):
-    permission_classes = [IsAuthenticated]
-
     @extend_schema(tags=["documents"], responses=OpenApiTypes.BINARY)
     def get(self, request, pk):
-        document = _owned_document(request.user, pk)
+        document = _owned_document(request, pk)
         version = _select_version(document, request)
         return _stream_version(version, request, filename=f"{document.title}.pdf",
                                as_attachment=True)
 
 
 class ThumbnailView(APIView):
-    permission_classes = [IsAuthenticated]
-
     @extend_schema(tags=["documents"], responses=OpenApiTypes.BINARY)
     def get(self, request, pk, n):
-        document = _owned_document(request.user, pk)
+        document = _owned_document(request, pk)
         version = _select_version(document, request)
         try:
             width = max(60, min(int(request.query_params.get("w", 240)), 1200))
@@ -307,25 +354,26 @@ class ThumbnailView(APIView):
 # --------------------------------------------------------------------------- #
 class VersionListView(generics.ListAPIView):
     serializer_class = DocumentVersionSerializer
-    permission_classes = [IsAuthenticated]
     pagination_class = None
 
     def get_queryset(self):
-        document = _owned_document(self.request.user, self.kwargs["pk"])
+        # Schema generation introspects the queryset with no URL kwargs bound.
+        if getattr(self, "swagger_fake_view", False):
+            return DocumentVersion.objects.none()
+        document = _owned_document(self.request, self.kwargs["pk"])
         return document.versions.select_related("job", "created_by").all()
 
 
 class RevertVersionView(APIView):
-    permission_classes = [IsAuthenticated]
-
     @extend_schema(request=None, responses=JobSerializer, tags=["documents"])
     def post(self, request, pk, seq):
-        document = _owned_document(request.user, pk)
+        document = _owned_document(request, pk)
         generics.get_object_or_404(document.versions, seq=seq)
-        _check_concurrency(request.user)
+        principal = _principal(request)
+        _guard_operation(request, "revert_version", principal)
         current = document.current_version
         job = Job.objects.create(
-            user=request.user, document=document, type="revert_version",
+            **job_owner_kwargs(principal), document=document, type="revert_version",
             params={"seq": int(seq)},
             base_version_seq=current.seq if current else None,
         )
@@ -338,11 +386,9 @@ class RevertVersionView(APIView):
 
 
 class OutlineView(APIView):
-    permission_classes = [IsAuthenticated]
-
     @extend_schema(tags=["documents"], responses=OpenApiTypes.OBJECT)
     def get(self, request, pk):
-        document = _owned_document(request.user, pk)
+        document = _owned_document(request, pk)
         version = _select_version(document, request)
         try:
             blob = get_storage().get_bytes(version.storage_key)
@@ -353,11 +399,9 @@ class OutlineView(APIView):
 
 
 class TextSearchView(APIView):
-    permission_classes = [IsAuthenticated]
-
     @extend_schema(tags=["documents"], responses=OpenApiTypes.OBJECT)
     def get(self, request, pk):
-        document = _owned_document(request.user, pk)
+        document = _owned_document(request, pk)
         version = _select_version(document, request)
         q = request.query_params.get("q", "").strip()
         if not q:
@@ -383,11 +427,13 @@ class TextSearchView(APIView):
 class DocumentOperationView(APIView):
     """POST /api/documents/{id}/operations/ — single-document ops (§11)."""
 
-    permission_classes = [IsAuthenticated]
-
     @extend_schema(request=OperationRequestSerializer, responses=JobSerializer, tags=["operations"])
     def post(self, request, pk):
-        document = _owned_document(request.user, pk)
+        # No `write=True`: an operation targets a document the caller already
+        # owns, so they already have a principal. Minting before the ownership
+        # check would create a session row for anyone probing document ids.
+        document = _owned_document(request, pk)
+        principal = _principal(request)
         serializer = OperationRequestSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         op_type = serializer.validated_data["type"]
@@ -405,10 +451,11 @@ class DocumentOperationView(APIView):
             registry.validate_params(op_type, params)
         except EngineError as exc:
             raise ValidationFailed(exc.message) from exc
-        _check_concurrency(request.user)
+        _guard_operation(request, op_type, principal)
+        L.enforce_metered_op(principal, op_type)
 
         job = Job.objects.create(
-            user=request.user, document=document, type=op_type,
+            **job_owner_kwargs(principal), document=document, type=op_type,
             params=params, base_version_seq=base_seq,
         )
         from .tasks import run_operation
@@ -421,8 +468,6 @@ class DocumentOperationView(APIView):
 
 class CrossDocumentOperationView(APIView):
     """POST /api/operations/ — cross-document ops: merge, alternate_mix (§11)."""
-
-    permission_classes = [IsAuthenticated]
 
     @extend_schema(request=OperationRequestSerializer, responses=JobSerializer, tags=["operations"])
     def post(self, request):
@@ -439,18 +484,23 @@ class CrossDocumentOperationView(APIView):
         except EngineError as exc:
             raise ValidationFailed(exc.message) from exc
 
-        # Ownership + encryption check on every source document.
+        # Ownership + encryption check on every source document. No minting:
+        # every input is a document the caller already owns.
+        principal = _principal(request)
+        if principal is None:
+            raise NotFound("Not found.")
         ids = []
         for key in op.source_id_params:
             val = params.get(key)
             ids.extend(val if isinstance(val, list) else [val])
         for doc_id in ids:
-            doc = _owned_document(request.user, doc_id)
+            doc = _owned_document(request, doc_id)
             if doc.is_encrypted:
                 raise DocumentEncrypted()
-        _check_concurrency(request.user)
+        _guard_operation(request, op_type, principal)
+        L.enforce_metered_op(principal, op_type)
 
-        job = Job.objects.create(user=request.user, type=op_type, params=params)
+        job = Job.objects.create(**job_owner_kwargs(principal), type=op_type, params=params)
         from .tasks import run_cross_document_operation
 
         result = run_cross_document_operation.apply_async(args=[str(job.id)], queue=op.queue)
@@ -460,26 +510,29 @@ class CrossDocumentOperationView(APIView):
 
 
 # --------------------------------------------------------------------------- #
-# Folders
+# Folders — account-only (§21.3): guests get a flat session workspace, and a
+# library needs a durable identity to exist at all.
 # --------------------------------------------------------------------------- #
 class FolderListCreateView(generics.ListCreateAPIView):
     serializer_class = FolderSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAccount]
     pagination_class = None
+    account_required_message = "Create a free account to organize files into folders."
 
     def get_queryset(self):
-        return Folder.objects.filter(owner=self.request.user)
+        return owned_by(Folder.objects.all(), _principal(self.request))
 
     def perform_create(self, serializer):
-        serializer.save(owner=self.request.user)
+        serializer.save(**{"owner": _principal(self.request)})
 
 
 class FolderDetailView(generics.RetrieveUpdateDestroyAPIView):
     serializer_class = FolderSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAccount]
+    account_required_message = "Create a free account to organize files into folders."
 
     def get_queryset(self):
-        return Folder.objects.filter(owner=self.request.user)
+        return owned_by(Folder.objects.all(), _principal(self.request))
 
     def destroy(self, request, *args, **kwargs):
         folder = self.get_object()
@@ -503,8 +556,8 @@ class FolderDetailView(generics.RetrieveUpdateDestroyAPIView):
                 seen.add(f.pk)
                 all_folders.append(f)
                 stack.extend(list(f.children.all()))
-            Document.objects.filter(
-                owner=request.user, folder__in=all_folders
+            owned_by(
+                Document.objects.filter(folder__in=all_folders), _principal(request)
             ).update(trashed_at=timezone.now())
         folder.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)

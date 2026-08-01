@@ -2,6 +2,7 @@ import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/cor
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 
+import { AuthFacade } from '../../abstraction/auth.facade';
 import { DocumentsFacade } from '../../abstraction/documents.facade';
 import { FoldersFacade } from '../../abstraction/folders.facade';
 import { JobsFacade } from '../../abstraction/jobs.facade';
@@ -27,6 +28,8 @@ export class Dashboard {
   protected docs = inject(DocumentsFacade);
   protected folders = inject(FoldersFacade);
   protected upload = inject(UploadFacade);
+  /** Surfaces what signing up just rescued — the payoff must not be silent. */
+  protected auth = inject(AuthFacade);
   private jobs = inject(JobsFacade);
   private jobsSvc = inject(JobsService);
   private docsSvc = inject(DocumentsService);

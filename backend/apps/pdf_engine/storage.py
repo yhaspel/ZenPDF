@@ -45,6 +45,24 @@ class BaseStorage:
     def delete(self, key: str) -> None:
         raise NotImplementedError
 
+    def list_prefix(self, prefix: str) -> list[str]:
+        """Every key under `prefix`.
+
+        `guest_purge` needs it: a document's thumbnails are keyed by page and
+        width (`thumbs/{doc}/{seq}/p{n}@{w}.png`), so the exact key set is not
+        derivable from the DB rows — deleting only the version blobs would
+        orphan them (§21.4).
+        """
+        raise NotImplementedError
+
+    def delete_prefix(self, prefix: str) -> int:
+        """Delete everything under `prefix`; return the number of keys removed."""
+        removed = 0
+        for key in self.list_prefix(prefix):
+            self.delete(key)
+            removed += 1
+        return removed
+
     def presigned_get(self, key: str, expires: int = 3600) -> str:
         raise NotImplementedError
 
@@ -127,6 +145,13 @@ class S3Storage(BaseStorage):
     def delete(self, key):
         self._client.delete_object(Bucket=self._bucket, Key=key)
 
+    def list_prefix(self, prefix):
+        keys = []
+        paginator = self._client.get_paginator("list_objects_v2")
+        for page in paginator.paginate(Bucket=self._bucket, Prefix=prefix):
+            keys.extend(obj["Key"] for obj in page.get("Contents", []))
+        return keys
+
     def presigned_get(self, key, expires=3600):
         return self._public_client.generate_presigned_url(
             "get_object",
@@ -202,6 +227,15 @@ class FilesystemStorage(BaseStorage):
         path = self._path(key)
         if os.path.exists(path):
             os.remove(path)
+
+    def list_prefix(self, prefix):
+        keys = []
+        for dirpath, _dirnames, filenames in os.walk(self._root):
+            for name in filenames:
+                key = os.path.relpath(os.path.join(dirpath, name), self._root)
+                if key.startswith(prefix):
+                    keys.append(key)
+        return keys
 
     def presigned_get(self, key, expires=3600):
         # Filesystem backend has no presign; callers must use the API proxy.

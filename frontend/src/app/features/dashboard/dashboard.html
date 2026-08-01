@@ -1,3 +1,21 @@
+@if (auth.lastClaim(); as claim) {
+  <!-- The payoff moment must be visible, not silent (§21.5). -->
+  <div class="mx-auto max-w-7xl px-6 pt-6">
+    <div
+      class="flex items-center justify-between gap-4 rounded-xl bg-emerald-50 px-4 py-3 text-sm text-emerald-900"
+      data-test="claim-banner"
+    >
+      <span>
+        {{ claim.documents }} file{{ claim.documents === 1 ? '' : 's' }} from your guest session
+        {{ claim.documents === 1 ? 'is' : 'are' }} now saved to your account.
+      </span>
+      <button type="button" class="text-emerald-700 underline" (click)="auth.clearLastClaim()">
+        Got it
+      </button>
+    </div>
+  </div>
+}
+
 <div class="mx-auto flex max-w-7xl gap-6 p-6">
   <!-- Sidebar -->
   <aside class="w-60 shrink-0 space-y-6">

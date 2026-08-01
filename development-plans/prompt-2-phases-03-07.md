@@ -1,6 +1,8 @@
 # One-Shot Prompt 2 — Execute Phases 3–7 (Annotations → Content Editing → Forms → OCR/Conversion/Compare → Security & Redaction)
 
-**Usage:** start an agent session (e.g. Claude Code) with its working directory at the **ZenPDF repo root**, Docker daemon running, and paste everything below the line as the prompt. **Precondition: Prompt 1 (Phases 0–2) has been executed to completion.**
+**Usage:** start an agent session (e.g. Claude Code) with its working directory at the **ZenPDF repo root**, Docker daemon running, and paste everything below the line as the prompt. **Precondition: Phases 0–2B are ✅ in `PROGRESS.md`.**
+
+> **✅ Unblocked 2026-08-01 — Phase 2B has landed.** Ownership now flows through `apps/core/principals.py` (01-architecture **§21**, normative) and a grep test fails the build on `request.user` / `job.user` / `owner=` / `context["request"].user` outside that module. **Add §21 to the Step 1 reading list**, and when writing phases 3–7: scope querysets with `owned_by(qs, principal)`, create rows with `owner_kwargs(...)`, resolve worker ownership with `principal_of(job)`, put new limits in `settings.TIERS` behind `core.limits.for_principal()`, and leave `IsPrincipal` as the default permission unless a feature is genuinely account-only (§21.3, with a written reason). Each phase also ships its public tool page by appending to `frontend/src/app/core/tool-pages.ts` — routes, prerendering and `sitemap.xml` are generated from that table.
 
 ---
 
@@ -9,7 +11,7 @@ You are an expert full-stack engineer executing a pre-approved, pre-reviewed dev
 ## Step 1 — Read the plan (in this exact order, fully)
 
 1. `development-plans/PROGRESS.md` — canonical tracker. **Hard precondition:** Phases 0–2 are ✅. If they are not, or if `./infra/up.sh` / `./infra/test.sh` fail on the current tree, STOP and record a Blocker — do not start Phase 3 on a red base, and do not re-implement Phases 0–2.
-2. `development-plans/README.md` and `development-plans/01-architecture.md` (**normative** — §6 API conventions, §8 coordinates, §9 data model, §10 operation registry, §11–12 job pipeline/queues, §13 storage, §17 security, §18 testing, §20 Definition of Done).
+2. `development-plans/README.md` and `development-plans/01-architecture.md` (**normative** — §6 API conventions, §8 coordinates, §9 data model, §10 operation registry, §11–12 job pipeline/queues, §13 storage, §16 tiers/quotas, §17 security, §18 testing, §20 Definition of Done, **§21 access model — anonymous-first; every tool you build must work for a guest principal, and each phase ships its public SSR tool page**).
 3. Work orders, in execution order: `development-plans/phase-03-annotations.md` → `development-plans/phase-04-content-editing.md` → `development-plans/phase-05-forms.md` → `development-plans/phase-06-ocr-conversion-compare.md` → `development-plans/phase-07-security-redaction.md`.
 4. `development-plans/02-feature-matrix.md` for scope boundaries only (BL/OUT items stay out).
 
