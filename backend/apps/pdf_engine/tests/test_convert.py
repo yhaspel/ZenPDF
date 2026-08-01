@@ -288,3 +288,24 @@ def test_url_conversion_refuses_the_private_space(url):
     and could be replayed."""
     with pytest.raises(InvalidParams):
         C.url_to_pdf(url)
+
+
+@needs_gotenberg
+@pytest.mark.parametrize("url", [
+    "http://api:8000/api/health/",          # our own API, by service name
+    "http://169.254.169.254/latest/meta-data/",
+    "file:///etc/passwd",
+])
+def test_gotenberg_itself_refuses_the_private_space(url):
+    """Layer 2, proven against the running container rather than against a
+    string in settings.
+
+    Deliberately bypasses `url_to_pdf`, which would refuse these at layer 1.
+    What is being tested is what happens when layer 1 *cannot* help — a
+    redirect, or a name that resolved publicly a moment ago — and the answer
+    has to be that Chromium will not go there.
+    """
+    with pytest.raises(EngineError) as exc:
+        C._gotenberg("/forms/chromium/convert/url", [], {"url": url},
+                     what="Converting that web page")
+    assert "conversion_failed" in exc.value.code or "failed" in str(exc.value).lower()

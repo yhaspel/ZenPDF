@@ -44,8 +44,19 @@ services:
     image: gotenberg/gotenberg:8
     command:
       - gotenberg
+      # JavaScript stays off: we render documents and web pages, not
+      # applications, and it is the largest single piece of attack surface in
+      # the container that fetches URLs on a user's behalf.
       - --chromium-disable-javascript=true
-      - --chromium-allow-list=file:///tmp/.*
+      # Layer 2 of the SSRF guard (§17, phase-06). `apps/core/urlguard.py` is
+      # layer 1 and checks the URL a user typed; this is what covers the hops it
+      # cannot see — a redirect into the private space, and a name that resolves
+      # publicly when we check it and privately when Chromium connects, because
+      # the deny-list is evaluated on *every navigation*.
+      #
+      # Kept in step with `urlguard.INTERNAL_HOSTS` and the private ranges by
+      # `apps/core/tests/test_urlguard.py::test_gotenberg_denies_what_layer_one_denies`.
+      - --chromium-deny-list=${GOTENBERG_DENY_LIST}
 
   mailpit:
     image: axllent/mailpit:v1.30

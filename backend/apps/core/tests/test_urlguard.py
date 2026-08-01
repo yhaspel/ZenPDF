@@ -95,6 +95,41 @@ def test_a_name_that_does_not_resolve_is_refused_by_name():
             check_url("https://no-such-host.example/")
 
 
+def test_gotenberg_denies_what_layer_one_denies():
+    """Layer 2 must actually be configured (§17, phase-06).
+
+    Layer 1 checks the URL a user typed. It cannot see a redirect, and it cannot
+    see a name that resolves publicly when we check it and privately when
+    Chromium connects a moment later. Gotenberg's deny-list is what covers both,
+    because it is evaluated on *every* navigation — so its absence, or a hole in
+    it, is something no test of `check_url` would ever notice.
+
+    Compose passes this exact setting to the container.
+    """
+    import re
+
+    from django.conf import settings
+
+    pattern = re.compile(settings.GOTENBERG_DENY_LIST)
+    for url in [
+        "http://169.254.169.254/latest/meta-data/",
+        "http://localhost:8000/",
+        "http://127.0.0.1/",
+        "http://10.0.0.5/",
+        "http://172.20.1.1/",
+        "http://192.168.0.1/",
+        "http://api:8000/api/documents/",
+        "http://storage:8333/",
+        "http://metadata.google.internal/",
+        "file:///etc/passwd",
+    ]:
+        assert pattern.match(url), f"gotenberg would still fetch {url}"
+
+    # …and it must not deny the ordinary web, or the tool does nothing at all.
+    for url in ["https://example.com/report", "http://news.example.co.uk/a/b"]:
+        assert not pattern.match(url), f"gotenberg would refuse {url}"
+
+
 def test_a_trailing_dot_does_not_smuggle_an_internal_name():
     """`http://api./` resolves exactly like `http://api/` — the dot is a
     fully-qualified-name marker, not a different host."""

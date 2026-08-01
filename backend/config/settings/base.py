@@ -265,6 +265,16 @@ PRESIGNED_DELIVERY = config("PRESIGNED_DELIVERY", default=False, cast=bool)
 
 # --- Engine / signing -------------------------------------------------------
 GOTENBERG_URL = config("GOTENBERG_URL", default="http://gotenberg:3000")
+# Layer 2 of the SSRF guard (§17, phase-06): the pattern Gotenberg's Chromium
+# refuses to navigate to, on *every* navigation — which is what covers the hops
+# `apps.core.urlguard` cannot see (a redirect, or a name that resolves publicly
+# when we check it and privately when Chromium connects). Compose passes this
+# same value to the container; the default here and there are deliberately
+# identical so the guard holds even if the env var goes missing.
+GOTENBERG_DENY_LIST = config(
+    "GOTENBERG_DENY_LIST",
+    default=r"^file:(?!//\/tmp/).*|^.*://(localhost|127\.\d+\.\d+\.\d+|0\.0\.0\.0|\[?::1\]?|\[?fd[0-9a-f]{2}:.*|169\.254\.\d+\.\d+|10\.\d+\.\d+\.\d+|172\.(1[6-9]|2\d|3[01])\.\d+\.\d+|192\.168\.\d+\.\d+|100\.100\.200\.200|metadata\.google\.internal|metadata\.goog|api|web|db|redis|storage|mailpit|gotenberg|beat|worker-default|worker-heavy|worker-render)([:/].*)?$",
+)
 SIGNING_CERT_PATH = config("SIGNING_CERT_PATH", default="/certs/zenpdf-dev.p12")
 SIGNING_CERT_PASSWORD = config("SIGNING_CERT_PASSWORD", default="devpass")
 TSA_URL = config("TSA_URL", default="")
