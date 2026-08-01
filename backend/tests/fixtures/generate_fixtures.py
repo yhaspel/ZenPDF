@@ -19,7 +19,9 @@ import fitz
 import pikepdf
 
 OUT = os.path.join(os.path.dirname(__file__), "pdfs")
+IMAGES = os.path.join(os.path.dirname(__file__), "images")
 os.makedirs(OUT, exist_ok=True)
+os.makedirs(IMAGES, exist_ok=True)
 
 
 def _text_doc(pages: int, prefix: str) -> fitz.Document:
@@ -145,6 +147,19 @@ def make_scanned_hebrew():
     out.save(os.path.join(OUT, "scanned-hebrew.pdf"), deflate=True)
     out.close()
     src.close()
+
+
+def make_sample_image():
+    """A PNG for the image-import path (phase-06) — the one fixture in the
+    corpus that is deliberately *not* a PDF."""
+    doc = fitz.open()
+    page = doc.new_page(width=400, height=260)
+    page.draw_rect(page.rect, color=None, fill=(0.96, 0.97, 1.0))
+    page.insert_text((30, 90), "ZenPDF sample image", fontsize=22)
+    page.insert_text((30, 130), "for the image-to-PDF route", fontsize=13)
+    pix = page.get_pixmap(matrix=fitz.Matrix(2, 2))
+    doc.close()
+    pix.save(os.path.join(IMAGES, "sample.png"))
 
 
 def make_compare_pair():
@@ -287,6 +302,7 @@ if __name__ == "__main__":
     make_scanned()
     make_scanned_hebrew()
     make_compare_pair()
+    make_sample_image()
     make_rotated()
     make_large()
     make_encrypted()
