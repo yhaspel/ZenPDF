@@ -14,11 +14,17 @@
 
       <div class="ml-auto flex items-center gap-2 text-sm">
         <button (click)="download()" class="rounded px-2 py-1 text-slate-600 hover:bg-slate-100" data-test="download">Download</button>
-        <button (click)="mode.set(mode() === 'view' ? 'organize' : 'view')"
+        <button (click)="mode.set(mode() === 'organize' ? 'view' : 'organize')"
                 class="rounded px-3 py-1 font-medium"
                 [class.bg-indigo-600]="mode() === 'organize'" [class.text-white]="mode() === 'organize'"
-                [class.text-indigo-600]="mode() === 'view'" data-test="organize-toggle">
+                [class.text-indigo-600]="mode() !== 'organize'" data-test="organize-toggle">
           {{ mode() === 'organize' ? 'Done' : 'Organize' }}
+        </button>
+        <button (click)="mode.set(mode() === 'annotate' ? 'view' : 'annotate')"
+                class="rounded px-3 py-1 font-medium"
+                [class.bg-indigo-600]="mode() === 'annotate'" [class.text-white]="mode() === 'annotate'"
+                [class.text-indigo-600]="mode() !== 'annotate'" data-test="annotate-toggle">
+          {{ mode() === 'annotate' ? 'Done' : 'Annotate' }}
         </button>
         <button (click)="dialog.set('split')" class="rounded px-2 py-1 text-slate-600 hover:bg-slate-100" data-test="tool-split">Split</button>
         <button (click)="dialog.set('compress')" class="rounded px-2 py-1 text-slate-600 hover:bg-slate-100" data-test="tool-compress">Compress</button>
@@ -40,7 +46,7 @@
         <button (click)="duplicate()" class="rounded bg-white px-3 py-1 shadow-sm hover:bg-slate-100" data-test="op-duplicate">⧉ Duplicate</button>
         <button (click)="extract()" class="rounded bg-white px-3 py-1 shadow-sm hover:bg-slate-100" data-test="op-extract">⇥ Extract</button>
         <button (click)="dialog.set('insert')" class="rounded bg-white px-3 py-1 shadow-sm hover:bg-slate-100" data-test="op-insert">＋ Insert blank</button>
-        <button (click)="dialog.set('crop')" class="rounded bg-white px-3 py-1 shadow-sm hover:bg-slate-100" data-test="op-crop">◱ Crop</button>
+        <button (click)="startCrop()" class="rounded bg-white px-3 py-1 shadow-sm hover:bg-slate-100" data-test="op-crop">◱ Crop</button>
         <button (click)="dialog.set('scale')" class="rounded bg-white px-3 py-1 shadow-sm hover:bg-slate-100" data-test="op-scale">⤢ Scale</button>
         <button (click)="dialog.set('nup')" class="rounded bg-white px-3 py-1 shadow-sm hover:bg-slate-100" data-test="op-nup">▦ N-up</button>
         <span class="text-xs text-slate-400">Drag thumbnails to reorder</span>
@@ -48,6 +54,17 @@
     }
 
     <!-- Body -->
+    @if (mode() === 'annotate') {
+      <app-annotate
+        [docId]="doc.id"
+        [pageCount]="viewer.pageCount()"
+        [currentSeq]="viewer.currentSeq()"
+        [selectedPages]="selected()"
+        [initialTool]="annotateTool()"
+        (saved)="onAnnotationsSaved()"
+        (conflict)="onAnnotationConflict()"
+      />
+    } @else {
     <div class="flex min-h-0 flex-1">
       <!-- Left rail -->
       <aside class="flex w-56 shrink-0 flex-col border-r border-slate-200 bg-white">
@@ -145,6 +162,7 @@
         }
       </main>
     </div>
+    }
   </div>
 
   <!-- Dialogs -->
@@ -175,10 +193,6 @@
             <option value="balanced">Balanced</option>
             <option value="strong">Strong (grayscale)</option>
           </select>
-        } @else if (d === 'crop') {
-          <h3 class="mb-4 text-lg font-semibold">Crop margins</h3>
-          <label class="text-sm text-slate-500">Trim {{ cropMargin() }}% from each edge</label>
-          <input type="range" min="0" max="45" [ngModel]="cropMargin()" (ngModelChange)="cropMargin.set(+$event)" class="w-full" data-test="crop-margin" />
         } @else if (d === 'scale') {
           <h3 class="mb-4 text-lg font-semibold">Scale pages</h3>
           <select [ngModel]="scaleSize()" (ngModelChange)="scaleSize.set($event)" class="w-full rounded border border-slate-300 px-3 py-2" data-test="scale-size">

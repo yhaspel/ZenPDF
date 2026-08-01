@@ -327,7 +327,10 @@ class ThumbnailView(APIView):
         document = _owned_document(request, pk)
         version = _select_version(document, request)
         try:
-            width = max(60, min(int(request.query_params.get("w", 240)), 1200))
+            # 2000 rather than 1200 since phase 3: the overlay renders the page
+            # it draws on at 2x for HiDPI, and a blurry page makes precise
+            # placement guesswork. Still inside the <1 s single-page budget (§3).
+            width = max(60, min(int(request.query_params.get("w", 240)), 2000))
         except ValueError:
             width = 240
         if n < 0 or n >= version.page_count:

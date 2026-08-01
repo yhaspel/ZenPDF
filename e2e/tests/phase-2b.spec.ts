@@ -97,6 +97,7 @@ test('phase 2b: every tool page is reachable and self-describing', async ({ page
     'delete-pdf-pages',
     'extract-pdf-pages',
     'organize-pdf',
+    'annotate-pdf',
   ];
   const titles = new Set<string>();
   for (const slug of slugs) {

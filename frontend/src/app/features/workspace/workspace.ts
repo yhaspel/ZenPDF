@@ -5,6 +5,7 @@ import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { NgxExtendedPdfViewerModule } from 'ngx-extended-pdf-viewer';
 
+import { AnnotationsFacade } from '../../abstraction/annotations.facade';
 import { GuestFacade } from '../../abstraction/guest.facade';
 import { JobsFacade } from '../../abstraction/jobs.facade';
 import { PagesFacade } from '../../abstraction/pages.facade';
@@ -17,13 +18,19 @@ import { ConfirmService } from '../../shared/confirm.service';
 import { PdfThumbnail } from '../../shared/pdf-thumbnail';
 import { saveBlob } from '../../shared/save-blob';
 import { ToastService } from '../../shared/toast.service';
+import { Annotate, AnnotateTool } from './annotate';
 
-type Dialog = null | 'split' | 'crop' | 'scale' | 'nup' | 'compress' | 'insert';
+// `crop` left the dialog list in Phase 3: it is now drawn on the overlay
+// (Human review queue, 2026-07-19 — "revisit crop to use it then").
+type Dialog = null | 'split' | 'scale' | 'nup' | 'compress' | 'insert';
 
 @Component({
   selector: 'app-workspace',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [FormsModule, RouterLink, NgxExtendedPdfViewerModule, CdkDropList, CdkDrag, PdfThumbnail],
+  imports: [
+    FormsModule, RouterLink, NgxExtendedPdfViewerModule, CdkDropList, CdkDrag, PdfThumbnail,
+    Annotate,
+  ],
   templateUrl: './workspace.html',
 })
 export class Workspace {
@@ -33,6 +40,7 @@ export class Workspace {
   private docsSvc = inject(DocumentsService);
   private tokens = inject(TokenService);
   protected guests = inject(GuestFacade);
+  protected annotations = inject(AnnotationsFacade);
   private guestTokens = inject(GuestTokenService);
   private route = inject(ActivatedRoute);
   private router = inject(Router);
@@ -40,7 +48,8 @@ export class Workspace {
   private confirm = inject(ConfirmService);
 
   protected leftTab = signal<'thumbs' | 'outline' | 'history'>('thumbs');
-  protected mode = signal<'view' | 'organize'>('view');
+  protected mode = signal<'view' | 'organize' | 'annotate'>('view');
+  protected annotateTool = signal<AnnotateTool>('select');
   protected page = signal(1);
   protected order = signal<number[]>([]);
   protected busy = signal(false);
@@ -56,7 +65,6 @@ export class Workspace {
   protected splitMode = signal<'ranges' | 'every_n' | 'by_size_mb' | 'by_bookmarks'>('ranges');
   protected splitRanges = signal('1');
   protected splitEveryN = signal(1);
-  protected cropMargin = signal(10);
   protected scaleSize = signal<'a4' | 'letter' | 'legal'>('a4');
   protected nupPer = signal(2);
   protected compressPreset = signal<'light' | 'balanced' | 'strong'>('balanced');
@@ -101,12 +109,27 @@ export class Workspace {
       const id = params.get('id');
       if (id) this.viewer.load(id);
     });
+    // `/annotate-pdf` hands off here with ?mode=annotate, so the public tool
+    // page lands the guest directly in the markup tools (§21.6: the page must
+    // *be* the tool, with no login prompt anywhere in the path).
+    this.route.queryParamMap.pipe(takeUntilDestroyed()).subscribe((params) => {
+      if (params.get('mode') === 'annotate') this.mode.set('annotate');
+    });
     // reset organize order whenever the version changes
     effect(() => {
       const n = this.viewer.pageCount();
       this.viewer.currentSeq();
       this.order.set(Array.from({ length: n }, (_, i) => i));
       this.pages.clear();
+    });
+    // Annotations live in the file, so a new version is a new annotation set —
+    // and every cached page word list is stale with it.
+    effect(() => {
+      const doc = this.viewer.doc();
+      const seq = this.viewer.currentSeq();
+      if (!doc) return;
+      this.annotations.resetForVersion();
+      this.annotations.load(doc.id, seq);
     });
     effect(() => {
       if (this.viewer.doc()?.is_encrypted && !this.password()) {
@@ -212,14 +235,6 @@ export class Workspace {
     this.dialog.set(null);
   }
 
-  applyCrop(): void {
-    const m = Math.min(45, Math.max(0, this.cropMargin())) / 100;
-    const rect = { x: m, y: m, w: 1 - 2 * m, h: 1 - 2 * m };
-    const sel = this.selected().length ? this.selected() : this.order();
-    this.runOp('crop_pages', { pages: sel, rect }, 'Cropped pages');
-    this.dialog.set(null);
-  }
-
   applyScale(): void {
     const sel = this.selected().length ? this.selected() : this.order();
     this.runOp('scale_pages', { pages: sel, target_size: this.scaleSize() }, 'Scaled pages');
@@ -313,7 +328,6 @@ export class Workspace {
     switch (this.dialog()) {
       case 'split': return this.applySplit();
       case 'compress': return this.applyCompress();
-      case 'crop': return this.applyCrop();
       case 'scale': return this.applyScale();
       case 'nup': return this.applyNup();
       case 'insert': return this.applyInsert();
@@ -330,5 +344,29 @@ export class Workspace {
   submitPassword(pw: string): void {
     this.password.set(pw);
     this.passwordPrompt.set(false);
+  }
+
+  /**
+   * Crop moved off the margin dialog onto the overlay (Human review queue,
+   * 2026-07-19): you now drag the area to keep, on the page, instead of typing
+   * a percentage and hoping. The organize selection carries over as the range.
+   */
+  startCrop(): void {
+    this.annotateTool.set('crop');
+    this.mode.set('annotate');
+  }
+
+  /** Annotate mode produced a new version (save, flatten or overlay crop). */
+  onAnnotationsSaved(): void {
+    this.viewer.reload();
+  }
+
+  /**
+   * A save lost a `version_conflict`. The drafts were kept, so reload the
+   * document and let the user press Save again against the fresh version
+   * (phase-03 §"Save model UX" — no merge dialog in v1).
+   */
+  onAnnotationConflict(): void {
+    this.viewer.reload();
   }
 }
