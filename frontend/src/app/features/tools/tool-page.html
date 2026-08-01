@@ -1,0 +1,145 @@
+<div class="min-h-screen bg-slate-50">
+  <header class="border-b border-slate-200 bg-white">
+    <div class="mx-auto flex max-w-5xl items-center justify-between px-6 py-4">
+      <a routerLink="/" class="flex items-center gap-2 font-bold text-slate-800">
+        <span>🧘‍♀️</span> ZenPDF
+      </a>
+      <nav class="flex items-center gap-4 text-sm">
+        @if (guests.principal() === 'user') {
+          <a routerLink="/app/dashboard" class="text-slate-600" data-test="nav-library">My files</a>
+        } @else {
+          <a routerLink="/auth/register" class="text-slate-600" data-test="nav-register">
+            Create free account
+          </a>
+        }
+      </nav>
+    </div>
+  </header>
+
+  <!-- Dropzone above the fold: the page IS the tool (§21.6). -->
+  <main class="mx-auto max-w-3xl px-6 py-10">
+    <h1 class="text-3xl font-bold text-slate-800" data-test="tool-h1">{{ tool().h1 }}</h1>
+    <p class="mt-2 text-slate-500">{{ tool().metaDescription }}</p>
+
+    <section class="mt-8 rounded-2xl bg-white p-6 shadow-sm" data-test="tool-widget">
+      @if (phase() !== 'done') {
+        <app-upload-dropzone (filesPicked)="onFilesPicked($event)" />
+
+        @if (picked().length) {
+          <ul class="mt-4 divide-y divide-slate-100" data-test="picked-list">
+            @for (file of picked(); track file.name + $index) {
+              <li class="flex items-center justify-between py-2 text-sm">
+                <span class="truncate text-slate-700">{{ file.name }}</span>
+                <button
+                  type="button"
+                  class="text-slate-400 hover:text-rose-600"
+                  (click)="removeFile($index)"
+                  data-test="remove-file"
+                >
+                  Remove
+                </button>
+              </li>
+            }
+          </ul>
+        }
+
+        @if (tool().minFiles > 1 && picked().length < tool().minFiles) {
+          <p class="mt-3 text-sm text-slate-500" data-test="need-more">
+            Add at least {{ tool().minFiles }} PDFs to continue.
+          </p>
+        }
+
+        <button
+          type="button"
+          class="mt-5 w-full rounded-lg bg-indigo-600 py-3 font-medium text-white hover:bg-indigo-700 disabled:opacity-40"
+          [disabled]="!ready() || busy()"
+          (click)="run()"
+          data-test="tool-run"
+        >
+          @if (phase() === 'uploading') {
+            Uploading…
+          } @else if (phase() === 'running') {
+            Working…
+          } @else {
+            {{ tool().cta }}
+          }
+        </button>
+      }
+
+      @if (phase() === 'error') {
+        <p class="mt-4 rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700" data-test="tool-error">
+          {{ error() }}
+        </p>
+      }
+
+      @if (phase() === 'done') {
+        <div data-test="tool-result">
+          <p class="text-lg font-medium text-slate-800">Done.</p>
+          <ul class="mt-4 divide-y divide-slate-100">
+            @for (doc of results(); track doc.id) {
+              <li class="flex items-center justify-between gap-3 py-3">
+                <span class="min-w-0 flex-1 truncate text-sm text-slate-700" data-test="result-title">
+                  {{ doc.title }}.pdf
+                  <span class="text-slate-400">({{ sizeMb(doc.size_bytes) }} MB)</span>
+                </span>
+                <button
+                  type="button"
+                  class="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700"
+                  (click)="download(doc)"
+                  data-test="tool-download"
+                >
+                  Download
+                </button>
+                <button
+                  type="button"
+                  class="rounded-lg border border-slate-300 px-4 py-2 text-sm text-slate-700 hover:bg-slate-50"
+                  (click)="openInWorkspace(doc)"
+                  data-test="tool-open-workspace"
+                >
+                  Open in workspace
+                </button>
+              </li>
+            }
+          </ul>
+          <button
+            type="button"
+            class="mt-4 text-sm text-indigo-600"
+            (click)="reset()"
+            data-test="tool-again"
+          >
+            Do another one
+          </button>
+
+          @if (guests.principal() === 'guest') {
+            <!-- Prompted by value, never by time or count (§21.5): shown only
+                 once there is a result worth keeping. -->
+            <p class="mt-6 rounded-lg bg-indigo-50 px-4 py-3 text-sm text-indigo-900" data-test="tool-upsell">
+              These files are deleted automatically within 24 hours.
+              <a routerLink="/auth/register" class="font-medium underline" data-test="tool-upsell-link">
+                Create a free account to keep them.
+              </a>
+            </p>
+          }
+        </div>
+      }
+    </section>
+
+    <section class="mt-12 space-y-4 text-slate-600">
+      @for (paragraph of tool().intro; track $index) {
+        <p>{{ paragraph }}</p>
+      }
+    </section>
+
+    <section class="mt-12">
+      <h2 class="text-xl font-semibold text-slate-800">Questions</h2>
+      <dl class="mt-4 space-y-5">
+        @for (item of tool().faq; track item.q) {
+          <div data-test="faq-item">
+            <dt class="font-medium text-slate-800">{{ item.q }}</dt>
+            <dd class="mt-1 text-slate-600">{{ item.a }}</dd>
+          </div>
+        }
+      </dl>
+    </section>
+  </main>
+</div>

@@ -1,10 +1,14 @@
-import { HttpErrorResponse, HttpInterceptorFn } from '@angular/common/http';
+import { HttpErrorResponse, HttpInterceptorFn, HttpResponse } from '@angular/common/http';
 import { inject } from '@angular/core';
 import { Router } from '@angular/router';
-import { catchError, switchMap, throwError } from 'rxjs';
+import { catchError, switchMap, tap, throwError } from 'rxjs';
 
+import { GuestFacade } from '../../abstraction/guest.facade';
 import { AuthService } from '../services/auth.service';
+import { GuestTokenService } from '../services/guest-token.service';
 import { TokenService } from '../services/token.service';
+
+export const GUEST_HEADER = 'X-Guest-Token';
 
 function isAuthEndpoint(url: string): boolean {
   return (
@@ -14,34 +18,88 @@ function isAuthEndpoint(url: string): boolean {
   );
 }
 
-/** Attaches the JWT and runs the 401 → refresh → retry → logout flow (§7). */
+/**
+ * Attaches exactly one credential and handles its failure mode (§7, §21.2).
+ *
+ * JWT when there is one, else `X-Guest-Token`. A freshly minted guest token
+ * arrives on the response of the first write and is captured here, so no call
+ * site has to remember to do it.
+ */
 export const authInterceptor: HttpInterceptorFn = (req, next) => {
   const tokens = inject(TokenService);
+  const guestTokens = inject(GuestTokenService);
+  const guests = inject(GuestFacade);
   const auth = inject(AuthService);
   const router = inject(Router);
 
   const access = tokens.access;
-  const authReq =
-    access && !isAuthEndpoint(req.url)
-      ? req.clone({ setHeaders: { Authorization: `Bearer ${access}` } })
-      : req;
+  const guestToken = guestTokens.token;
 
-  return next(authReq).pipe(
+  // Auth endpoints carry the guest token *deliberately*: register and login
+  // claim that session inline on success (§21.5). They never carry the JWT.
+  let outgoing = req;
+  if (isAuthEndpoint(req.url)) {
+    if (guestToken) {
+      outgoing = req.clone({ setHeaders: { [GUEST_HEADER]: guestToken } });
+    }
+  } else if (access) {
+    outgoing = req.clone({ setHeaders: { Authorization: `Bearer ${access}` } });
+  } else if (guestToken) {
+    outgoing = req.clone({ setHeaders: { [GUEST_HEADER]: guestToken } });
+  }
+
+  return next(outgoing).pipe(
+    tap((event) => {
+      if (event instanceof HttpResponse) {
+        const minted = event.headers.get(GUEST_HEADER);
+        if (minted && minted !== guestToken) {
+          guests.captureToken(minted);
+        }
+      }
+    }),
     catchError((err: HttpErrorResponse) => {
-      if (err.status === 401 && !isAuthEndpoint(req.url) && tokens.refresh) {
-        return auth.refreshOnce(tokens.refresh).pipe(
-          switchMap((res) => {
-            // Store the rotated refresh token: the one we just used is now
-            // blacklisted server-side (ROTATE_REFRESH_TOKENS + BLACKLIST).
-            tokens.set(res.access, res.refresh);
-            return next(req.clone({ setHeaders: { Authorization: `Bearer ${res.access}` } }));
-          }),
-          catchError((refreshErr) => {
-            tokens.clear();
-            router.navigate(['/auth/login']);
-            return throwError(() => refreshErr);
-          }),
-        );
+      const code = err.error?.error?.code;
+
+      // A guest session ended. Clearing the token means the next write mints a
+      // fresh one; an inline notice explains it. Redirecting a guest to a login
+      // form would reinstate exactly the wall this phase removes (§21.5).
+      if (err.status === 410 && code === 'guest_expired') {
+        guests.onSessionExpired();
+        return throwError(() => err);
+      }
+
+      // An account-only feature. Surfaced as an inline upgrade prompt that
+      // names what the account unlocks — never a dead end (§21.3).
+      if (err.status === 403 && code === 'account_required') {
+        guests.onAccountRequired(err.error?.error?.message ?? '');
+        return throwError(() => err);
+      }
+
+      // The 401 → refresh → /auth/login path is for a JWT principal ONLY.
+      if (err.status === 401 && !isAuthEndpoint(req.url)) {
+        if (!access) {
+          if (guestToken) {
+            guests.onSessionExpired();
+          }
+          return throwError(() => err);
+        }
+        if (tokens.refresh) {
+          return auth.refreshOnce(tokens.refresh).pipe(
+            switchMap((res) => {
+              // Store the rotated refresh token: the one we just used is now
+              // blacklisted server-side (ROTATE_REFRESH_TOKENS + BLACKLIST).
+              tokens.set(res.access, res.refresh);
+              return next(
+                req.clone({ setHeaders: { Authorization: `Bearer ${res.access}` } }),
+              );
+            }),
+            catchError((refreshErr) => {
+              tokens.clear();
+              router.navigate(['/auth/login']);
+              return throwError(() => refreshErr);
+            }),
+          );
+        }
       }
       return throwError(() => err);
     }),

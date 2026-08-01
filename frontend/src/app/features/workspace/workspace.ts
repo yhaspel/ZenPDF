@@ -5,11 +5,13 @@ import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { NgxExtendedPdfViewerModule } from 'ngx-extended-pdf-viewer';
 
+import { GuestFacade } from '../../abstraction/guest.facade';
 import { JobsFacade } from '../../abstraction/jobs.facade';
 import { PagesFacade } from '../../abstraction/pages.facade';
 import { ViewerFacade } from '../../abstraction/viewer.facade';
 import { Job, SearchHit } from '../../core/models/models';
 import { DocumentsService } from '../../core/services/documents.service';
+import { GuestTokenService } from '../../core/services/guest-token.service';
 import { TokenService } from '../../core/services/token.service';
 import { ConfirmService } from '../../shared/confirm.service';
 import { PdfThumbnail } from '../../shared/pdf-thumbnail';
@@ -30,6 +32,8 @@ export class Workspace {
   private jobs = inject(JobsFacade);
   private docsSvc = inject(DocumentsService);
   private tokens = inject(TokenService);
+  protected guests = inject(GuestFacade);
+  private guestTokens = inject(GuestTokenService);
   private route = inject(ActivatedRoute);
   private router = inject(Router);
   private toast = inject(ToastService);
@@ -68,7 +72,27 @@ export class Workspace {
     // operation — without it the viewer keeps rendering the old bytes.
     return d?.current_version ? this.docsSvc.contentUrl(d.id, d.current_version.seq) : '';
   });
-  readonly authHeaders = computed(() => ({ Authorization: `Bearer ${this.tokens.access ?? ''}` }));
+  /**
+   * ngx-extended-pdf-viewer fetches the PDF **outside `HttpClient`**, so the
+   * auth interceptor never runs for it (§21.2, trap 5). This is the one place
+   * the credential has to be assembled by hand — miss it and a guest gets a
+   * working workspace with a blank viewer.
+   *
+   * Depends on `guests.principal()` (a signal) rather than only reading
+   * localStorage, so it recomputes when a token is minted or discarded.
+   */
+  readonly authHeaders = computed(() => {
+    const headers: Record<string, string> = {};
+    if (this.guests.principal() === 'user') {
+      headers['Authorization'] = `Bearer ${this.tokens.access ?? ''}`;
+      return headers;
+    }
+    const guestToken = this.guestTokens.token;
+    if (guestToken) {
+      headers['X-Guest-Token'] = guestToken;
+    }
+    return headers;
+  });
 
   constructor() {
     // Angular reuses this component across /app/doc/:id navigations (split and

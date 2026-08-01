@@ -13,6 +13,9 @@ export interface User {
 export interface AuthTokens {
   access: string;
   refresh: string;
+  /** Present when a guest session was claimed inline on login (§21.5). */
+  claimed?: ClaimSummary;
+  claim_error?: { code: string; message: string; details: Record<string, unknown> };
 }
 
 export interface VersionRef {
@@ -84,24 +87,68 @@ export interface Paginated<T> {
   results: T[];
 }
 
+/** The current principal's resolved tier limits (§16). */
+export interface TierLimits {
+  tier: 'guest' | 'free' | 'pro';
+  storage_mb: number;
+  max_upload_mb: number;
+  max_pages: number;
+  max_concurrent_jobs: number;
+  metered_ops_per_hour: number;
+  ocr_pages_per_day: number;
+  ocr_pages_per_month: number;
+  sign_requests_per_month: number;
+  version_retention: number;
+  library: boolean;
+  ads: boolean;
+}
+
+/** Present only when the caller is a guest principal (§21.2). */
+export interface GuestState {
+  id?: string;
+  expires_at?: string;
+  seconds_remaining?: number;
+  storage_bytes_used?: number;
+}
+
 export interface AppConfig {
-  limits: {
-    max_upload_mb: number;
-    user_storage_quota_mb: number;
-    max_pages: number;
-    version_retention: number;
-    sign_requests_per_month: number;
-    ocr_pages_per_month: number;
-    max_concurrent_jobs: number;
+  principal: 'guest' | 'user' | 'none';
+  limits: TierLimits;
+  guest: GuestState;
+  features: {
+    ads_enabled: boolean;
+    presigned_delivery: boolean;
+    guest_access_enabled: boolean;
+    captcha_enabled: boolean;
   };
-  features: { ads_enabled: boolean; presigned_delivery: boolean };
+  guest_ttl_hours: number;
+  turnstile_site_key: string;
   ads: { client_id: string };
 }
 
 export interface Usage {
   period: string;
+  principal: 'guest' | 'user' | 'none';
+  tier: string;
   storage: { used_bytes: number; quota_bytes: number };
-  counters: { sign_requests: number; ocr_pages: number; conversions: number };
+  counters: {
+    sign_requests: number;
+    ocr_pages: number;
+    conversions: number;
+    heavy_ops: number;
+    metered_ops_this_hour: number;
+  };
+  limits: TierLimits;
+  session?: { expires_at: string; seconds_remaining: number };
+}
+
+/** Result of a claim-on-signup (§21.5). */
+export interface ClaimSummary {
+  documents: number;
+  jobs: number;
+  bytes: number;
+  current_version_bytes: number;
+  already_claimed: boolean;
 }
 
 export interface SearchHit {
