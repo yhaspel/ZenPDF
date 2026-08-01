@@ -19,6 +19,7 @@ import { PdfThumbnail } from '../../shared/pdf-thumbnail';
 import { saveBlob } from '../../shared/save-blob';
 import { ToastService } from '../../shared/toast.service';
 import { Annotate, AnnotateTool } from './annotate';
+import { Edit } from './edit';
 
 // `crop` left the dialog list in Phase 3: it is now drawn on the overlay
 // (Human review queue, 2026-07-19 — "revisit crop to use it then").
@@ -29,7 +30,7 @@ type Dialog = null | 'split' | 'scale' | 'nup' | 'compress' | 'insert';
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
     FormsModule, RouterLink, NgxExtendedPdfViewerModule, CdkDropList, CdkDrag, PdfThumbnail,
-    Annotate,
+    Annotate, Edit,
   ],
   templateUrl: './workspace.html',
 })
@@ -48,7 +49,7 @@ export class Workspace {
   private confirm = inject(ConfirmService);
 
   protected leftTab = signal<'thumbs' | 'outline' | 'history'>('thumbs');
-  protected mode = signal<'view' | 'organize' | 'annotate'>('view');
+  protected mode = signal<'view' | 'organize' | 'annotate' | 'edit'>('view');
   protected annotateTool = signal<AnnotateTool>('select');
   /** Set when Annotate was entered *from* the Organize toolbar's Crop button. */
   private cropReturnsToOrganize = false;
@@ -115,7 +116,8 @@ export class Workspace {
     // page lands the guest directly in the markup tools (§21.6: the page must
     // *be* the tool, with no login prompt anywhere in the path).
     this.route.queryParamMap.pipe(takeUntilDestroyed()).subscribe((params) => {
-      if (params.get('mode') === 'annotate') this.mode.set('annotate');
+      const mode = params.get('mode');
+      if (mode === 'annotate' || mode === 'edit') this.mode.set(mode);
     });
     // reset organize order whenever the version changes
     effect(() => {
@@ -369,6 +371,19 @@ export class Workspace {
   /** Annotate mode produced a new version (save, flatten or overlay crop). */
   onAnnotationsSaved(): void {
     this.viewer.reload();
+  }
+
+  /** Edit mode produced a new version. */
+  onEditSaved(): void {
+    this.viewer.reload();
+  }
+
+  /**
+   * The scanned-page gate's CTA. Phase 6 owns OCR, so until then the button is
+   * disabled with a "coming with OCR tool" tooltip and this never fires.
+   */
+  onOcrRequested(): void {
+    this.toast.info('OCR arrives with the OCR tool.');
   }
 
   /**

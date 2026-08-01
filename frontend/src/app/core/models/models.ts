@@ -253,3 +253,87 @@ export interface ImageAsset {
 export interface ApiError {
   error: { code: string; message: string; details: Record<string, unknown> };
 }
+
+
+// --- Phase 4: content editing (§10) --------------------------------------- //
+
+export interface TextSpan {
+  text: string;
+  font: string;
+  size: number;
+  color: string;
+  bold: boolean;
+  italic: boolean;
+  bbox: Rect;
+}
+
+export interface TextLine {
+  bbox: Rect;
+  spans: TextSpan[];
+}
+
+export interface TextBlock {
+  block_id: number;
+  bbox: Rect;
+  lines: TextLine[];
+  text: string;
+}
+
+export interface PageTextBlocks {
+  page: number;
+  width: number;
+  height: number;
+  rotation: number;
+  /** A page of pixels has nothing to click — the editor gates on this. */
+  is_scanned_page: boolean;
+  blocks: TextBlock[];
+}
+
+export interface PageImage {
+  xref: number;
+  width: number;
+  height: number;
+  bbox: Rect;
+}
+
+export interface PageLink {
+  index: number;
+  bbox: Rect;
+  kind: 'uri' | 'page' | 'other';
+  uri?: string;
+  page?: number;
+}
+
+export interface TextStyle {
+  font_family?: 'helvetica' | 'sans-serif' | 'times' | 'serif' | 'courier' | 'monospace';
+  size?: number;
+  color?: string;
+  align?: 'left' | 'center' | 'right' | 'justify';
+  bold?: boolean;
+  italic?: boolean;
+}
+
+/** One hit from a `find_replace` dry run, for the review list. */
+export interface ReplaceMatch {
+  id: string;
+  page: number;
+  rect: Rect;
+  context: string;
+}
+
+export interface ReplaceReport {
+  query: string;
+  count: number;
+  matches: ReplaceMatch[];
+  replaced: number;
+  dry_run: boolean;
+}
+
+export type StampPosition =
+  | 'top-left' | 'top-center' | 'top-right'
+  | 'bottom-left' | 'bottom-center' | 'bottom-right';
+
+export interface PageRange {
+  pages?: number[];
+  skip_first?: boolean;
+}

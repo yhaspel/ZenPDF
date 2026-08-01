@@ -10,6 +10,9 @@ import {
   ImageAsset,
   Job,
   OutlineItem,
+  PageImage,
+  PageLink,
+  PageTextBlocks,
   PageWords,
   Paginated,
   SearchHit,
@@ -105,6 +108,31 @@ export class DocumentsService {
     let hp = new HttpParams().set('page', String(page));
     if (version) hp = hp.set('version', String(version));
     return this.http.get<PageWords>(`${this.base}/documents/${id}/text-words/`, { params: hp });
+  }
+
+  /** Phase 4 — editable text blocks for one page. */
+  textBlocks(id: string, page: number, version?: number | null): Observable<PageTextBlocks> {
+    let hp = new HttpParams().set('page', String(page));
+    if (version) hp = hp.set('version', String(version));
+    return this.http.get<PageTextBlocks>(`${this.base}/documents/${id}/text-blocks/`, {
+      params: hp,
+    });
+  }
+
+  pageImages(id: string, page: number, version?: number | null): Observable<{ page: number; images: PageImage[] }> {
+    let hp = new HttpParams().set('page', String(page));
+    if (version) hp = hp.set('version', String(version));
+    return this.http.get<{ page: number; images: PageImage[] }>(
+      `${this.base}/documents/${id}/images/`, { params: hp },
+    );
+  }
+
+  pageLinks(id: string, page: number, version?: number | null): Observable<{ page: number; links: PageLink[] }> {
+    let hp = new HttpParams().set('page', String(page));
+    if (version) hp = hp.set('version', String(version));
+    return this.http.get<{ page: number; links: PageLink[] }>(
+      `${this.base}/documents/${id}/links/`, { params: hp },
+    );
   }
 
   /** Ephemeral image asset (§13 `uploads/…`) → an opaque, principal-scoped ref. */

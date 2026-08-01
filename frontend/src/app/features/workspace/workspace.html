@@ -20,6 +20,12 @@
                 [class.text-indigo-600]="mode() !== 'organize'" data-test="organize-toggle">
           {{ mode() === 'organize' ? 'Done' : 'Organize' }}
         </button>
+        <button (click)="mode.set(mode() === 'edit' ? 'view' : 'edit')"
+                class="rounded px-3 py-1 font-medium"
+                [class.bg-indigo-600]="mode() === 'edit'" [class.text-white]="mode() === 'edit'"
+                [class.text-indigo-600]="mode() !== 'edit'" data-test="edit-toggle">
+          {{ mode() === 'edit' ? 'Done' : 'Edit' }}
+        </button>
         <button (click)="mode.set(mode() === 'annotate' ? 'view' : 'annotate')"
                 class="rounded px-3 py-1 font-medium"
                 [class.bg-indigo-600]="mode() === 'annotate'" [class.text-white]="mode() === 'annotate'"
@@ -54,7 +60,16 @@
     }
 
     <!-- Body -->
-    @if (mode() === 'annotate') {
+    @if (mode() === 'edit') {
+      <app-edit
+        [docId]="doc.id"
+        [pageCount]="viewer.pageCount()"
+        [currentSeq]="viewer.currentSeq()"
+        (saved)="onEditSaved()"
+        (conflict)="onAnnotationConflict()"
+        (ocrRequested)="onOcrRequested()"
+      />
+    } @else if (mode() === 'annotate') {
       <app-annotate
         [docId]="doc.id"
         [pageCount]="viewer.pageCount()"

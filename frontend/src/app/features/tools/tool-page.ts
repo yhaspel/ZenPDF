@@ -171,12 +171,19 @@ export class ToolPage {
     const tool = this.tool();
     const primary = docs[0];
 
-    if (tool.kind === 'organize' || tool.kind === 'annotate') {
-      // Inherently interactive: there is no "one click and download" version of
-      // arranging pages or marking a document up. Hand straight to the
-      // workspace, opened on the right mode — still with no login in the path.
+    // Inherently interactive tools: there is no "one click and download"
+    // version of arranging pages, marking a document up or rewriting its text.
+    // Hand straight to the workspace, opened on the right mode — still with no
+    // login anywhere in the path.
+    const interactive: Partial<Record<typeof tool.kind, string>> = {
+      organize: '',
+      annotate: 'annotate',
+      edit: 'edit',
+    };
+    if (tool.kind in interactive) {
+      const mode = interactive[tool.kind];
       this.router.navigate(['/app/doc', primary.id], {
-        queryParams: tool.kind === 'annotate' ? { mode: 'annotate' } : {},
+        queryParams: mode ? { mode } : {},
       });
       return;
     }
@@ -199,6 +206,10 @@ export class ToolPage {
         type: 'extract_pages',
         params: { pages: [0], as_new_document: true },
       },
+      // Phase 4's two one-shot tools run with sensible defaults here and offer
+      // the workspace for anything finer.
+      watermark: { type: 'watermark', params: { text: 'DRAFT', under: true, opacity: 0.25 } },
+      'page-numbers': { type: 'page_numbers', params: { position: 'bottom-center', format: '{page}' } },
     };
     const op = single[tool.kind];
     this.track(

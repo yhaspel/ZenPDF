@@ -20,7 +20,8 @@
       draggable="false"
     />
   } @else {
-    <div class="absolute inset-0 flex items-center justify-center bg-slate-50 text-sm text-slate-300">
+    <div class="pointer-events-none absolute inset-0 flex items-center justify-center bg-slate-50 text-sm text-slate-300"
+         data-test="overlay-placeholder">
       Rendering page {{ page() + 1 }}…
     </div>
   }
@@ -59,11 +60,19 @@
       </marker>
     </defs>
 
+    <!--
+      `pointer-events="all"` rather than a CSS class: an SVG shape drawn with
+      `fill="none"` is only hit-testable on its 1px stroke, so an outlined box
+      (a text block, an empty rectangle) could otherwise be selected only by
+      clicking exactly on its border. `all` makes the interior count too.
+      Switched off entirely while a draw tool is active, so an existing item
+      never swallows the gesture that is drawing the next one.
+    -->
     @for (item of items(); track trackItem($index, item)) {
       @if (item.page === page()) {
         <g
           [attr.opacity]="item.opacity ?? 1"
-          class="pointer-events-auto"
+          [attr.pointer-events]="tool() === 'select' && !item.locked ? 'all' : 'none'"
           [class.cursor-move]="tool() === 'select' && !item.locked"
           (pointerdown)="onItemPointerDown($event, item)"
           data-test="overlay-item"
