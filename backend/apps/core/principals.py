@@ -119,6 +119,18 @@ def principal_of(job: Any) -> Any:
     return job.guest_session or job.user
 
 
+def created_by_user(job: Any) -> Any:
+    """The `User` to stamp on a DocumentVersion's `created_by` audit field.
+
+    Not an ownership expression — `created_by` is provenance, and §9 has it
+    nullable precisely so a guest version can say "nobody in particular". It
+    lives here anyway because §21.2 is literal: `job.user` is read in exactly
+    one module, so the grep gate stays a clean signal instead of needing an
+    allowlist entry that would also hide the worker trap.
+    """
+    return job.user
+
+
 def principal_of_document(document: Any) -> Any:
     """The principal that owns a Document."""
     return document.guest_session or document.owner

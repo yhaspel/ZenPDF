@@ -13,7 +13,13 @@ from celery import shared_task
 from django.conf import settings
 
 from apps.core import limits as L
-from apps.core.principals import is_guest, owned_by, owner_kwargs, principal_of
+from apps.core.principals import (
+    created_by_user,
+    is_guest,
+    owned_by,
+    owner_kwargs,
+    principal_of,
+)
 from apps.jobs.models import Job
 from apps.pdf_engine import registry
 from apps.pdf_engine.engine import pages as P
@@ -217,7 +223,7 @@ def run_operation(self, job_id: str):
 
             if kind == "version":
                 version = _save_new_version(document=document, data=payload, label=label,
-                                            created_by=job.user, job=job)
+                                            created_by=created_by_user(job), job=job)
                 job.mark_succeeded({
                     "document_id": str(document.id),
                     "version_id": str(version.id),
@@ -230,7 +236,7 @@ def run_operation(self, job_id: str):
                     new_doc = _create_document_from_bytes(
                         principal=principal_of(job), folder=document.folder,
                         title=item["title"], data=item["data"],
-                        created_by=job.user, job=job,
+                        created_by=created_by_user(job), job=job,
                     )
                     created.append(str(new_doc.id))
                 job.mark_succeeded({"documents": created})
@@ -279,7 +285,7 @@ def run_cross_document_operation(self, job_id: str):
 
         new_doc = _create_document_from_bytes(
             principal=principal_of(job), folder=folder, title=title, data=data,
-            created_by=job.user, job=job,
+            created_by=created_by_user(job), job=job,
         )
         job.mark_succeeded({"documents": [str(new_doc.id)]})
     except EngineError as exc:
@@ -317,7 +323,7 @@ def revert_version(self, job_id: str):
                 return
             version = _save_new_version(
                 document=document, data=data,
-                label=f"Reverted to v{target_seq}", created_by=job.user, job=job,
+                label=f"Reverted to v{target_seq}", created_by=created_by_user(job), job=job,
             )
             job.mark_succeeded({
                 "document_id": str(document.id),

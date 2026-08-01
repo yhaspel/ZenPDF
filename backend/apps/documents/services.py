@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import hashlib
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 from django.conf import settings
 from django.utils import timezone
@@ -18,7 +18,7 @@ from apps.pdf_engine.storage import get_storage
 from .models import Document, Folder
 
 
-def guest_expiry() -> timezone.datetime:
+def guest_expiry() -> datetime:
     """Initial TTL for a guest document; the session's own sliding expiry is
     authoritative for purging (§21.4)."""
     return timezone.now() + timedelta(hours=settings.GUEST_TTL_HOURS)

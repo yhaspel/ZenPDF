@@ -40,13 +40,19 @@ def preflight(session: GuestSession, user) -> dict:
     from apps.jobs.models import Job
 
     documents = Document.objects.filter(guest_session=session)
-    incoming_bytes = int(
-        documents.aggregate(total=Sum("size_bytes"))["total"] or 0
-    )
+    # Measure what is actually transferred: `session.storage_bytes_used` is the
+    # counter folded into `User.storage_bytes_used`, and it accounts for *every*
+    # version blob. Summing `Document.size_bytes` would only see current
+    # versions, so a session with edit history could pass this check and still
+    # push the account over its quota.
+    incoming_bytes = int(session.storage_bytes_used)
     summary = {
         "documents": documents.count(),
         "jobs": Job.objects.filter(guest_session=session).count(),
         "bytes": incoming_bytes,
+        "current_version_bytes": int(
+            documents.aggregate(total=Sum("size_bytes"))["total"] or 0
+        ),
     }
 
     limits = for_principal(user)
@@ -88,7 +94,10 @@ def claim_session(session: GuestSession, user) -> dict:
     session = GuestSession.objects.select_for_update().get(pk=session.pk)
 
     if session.claimed_at is not None:
-        return {"documents": 0, "jobs": 0, "bytes": 0, "already_claimed": True}
+        return {
+            "documents": 0, "jobs": 0, "bytes": 0,
+            "current_version_bytes": 0, "already_claimed": True,
+        }
 
     summary = preflight(session, user)
 

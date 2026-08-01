@@ -356,6 +356,9 @@ class VersionListView(generics.ListAPIView):
     pagination_class = None
 
     def get_queryset(self):
+        # Schema generation introspects the queryset with no URL kwargs bound.
+        if getattr(self, "swagger_fake_view", False):
+            return DocumentVersion.objects.none()
         document = _owned_document(self.request, self.kwargs["pk"])
         return document.versions.select_related("job", "created_by").all()
 
