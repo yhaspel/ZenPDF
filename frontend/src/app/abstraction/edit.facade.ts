@@ -39,7 +39,15 @@ export class EditFacade {
   private _blocks = signal<Map<number, PageTextBlocks>>(new Map());
   private _images = signal<Map<number, PageImage[]>>(new Map());
   private _links = signal<Map<number, PageLink[]>>(new Map());
-  private _edits = signal<Map<number, BlockEdit>>(new Map());
+  /**
+   * Staged edits, keyed `"{page}:{block_id}"`.
+   *
+   * `block_id` is PyMuPDF's *per-page* block number and restarts at 0 on every
+   * page, so keying on it alone made editing block 0 of page 2 overwrite the
+   * edit staged for block 0 of page 1 — and prefill the editor with the other
+   * page's text.
+   */
+  private _edits = signal<Map<string, BlockEdit>>(new Map());
   private _report = signal<ReplaceReport | null>(null);
   private _excluded = signal<Set<string>>(new Set());
   private _loading = signal(false);
@@ -81,8 +89,12 @@ export class EditFacade {
     return this._blocks().has(page);
   }
 
-  editFor(blockId: number): BlockEdit | undefined {
-    return this._edits().get(blockId);
+  private static key(page: number, blockId: number): string {
+    return `${page}:${blockId}`;
+  }
+
+  editFor(page: number, blockId: number): BlockEdit | undefined {
+    return this._edits().get(EditFacade.key(page, blockId));
   }
 
   // ------------------------------------------------------------------ //
@@ -114,6 +126,7 @@ export class EditFacade {
 
   /** A new version invalidates every cached page. */
   reset(): void {
+    this._reportQuery = null;
     this._blocks.set(new Map());
     this._images.set(new Map());
     this._links.set(new Map());
@@ -126,19 +139,20 @@ export class EditFacade {
   // Text editing
   // ------------------------------------------------------------------ //
   stageEdit(block: TextBlock, page: number, newText: string, style: TextStyle): void {
+    const key = EditFacade.key(page, block.block_id);
     if (newText === block.text) {
       // Reverting to the original is not an edit; keeping it would send a
       // no-op through the redact-and-reinsert path and re-render the block for
       // nothing.
       this._edits.update((map) => {
         const next = new Map(map);
-        next.delete(block.block_id);
+        next.delete(key);
         return next;
       });
       return;
     }
     this._edits.update((map) =>
-      new Map(map).set(block.block_id, {
+      new Map(map).set(key, {
         block_id: block.block_id,
         page,
         block_bbox: block.bbox,
@@ -149,10 +163,10 @@ export class EditFacade {
     );
   }
 
-  discardEdit(blockId: number): void {
+  discardEdit(page: number, blockId: number): void {
     this._edits.update((map) => {
       const next = new Map(map);
-      next.delete(blockId);
+      next.delete(EditFacade.key(page, blockId));
       return next;
     });
   }
@@ -194,6 +208,24 @@ export class EditFacade {
   setReport(report: ReplaceReport | null): void {
     this._report.set(report);
     this._excluded.set(new Set());
+  }
+
+  /**
+   * The query a held report was produced for.
+   *
+   * Match ids are positional (`p{page}:{ordinal}`), so applying a report's ids
+   * with different search parameters resolves them against a *different* set of
+   * hits — the user unticks "cat" and gets "cat" replaced anyway. The component
+   * drops the report whenever the query changes; this is what it compares.
+   */
+  reportQuery(): { find: string; matchCase: boolean } | null {
+    return this._reportQuery;
+  }
+
+  private _reportQuery: { find: string; matchCase: boolean } | null = null;
+
+  rememberQuery(find: string, matchCase: boolean): void {
+    this._reportQuery = { find, matchCase };
   }
 
   toggleMatch(id: string): void {

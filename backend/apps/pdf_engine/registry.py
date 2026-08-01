@@ -16,7 +16,10 @@ class Op:
     type: str
     queue: str
     schema: dict
-    produces: str  # "version" | "documents"
+    # "version" | "documents" | "version_or_report" — the last one is
+    # `find_replace`, whose dry run inspects the document and changes nothing,
+    # so it must not mint a version (§10, amended).
+    produces: str
     source_id_params: tuple = field(default_factory=tuple)
 
     @property
@@ -54,7 +57,7 @@ OPERATIONS: dict[str, Op] = {
     "edit_text": Op("edit_text", "default", S.EDIT_TEXT, "version"),
     "add_text": Op("add_text", "default", S.ADD_TEXT, "version"),
     "whiteout": Op("whiteout", "default", S.WHITEOUT, "version"),
-    "find_replace": Op("find_replace", "default", S.FIND_REPLACE, "version"),
+    "find_replace": Op("find_replace", "default", S.FIND_REPLACE, "version_or_report"),
     "add_image": Op("add_image", "default", S.ADD_IMAGE, "version"),
     "replace_image": Op("replace_image", "default", S.REPLACE_IMAGE, "version"),
     "delete_image": Op("delete_image", "default", S.DELETE_IMAGE, "version"),

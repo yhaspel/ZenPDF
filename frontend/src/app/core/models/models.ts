@@ -74,6 +74,9 @@ export interface Job {
   base_version_seq: number | null;
   error_code: string;
   error_message: string;
+  /** Structured half of the §6 error shape — e.g. `text_overflow`'s
+   *  `fits_at_size`, which the editor turns into an offer. */
+  error_details: Record<string, unknown>;
   result: Record<string, unknown> | null;
   created_at: string;
   started_at: string | null;

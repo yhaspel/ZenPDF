@@ -59,6 +59,11 @@
           <label class="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Add an image</label>
           <input type="file" accept="image/png,image/jpeg" (change)="onImageFile($event)"
                  class="text-[11px]" data-test="image-upload" />
+          <label class="flex items-center gap-1 text-[11px] text-slate-500">
+            <input type="checkbox" [ngModel]="imageKeepAspect()"
+                   (ngModelChange)="imageKeepAspect.set($event)" data-test="image-keep-aspect" />
+            Keep the original proportions
+          </label>
           @if (selectedImage(); as img) {
             <div class="rounded border border-indigo-200 bg-indigo-50 p-2">
               <p class="text-[11px] text-indigo-800">Selected: {{ img.width }}×{{ img.height }}</p>
@@ -85,12 +90,13 @@
         <!-- Find & replace: two steps, always -->
         <div class="border-t border-slate-200 pt-3">
           <p class="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-400">Find &amp; replace</p>
-          <input [ngModel]="findText()" (ngModelChange)="findText.set($event)" placeholder="Find"
-                 class="mb-1 w-full rounded border border-slate-300 px-2 py-1" data-test="find-input" />
+          <input [ngModel]="findText()" (ngModelChange)="findText.set($event); onQueryChanged()" placeholder="Find"
+                 class="mb-1 w-full rounded border border-slate-300 px-2 py-1" data-test="replace-find-input" />
           <input [ngModel]="replaceText()" (ngModelChange)="replaceText.set($event)" placeholder="Replace with"
                  class="mb-1 w-full rounded border border-slate-300 px-2 py-1" data-test="replace-input" />
           <label class="mb-1 flex items-center gap-1 text-[11px] text-slate-500">
-            <input type="checkbox" [ngModel]="matchCase()" (ngModelChange)="matchCase.set($event)"
+            <input type="checkbox" [ngModel]="matchCase()"
+                   (ngModelChange)="matchCase.set($event); onQueryChanged()"
                    data-test="match-case" /> Match case
           </label>
           <button class="w-full rounded border border-slate-300 px-2 py-1 disabled:opacity-40"
@@ -135,12 +141,27 @@
           <label class="text-[11px] text-slate-500">Opacity {{ (wmOpacity() * 100).toFixed(0) }}%</label>
           <input type="range" min="0.05" max="1" step="0.05" [ngModel]="wmOpacity()"
                  (ngModelChange)="wmOpacity.set(+$event)" class="w-full" data-test="wm-opacity" />
+          <label class="text-[11px] text-slate-500">Angle {{ wmRotation() }}°</label>
+          <input type="range" min="-180" max="180" step="5" [ngModel]="wmRotation()"
+                 (ngModelChange)="wmRotation.set(+$event)" class="w-full" data-test="wm-rotation" />
+          <div class="flex items-center gap-2">
+            <label class="flex-1 text-[11px] text-slate-500">Size {{ wmSize() }}pt</label>
+            <input type="number" min="8" max="200" [ngModel]="wmSize()"
+                   (ngModelChange)="wmSize.set(+$event)"
+                   class="w-16 rounded border border-slate-300 px-1 py-0.5" data-test="wm-size" />
+            <input type="color" [ngModel]="wmColor()" (ngModelChange)="wmColor.set($event)"
+                   class="h-7 w-9" data-test="wm-color" />
+          </div>
           <label class="flex items-center gap-1 text-[11px] text-slate-500">
             <input type="checkbox" [ngModel]="wmTiled()" (ngModelChange)="wmTiled.set($event)" /> Tile across the page
           </label>
           <label class="flex items-center gap-1 text-[11px] text-slate-500">
             <input type="checkbox" [ngModel]="wmUnder()" (ngModelChange)="wmUnder.set($event)" />
             Behind the content (keeps it readable)
+          </label>
+          <label class="flex items-center gap-1 text-[11px] text-slate-500">
+            <input type="checkbox" [ngModel]="wmSkipFirst()" (ngModelChange)="wmSkipFirst.set($event)"
+                   data-test="wm-skip-first" /> Skip the first page
           </label>
           <button class="mt-1 w-full rounded bg-indigo-600 px-2 py-1 text-white disabled:opacity-40"
                   [disabled]="busy()" (click)="applyWatermark()" data-test="wm-apply">Apply watermark</button>
@@ -155,6 +176,9 @@
                   class="mb-1 w-full rounded border border-slate-300 px-2 py-1" data-test="pn-position">
             @for (p of positions; track p) { <option [value]="p">{{ p }}</option> }
           </select>
+          <label class="text-[11px] text-slate-500">Start numbering at</label>
+          <input type="number" min="0" [ngModel]="pnStartAt()" (ngModelChange)="pnStartAt.set(+$event)"
+                 class="mb-1 w-full rounded border border-slate-300 px-2 py-1" data-test="pn-start-at" />
           <label class="flex items-center gap-1 text-[11px] text-slate-500">
             <input type="checkbox" [ngModel]="pnSkipFirst()" (ngModelChange)="pnSkipFirst.set($event)"
                    data-test="pn-skip-first" /> Skip the first page
@@ -165,23 +189,55 @@
 
         <div class="border-t border-slate-200 pt-3">
           <p class="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-400">Header / footer</p>
+          <p class="mb-1 text-[10px] text-slate-400">Header — left / centre / right</p>
+          <div class="mb-1 flex gap-1">
+            <input [ngModel]="hfHeader().left" (ngModelChange)="setHeaderSlot('left', $event)"
+                   placeholder="Left" class="w-1/3 rounded border border-slate-300 px-1 py-1 text-[11px]"
+                   data-test="hf-top-left" />
+            <input [ngModel]="hfHeader().center" (ngModelChange)="setHeaderSlot('center', $event)"
+                   placeholder="Centre" class="w-1/3 rounded border border-slate-300 px-1 py-1 text-[11px]"
+                   data-test="hf-top-center" />
+            <input [ngModel]="hfHeader().right" (ngModelChange)="setHeaderSlot('right', $event)"
+                   placeholder="Right" class="w-1/3 rounded border border-slate-300 px-1 py-1 text-[11px]"
+                   data-test="hf-top-right" />
+          </div>
+          <p class="mb-1 text-[10px] text-slate-400">Footer — left / centre / right</p>
+          <div class="mb-1 flex gap-1">
+            <input [ngModel]="hfFooterSlots().left" (ngModelChange)="setFooterSlot('left', $event)"
+                   placeholder="Left" class="w-1/3 rounded border border-slate-300 px-1 py-1 text-[11px]"
+                   data-test="hf-bottom-left" />
+            <input [ngModel]="hfFooterSlots().center" (ngModelChange)="setFooterSlot('center', $event)"
+                   placeholder="Centre" class="w-1/3 rounded border border-slate-300 px-1 py-1 text-[11px]"
+                   data-test="hf-bottom-center" />
+            <input [ngModel]="hfFooterSlots().right" (ngModelChange)="setFooterSlot('right', $event)"
+                   placeholder="Right" class="w-1/3 rounded border border-slate-300 px-1 py-1 text-[11px]"
+                   data-test="hf-bottom-right" />
+          </div>
+          <p class="mb-1 text-[10px] text-slate-400">Tokens: &#123;page&#125; &#123;total&#125; &#123;date&#125;</p>
           <label class="flex items-center gap-1 text-[11px] text-slate-500">
-            <input type="checkbox" [ngModel]="hfFooter()" (ngModelChange)="hfFooter.set($event)" /> Footer instead of header
+            <input type="checkbox" [ngModel]="hfSkipFirst()" (ngModelChange)="hfSkipFirst.set($event)"
+                   data-test="hf-skip-first" /> Skip the first page
           </label>
-          <input [ngModel]="hfLeft()" (ngModelChange)="hfLeft.set($event)" placeholder="Left"
-                 class="mb-1 w-full rounded border border-slate-300 px-2 py-1" data-test="hf-left" />
-          <input [ngModel]="hfCenter()" (ngModelChange)="hfCenter.set($event)" placeholder="Center"
-                 class="mb-1 w-full rounded border border-slate-300 px-2 py-1" data-test="hf-center" />
-          <input [ngModel]="hfRight()" (ngModelChange)="hfRight.set($event)" placeholder="Right"
-                 class="mb-1 w-full rounded border border-slate-300 px-2 py-1" data-test="hf-right" />
-          <button class="w-full rounded bg-indigo-600 px-2 py-1 text-white disabled:opacity-40"
+          <button class="mt-1 w-full rounded bg-indigo-600 px-2 py-1 text-white disabled:opacity-40"
                   [disabled]="busy()" (click)="applyHeaderFooter()" data-test="hf-apply">Apply</button>
         </div>
 
         <div class="border-t border-slate-200 pt-3">
           <p class="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-400">Bates numbering</p>
-          <input [ngModel]="batesPrefix()" (ngModelChange)="batesPrefix.set($event)" placeholder="Prefix"
-                 class="mb-1 w-full rounded border border-slate-300 px-2 py-1" data-test="bates-prefix" />
+          <div class="mb-1 flex gap-1">
+            <input [ngModel]="batesPrefix()" (ngModelChange)="batesPrefix.set($event)" placeholder="Prefix"
+                   class="w-1/2 rounded border border-slate-300 px-2 py-1" data-test="bates-prefix" />
+            <input [ngModel]="batesSuffix()" (ngModelChange)="batesSuffix.set($event)" placeholder="Suffix"
+                   class="w-1/2 rounded border border-slate-300 px-2 py-1" data-test="bates-suffix" />
+          </div>
+          <select [ngModel]="batesPosition()" (ngModelChange)="batesPosition.set($event)"
+                  class="mb-1 w-full rounded border border-slate-300 px-2 py-1" data-test="bates-position">
+            @for (p of positions; track p) { <option [value]="p">{{ p }}</option> }
+          </select>
+          <label class="mb-1 flex items-center gap-1 text-[11px] text-slate-500">
+            <input type="checkbox" [ngModel]="batesSkipFirst()" (ngModelChange)="batesSkipFirst.set($event)"
+                   data-test="bates-skip-first" /> Skip the first page
+          </label>
           <div class="mb-1 flex gap-1">
             <input type="number" min="0" [ngModel]="batesStart()" (ngModelChange)="batesStart.set(+$event)"
                    class="w-1/2 rounded border border-slate-300 px-2 py-1" data-test="bates-start" />
@@ -190,6 +246,27 @@
           </div>
           <button class="w-full rounded bg-indigo-600 px-2 py-1 text-white disabled:opacity-40"
                   [disabled]="busy()" (click)="applyBates()" data-test="bates-apply">Apply Bates</button>
+        </div>
+
+        <div class="border-t border-slate-200 pt-3">
+          <p class="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+            Overlay another PDF
+          </p>
+          <p class="mb-1 text-[10px] text-slate-400">Letterhead or background, from one of your documents.</p>
+          <select [ngModel]="overlayDocId()" (ngModelChange)="overlayDocId.set($event)"
+                  (focus)="loadOverlaySources()"
+                  class="mb-1 w-full rounded border border-slate-300 px-2 py-1" data-test="overlay-doc">
+            <option value="">Choose a document…</option>
+            @for (d of overlayDocs(); track d.id) { <option [value]="d.id">{{ d.title }}</option> }
+          </select>
+          <select [ngModel]="overlayMode()" (ngModelChange)="overlayMode.set($event)"
+                  class="mb-1 w-full rounded border border-slate-300 px-2 py-1" data-test="overlay-mode">
+            <option value="background">Behind the content</option>
+            <option value="foreground">In front of the content</option>
+          </select>
+          <button class="w-full rounded bg-indigo-600 px-2 py-1 text-white disabled:opacity-40"
+                  [disabled]="busy() || !overlayDocId()" (click)="applyOverlay()"
+                  data-test="overlay-apply">Apply overlay</button>
         </div>
       </div>
     }
@@ -205,8 +282,15 @@
                class="w-full rounded border border-slate-300 px-2 py-1" data-test="meta-subject" />
         <input [ngModel]="metaKeywords()" (ngModelChange)="metaKeywords.set($event)" placeholder="Keywords"
                class="w-full rounded border border-slate-300 px-2 py-1" data-test="meta-keywords" />
+        <label class="flex items-center gap-1 text-[11px] text-slate-500">
+          <input type="checkbox" [ngModel]="metaClear()" (ngModelChange)="metaClear.set($event)"
+                 data-test="meta-clear" />
+          Clear all properties instead (removes author, title, dates and producer)
+        </label>
         <button class="rounded bg-indigo-600 px-2 py-1 text-white disabled:opacity-40"
-                [disabled]="busy()" (click)="applyMetadata()" data-test="meta-apply">Save properties</button>
+                [disabled]="busy()" (click)="applyMetadata()" data-test="meta-apply">
+          {{ metaClear() ? 'Clear properties' : 'Save properties' }}
+        </button>
 
         <div class="border-t border-slate-200 pt-3">
           <p class="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-400">Bookmarks</p>
@@ -221,6 +305,8 @@
               <input type="number" min="1" [ngModel]="bm.page"
                      (ngModelChange)="updateBookmark($index, { page: +$event })"
                      class="w-12 rounded border border-slate-300 px-1 py-0.5 text-[11px]" />
+              <button class="text-[10px] text-indigo-600" (click)="bookmarkToCurrentPage($index)"
+                      title="Set to the page you are viewing" data-test="bookmark-here">here</button>
               <button class="text-rose-600" (click)="removeBookmark($index)">✕</button>
             </div>
           }

@@ -42,6 +42,27 @@ const GESTURE: Record<EditMode, OverlayTool> = {
   link: 'rect',
 };
 
+/**
+ * The span that carries the most text in a block.
+ *
+ * phase-04 asks for "font-size/family approximated from the **dominant** span".
+ * Taking `spans[0]` gets the first fragment, which in a heading followed by a
+ * run of body text is routinely the wrong size.
+ */
+function dominantSpan(block: TextBlock) {
+  let best: TextBlock['lines'][number]['spans'][number] | undefined;
+  let bestLength = -1;
+  for (const line of block.lines) {
+    for (const span of line.spans) {
+      if (span.text.length > bestLength) {
+        bestLength = span.text.length;
+        best = span;
+      }
+    }
+  }
+  return best;
+}
+
 const POSITIONS: StampPosition[] = [
   'top-left', 'top-center', 'top-right',
   'bottom-left', 'bottom-center', 'bottom-right',
@@ -106,20 +127,33 @@ export class Edit {
   // stamps
   protected wmText = signal('DRAFT');
   protected wmOpacity = signal(0.25);
+  protected wmRotation = signal(-45);
+  protected wmSize = signal(48);
+  protected wmColor = signal('#808080');
   protected wmTiled = signal(false);
   protected wmUnder = signal(true);
+  protected wmSkipFirst = signal(false);
   protected wmImageRef = signal<string | null>(null);
   protected pnFormat = signal('{page}');
   protected pnPosition = signal<StampPosition>('bottom-center');
   protected pnStartAt = signal(1);
   protected pnSkipFirst = signal(false);
-  protected hfLeft = signal('');
-  protected hfCenter = signal('');
-  protected hfRight = signal('');
-  protected hfFooter = signal(false);
+  // Six slots (§phase-04): a header *and* a footer in one operation.
+  protected hfHeader = signal({ left: '', center: '', right: '' });
+  protected hfFooterSlots = signal({ left: '', center: '', right: '' });
+  protected hfSkipFirst = signal(false);
   protected batesPrefix = signal('');
+  protected batesSuffix = signal('');
   protected batesStart = signal(1);
   protected batesDigits = signal(6);
+  protected batesPosition = signal<StampPosition>('bottom-right');
+  protected batesSkipFirst = signal(false);
+  protected metaClear = signal(false);
+  protected imageKeepAspect = signal(true);
+  /** Overlay (letterhead) source — another document the caller owns. */
+  protected overlayDocs = signal<{ id: string; title: string }[]>([]);
+  protected overlayDocId = signal('');
+  protected overlayMode = signal<'foreground' | 'background'>('background');
 
   // info
   protected metaTitle = signal('');
@@ -140,7 +174,7 @@ export class Edit {
 
     if (mode === 'text') {
       for (const block of this.edits.blocksFor(page)) {
-        const staged = this.edits.editFor(block.block_id);
+        const staged = this.edits.editFor(page, block.block_id);
         items.push({
           id: `b${block.block_id}`,
           page,
@@ -187,13 +221,19 @@ export class Edit {
   });
 
   constructor() {
+    // One effect, not two. Splitting "reset on version change" from "load the
+    // page" made them fight: `reset()` replaced the very signal the loader
+    // reads, dirtying it and refiring the fetch before the first response
+    // landed — six requests per page open instead of three.
+    let lastSeq: number | null | undefined;
     effect(() => {
-      this.edits.load(this.docId(), this.page(), this.currentSeq());
-    });
-    // A new version invalidates every cached page and every staged edit.
-    effect(() => {
-      this.currentSeq();
-      this.edits.reset();
+      const seq = this.currentSeq();
+      const page = this.page();
+      if (lastSeq !== seq) {
+        lastSeq = seq;
+        this.edits.reset();
+      }
+      this.edits.load(this.docId(), page, seq);
     });
   }
 
@@ -220,10 +260,10 @@ export class Edit {
   }
 
   protected openEditor(block: TextBlock): void {
-    const staged = this.edits.editFor(block.block_id);
+    const staged = this.edits.editFor(this.page(), block.block_id);
     this.editingBlock.set(block);
     this.draftText.set(staged?.new_text ?? block.text);
-    const span = block.lines[0]?.spans[0];
+    const span = dominantSpan(block);
     if (span) {
       this.style.set({
         font_family: this.style().font_family,
@@ -374,12 +414,18 @@ export class Edit {
   // ------------------------------------------------------------------ //
   // Find & replace
   // ------------------------------------------------------------------ //
+  /** Changing the query invalidates any held report — see `reportQuery`. */
+  protected onQueryChanged(): void {
+    if (this.edits.report()) this.edits.setReport(null);
+  }
+
   protected preview(): void {
     const find = this.findText().trim();
     if (!find) return;
     // Drop the previous results first: leaving them on screen next to a new
     // query shows matches for a search the user has already moved on from.
     this.edits.setReport(null);
+    this.edits.rememberQuery(find, this.matchCase());
     this.busy.set(true);
     this.edits.preview(this.docId(), this.currentSeq(), find, this.matchCase()).subscribe({
       next: (job) => {
@@ -406,12 +452,27 @@ export class Edit {
       this.toast.info('Nothing selected to replace');
       return;
     }
+    // The ids are positional, so they only mean anything against the search
+    // that produced them. Applying them with a changed query silently replaces
+    // the wrong occurrences.
+    const held = this.edits.reportQuery();
+    const find = this.findText().trim();
+    if (!held || held.find !== find || held.matchCase !== this.matchCase()) {
+      this.edits.setReport(null);
+      this.toast.info('The search changed — preview the matches again.');
+      return;
+    }
     this.busy.set(true);
     this.edits
-      .execute(this.docId(), this.currentSeq(), this.findText().trim(),
-               this.replaceText(), this.matchCase())
+      .execute(this.docId(), this.currentSeq(), find, this.replaceText(),
+               this.matchCase())
       .subscribe({
-        next: (job) => this.onJob(job, `Replaced ${kept.length} match(es)`),
+        // Report what the *server* did, not what we asked for.
+        next: (job) => this.onJob(
+          job,
+          `Replaced ${(job.result?.['report'] as { replaced?: number } | undefined)
+            ?.replaced ?? kept.length} match(es)`,
+        ),
         error: () => this.fail(),
       });
   }
@@ -427,9 +488,16 @@ export class Edit {
     const ref = this.wmImageRef();
     const params: Record<string, unknown> = {
       opacity: this.wmOpacity(), tiled: this.wmTiled(), under: this.wmUnder(),
+      scale: 1, range: this.wmSkipFirst() ? { skip_first: true } : {},
     };
-    if (ref) params['image_ref'] = ref;
-    else params['text'] = this.wmText();
+    if (ref) {
+      params['image_ref'] = ref;
+    } else {
+      params['text'] = this.wmText();
+      params['rotation'] = this.wmRotation();
+      params['size'] = this.wmSize();
+      params['color'] = this.wmColor();
+    }
     this.run('watermark', params, 'Watermark applied');
   }
 
@@ -455,32 +523,78 @@ export class Edit {
   }
 
   protected applyHeaderFooter(): void {
-    const prefix = this.hfFooter() ? 'bottom' : 'top';
     const segments: Record<string, string> = {};
-    if (this.hfLeft()) segments[`${prefix}-left`] = this.hfLeft();
-    if (this.hfCenter()) segments[`${prefix}-center`] = this.hfCenter();
-    if (this.hfRight()) segments[`${prefix}-right`] = this.hfRight();
+    for (const [slot, value] of Object.entries(this.hfHeader())) {
+      if (value) segments[`top-${slot}`] = value;
+    }
+    for (const [slot, value] of Object.entries(this.hfFooterSlots())) {
+      if (value) segments[`bottom-${slot}`] = value;
+    }
     if (!Object.keys(segments).length) {
       this.toast.info('Fill at least one slot');
       return;
     }
-    this.run('header_footer', { segments }, 'Header/footer applied');
+    this.run('header_footer', {
+      segments,
+      range: this.hfSkipFirst() ? { skip_first: true } : {},
+    }, 'Header/footer applied');
+  }
+
+  protected setHeaderSlot(slot: 'left' | 'center' | 'right', value: string): void {
+    this.hfHeader.update((v) => ({ ...v, [slot]: value }));
+  }
+
+  protected setFooterSlot(slot: 'left' | 'center' | 'right', value: string): void {
+    this.hfFooterSlots.update((v) => ({ ...v, [slot]: value }));
   }
 
   protected applyBates(): void {
     this.run('bates', {
-      prefix: this.batesPrefix(), start: this.batesStart(), digits: this.batesDigits(),
+      prefix: this.batesPrefix(), suffix: this.batesSuffix(),
+      start: this.batesStart(), digits: this.batesDigits(),
+      position: this.batesPosition(),
+      range: this.batesSkipFirst() ? { skip_first: true } : {},
     }, 'Bates numbering applied');
+  }
+
+  /** Stamp a page of another document over (or under) this one — letterheads. */
+  protected loadOverlaySources(): void {
+    this.docsSvc.list({}).subscribe({
+      next: (page) => this.overlayDocs.set(
+        page.results
+          .filter((d) => d.id !== this.docId())
+          .map((d) => ({ id: d.id, title: d.title })),
+      ),
+      error: () => this.overlayDocs.set([]),
+    });
+  }
+
+  protected applyOverlay(): void {
+    const id = this.overlayDocId();
+    if (!id) {
+      this.toast.info('Choose a document to overlay');
+      return;
+    }
+    this.run('overlay_pdf', { overlay_document_id: id, mode: this.overlayMode() },
+             'Overlay applied');
   }
 
   // ------------------------------------------------------------------ //
   // Info
   // ------------------------------------------------------------------ //
   protected applyMetadata(): void {
+    if (this.metaClear()) {
+      this.run('set_metadata', { clear: true }, 'Metadata cleared');
+      return;
+    }
     this.run('set_metadata', {
       title: this.metaTitle(), author: this.metaAuthor(),
       subject: this.metaSubject(), keywords: this.metaKeywords(),
     }, 'Metadata updated');
+  }
+
+  protected bookmarkToCurrentPage(index: number): void {
+    this.updateBookmark(index, { page: this.page() + 1 });
   }
 
   protected addBookmark(): void {
@@ -538,7 +652,7 @@ export class Edit {
       } else if (job.error_code === 'text_overflow') {
         // The engine tells us the size that *would* fit; offering the number is
         // the whole point of the error contract.
-        const fits = (job.result?.['fits_at_size'] as number) ?? null;
+        const fits = (job.error_details?.['fits_at_size'] as number) ?? null;
         this.toast.error(
           fits
             ? `That text does not fit. It would fit at about ${fits}pt.`

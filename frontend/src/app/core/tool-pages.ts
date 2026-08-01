@@ -364,11 +364,11 @@ export const TOOL_PAGES: ToolPageDef[] = [
       'Stamp DRAFT, CONFIDENTIAL or your logo across a PDF. Adjustable opacity, tiling, and behind-the-text placement. Free, no account.',
     h1: 'Add a watermark to a PDF',
     intro: [
-      'Mark a document as a draft, as confidential, or as yours. Add a word across every page, or upload a logo and place that instead. Opacity, tiling and rotation are yours to set.',
+      'Mark a document as a draft, as confidential, or as yours. This page stamps a diagonal DRAFT across every page, behind the content, at a readable opacity — one click, then download.',
       'By default the watermark is drawn behind the page content rather than on top of it. That is a deliberate choice: a watermark over the text makes the document harder to read and, if it is opaque enough to be obvious, harder to use. Behind the content it is clearly visible, the text stays crisp, and the document stays searchable.',
       'Tiling repeats the mark across the whole page, which is what you want when the point is to make the document awkward to pass off as an original. A single centred mark is quieter and usually enough for an internal draft.',
       'A watermark added here is part of the page, not an overlay a reader can switch off. It is not a security feature — anyone determined can remove it with the same class of tool you are using now — but it does travel with the file and it does make provenance obvious at a glance.',
-      'If you need a watermark on only some pages, apply it to a range. Cover sheets in particular often want to be left alone.',
+      'For anything more specific — your own wording, a logo instead of a word, a different angle, colour or opacity, tiling, or a watermark on only some pages — open the document in the workspace afterwards and use the Stamps panel, which exposes all of it.',
       'No account is needed and the result is not itself watermarked by us. Guest files are deleted automatically within 24 hours.',
     ],
     faq: [
@@ -378,7 +378,7 @@ export const TOOL_PAGES: ToolPageDef[] = [
       },
       {
         q: 'Can I use my logo instead of a word?',
-        a: 'Yes. Upload a PNG or JPEG and it is placed with the same opacity and tiling controls.',
+        a: 'Yes, from the Stamps panel in the workspace: upload a PNG or JPEG and it is placed with the same opacity and tiling controls. This page does the common text case in one click.',
       },
       {
         q: 'Does a watermark stop people copying my document?',
@@ -398,20 +398,20 @@ export const TOOL_PAGES: ToolPageDef[] = [
     h1: 'Add page numbers to a PDF',
     intro: [
       'Number the pages of a document that arrived without numbers, or renumber one whose numbering no longer matches after pages were added or removed.',
-      'Pick where the number goes — any of six positions — and what it says. "Page 3 of 12" is as easy as "3": the format accepts tokens for the current page, the total, and the date, and everything else in the field is printed literally.',
-      'Numbering can start at any value, which matters more often than it sounds. A chapter that begins on page 47 of a bound report should say 47, not 1. And a cover page usually should not be numbered at all, so skipping the first page is a single checkbox.',
+      'This page numbers every page in the bottom centre — the usual answer — and hands you the file. For anything else, open the document in the workspace: the Stamps panel offers six positions, any starting number, skipping the cover page, and a format field where "Page 3 of 12" is as easy as "3".',
+      'Numbering starting at any value matters more often than it sounds. A chapter that begins on page 47 of a bound report should say 47, not 1. And a cover page usually should not be numbered at all. Both are single controls in the workspace panel.',
       'The number is drawn into the page content, so it is part of the file and shows up wherever the document is opened or printed. It is not a header a reader can toggle.',
       'Numbers printed onto pages do not renumber themselves if you later add or remove pages — they are content, not a field. Reorder first, number second, and if the document changes afterwards just number it again from the version before.',
-      'Free, no account, and nothing is watermarked. If you also need a running header or Bates numbering for legal work, both are in the workspace under Stamps.',
+      'Free, no account, and nothing is watermarked. A running header or footer and Bates numbering for legal work are in the same Stamps panel.',
     ],
     faq: [
       {
         q: 'Can I skip the cover page?',
-        a: 'Yes — one checkbox. Numbering then starts on the second page, and you choose what number it starts at.',
+        a: 'Yes, from the Stamps panel in the workspace — one checkbox. Numbering then starts on the second page, and you choose what number it starts at. This page numbers every page.',
       },
       {
         q: 'Can I write "Page 3 of 12"?',
-        a: 'Yes. The format field accepts tokens for the page number, the total page count and the date, mixed with any text you like.',
+        a: 'Yes, in the workspace: the format field accepts tokens for the page number, the total page count and the date, mixed with any text you like.',
       },
       {
         q: 'Will the numbers update if I add pages later?',

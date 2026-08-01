@@ -4,14 +4,17 @@ from __future__ import annotations
 import fitz
 
 from ..exceptions import UnsupportedFileError
-from ..geometry import page_rect_to_norm
+from ..geometry import apply_matrix_rect, page_rect_to_norm_clamped
 
 
 def search_text(data: bytes, q: str, pages: list[int] | None = None) -> list[dict]:
     """Return hits [{page, x, y, w, h}] in normalized visual coordinates.
 
-    Rects come straight from PyMuPDF's page.search_for (page coordinate space =
-    visual space per §8), normalized against page.rect.
+    `page.search_for` answers in the page's **unrotated** space — measured, not
+    assumed; `page.rect` is rotation-applied, so on an unrotated page the two
+    are indistinguishable and the difference only shows up on a rotated one,
+    where the find bar was highlighting empty space. Rects are rotated into
+    display space before being normalized (§8).
     """
     if not q:
         return []
@@ -28,8 +31,11 @@ def search_text(data: bytes, q: str, pages: list[int] | None = None) -> list[dic
                 continue
             page = doc[i]
             width, height = page.rect.width, page.rect.height
+            rot = tuple(page.rotation_matrix)
             for rect in page.search_for(q):
-                nr = page_rect_to_norm(rect.x0, rect.y0, rect.x1, rect.y1, width, height)
+                x0, y0, x1, y1 = apply_matrix_rect(rect.x0, rect.y0, rect.x1,
+                                                   rect.y1, rot)
+                nr = page_rect_to_norm_clamped(x0, y0, x1, y1, width, height)
                 hits.append(
                     {"page": i, "x": nr.x, "y": nr.y, "w": nr.w, "h": nr.h}
                 )

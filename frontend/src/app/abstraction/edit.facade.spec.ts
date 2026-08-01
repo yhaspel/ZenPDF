@@ -65,12 +65,37 @@ describe('EditFacade', () => {
 
     facade.stageEdit(BLOCK, 0, 'Something else', { size: 12 });
     expect(facade.dirty()).toBe(true);
-    expect(facade.editFor(0)!.new_text).toBe('Something else');
+    expect(facade.editFor(0, 0)!.new_text).toBe('Something else');
 
     // Typing the original back is not an edit — sending it would re-render the
     // block through redact-and-reinsert for no reason.
     facade.stageEdit(BLOCK, 0, 'Hello world', { size: 12 });
     expect(facade.dirty()).toBe(false);
+  });
+
+  it('keeps edits to the same block number on different pages apart', () => {
+    // `block_id` is PyMuPDF's *per-page* number and restarts at 0 on each page,
+    // so keying on it alone lost one of these — and prefilled the editor for
+    // page 2 with the text typed on page 1.
+    loadPage();
+    facade.stageEdit(BLOCK, 0, 'EDIT ON PAGE 1', { size: 12 });
+    facade.stageEdit(BLOCK, 1, 'EDIT ON PAGE 2', { size: 12 });
+
+    expect(facade.pendingEdits().length).toBe(2);
+    expect(facade.editFor(0, 0)!.new_text).toBe('EDIT ON PAGE 1');
+    expect(facade.editFor(1, 0)!.new_text).toBe('EDIT ON PAGE 2');
+
+    // Reverting page 1 leaves page 2 staged.
+    facade.stageEdit(BLOCK, 0, 'Hello world', { size: 12 });
+    expect(facade.pendingEdits().length).toBe(1);
+    expect(facade.editFor(1, 0)!.new_text).toBe('EDIT ON PAGE 2');
+  });
+
+  it('remembers which query a report belongs to', () => {
+    facade.rememberQuery('cat', false);
+    expect(facade.reportQuery()).toEqual({ find: 'cat', matchCase: false });
+    facade.reset();
+    expect(facade.reportQuery()).toBeNull();
   });
 
   it('commits every staged block as ONE edit_text job', () => {

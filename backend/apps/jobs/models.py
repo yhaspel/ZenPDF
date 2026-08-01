@@ -40,6 +40,10 @@ class Job(models.Model):
     progress = models.IntegerField(default=0)
     error_code = models.CharField(max_length=64, blank=True)
     error_message = models.TextField(blank=True)
+    # Structured detail for the §6 error shape. `text_overflow` is the reason it
+    # exists: the client has to offer "shrink to N pt", and N is computed by the
+    # engine — without somewhere to put it the number never leaves the worker.
+    error_details = models.JSONField(default=dict, blank=True)
     result = models.JSONField(null=True, blank=True)
     celery_task_id = models.CharField(max_length=255, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -88,12 +92,14 @@ class Job(models.Model):
         self.finished_at = timezone.now()
         self.save(update_fields=["status", "progress", "result", "finished_at"])
 
-    def mark_failed(self, code: str, message: str) -> None:
+    def mark_failed(self, code: str, message: str, details: dict | None = None) -> None:
         self.status = self.Status.FAILED
         self.error_code = code
         self.error_message = message
+        self.error_details = details or {}
         self.finished_at = timezone.now()
-        self.save(update_fields=["status", "error_code", "error_message", "finished_at"])
+        self.save(update_fields=["status", "error_code", "error_message",
+                                 "error_details", "finished_at"])
 
     def mark_canceled(self) -> None:
         self.status = self.Status.CANCELED

@@ -16,6 +16,7 @@ class JobSerializer(serializers.ModelSerializer):
             "base_version_seq",
             "error_code",
             "error_message",
+            "error_details",
             "result",
             "created_at",
             "started_at",

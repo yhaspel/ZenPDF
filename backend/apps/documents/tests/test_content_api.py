@@ -331,11 +331,25 @@ def test_every_phase_4_op_is_reachable_by_a_guest():
 
     Asserted structurally rather than by 17 end-to-end tests: the default
     permission is `IsPrincipal`, so the way an op *would* become account-only is
-    a declaration somewhere — this catches that.
+    a declaration on the view — this catches that, and it catches a *new* op
+    added later without one.
     """
-    from apps.core.permissions import IsAccount
+    from apps.core.permissions import IsAccount, IsPrincipal
     from apps.documents.views import DocumentOperationView
+    from apps.pdf_engine import registry
 
-    assert IsAccount not in DocumentOperationView().get_permissions().__class__.__mro__
-    assert all(not isinstance(p, IsAccount)
-               for p in DocumentOperationView().get_permissions())
+    permissions = DocumentOperationView().get_permissions()
+    assert any(isinstance(p, IsPrincipal) for p in permissions)
+    assert not any(isinstance(p, IsAccount) for p in permissions)
+
+    # And every Phase-4 op really is on the single-document entrypoint that
+    # view serves, rather than quietly routed somewhere account-only.
+    phase_4 = {
+        "edit_text", "add_text", "whiteout", "find_replace",
+        "add_image", "replace_image", "delete_image",
+        "add_link", "edit_link", "delete_link",
+        "header_footer", "page_numbers", "bates", "watermark",
+        "overlay_pdf", "set_metadata", "set_bookmarks",
+    }
+    assert phase_4 <= set(registry.OPERATIONS)
+    assert not any(registry.OPERATIONS[op].is_cross_document for op in phase_4)

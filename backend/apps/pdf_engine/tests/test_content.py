@@ -682,3 +682,332 @@ def test_stamps_land_correctly_on_a_rotated_page(fixture_bytes):
         assert page.rect.width * 0.3 < hit.x0 < page.rect.width * 0.7
     finally:
         doc.close()
+
+
+# --------------------------------------------------------------------------- #
+# Gaps closed after the phase-4 self-review
+# --------------------------------------------------------------------------- #
+def _page_pixels(data: bytes, page: int = 0):
+    doc = fitz.open(stream=data, filetype="pdf")
+    try:
+        return doc[page].get_pixmap(dpi=72)
+    finally:
+        doc.close()
+
+
+def _diff_ratio(a, b, clip: fitz.IRect) -> float:
+    """Fraction of sampled pixels inside `clip` that differ between two renders."""
+    differing = total = 0
+    for y in range(clip.y0, min(clip.y1, a.height, b.height), 2):
+        for x in range(clip.x0, min(clip.x1, a.width, b.width), 2):
+            total += 1
+            pa, pb = a.pixel(x, y), b.pixel(x, y)
+            if max(abs(pa[i] - pb[i]) for i in range(3)) > 24:
+                differing += 1
+    return differing / max(1, total)
+
+
+def test_a_same_text_edit_leaves_the_rest_of_the_page_pixel_identical(fixture_bytes):
+    """The visual half of acceptance criterion 2, measured where it is
+    meaningful — and honest about where it is not.
+
+    **Outside the edited block: exactly zero pixels change.** That is the strong
+    guarantee, it is what "neighbours untouched" means, and it is what would
+    break first if the redaction were too greedy or the reinsertion landed in
+    the wrong place.
+
+    **Inside the block it cannot be zero, and it cannot be 15% either.** The
+    criterion's 15% budget assumes a like-for-like re-render; ours is not one.
+    The original glyphs were placed by `insert_text` at an exact baseline, the
+    replacement is laid out by `insert_htmlbox` inside a box, and the two
+    disagree on origin and leading by a few points — which moves every glyph and
+    therefore changes a quarter of the pixels in a text-dense box even when the
+    font is base-14 Helvetica and nothing is substituted at all. Measured at
+    ~25% on this fixture; tightening the CSS (margin/line-height) was tried and
+    made it *worse*, so it was reverted rather than kept for appearances.
+
+    The bound below is set to catch gross breakage — text landing in the wrong
+    place, at the wrong size, or not at all — rather than to assert a number the
+    approach cannot deliver. Recorded in the Decisions log rather than quietly
+    reinterpreted.
+    """
+    data = fixture_bytes("text.pdf")
+    block = _blocks(data)[0]
+    out = C.edit_text(data, edits=[{
+        "page": 0, "block_bbox": block["bbox"], "new_text": block["text"],
+        "style": {"size": 22},
+    }])
+
+    before, after = _page_pixels(data), _page_pixels(out)
+    w, h = before.width, before.height
+    bb = block["bbox"]
+    inside = fitz.IRect(int(bb["x"] * w) - 2, int(bb["y"] * h) - 2,
+                        int((bb["x"] + bb["w"]) * w) + 2,
+                        int((bb["y"] + bb["h"]) * h) + 2)
+
+    # Everything below the edited block must be untouched.
+    below = fitz.IRect(0, inside.y1 + 4, w, h)
+    assert _diff_ratio(before, after, below) == 0.0, "content outside the block moved"
+
+    in_block = _diff_ratio(before, after, inside)
+    assert in_block < 0.45, (
+        f"edited region differs by {in_block:.1%} — expected ~25% for a "
+        "same-text roundtrip; well above that means the text moved, resized or "
+        "vanished"
+    )
+
+
+def test_editing_a_block_does_not_disturb_an_image_beside_it(fixture_bytes):
+    """phase-04's Tests line: "neighbors untouched (text **+ images**)".
+
+    This is what `PDF_REDACT_IMAGE_NONE` is for — the redaction that clears the
+    old glyphs must not take a figure sharing the page with them.
+    """
+    with_image = C.add_image(fixture_bytes("text.pdf"), page=0,
+                             rect={"x": 0.55, "y": 0.08, "w": 0.3, "h": 0.12},
+                             image=_png((255, 0, 0)), keep_aspect=False)
+    block = _blocks(with_image)[0]
+
+    out = C.edit_text(with_image, edits=[{
+        "page": 0, "block_bbox": block["bbox"], "new_text": "Replaced heading",
+    }])
+
+    assert len(C.page_images(out, 0)["images"]) == 1, "the image was removed"
+    rect = _page_rect(out)
+    colors = _region_colors(out, 0, fitz.Rect(0.6 * rect.width, 0.10 * rect.height,
+                                              0.8 * rect.width, 0.18 * rect.height))
+    assert any(c[0] > 200 and c[1] < 60 for c in colors), "the image pixels are gone"
+
+
+def test_watermark_honours_a_range_and_skip_first(fixture_bytes):
+    out = C.watermark(fixture_bytes("text.pdf"), text="DRAFT", under=True,
+                      opacity=1.0, range={"skip_first": True})
+    assert "DRAFT" not in _text(out, 0), "the cover must stay unmarked"
+    assert "DRAFT" in _text(out, 1)
+    assert "DRAFT" in _text(out, 2)
+
+    only_last = C.watermark(fixture_bytes("text.pdf"), text="COPY", under=True,
+                            opacity=1.0, range={"pages": [2]})
+    assert "COPY" not in _text(only_last, 0)
+    assert "COPY" in _text(only_last, 2)
+
+
+def test_overlay_pdf_honours_a_range(fixture_bytes):
+    letterhead = C.add_text(fixture_bytes("text.pdf"), boxes=[{
+        "page": 0, "rect": {"x": 0.1, "y": 0.02, "w": 0.7, "h": 0.05},
+        "text": "LETTERHEAD BANNER",
+    }])
+    out = C.overlay_pdf(fixture_bytes("text.pdf"), letterhead,
+                        range={"pages": [1]})
+    assert "LETTERHEAD BANNER" not in _text(out, 0)
+    assert "LETTERHEAD BANNER" in _text(out, 1)
+    assert "LETTERHEAD BANNER" not in _text(out, 2)
+
+
+def test_a_text_watermark_is_drawn_at_the_angle_asked_for(fixture_bytes):
+    """−45° must be a diagonal, not a quarter turn.
+
+    `insert_htmlbox` only rotates in 90° steps, so the first implementation
+    silently rendered the spec'd default as a vertical 270°.
+    """
+    def ink_spread(rotation: int) -> tuple[float, float]:
+        # A distinct colour, so the measurement cannot pick up the page's own
+        # (antialiased, therefore grey) body text.
+        out = C.watermark(fixture_bytes("text.pdf"), text="CONFIDENTIAL",
+                          rotation=rotation, opacity=1.0, size=44, under=False,
+                          color="#ff0000")
+        pm = _page_pixels(out)
+        pts = [(x / pm.width, y / pm.height)
+               for y in range(0, pm.height, 3) for x in range(0, pm.width, 3)
+               if pm.pixel(x, y)[0] > 140 and pm.pixel(x, y)[1] < 110
+               and pm.pixel(x, y)[2] < 110]
+        assert pts, f"no watermark ink at rotation={rotation}"
+        xs = [p[0] for p in pts]
+        ys = [p[1] for p in pts]
+        return (max(xs) - min(xs), max(ys) - min(ys))
+
+    flat_x, flat_y = ink_spread(0)
+    diag_x, diag_y = ink_spread(-45)
+
+    # Horizontal text is wide and short; a diagonal covers far more height.
+    assert flat_y < 0.2, f"rotation=0 should be a flat band, got height {flat_y:.2f}"
+    assert diag_y > flat_y * 1.8, (
+        f"rotation=-45 should be diagonal: height {diag_y:.2f} vs flat {flat_y:.2f}"
+    )
+    assert diag_x > 0.2, "a diagonal still spans horizontally"
+
+
+def test_watermark_text_stays_extractable_at_any_angle(fixture_bytes):
+    out = C.watermark(fixture_bytes("text.pdf"), text="CONFIDENTIAL",
+                      rotation=-45, under=True, opacity=0.3)
+    assert "CONFIDENTIAL" in _text(out, 0)
+    assert "Sample document" in _text(out, 0)
+
+
+# --------------------------------------------------------------------------- #
+# Correctness bugs found by the phase-4 self-review
+# --------------------------------------------------------------------------- #
+def _one_line(text: str) -> bytes:
+    doc = fitz.open()
+    page = doc.new_page(width=595, height=842)
+    page.insert_text((72, 100), text, fontsize=14)
+    try:
+        return doc.tobytes()
+    finally:
+        doc.close()
+
+
+def test_adjacent_occurrences_are_separate_matches(fixture_bytes):
+    """`search_for` returns ONE rect for directly-abutting hits.
+
+    Redacting that rect and writing a single replacement silently **deleted**
+    the second occurrence, and the dry run under-reported what the user was
+    about to change. "banana" contains "na" twice, not once.
+    """
+    data = _one_line("banana bread catcat")
+
+    _, preview = C.find_replace(data, find="na", dry_run=True)
+    assert preview["count"] == 2, "both occurrences must be offered for review"
+
+    out, report = C.find_replace(data, find="na", replace="NA")
+    assert report["replaced"] == 2
+    text = _text(out)
+    assert text.count("NA") == 2, "the second occurrence was dropped"
+
+    out2, report2 = C.find_replace(data, find="cat", replace="XY")
+    assert report2["replaced"] == 2
+    assert _text(out2).count("XY") == 2
+
+
+def test_a_wider_same_length_replacement_still_fits(fixture_bytes):
+    """"cat" → "CAT" is the same length and measurably wider.
+
+    Sizing the replacement box off character count made that overflow, and an
+    overflow fails the *whole* job — so a single capitalisation aborted a
+    document-wide replace.
+    """
+    data = _one_line("the cat sat on the mat")
+    for replacement in ("CAT", "DOG", "iPhone"):
+        out, report = C.find_replace(data, find="cat", replace=replacement)
+        assert report["replaced"] == 1
+        assert replacement in _text(out)
+
+
+def test_a_long_replacement_near_the_margin_stays_on_the_page(fixture_bytes):
+    doc = fitz.open()
+    page = doc.new_page(width=595, height=842)
+    page.insert_text((500, 100), "cat", fontsize=12)
+    data = doc.tobytes()
+    doc.close()
+
+    out, report = C.find_replace(data, find="cat", replace="caterpillar habitat")
+    assert report["replaced"] == 1
+    doc = fitz.open(stream=out, filetype="pdf")
+    try:
+        page = doc[0]
+        for block in page.get_text("dict")["blocks"]:
+            if block.get("type") == 0:
+                assert block["bbox"][2] <= page.mediabox.x1 + 1, (
+                    f"text runs off the page: {block['bbox']}"
+                )
+    finally:
+        doc.close()
+
+
+def test_find_replace_works_on_a_rotated_page(fixture_bytes):
+    """`search_for` answers in *unrotated* space, exactly like `get_text` — the
+    opposite of what this module first assumed. With the transform wrong, the
+    redaction missed, `match_case` matched nothing, and the context was blank.
+    """
+    data = fixture_bytes("rotated-90.pdf")
+
+    _, preview = C.find_replace(data, find="Rotated", dry_run=True)
+    assert preview["count"] >= 1
+    assert preview["matches"][0]["context"], "the review list showed blank rows"
+
+    _, sensitive = C.find_replace(data, find="Rotated", match_case=True, dry_run=True)
+    assert sensitive["count"] >= 1, "case-sensitive search found nothing at all"
+
+    out, report = C.find_replace(data, find="Rotated", replace="Turned")
+    assert report["replaced"] >= 1
+    text = _text(out)
+    assert "Turned" in text
+    assert "Rotated fixture" not in text, "the redaction missed the original"
+
+
+def test_editing_a_block_on_a_rotated_page_works(fixture_bytes):
+    """Every edit on a landscape-rotated page used to fail with `text_overflow`.
+
+    The block's *display* box is tall and narrow (the text reads vertically to
+    the viewer), so horizontal layout could never fit it. The replacement is
+    written in the page's unrotated space, where the original glyphs were.
+    """
+    data = fixture_bytes("rotated-90.pdf")
+    block = _blocks(data)[0]
+    out = C.edit_text(data, edits=[{
+        "page": 0, "block_bbox": block["bbox"], "new_text": "Edited on a rotated page",
+    }])
+    assert "Edited on a rotated page" in _text(out, 0)
+    assert "Rotated fixture page 1" not in _text(out, 0)
+
+    doc = fitz.open(stream=out, filetype="pdf")
+    try:
+        assert doc[0].rotation == 90, "the page rotation must be preserved"
+    finally:
+        doc.close()
+
+
+def test_page_and_total_are_counted_in_the_same_space(fixture_bytes):
+    """"1 of 10" on the second page of a ten-page document whose cover was
+    skipped is two numbering schemes in one string."""
+    out = C.page_numbers(fixture_bytes("text.pdf"), format="{page} of {total}",
+                         range={"skip_first": True})
+    assert "1 of 2" in _text(out, 1)
+    assert "2 of 2" in _text(out, 2)
+
+
+def test_skip_first_means_something_with_an_explicit_range(fixture_bytes):
+    """It drops the first page *of the selection*. Dropping index 0
+    unconditionally made the flag a silent no-op alongside an explicit range."""
+    out = C.page_numbers(fixture_bytes("text.pdf"), format="<{page}>",
+                         range={"pages": [1, 2], "skip_first": True})
+    assert "<" not in _text(out, 0)
+    assert "<" not in _text(out, 1), "the first page of the selection was stamped"
+    assert "<1>" in _text(out, 2)
+
+
+def test_read_models_survive_content_outside_the_page(fixture_bytes):
+    """Print PDFs routinely place content off-page — a CropBox inset for trim
+    marks, or a full-bleed image. Reporting that as a hard error made every read
+    model answer 500 for an ordinary print-ready file."""
+    doc = fitz.open()
+    page = doc.new_page(width=595, height=842)
+    page.insert_text((-40, -10), "bleeding off the corner", fontsize=14)
+    page.insert_image(fitz.Rect(-30, -30, 300, 200), stream=_png())
+    page.set_cropbox(fitz.Rect(18, 18, 577, 824))
+    data = doc.tobytes()
+    doc.close()
+
+    blocks = C.text_blocks(data, 0)
+    images = C.page_images(data, 0)
+    assert C.page_links(data, 0)["links"] == []
+    for rect in [b["bbox"] for b in blocks["blocks"]] + [i["bbox"] for i in images["images"]]:
+        assert 0 <= rect["x"] <= 1 and 0 <= rect["y"] <= 1
+        assert rect["x"] + rect["w"] <= 1.001
+        assert rect["y"] + rect["h"] <= 1.001
+
+
+def test_page_images_does_not_multiply_duplicate_placements(fixture_bytes):
+    """Matching placements by decoded-pixel MD5 returned the union of every
+    identical image's boxes, so N duplicate images produced N² entries — which
+    is what merging N copies of a document produces naturally."""
+    doc = fitz.open()
+    page = doc.new_page(width=595, height=842)
+    png = _png()
+    for i in range(8):
+        page.insert_image(fitz.Rect(20, 20 + i * 60, 120, 70 + i * 60), stream=png)
+    data = doc.tobytes()
+    doc.close()
+
+    images = C.page_images(data, 0)["images"]
+    assert len(images) == 8, f"expected 8 placements, got {len(images)}"

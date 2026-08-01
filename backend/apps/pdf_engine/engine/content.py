@@ -25,7 +25,12 @@ import fitz
 
 from ..colors import css_color, parse_color
 from ..exceptions import EngineError, InvalidParams, PageOutOfRange, UnsupportedFileError
-from ..geometry import NormRect, apply_matrix_rect, norm_to_page_rect
+from ..geometry import (
+    NormRect,
+    apply_matrix_point,
+    apply_matrix_rect,
+    norm_to_page_rect,
+)
 
 _SAVE = dict(garbage=4, deflate=True, deflate_images=True, deflate_fonts=True)
 
@@ -127,8 +132,10 @@ def _resolve_pages(doc: fitz.Document, spec: dict | None) -> list[int]:
                 raise PageOutOfRange(f"page {i} out of range (0..{doc.page_count - 1})")
             indices.append(i)
         indices = sorted(set(indices))
-    if spec.get("skip_first"):
-        indices = [i for i in indices if i != 0]
+    if spec.get("skip_first") and indices:
+        # The first page *of the selection*. Dropping index 0 unconditionally
+        # made the flag a silent no-op whenever an explicit range was given.
+        indices = indices[1:]
     if not indices:
         raise InvalidParams("the selected page range is empty")
     return indices
@@ -164,10 +171,21 @@ def _html_block(text: str, style: dict | None, *, default_size: float = 11.0) ->
     return f"<div style=\"{_style_css(style, default_size=default_size)}\">{escaped}</div>"
 
 
-def _write_box(page: fitz.Page, rect: fitz.Rect, text: str, style: dict | None,
-               *, default_size: float = 11.0, rotate: int = 0,
-               overlay: bool = True, opacity: float = 1.0) -> None:
-    """Draw text into `rect`, shrinking to `MIN_SHRINK` before giving up.
+def _write_box(page: fitz.Page, raw_rect: fitz.Rect, text: str, style: dict | None,
+               *, default_size: float = 11.0, overlay: bool = True,
+               opacity: float = 1.0) -> None:
+    """Draw text into `raw_rect`, shrinking to `MIN_SHRINK` before giving up.
+
+    `raw_rect` is in the page's **unrotated** space, and the page's rotation is
+    temporarily zeroed around the write. That is not a trick — it is the correct
+    model for replacing text: the glyphs being replaced were themselves laid
+    down in unrotated space, so the replacement must be too, and it then rotates
+    with the page exactly as the original did.
+
+    Passing a *display* rect instead (with `insert_htmlbox`'s own rotation
+    handling) fails on any /Rotate 90 page: the display box of a normal line of
+    text is tall and narrow, horizontal layout cannot fit it, and every edit
+    came back as `text_overflow` telling the user their text was too long.
 
     `insert_htmlbox` returns `(spare_height, scale)`; a **negative** spare height
     means it could not fit even at `scale_low`. Asking a second time with no
@@ -175,16 +193,22 @@ def _write_box(page: fitz.Page, rect: fitz.Rect, text: str, style: dict | None,
     offer "shrink to N pt / enlarge the box / cancel" (phase-04 error contract).
     """
     size = float((style or {}).get("size") or default_size)
-    spare, scale = page.insert_htmlbox(
-        rect, _html_block(text, style, default_size=default_size),
-        scale_low=MIN_SHRINK, rotate=rotate, overlay=overlay, opacity=opacity,
-    )
-    if spare >= 0:
-        return
-    _, unbounded = page.insert_htmlbox(
-        rect, _html_block(text, style, default_size=default_size),
-        scale_low=0, rotate=rotate, overlay=overlay, opacity=opacity,
-    )
+    html = _html_block(text, style, default_size=default_size)
+    rotation = page.rotation
+    if rotation:
+        page.set_rotation(0)
+    try:
+        spare, _ = page.insert_htmlbox(
+            raw_rect, html, scale_low=MIN_SHRINK, overlay=overlay, opacity=opacity,
+        )
+        if spare >= 0:
+            return
+        _, unbounded = page.insert_htmlbox(
+            raw_rect, html, scale_low=0, overlay=overlay, opacity=opacity,
+        )
+    finally:
+        if rotation:
+            page.set_rotation(rotation)
     fits_at = round(size * float(unbounded or 0), 1)
     raise TextOverflow(
         "That text does not fit the box at this size.",
@@ -246,10 +270,13 @@ def text_blocks(data: bytes, page_index: int) -> dict:
                 "text": "".join(text_parts).strip("\n"),
             })
 
-        images = page.get_images(full=True)
+        # `get_image_info` reports placements from the content stream.
+        # `get_image_rects` would decode every embedded image to MD5-match it —
+        # a 20000x20000 image is 1.2 GB of allocation, in the API process, where
+        # §12's worker memory limits do not apply.
         full_page_image = any(
-            _covers_page(page, r) for xref in (i[0] for i in images)
-            for r in page.get_image_rects(xref)
+            _covers_page(page, fitz.Rect(info["bbox"]))
+            for info in page.get_image_info()
         )
         return {
             "page": page_index,
@@ -266,9 +293,15 @@ def text_blocks(data: bytes, page_index: int) -> dict:
 
 
 def _rect_dict(x0, y0, x1, y1, pw, ph) -> dict:
-    from ..geometry import page_rect_to_norm
+    """Normalized rect for a **read model** — clamped, never raising.
 
-    nr = page_rect_to_norm(x0, y0, x1, y1, pw, ph)
+    Content legitimately sits outside the visible page in real files (CropBox
+    insets for trim marks, full-bleed images). Reporting that as a hard error
+    made every one of these endpoints answer 500 for an ordinary print PDF.
+    """
+    from ..geometry import page_rect_to_norm_clamped
+
+    nr = page_rect_to_norm_clamped(x0, y0, x1, y1, pw, ph)
     return {"x": round(nr.x, 6), "y": round(nr.y, 6),
             "w": round(nr.w, 6), "h": round(nr.h, 6)}
 
@@ -285,16 +318,20 @@ def page_images(data: bytes, page_index: int) -> dict:
         pw, ph = page.rect.width, page.rect.height
         rot = tuple(page.rotation_matrix)
         out = []
-        for info in page.get_images(full=True):
-            xref = info[0]
-            for rect in page.get_image_rects(xref):
-                x0, y0, x1, y1 = apply_matrix_rect(rect.x0, rect.y0, rect.x1, rect.y1, rot)
-                out.append({
-                    "xref": xref,
-                    "width": int(info[2]),
-                    "height": int(info[3]),
-                    "bbox": _rect_dict(x0, y0, x1, y1, pw, ph),
-                })
+        # One entry per *placement*, straight from the content stream. The
+        # previous `get_images` × `get_image_rects` pairing both decoded every
+        # image (see `text_blocks`) and matched placements by pixel MD5, so N
+        # xrefs sharing content produced N² entries — which a merged document
+        # produces naturally.
+        for info in page.get_image_info(xrefs=True):
+            bbox = fitz.Rect(info["bbox"])
+            x0, y0, x1, y1 = apply_matrix_rect(bbox.x0, bbox.y0, bbox.x1, bbox.y1, rot)
+            out.append({
+                "xref": int(info.get("xref") or 0),
+                "width": int(info.get("width") or 0),
+                "height": int(info.get("height") or 0),
+                "bbox": _rect_dict(x0, y0, x1, y1, pw, ph),
+            })
         return {"page": page_index, "images": out}
     finally:
         doc.close()
@@ -358,10 +395,15 @@ def edit_text(data: bytes, *, edits: list[dict]) -> bytes:
                 page.add_redact_annot(
                     fitz.Rect(raw.x0 - 1, raw.y0 - 1, raw.x1 + 1, raw.y1 + 1)
                 )
-                rects.append((_display_rect(edit.get("block_bbox"), page), edit))
+                rects.append((raw, edit))
             page.apply_redactions(images=fitz.PDF_REDACT_IMAGE_NONE)
             for rect, edit in rects:
                 style = edit.get("style") or {}
+                # `rotate` matters on a rotated page: the block's display box is
+                # tall and narrow (the text reads vertically to the viewer), and
+                # laying the replacement out horizontally into it overflows —
+                # so every edit on a landscape-rotated page failed with
+                # `text_overflow` telling the user their text was too long.
                 _write_box(page, rect, edit.get("new_text", ""), style,
                            default_size=float(style.get("size") or 11))
         _subset(doc)
@@ -385,10 +427,9 @@ def add_text(data: bytes, *, boxes: list[dict]) -> bytes:
     try:
         for box in boxes:
             page = _page(doc, box.get("page", 0))
-            rect = _display_rect(box.get("rect"), page)
             style = box.get("style") or {}
-            _write_box(page, rect, box.get("text", ""), style,
-                       default_size=float(style.get("size") or 12))
+            _write_box(page, _raw_rect(box.get("rect"), page), box.get("text", ""),
+                       style, default_size=float(style.get("size") or 12))
         _subset(doc)
         return doc.tobytes(**_SAVE)
     finally:
@@ -441,16 +482,22 @@ def find_replace(data: bytes, *, find: str, replace: str = "", match_case: bool 
                 continue
             page = doc[page_index]
             pw, ph = page.rect.width, page.rect.height
+            rot = tuple(page.rotation_matrix)
+            # `search_for` answers in the page's **unrotated** space, exactly
+            # like `get_text` — measured, because the opposite is easy to assume
+            # (`page.rect` is rotation-applied, and an unrotated page makes the
+            # two indistinguishable). Everything below stays in that space, and
+            # only the two places that need display space convert.
             hits = _search(page, find, match_case)
             targets = []
             for ordinal, rect in enumerate(hits):
                 match_id = f"p{page_index}:{ordinal}"
+                dx0, dy0, dx1, dy1 = apply_matrix_rect(rect.x0, rect.y0,
+                                                       rect.x1, rect.y1, rot)
                 matches.append({
                     "id": match_id,
                     "page": page_index,
-                    # `search_for` already answers in display space — unlike
-                    # `get_text`, which does not. No transform here.
-                    "rect": _rect_dict(rect.x0, rect.y0, rect.x1, rect.y1, pw, ph),
+                    "rect": _rect_dict(dx0, dy0, dx1, dy1, pw, ph),
                     "context": _context_around(page, rect),
                 })
                 if keep is None or match_id in keep:
@@ -461,16 +508,15 @@ def find_replace(data: bytes, *, find: str, replace: str = "", match_case: bool 
             # Read the span style before the redaction removes the span.
             styles = [_span_style_at(page, rect) for rect in targets]
             for rect in targets:
-                raw = fitz.Rect(*_derotate(rect, page))
-                page.add_redact_annot(fitz.Rect(raw.x0 - 0.5, raw.y0 - 0.5,
-                                                raw.x1 + 0.5, raw.y1 + 0.5))
+                page.add_redact_annot(fitz.Rect(rect.x0 - 0.5, rect.y0 - 0.5,
+                                                rect.x1 + 0.5, rect.y1 + 0.5))
             page.apply_redactions(images=fitz.PDF_REDACT_IMAGE_NONE)
             for rect, style in zip(targets, styles):
                 if replace:
-                    box = fitz.Rect(rect.x0, rect.y0 - 1,
-                                    rect.x1 + _slack(rect, find, replace), rect.y1 + 1)
-                    _write_box(page, box, replace, style,
-                               default_size=float(style.get("size") or 11))
+                    size = float(style.get("size") or 11)
+                    # Already unrotated — `search_for` and `_write_box` agree.
+                    _write_box(page, _replacement_box(page, rect, replace, size),
+                               replace, style, default_size=size)
                 applied += 1
 
         result = {"query": find, "count": len(matches), "matches": matches,
@@ -509,6 +555,31 @@ def ligature_variants(needle: str) -> list[str]:
     return variants
 
 
+def _split_merged(page: fitz.Page, rect: fitz.Rect, find: str) -> list[fitz.Rect]:
+    """Split a hit that covers several adjacent occurrences.
+
+    `search_for` returns ONE rect for directly-abutting matches — "banana"
+    searched for "na" comes back as a single box over both. Redacting that box
+    and writing one replacement silently **deletes** the second occurrence, and
+    the dry run under-reports the count the user is about to act on.
+
+    The occurrences are the same string, so they are the same width: counting
+    them in the text under the rect and dividing evenly recovers them exactly.
+    """
+    import unicodedata
+
+    inner = unicodedata.normalize("NFKC", page.get_textbox(rect) or "")
+    needle = unicodedata.normalize("NFKC", find)
+    occurrences = inner.lower().count(needle.lower()) if needle else 0
+    if occurrences <= 1:
+        return [rect]
+    step = rect.width / occurrences
+    return [
+        fitz.Rect(rect.x0 + i * step, rect.y0, rect.x0 + (i + 1) * step, rect.y1)
+        for i in range(occurrences)
+    ]
+
+
 def _search(page: fitz.Page, find: str, match_case: bool) -> list[fitz.Rect]:
     """Hits for `find`, in display space.
 
@@ -520,45 +591,57 @@ def _search(page: fitz.Page, find: str, match_case: bool) -> list[fitz.Rect]:
     """
     seen: list[fitz.Rect] = []
     for variant in ligature_variants(find):
-        for rect in page.search_for(variant):
-            if any(abs(rect.x0 - r.x0) < 0.5 and abs(rect.y0 - r.y0) < 0.5 for r in seen):
-                continue
-            if match_case and not _matches_case(page, rect, find):
-                continue
-            seen.append(rect)
+        for merged in page.search_for(variant):
+            for rect in _split_merged(page, merged, variant):
+                if any(abs(rect.x0 - r.x0) < 0.5 and abs(rect.y0 - r.y0) < 0.5
+                       for r in seen):
+                    continue
+                if match_case and not _matches_case(page, rect, find):
+                    continue
+                seen.append(rect)
     seen.sort(key=lambda r: (round(r.y0, 1), r.x0))
     return seen
 
 
 def _matches_case(page: fitz.Page, rect: fitz.Rect, find: str) -> bool:
+    """`search_for` is unconditionally case-insensitive, so an exact-case search
+    is filtered against the text actually under the hit. Both are in the page's
+    unrotated space, so no transform belongs here."""
     import unicodedata
 
-    raw = fitz.Rect(*_derotate(rect, page))
-    found = unicodedata.normalize("NFKC", page.get_textbox(raw) or "")
+    found = unicodedata.normalize("NFKC", page.get_textbox(rect) or "")
     return unicodedata.normalize("NFKC", find) in found
 
 
-def _slack(rect: fitz.Rect, find: str, replace: str) -> float:
-    """Extra width for a longer replacement, so it is not shrunk to nothing.
+def _replacement_box(page: fitz.Page, rect: fitz.Rect, replace: str,
+                     size: float) -> fitz.Rect:
+    """A box wide enough for the replacement, clamped to the page.
 
-    Proportional to the match's own width per character, which approximates the
-    span's advance without having to resolve the embedded font.
+    Sizing off *character count* is not enough: "cat"→"CAT" is the same length
+    and measurably wider, and the tight box then failed the whole job with
+    `text_overflow`. The width comes from `get_text_length`, and the box is
+    clamped so a long replacement near the right margin is drawn on the page
+    rather than off the edge of it.
     """
-    if len(replace) <= len(find) or not find:
-        return 0.0
-    per_char = rect.width / max(1, len(find))
-    return per_char * (len(replace) - len(find))
+    needed = fitz.get_text_length(replace, fontname="helv", fontsize=size) * 1.08
+    width = max(rect.width, needed)
+    box = fitz.Rect(rect.x0, rect.y0 - 1, rect.x0 + width, rect.y1 + 1)
+    limit = page.mediabox
+    if box.x1 > limit.x1:
+        # Prefer keeping the text on the page over keeping its left edge.
+        shift = min(box.x0 - limit.x0, box.x1 - limit.x1)
+        box = fitz.Rect(box.x0 - shift, box.y0, min(box.x1 - shift, limit.x1), box.y1)
+    return box
 
 
 def _span_style_at(page: fitz.Page, rect: fitz.Rect) -> dict:
     """The style of the span a match sits in, so the replacement inherits it.
 
-    `rect` arrives in display space from `search_for`, while span boxes come
-    from `get_text` in unrotated space — compare them in the same one.
+    Both `search_for` and `get_text` answer in the page's unrotated space, so
+    the rects compare directly.
     """
     from ..colors import from_int
 
-    rect = fitz.Rect(*_derotate(rect, page))
     best = None
     for block in page.get_text("dict").get("blocks", []):
         if block.get("type") != 0:
@@ -583,10 +666,13 @@ def _span_style_at(page: fitz.Page, rect: fitz.Rect) -> dict:
 
 
 def _context_around(page: fitz.Page, rect: fitz.Rect) -> str:
-    """A snippet of the line the match sits on, for the review list."""
-    raw = fitz.Rect(*_derotate(rect, page))
+    """A snippet of the line the match sits on, for the review list.
+
+    Unrotated space throughout — `rect` comes from `search_for` and the band is
+    measured against the mediabox, which is the same space.
+    """
     box = page.mediabox
-    band = fitz.Rect(box.x0, raw.y0 - 1, box.x1, raw.y1 + 1)
+    band = fitz.Rect(box.x0, rect.y0 - 1, box.x1, rect.y1 + 1)
     return (page.get_textbox(band) or "").replace("\n", " ").strip()[:160]
 
 
@@ -732,6 +818,10 @@ def _band(page: fitz.Page, position: str, margin: float, height: float) -> fitz.
 
 
 def _tokens(text: str, *, page_number: int, total: int, date: str) -> str:
+    """`{page}`/`{total}`/`{date}`. `total` counts the *stamped* pages, because
+    `{page}` counts them too — "1 of 10" on the second page of a ten-page
+    document whose cover was skipped is two different numbering schemes in one
+    string."""
     return (str(text or "")
             .replace("{page}", str(page_number))
             .replace("{total}", str(total))
@@ -772,7 +862,7 @@ def header_footer(data: bytes, *, segments: dict, style: dict | None = None,
     doc = _open(data)
     try:
         indices = _resolve_pages(doc, range)
-        total = doc.page_count
+        total = len(indices)
         date = _today()
         for ordinal, page_index in enumerate(indices):
             page = doc[page_index]
@@ -873,18 +963,34 @@ def _watermark_positions(page: fitz.Page, tiled: bool, w: float, h: float):
 
 
 def _watermark_text(page, text, opacity, rotation, scale, color, size, tiled, under):
-    size = float(size) * float(scale)
-    w = min(page.rect.width * 0.9, max(60.0, size * len(text) * 0.62))
-    h = size * 1.6
-    style = {"size": size, "color": color or "#808080", "align": "center", "bold": True}
-    for box in _watermark_positions(page, tiled, w, h):
-        page.insert_htmlbox(
-            box,
-            _html_block(text, style, default_size=size),
-            rotate=int(rotation) % 360 // 90 * 90,
-            opacity=float(opacity),
+    """Draw the text watermark at an **arbitrary** angle.
+
+    `insert_htmlbox` — used everywhere else in this module — only rotates in
+    90° steps, which silently turned the spec'd −45° default into a vertical
+    270°. A watermark is one line of text with no layout to do, so it goes
+    through `insert_text` with a `morph` instead, which takes any angle.
+    """
+    size = max(4.0, float(size) * float(scale))
+    fontname = "hebo"  # Helvetica-Bold: a watermark wants weight
+    text_width = fitz.get_text_length(text, fontname=fontname, fontsize=size)
+    rgb = parse_color(color) if color is not None else (0.5, 0.5, 0.5)
+    derot = tuple(page.derotation_matrix)
+    # The page's own rotation is applied on display, so subtract it to land at
+    # the angle the user asked for *as seen*.
+    angle = (float(rotation) - page.rotation) % 360
+
+    for box in _watermark_positions(page, tiled, text_width, size * 1.6):
+        centre_x = (box.x0 + box.x1) / 2
+        centre_y = (box.y0 + box.y1) / 2
+        origin = apply_matrix_point(centre_x - text_width / 2,
+                                    centre_y + size / 3, derot)
+        pivot = apply_matrix_point(centre_x, centre_y, derot)
+        page.insert_text(
+            fitz.Point(*origin), text,
+            fontname=fontname, fontsize=size, color=rgb,
+            fill_opacity=float(opacity),
+            morph=(fitz.Point(*pivot), fitz.Matrix(angle)),
             overlay=not under,
-            scale_low=0.3,
         )
 
 

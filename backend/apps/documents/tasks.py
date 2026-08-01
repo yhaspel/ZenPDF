@@ -169,7 +169,11 @@ def _one_image(job: Job, ref) -> bytes:
 
 
 def _apply_single(op, primary_bytes, params, source_bytes, *, job=None):
-    """Return (kind, payload, label, report). kind ∈ {version, documents}."""
+    """Return (kind, payload, label, report).
+
+    kind ∈ {version, documents, **report**}. `report` is inspection only — a
+    find & replace dry run changes no bytes, so it must not mint a version.
+    """
     t = op.type
     if t == "rotate_pages":
         data = P.rotate_pages(primary_bytes, pages=params["pages"], degrees=params["degrees"])
@@ -288,6 +292,9 @@ def _apply_single(op, primary_bytes, params, source_bytes, *, job=None):
         data, report = C.bates(primary_bytes, **params)
         return "version", data, f"Bates {report['first']}–{report['last']}", report
     if t == "watermark":
+        # Copy: `params` *is* `job.params`, and popping from it would rewrite the
+        # job's own record of what was asked for.
+        params = dict(params)
         image_ref = params.pop("image_ref", None)
         data = C.watermark(
             primary_bytes,
@@ -387,7 +394,9 @@ def run_operation(self, job_id: str):
                     created.append(str(new_doc.id))
                 job.mark_succeeded({"documents": created})
     except EngineError as exc:
-        job.mark_failed(exc.code, exc.message)
+        # `details` carries the structured half of the §6 error shape — e.g.
+        # `text_overflow`'s `fits_at_size`, which the editor turns into an offer.
+        job.mark_failed(exc.code, exc.message, exc.details)
     except Document.DoesNotExist:
         job.mark_failed("not_found", "A referenced document was not found.")
     except Exception as exc:  # noqa: BLE001

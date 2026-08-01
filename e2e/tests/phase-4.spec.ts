@@ -56,14 +56,14 @@ test('phase 4: edit a paragraph, replace text, stamp numbers, set metadata', asy
   // saved document rather than by re-opening "the first block": redact-and-
   // reinsert appends the replacement as a new block, so block order after an
   // edit is not the order before it.
-  await page.fill('[data-test=find-input]', 'Rewritten by the editor');
+  await page.fill('[data-test=replace-find-input]', 'Rewritten by the editor');
   await page.click('[data-test=find-preview]');
   await expect(page.locator('[data-test=replace-count]')).toContainText('1 match', {
     timeout: 60_000,
   });
 
   // --- 2. Find & replace: preview, untick one, apply the rest. ---
-  await page.fill('[data-test=find-input]', 'quick');
+  await page.fill('[data-test=replace-find-input]', 'quick');
   await page.fill('[data-test=replace-input]', 'rapid');
   await page.click('[data-test=find-preview]');
   // text.pdf says "The quick brown fox…" once per page, so exactly 3. Asserting
