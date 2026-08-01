@@ -355,6 +355,8 @@ export interface FormField {
   default: string;
   /** `/Q` — so the property panel prefills what the field actually has. */
   align: 'left' | 'center' | 'right';
+  /** `/DA`'s size. 0 means "auto", which is PDF for "fit the box". */
+  font_size: number;
   options: string[];
   flags: { required: boolean; readonly: boolean; multiline: boolean; password: boolean };
   max_len: number;

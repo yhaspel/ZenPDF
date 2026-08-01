@@ -554,10 +554,19 @@ FILL_FORM = {
     "properties": {
         # Values are typed by the *field*, not by the wire: a checkbox accepts a
         # bool or "yes"/"on", a choice field accepts one of its options.
+        #
+        # Bounded on both axes, like every other schema here. Params are stored
+        # on the Job row and echoed on every poll, so an uncapped map is a
+        # quota-free write into Postgres and a read amplifier — a guest could
+        # park megabytes per job and re-download them 40×/minute.
         "values": {
             "type": "object",
             "minProperties": 1,
-            "additionalProperties": {"type": ["string", "boolean", "number", "null"]},
+            "maxProperties": 1000,
+            "additionalProperties": {
+                "type": ["string", "boolean", "number", "null"],
+                "maxLength": 20000,
+            },
         },
         "flatten_after": {"type": "boolean"},
     },
@@ -575,7 +584,10 @@ _FIELD_SPEC = {
         "rect": _NORM_RECT,
         # A radio group is N placements of one field, so it carries N rects.
         "rects": {"type": "array", "items": _NORM_RECT, "minItems": 2, "maxItems": 50},
-        "options": {"type": "array", "items": {"type": "string", "maxLength": 200},
+        # `minLength: 1` is load-bearing: an empty option becomes `Name("/")`,
+        # which pikepdf refuses — a 500-shaped failure for a 400-shaped input.
+        "options": {"type": "array",
+                    "items": {"type": "string", "minLength": 1, "maxLength": 200},
                     "maxItems": 200},
         "default": {"type": ["string", "boolean", "null"]},
         "required": {"type": "boolean"},
@@ -616,8 +628,11 @@ IMPORT_FORM_DATA = {
     "properties": {
         "format": {"enum": ["json", "csv"]},
         # The file contents, inline: form data is small and this keeps the
-        # import on the same job pipeline as every other mutation.
-        "data": {"type": "string", "maxLength": 2_000_000},
+        # import on the same job pipeline as every other mutation. The cap is
+        # ~25 000 `name,value` rows — far past any real form — and is what
+        # keeps the payload, which is retained on the Job row and echoed on
+        # every poll, from becoming a quota-free store-and-amplify.
+        "data": {"type": "string", "maxLength": 500_000},
         "flatten_after": {"type": "boolean"},
     },
     "additionalProperties": False,

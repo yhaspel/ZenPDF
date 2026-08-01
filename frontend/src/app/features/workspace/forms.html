@@ -22,8 +22,12 @@
         @if (!forms.hasForm()) {
           <p class="rounded border border-slate-200 bg-slate-50 p-2 text-[11px] text-slate-500"
              data-test="no-form">
-            This document has no form fields. Switch to <strong>Form builder</strong> to add some.
+            This document has no form fields — there is nothing to fill in yet.
           </p>
+          <button class="rounded border border-slate-300 px-2 py-1 text-[11px]"
+                  (click)="tab.set('build')" data-test="no-form-build">
+            Add fields with the form builder
+          </button>
         } @else {
           <p class="text-[11px] text-slate-500">
             Type straight into the page, or use the list below. Everything you change is

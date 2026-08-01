@@ -14,6 +14,7 @@ function field(over: Partial<FormField> = {}): FormField {
     value: '',
     default: '',
     align: 'left',
+    font_size: 0,
     options: [],
     flags: { required: false, readonly: false, multiline: false, password: false },
     max_len: 0,

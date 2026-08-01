@@ -341,6 +341,27 @@ def test_a_signature_field_lands_where_it_was_placed():
     assert field["rect"]["h"] == pytest.approx(0.05, abs=0.01)
 
 
+def _radio_state(data: bytes, name: str) -> tuple[str, list[str]]:
+    """(parent `/V`, each kid's `/AS`) — where a radio group's answer lives.
+
+    Asserted here rather than through `widget.field_value`, which reports the
+    *inherited* parent value for every kid once the group is structured the way
+    the spec wants: the answer belongs to the parent field, and it is `/AS`
+    that decides which kid renders as filled in.
+    """
+    import io as _io
+
+    import pikepdf
+
+    pdf = pikepdf.open(_io.BytesIO(data))
+    try:
+        field = next(f for f in pdf.Root.AcroForm.Fields if str(f.get("/T", "")) == name)
+        kids = list(field.get("/Kids") or [])
+        return str(field.get("/V", "")), [str(k.get("/AS", "")) for k in kids]
+    finally:
+        pdf.close()
+
+
 def test_radio_options_are_mutually_exclusive():
     """The property that makes a radio group a radio group: selecting one
     option clears the others. Each kid carries its own export value — PyMuPDF's
@@ -351,23 +372,232 @@ def test_radio_options_are_mutually_exclusive():
                                     "rects": [_rect(0.10), _rect(0.20), _rect(0.30)]}},
     ])
     filled, _ = F.fill_form(built, values={"plan": "pro"})
-
-    doc = fitz.open(stream=filled, filetype="pdf")
-    try:
-        on = [w.field_value for w in doc[0].widgets()
-              if w.field_name == "plan" and w.field_value not in ("Off", "", None)]
-    finally:
-        doc.close()
-    assert on == ["pro"], f"exactly one option may be on, got {on}"
+    value, states = _radio_state(filled, "plan")
+    assert value == "/pro"
+    assert states == ["/Off", "/pro", "/Off"], f"exactly one may be on, got {states}"
+    assert _values(filled)["plan"] == "pro"
 
     again, _ = F.fill_form(filled, values={"plan": "team"})
-    doc = fitz.open(stream=again, filetype="pdf")
+    value, states = _radio_state(again, "plan")
+    assert value == "/team"
+    assert states == ["/Off", "/Off", "/team"], "switching must clear the previous one"
+    assert _values(again)["plan"] == "team"
+
+
+@pytest.mark.parametrize("options", [
+    ["Option 1", "Option 2"],          # the builder's own default text
+    ["a/b", "a#b"],                    # characters PDF names escape
+    ["Ja", "Nein-ü"],                  # non-ASCII
+])
+def test_a_radio_option_survives_being_a_pdf_name(options):
+    """An option is stored as a PDF *name*, so pikepdf escapes anything not
+    name-safe and PyMuPDF hands the raw token back. Without decoding, the read
+    model advertised `Option#201`, neither spelling selected anything, and each
+    builder round trip escaped the escape (`Option#23201`, `Option#2323201`)."""
+    built, _ = F.edit_fields_batch(_blank(), ops=[
+        {"action": "add", "field": {"name": "plan", "type": "radio", "page": 0,
+                                    "options": options,
+                                    "rects": [_rect(0.2), _rect(0.3)]}},
+    ])
+    field = F.read_form(built)["fields"][0]
+    assert field["options"] == options
+
+    chosen, _ = F.fill_form(built, values={"plan": options[1]})
+    assert _values(chosen)["plan"] == options[1]
+
+    # And the labels are stable across a builder edit — re-adding from what the
+    # read model reported must not escape them a second time.
+    again, _ = F.edit_fields_batch(built, ops=[
+        {"action": "update", "field": {"name": "plan", "type": "radio", "page": 0,
+                                       "options": field["options"],
+                                       "rects": [_rect(0.4), _rect(0.5)]}},
+    ])
+    assert F.read_form(again)["fields"][0]["options"] == options
+
+
+def test_a_field_placed_on_two_pages_is_one_text_field_not_a_radio_group():
+    """The commonest AcroForm shape there is: one name/date field repeated on
+    every page. Calling a second same-named widget "a radio option" left it
+    with no options, and the "nothing selected" cleanup then erased its value —
+    so export blanked it and the UI rendered a choice list with no choices."""
+    doc = fitz.open()
+    for _ in range(2):
+        page = doc.new_page(width=595, height=842)
+        widget = fitz.Widget()
+        widget.field_name = "signer_name"
+        widget.field_type = fitz.PDF_WIDGET_TYPE_TEXT
+        widget.rect = fitz.Rect(72, 120, 400, 145)
+        widget.field_value = "Ada Lovelace"
+        page.add_widget(widget)
+    data = doc.tobytes()
+    doc.close()
+
+    field = F.read_form(data)["fields"][0]
+    assert field["type"] == "text"
+    assert field["value"] == "Ada Lovelace"
+    assert len(field["widgets"]) == 2, "both placements are reported"
+
+    payload, _, _ = F.export_form_data(data, fmt="json")
+    import json as _json
+
+    assert _json.loads(payload) == {"signer_name": "Ada Lovelace"}
+
+
+def test_a_radio_group_leaves_one_field_in_the_acroform():
+    """The kids must not stay registered as top-level fields as well, and a
+    deleted group must not leave a parent behind whose /Kids dangle — both are
+    invisible to us and visible to Acrobat and to pyHanko in Phase 8."""
+    import io as _io
+
+    import pikepdf
+
+    def titles(data: bytes) -> list[str]:
+        pdf = pikepdf.open(_io.BytesIO(data))
+        try:
+            return [str(f.get("/T", "")) for f in pdf.Root.AcroForm.Fields]
+        finally:
+            pdf.close()
+
+    built, _ = F.edit_fields_batch(_blank(), ops=[
+        {"action": "add", "field": {"name": "plan", "type": "radio", "page": 0,
+                                    "options": ["basic", "pro"],
+                                    "rects": [_rect(0.2), _rect(0.3)]}},
+    ])
+    assert titles(built) == ["plan"]
+
+    # Update is delete-then-add; the name must not end up in the file twice.
+    updated, _ = F.edit_fields_batch(built, ops=[
+        {"action": "update", "field": {"name": "plan", "type": "radio", "page": 0,
+                                       "options": ["basic", "pro", "team"],
+                                       "rects": [_rect(0.2), _rect(0.3), _rect(0.4)]}},
+    ])
+    assert titles(updated) == ["plan"]
+
+    removed, _ = F.edit_fields_batch(updated, ops=[
+        {"action": "delete", "field": {"name": "plan"}},
+    ])
+    assert titles(removed) == []
+    assert F.read_form(removed)["has_form"] is False
+
+
+def test_a_signature_field_is_not_filled_in_by_an_import_round_trip():
+    """`export → import` used to write `/V ()` onto the `/Sig` field, after
+    which pyHanko refuses it ("appears to be filled already") — bricking the
+    placeholder Phase 8 exists to sign into."""
+    built, _ = F.edit_fields_batch(_blank(), ops=[
+        {"action": "add", "field": {"name": "who", "type": "text", "page": 0,
+                                    "rect": _rect(0.2)}},
+        {"action": "add", "field": {"name": "sign_here", "type": "signature",
+                                    "page": 0, "rect": _rect(0.5)}},
+    ])
+    payload, _, _ = F.export_form_data(built, fmt="json")
+    import json as _json
+
+    assert "sign_here" not in _json.loads(payload), "a signature has no value to export"
+
+    back, _ = F.fill_form(built, values=F.parse_form_data(payload, fmt="json") or {"who": ""})
+    doc = fitz.open(stream=back, filetype="pdf")
     try:
-        on = [w.field_value for w in doc[0].widgets()
-              if w.field_name == "plan" and w.field_value not in ("Off", "", None)]
+        sig = next(w for w in doc[0].widgets() if w.field_name == "sign_here")
+        assert doc.xref_get_key(sig.xref, "V")[0] == "null", "empty /V was written"
     finally:
         doc.close()
-    assert on == ["team"], "switching options must clear the previous one"
+
+    # Filling one deliberately is an error the user can act on, not a silent no-op.
+    with pytest.raises(InvalidParams, match="signed, not filled"):
+        F.fill_form(built, values={"sign_here": "Ada"})
+
+
+def test_export_csv_defuses_a_spreadsheet_formula():
+    """CWE-1236: the values come out of a PDF somebody else wrote, and Export
+    CSV is one click away from a victim opening it in Excel."""
+    doc = fitz.open()
+    page = doc.new_page(width=595, height=842)
+    widget = fitz.Widget()
+    widget.field_name = "notes"
+    widget.field_type = fitz.PDF_WIDGET_TYPE_TEXT
+    widget.rect = fitz.Rect(72, 120, 400, 145)
+    widget.field_value = "=cmd|' /C calc'!A0"
+    page.add_widget(widget)
+    data = doc.tobytes()
+    doc.close()
+
+    payload, _, _ = F.export_form_data(data, fmt="csv")
+    line = payload.decode().splitlines()[1]
+    assert line.startswith("notes,")
+    assert "'=cmd" in line, "the formula was not neutralised"
+    # JSON is not a spreadsheet — it must not be mangled.
+    import json as _json
+
+    assert _json.loads(F.export_form_data(data, fmt="json")[0])["notes"].startswith("=cmd")
+
+
+def test_deeply_nested_json_is_a_validation_error_not_a_stack_overflow():
+    with pytest.raises(InvalidParams):
+        F.parse_form_data(b"[" * 200000 + b"]" * 200000, fmt="json")
+
+
+def test_an_unknown_name_error_does_not_echo_the_whole_payload(fixture_bytes):
+    """The message is stored on the Job row and echoed on every poll; an import
+    of 90 000 unknown names produced 900 KB of error."""
+    with pytest.raises(InvalidParams) as exc:
+        F.fill_form(fixture_bytes("form.pdf"),
+                    values={f"unknown_{i}": "x" for i in range(500)})
+    assert len(str(exc.value)) < 2000
+    assert "more" in str(exc.value)
+
+
+def test_a_signature_field_lands_where_it_was_placed_on_a_rotated_offset_page():
+    """`~transformation_matrix` carries the page origin only when rotation is 0;
+    on a rotated page PyMuPDF computes it against a zero-origin box, so the
+    signature landed a whole MediaBox origin away — off the page, where
+    clamping then hid it."""
+    doc = fitz.open()
+    page = doc.new_page(width=595, height=842)
+    page.set_mediabox(fitz.Rect(100, 200, 695, 1042))
+    doc[0].set_rotation(90)
+    data = doc.tobytes()
+    doc.close()
+
+    built, _ = F.edit_fields_batch(data, ops=[
+        {"action": "add", "field": {"name": "sig", "type": "signature", "page": 0,
+                                    "rect": {"x": 0.1, "y": 0.1, "w": 0.3, "h": 0.05}}},
+    ])
+    got = next(f for f in F.read_form(built)["fields"] if f["name"] == "sig")["rect"]
+    assert got["x"] == pytest.approx(0.1, abs=0.02)
+    assert got["y"] == pytest.approx(0.1, abs=0.02)
+    assert got["w"] == pytest.approx(0.3, abs=0.02)
+
+
+def test_a_built_field_keeps_its_properties_when_it_is_moved():
+    """An update is delete-then-add from the spec the client sends, so anything
+    the read model does not report is reset the first time a field is dragged."""
+    built, _ = F.edit_fields_batch(_blank(), ops=[
+        {"action": "add", "field": {"name": "who", "type": "text", "page": 0,
+                                    "rect": _rect(0.2), "max_len": 12,
+                                    "align": "center", "font_size": 18,
+                                    "default": "seed"}},
+    ])
+    field = F.read_form(built)["fields"][0]
+    assert field["max_len"] == 12
+    assert field["align"] == "center"
+    assert field["font_size"] == pytest.approx(18)
+    assert field["default"] == "seed"
+
+    # Re-send exactly what the read model reported, as the builder does.
+    moved, _ = F.edit_fields_batch(built, ops=[
+        {"action": "update", "field": {"name": "who", "type": "text", "page": 0,
+                                       "rect": _rect(0.6),
+                                       "max_len": field["max_len"],
+                                       "align": field["align"],
+                                       "font_size": field["font_size"],
+                                       "default": field["default"]}},
+    ])
+    after = F.read_form(moved)["fields"][0]
+    assert after["max_len"] == 12
+    assert after["align"] == "center"
+    assert after["font_size"] == pytest.approx(18)
+    assert after["default"] == "seed"
 
 
 def test_a_radio_group_needs_a_rect_per_option():

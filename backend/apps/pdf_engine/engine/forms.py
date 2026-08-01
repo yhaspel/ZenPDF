@@ -106,10 +106,39 @@ def _flags_of(widget) -> int:
         return 0
 
 
+def _decode_pdf_name(token: str) -> str:
+    """`Option#201` → `Option 1`.
+
+    A radio option is stored as a PDF **name**, so pikepdf escapes anything not
+    name-safe — a space, `/`, `#`, or any non-ASCII byte — on the way in. PyMuPDF
+    hands the raw token straight back, so without decoding here the read model
+    advertised `Option#201` as the option, the client sent back either spelling,
+    and neither matched: the group could not be selected at all, and every
+    builder round trip escaped the escape (`Option#23201`, `Option#2323201`, …).
+    """
+    out = bytearray()
+    i = 0
+    while i < len(token):
+        pair = token[i + 1:i + 3]
+        if token[i] == "#" and len(pair) == 2 and all(c in "0123456789abcdefABCDEF" for c in pair):
+            out.append(int(pair, 16))
+            i += 3
+        else:
+            out.extend(token[i].encode("utf-8"))
+            i += 1
+    return out.decode("utf-8", errors="replace")
+
+
 def _on_states(widget) -> list[str]:
+    """The raw `/AP /N` on-state tokens, exactly as stored — what `field_value`
+    has to be set to. `_on_labels` is the same list for human consumption."""
     states = widget.button_states() or {}
     normal = states.get("normal") or []
     return [s.lstrip("/") for s in normal if s and s.lstrip("/") != "Off"]
+
+
+def _on_labels(widget) -> list[str]:
+    return [_decode_pdf_name(s) for s in _on_states(widget)]
 
 
 def _default_of(doc: fitz.Document, widget) -> str:
@@ -143,6 +172,29 @@ def _align_of(doc: fitz.Document, widget) -> str:
     return "left"
 
 
+def _font_size_of(doc: fitz.Document, widget) -> float:
+    """The size out of `/DA` (`… /Helv 12 Tf`), so the panel can carry it.
+
+    An update is delete-then-add from the spec the client sends, so anything
+    the read model does not report is silently reset the first time a field is
+    dragged.
+    """
+    size = float(getattr(widget, "text_fontsize", 0) or 0)
+    if size:
+        return size
+    for path in ("DA", "Parent/DA"):
+        kind, raw = doc.xref_get_key(widget.xref, path)
+        if kind != "string":
+            continue
+        parts = str(raw).split()
+        if "Tf" in parts:
+            try:
+                return float(parts[parts.index("Tf") - 1])
+            except (ValueError, IndexError):
+                return 0.0
+    return 0.0
+
+
 def read_form(data: bytes) -> dict:
     """The form read model (phase-05 §"Read model")."""
     doc = _open(data)
@@ -159,42 +211,53 @@ def read_form(data: bytes) -> dict:
                 if not name:
                     continue
                 kind = _WIDGET_TO_TYPE.get(widget.field_type, "text")
+                is_radio = kind == "radio" or (kind == "checkbox"
+                                               and _is_radio_kid(doc, widget))
                 flags = _flags_of(widget)
                 rect = widget.rect
                 x0, y0, x1, y1 = apply_matrix_rect(rect.x0, rect.y0, rect.x1, rect.y1, rot)
                 nr = page_rect_to_norm_clamped(x0, y0, x1, y1, pw, ph)
-                on_states = _on_states(widget)
+                labels = _on_labels(widget)
+                placement = {
+                    "page": index,
+                    "rect": {"x": round(nr.x, 6), "y": round(nr.y, 6),
+                             "w": round(nr.w, 6), "h": round(nr.h, 6)},
+                    "on_value": labels[0] if labels else "",
+                }
 
                 if name in by_name:
-                    # A second widget sharing a name is a radio group's other
-                    # option — PyMuPDF reports the kids, not the parent.
+                    # A second widget with the same name is *either* a radio
+                    # group's other option or the same field placed on several
+                    # pages — a name/date repeated on every page of a contract
+                    # is the commonest AcroForm shape there is. Calling that a
+                    # radio group left it with no options, which then made the
+                    # "nothing selected" cleanup below erase the real value and
+                    # left the UI rendering a choice list with no choices.
                     entry = by_name[name]
-                    entry["type"] = "radio"
-                    entry["options"].extend(o for o in on_states
-                                            if o not in entry["options"])
-                    entry["widgets"].append({
-                        "page": index,
-                        "rect": {"x": round(nr.x, 6), "y": round(nr.y, 6),
-                                 "w": round(nr.w, 6), "h": round(nr.h, 6)},
-                        "on_value": on_states[0] if on_states else "",
-                    })
-                    if widget.field_value and widget.field_value != "Off":
-                        entry["value"] = widget.field_value
+                    entry["widgets"].append(placement)
+                    if is_radio:
+                        entry["type"] = "radio"
+                        entry["options"].extend(o for o in labels
+                                                if o not in entry["options"])
+                        chosen = _decode_pdf_name(str(widget.field_value or ""))
+                        if chosen and chosen != "Off":
+                            entry["value"] = chosen
                     continue
 
                 order.append(name)
                 by_name[name] = {
                     "name": name,
-                    "type": kind,
+                    "type": "radio" if is_radio else kind,
                     "page": index,
                     "rect": {"x": round(nr.x, 6), "y": round(nr.y, 6),
                              "w": round(nr.w, 6), "h": round(nr.h, 6)},
                     "value": "" if widget.field_value in (None, "Off", False)
-                    else (widget.field_value if not isinstance(widget.field_value, bool)
-                          else "Yes"),
+                    else (_decode_pdf_name(widget.field_value)
+                          if not isinstance(widget.field_value, bool) else "Yes"),
                     "default": _default_of(doc, widget),
                     "align": _align_of(doc, widget),
-                    "options": list(widget.choice_values or on_states),
+                    "font_size": _font_size_of(doc, widget),
+                    "options": list(widget.choice_values or labels),
                     "flags": {
                         "required": bool(flags & FF_REQUIRED),
                         "readonly": bool(flags & FF_READONLY),
@@ -202,12 +265,7 @@ def read_form(data: bytes) -> dict:
                         "password": bool(flags & FF_PASSWORD),
                     },
                     "max_len": int(getattr(widget, "text_maxlen", 0) or 0),
-                    "widgets": [{
-                        "page": index,
-                        "rect": {"x": round(nr.x, 6), "y": round(nr.y, 6),
-                                 "w": round(nr.w, 6), "h": round(nr.h, 6)},
-                        "on_value": on_states[0] if on_states else "",
-                    }],
+                    "widgets": [placement],
                 }
         for entry in by_name.values():
             if entry["type"] == "radio" and entry["value"] not in entry["options"]:
@@ -240,7 +298,7 @@ def _coerce(widget, value):
         text = "" if value is None else str(value)
         if text and allowed and text not in allowed:
             raise InvalidParams(
-                f"'{text}' is not an option for '{widget.field_name}' ({allowed})"
+                f"'{text[:80]}' is not an option for '{widget.field_name}' ({allowed})"
             )
         return text
     return "" if value is None else str(value)
@@ -256,6 +314,7 @@ def fill_form(data: bytes, *, values: dict, flatten_after: bool = False) -> tupl
         # Counted by *field*, not by widget: a radio group is several widgets
         # and one answer, and "imported 3 field(s)" for one choice is a lie.
         touched: set[str] = set()
+        radio_targets: dict[str, str] = {}
         for index in range(doc.page_count):
             page = doc[index]
             for widget in page.widgets():
@@ -264,42 +323,107 @@ def fill_form(data: bytes, *, values: dict, flatten_after: bool = False) -> tupl
                     continue
                 target = values[name]
                 kind = _WIDGET_TO_TYPE.get(widget.field_type, "text")
-                if kind == "radio" or (kind == "checkbox" and _is_radio_kid(doc, widget)):
-                    # Only the kid whose export value was chosen turns on; the
-                    # others must be cleared, or two options read as selected.
-                    on_states = _on_states(widget)
-                    widget.field_value = (
-                        str(target) if str(target) in on_states else "Off"
-                    )
-                else:
-                    coerced = _coerce(widget, target)
-                    widget.field_value = coerced
-                    widget.update()
-                    if coerced == "":
-                        # `update()` will not write an empty `/V`, so a field
-                        # keeps its old text — and "clear the form", which is
-                        # half of the import round trip, silently did nothing.
-                        doc.xref_set_key(widget.xref, "V", fitz.get_pdf_str(""))
+                if kind == "signature":
+                    # A signature field holds a signature dictionary, not text.
+                    # Writing an empty `/V` string onto one — which is exactly
+                    # what an export→import round trip used to do, since the
+                    # export listed it with an empty value — makes pyHanko
+                    # refuse it ("appears to be filled already") and bricks the
+                    # placeholder Phase 8 is meant to sign into.
+                    if str(target or "").strip():
+                        raise InvalidParams(
+                            f"'{name}' is a signature field; it is signed, not filled in."
+                        )
                     touched.add(name)
                     remaining.pop(name, None)
                     continue
+                if kind == "radio" or (kind == "checkbox" and _is_radio_kid(doc, widget)):
+                    # Deferred to a pikepdf pass below. Setting `field_value` on
+                    # a kid works only while the export values happen to be
+                    # bare PDF names: PyMuPDF re-escapes whatever it is handed,
+                    # so `a/b` (stored `a#2fb`) became `a#232fb` and matched
+                    # nothing — the group silently stayed unselected.
+                    radio_targets[name] = str(target)
+                    touched.add(name)
+                    remaining.pop(name, None)
+                    continue
+
+                coerced = _coerce(widget, target)
+                widget.field_value = coerced
                 widget.update()
+                if coerced == "":
+                    # `update()` will not write an empty `/V`, so a field
+                    # keeps its old text — and "clear the form", which is
+                    # half of the import round trip, silently did nothing.
+                    doc.xref_set_key(widget.xref, "V", fitz.get_pdf_str(""))
                 touched.add(name)
                 remaining.pop(name, None)
 
         if remaining:
-            raise InvalidParams(
-                "This document has no field(s) called: " + ", ".join(sorted(remaining))
-            )
+            # Truncated: the caller controls both the count and the length of
+            # these names, and the message is persisted on the Job row and
+            # echoed on every poll. An import of 90 000 unknown names produced a
+            # 900 KB error message.
+            names = sorted(remaining)
+            shown = ", ".join(n[:80] for n in names[:20])
+            more = f" (and {len(names) - 20} more)" if len(names) > 20 else ""
+            raise InvalidParams(f"This document has no field(s) called: {shown}{more}")
         out = doc.tobytes(**_SAVE)
     finally:
         doc.close()
+
+    if radio_targets:
+        out = _select_radio_options(out, radio_targets)
 
     if flatten_after:
         from .annotations import flatten_annotations
 
         out = flatten_annotations(out, what="form")
     return out, {"filled": len(touched), "flattened": bool(flatten_after)}
+
+
+def _select_radio_options(raw: bytes, choices: dict[str, str]) -> bytes:
+    """Choose one option per radio group, at the PDF level.
+
+    The parent field carries `/V` and each kid carries `/AS` — exactly one on,
+    the rest `/Off`, which is what makes a group exclusive. Done here rather
+    than through PyMuPDF because `field_value` re-escapes what it is given, so
+    any option that is not already a bare PDF name could never be selected.
+    """
+    import pikepdf
+
+    def on_states(kid) -> list[str]:
+        """The `/AP /N` keys as plain strings — pikepdf hands back `"/basic"`,
+        not a Name, and assigning that string writes a *string* object."""
+        appearance = kid.get("/AP", {}).get("/N", {})
+        return [str(k) for k in appearance.keys() if str(k) != "/Off"]
+
+    pdf = pikepdf.open(io.BytesIO(raw))
+    try:
+        acro = pdf.Root.get("/AcroForm")
+        for field in list((acro or {}).get("/Fields") or []):
+            name = str(field.get("/T", ""))
+            if name not in choices:
+                continue
+            wanted = choices[name]
+            kids = list(field.get("/Kids") or [])
+            targets = kids or [field]
+            chosen = None
+            for kid in targets:
+                match = next(
+                    (s for s in on_states(kid)
+                     if _decode_pdf_name(s.lstrip("/")) == wanted), None)
+                kid.AS = pikepdf.Name(match) if match else pikepdf.Name("/Off")
+                if match:
+                    chosen = match
+                if kids and "/V" in kid:
+                    del kid["/V"]   # the answer belongs to the parent
+            field.V = pikepdf.Name(chosen) if chosen else pikepdf.Name("/Off")
+        buf = io.BytesIO()
+        pdf.save(buf)
+        return buf.getvalue()
+    finally:
+        pdf.close()
 
 
 def _is_radio_kid(doc: fitz.Document, widget) -> bool:
@@ -316,12 +440,28 @@ def _is_radio_kid(doc: fitz.Document, widget) -> bool:
 # --------------------------------------------------------------------------- #
 # Import / export
 # --------------------------------------------------------------------------- #
+def _csv_safe(cell) -> str:
+    """Defuse a spreadsheet formula (CWE-1236).
+
+    Field names and values come out of a PDF somebody else may have written,
+    and Export CSV is one click away — so `=cmd|' /C calc'!A0` in a text field
+    would execute when the victim opens the export in Excel. A leading
+    apostrophe is the standard neutraliser and survives a round trip back
+    through `parse_form_data` as a literal.
+    """
+    text = "" if cell is None else str(cell)
+    return "'" + text if text[:1] in {"=", "+", "-", "@", "\t", "\r"} else text
+
+
 def export_form_data(data: bytes, *, fmt: str = "json") -> tuple[bytes, str, str]:
     """Current values as JSON or CSV. Returns (bytes, filename, content_type)."""
     if fmt not in {"json", "csv"}:
         raise InvalidParams("format must be 'json' or 'csv'")
     model = read_form(data)
-    values = {f["name"]: f["value"] for f in model["fields"]}
+    # Signature fields are excluded on purpose: they have no value to export,
+    # and importing the empty one back writes `/V ()` onto a `/Sig` field,
+    # which permanently un-signs it.
+    values = {f["name"]: f["value"] for f in model["fields"] if f["type"] != "signature"}
     if fmt == "json":
         return (json.dumps(values, indent=2, ensure_ascii=False).encode(),
                 "form-data.json", "application/json")
@@ -329,7 +469,7 @@ def export_form_data(data: bytes, *, fmt: str = "json") -> tuple[bytes, str, str
     writer = csv.writer(buf)
     writer.writerow(["name", "value"])
     for name, value in values.items():
-        writer.writerow([name, value])
+        writer.writerow([_csv_safe(name), _csv_safe(value)])
     return buf.getvalue().encode(), "form-data.csv", "text/csv"
 
 
@@ -341,7 +481,9 @@ def parse_form_data(payload: bytes, *, fmt: str = "json") -> dict:
     if fmt == "json":
         try:
             parsed = json.loads(text)
-        except ValueError as exc:
+        except (ValueError, RecursionError) as exc:
+            # RecursionError: 300 000 nested `[` is well inside the size cap and
+            # blows the decoder's stack — a 400, not a 500.
             raise InvalidParams(f"that file is not valid JSON: {exc}") from exc
         if not isinstance(parsed, dict):
             raise InvalidParams("form data must be an object of {field: value}")
@@ -420,6 +562,12 @@ def _add_simple_field(page: fitz.Page, spec: dict) -> None:
     else:
         raise InvalidParams(f"unsupported field type '{kind}'")
     added = page.add_widget(widget)
+    xref_of = getattr(added, "xref", 0) or widget.xref
+
+    if spec.get("default") not in (None, "", False):
+        # `/DV` as well as `/V`: the spec's `default` is what "reset form" puts
+        # back, and PyMuPDF only ever writes the current value.
+        page.parent.xref_set_key(xref_of, "DV", fitz.get_pdf_str(str(spec["default"])))
 
     align = spec.get("align")
     if align:
@@ -427,8 +575,7 @@ def _add_simple_field(page: fitz.Page, spec: dict) -> None:
             raise InvalidParams(f"align must be one of {list(_ALIGN)}")
         # `/Q` — quadding. PyMuPDF's Widget has no attribute for it, so it goes
         # in by hand after the widget exists.
-        xref = getattr(added, "xref", 0) or widget.xref
-        page.parent.xref_set_key(xref, "Q", str(_ALIGN[align]))
+        page.parent.xref_set_key(xref_of, "Q", str(_ALIGN[align]))
 
 
 def _build_radio_group(raw: bytes, spec: dict) -> bytes:
@@ -482,6 +629,7 @@ def _build_radio_group(raw: bytes, spec: dict) -> bytes:
             Kids=pikepdf.Array([]),
         ))
         kids = []
+        kid_ids = set()
         page_obj = pdf.pages[page_index]
         for annot in list(page_obj.get("/Annots") or []):
             title = str(annot.get("/T", ""))
@@ -494,7 +642,17 @@ def _build_radio_group(raw: bytes, spec: dict) -> bytes:
                 appearance[pikepdf.Name("/" + option)] = appearance[on_keys[0]]
                 if on_keys[0] != "/" + option:
                     del appearance[on_keys[0]]
+            # Identity, captured *before* `/T` goes: the old filter matched the
+            # `/AcroForm/Fields` entries by title after this line had already
+            # removed it, so it never matched and every kid stayed registered as
+            # a top-level field as well as a `/Kids` entry.
+            if annot.is_indirect:
+                kid_ids.add(annot.objgen)
             del annot["/T"]
+            # `field_value = True` left each kid holding `/V /Yes`; the answer
+            # belongs to the parent, and a kid carrying its own beats it.
+            if "/V" in annot:
+                del annot["/V"]
             annot.Parent = parent
             annot.AS = pikepdf.Name("/" + option) if option == default else pikepdf.Name("/Off")
             kids.append(annot)
@@ -502,7 +660,7 @@ def _build_radio_group(raw: bytes, spec: dict) -> bytes:
 
         acro = pdf.Root.AcroForm
         fields = [f for f in (acro.get("/Fields") or [])
-                  if not str(f.get("/T", "")).startswith(f"{name}{_RADIO_SEP}")]
+                  if not (f.is_indirect and f.objgen in kid_ids)]
         fields.append(parent)
         acro.Fields = pikepdf.Array(fields)
 
@@ -549,6 +707,35 @@ def _add_signature_field(raw: bytes, spec: dict) -> bytes:
     return out.getvalue()
 
 
+def _prune_acroform_field(raw: bytes, name: str) -> tuple[bytes, int]:
+    """Drop `/AcroForm/Fields` entries called `name`. Returns (bytes, removed).
+
+    Deleting the widget annotations is not enough for a radio group: the group
+    is a *parent* field object with no annotation of its own, so it survived as
+    a ghost entry whose `/Kids` pointed at deleted annots — invisible to the
+    app, visible to Acrobat and to any later pyHanko pass, and impossible to
+    remove afterwards because no widget carried the name any more. Update is
+    delete-then-add, so the same document ended up with the name twice.
+    """
+    import pikepdf
+
+    pdf = pikepdf.open(io.BytesIO(raw))
+    try:
+        acro = pdf.Root.get("/AcroForm")
+        if acro is None:
+            return raw, 0
+        fields = list(acro.get("/Fields") or [])
+        kept = [f for f in fields if str(f.get("/T", "")) != name]
+        if len(kept) == len(fields):
+            return raw, 0
+        acro.Fields = pikepdf.Array(kept)
+        buf = io.BytesIO()
+        pdf.save(buf)
+        return buf.getvalue(), len(fields) - len(kept)
+    finally:
+        pdf.close()
+
+
 def _delete_field(raw: bytes, name: str) -> bytes:
     doc = _open(raw)
     try:
@@ -559,20 +746,46 @@ def _delete_field(raw: bytes, name: str) -> bytes:
                 if widget.field_name == name:
                     page.delete_widget(widget)
                     removed += 1
-        if not removed:
-            raise InvalidParams(f"no field called '{name}'")
-        return doc.tobytes(**_SAVE)
+        out = doc.tobytes(**_SAVE)
     finally:
         doc.close()
+
+    out, pruned = _prune_acroform_field(out, name)
+    if not removed and not pruned:
+        raise InvalidParams(f"no field called '{name}'")
+    return out
 
 
 def _existing_names(raw: bytes) -> set[str]:
+    """Every field name in the file — widgets *and* parent-only fields.
+
+    The parent half matters: a radio group's name lives on a field object with
+    no annotation, so a widget-only scan called the name free and let `add`
+    create a second field with it.
+    """
+    import pikepdf
+
+    names = set()
     doc = _open(raw)
     try:
-        return {w.field_name for i in range(doc.page_count) for w in doc[i].widgets()
-                if w.field_name}
+        for index in range(doc.page_count):
+            # Bound to a local: `doc[i].widgets()` lets the temporary Page be
+            # collected while its widgets are still in use (annotations.py).
+            page = doc[index]
+            names.update(w.field_name for w in page.widgets() if w.field_name)
     finally:
         doc.close()
+
+    pdf = pikepdf.open(io.BytesIO(raw))
+    try:
+        acro = pdf.Root.get("/AcroForm")
+        for field in list((acro or {}).get("/Fields") or []):
+            title = str(field.get("/T", ""))
+            if title:
+                names.add(title)
+    finally:
+        pdf.close()
+    return names
 
 
 def edit_fields_batch(data: bytes, *, ops: list[dict]) -> tuple[bytes, dict]:

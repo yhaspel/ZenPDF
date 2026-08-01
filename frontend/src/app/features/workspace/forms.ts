@@ -37,6 +37,51 @@ const NEEDS_OPTIONS: FormFieldType[] = ['radio', 'combobox', 'listbox'];
 const RADIO_GAP = 0.012;
 
 /**
+ * One drawn box → N placements running down the page.
+ *
+ * Clamping each row to the page instead of laying the group out as a whole
+ * gave every option past the bottom the *same* rect — a group whose last few
+ * choices were invisible and unclickable, with no error anywhere, because each
+ * rect was individually valid. So the block is shifted up to fit, and only if
+ * it still cannot fit is the spacing compressed.
+ */
+/**
+ * An existing field as the spec that would recreate it.
+ *
+ * An update is delete-then-**add**, so every property the spec leaves out is
+ * reset: dragging a field used to silently wipe its max length, alignment,
+ * font size and default. Everything the read model reports goes back.
+ */
+export function specOf(field: FormField): FormFieldSpec {
+  return {
+    name: field.name,
+    type: field.type,
+    page: field.page,
+    rect: field.rect,
+    rects: field.widgets.length > 1 ? field.widgets.map((w) => w.rect) : undefined,
+    options: field.options.length ? field.options : undefined,
+    required: field.flags.required,
+    readonly: field.flags.readonly,
+    multiline: field.flags.multiline,
+    align: field.align,
+    max_len: field.max_len || undefined,
+    font_size: field.font_size || undefined,
+    default: field.default || undefined,
+  };
+}
+
+export function radioLayout(rect: Rect, count: number): Rect[] {
+  const step = rect.h + RADIO_GAP;
+  const span = step * (count - 1) + rect.h;
+  const scale = span <= 1 ? 1 : Math.max(0, (1 - rect.h) / (step * (count - 1)));
+  const start = span <= 1 ? Math.min(rect.y, 1 - span) : 0;
+  return Array.from({ length: count }, (_, i) => ({
+    ...rect,
+    y: start + i * step * scale,
+  }));
+}
+
+/**
  * Forms mode (phase-05) — fill an AcroForm, or build one.
  *
  * **Fill** hands the page to the viewer: PDF.js renders the real widgets and
@@ -272,10 +317,7 @@ export class Forms {
       // One drawn box, N placements: the group is laid out down the page from
       // where it was drawn, so the user is not asked to draw the same box
       // repeatedly and get the sizes subtly wrong.
-      spec.rects = options.map((_, i) => ({
-        ...draft.rect!,
-        y: Math.min(1 - draft.rect!.h, draft.rect!.y + i * (draft.rect!.h + RADIO_GAP)),
-      }));
+      spec.rects = radioLayout(draft.rect, options.length);
       spec.options = options;
     } else {
       spec.rect = draft.rect;
@@ -298,19 +340,7 @@ export class Forms {
     this.selectedName.set(name);
     const staged = this.forms.pendingOps().find((op) => op.field.name === name);
     const existing = this.forms.fields().find((f) => f.name === name);
-    const spec: FormFieldSpec | null = staged?.field ?? (existing ? {
-      name: existing.name,
-      type: existing.type,
-      page: existing.page,
-      rect: existing.rect,
-      rects: existing.widgets.length > 1
-        ? existing.widgets.map((w) => w.rect) : undefined,
-      options: existing.options,
-      required: existing.flags.required,
-      readonly: existing.flags.readonly,
-      multiline: existing.flags.multiline,
-      align: existing.align,
-    } : null);
+    const spec: FormFieldSpec | null = staged?.field ?? (existing ? specOf(existing) : null);
     this.draftIsNew = isNew || staged?.action === 'add';
     this.draftOriginal = spec;
     this.draftName.set(spec?.name ?? name);
@@ -357,11 +387,7 @@ export class Forms {
     if (type === 'radio' && spec.rects) {
       // The option count drives the placement count; the engine rejects a
       // mismatch, so keep them in step here rather than at save time.
-      const first = spec.rects[0];
-      spec.rects = options.map((_, i) => ({
-        ...first,
-        y: Math.min(1 - first.h, first.y + i * (first.h + RADIO_GAP)),
-      }));
+      spec.rects = radioLayout(spec.rects[0], options.length);
     }
 
     if (this.draftIsNew) {
@@ -390,17 +416,7 @@ export class Forms {
     if (staged) {
       this.forms.stageUpdate({ ...staged.field, rect: change.rect });
     } else if (existing) {
-      this.forms.stageUpdate({
-        name: existing.name,
-        type: existing.type,
-        page: existing.page,
-        rect: change.rect,
-        options: existing.options.length ? existing.options : undefined,
-        required: existing.flags.required,
-        readonly: existing.flags.readonly,
-        multiline: existing.flags.multiline,
-        align: existing.align,
-      });
+      this.forms.stageUpdate({ ...specOf(existing), rect: change.rect });
     }
     if (this.selectedName() === name) this.select(name, this.draftIsNew);
   }

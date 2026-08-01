@@ -154,15 +154,22 @@ def page_rect_to_norm(x0: float, y0: float, x1: float, y1: float,
 
 def page_rect_to_pdf_native(x0: float, y0: float, x1: float, y1: float,
                             page) -> tuple[float, float, float, float]:
-    """PyMuPDF page space → the PDF's own user space (origin bottom-left).
+    """A page's **unrotated** PyMuPDF rect → the PDF's own user space.
 
     The one conversion §8 sanctions, for libraries that speak PDF natively —
-    pyHanko's visible-signature boxes in phases 5 and 8. It goes through the
-    inverse of the page's `transformation_matrix` rather than "height minus y",
-    because that carries the page's own origin: a MediaBox that does not start
-    at (0, 0) still lands where it was placed.
+    pyHanko's visible-signature boxes in phases 5 and 8.
+
+    Deliberately not `~page.transformation_matrix`: measured on PyMuPDF 1.28,
+    that matrix carries the page origin only when `page.rotation == 0`. On a
+    rotated page it is computed against a zero-origin box, so the inverse
+    silently drops the translation and a signature placed on a rotated page
+    with an offset MediaBox lands a whole origin away — off the page, where
+    clamping then hides it. The box arithmetic below was checked against the
+    `/Rect` PyMuPDF itself writes, for rotations 0/90/270, an offset MediaBox
+    and a CropBox inset inside it.
     """
-    inverse = ~page.transformation_matrix
-    ax, ay = apply_matrix_point(x0, y0, inverse)
-    bx, by = apply_matrix_point(x1, y1, inverse)
-    return (min(ax, bx), min(ay, by), max(ax, bx), max(ay, by))
+    origin = page.cropbox_position           # top-left of the CropBox
+    top = page.mediabox.y1 - origin.y        # PDF y of that top edge
+    lo_x, hi_x = sorted((x0 + origin.x, x1 + origin.x))
+    lo_y, hi_y = sorted((top - y0, top - y1))
+    return (lo_x, lo_y, hi_x, hi_y)
