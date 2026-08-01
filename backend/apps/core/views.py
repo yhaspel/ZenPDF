@@ -13,10 +13,16 @@ from rest_framework.views import APIView
 from apps.pdf_engine.storage import storage_healthy
 
 from . import limits as L
-from .assets import ImageRejected, store_image
+from .assets import AssetQuotaExceeded, ImageRejected, store_image
 from .authentication import require_principal
 from .claim import claim_session
-from .exceptions import AccountRequired, FileTooLarge, GuestExpired, ValidationFailed
+from .exceptions import (
+    AccountRequired,
+    FileTooLarge,
+    GuestExpired,
+    QuotaExceeded,
+    ValidationFailed,
+)
 from .models import GuestSession
 from .permissions import IsAccount
 from .principals import is_guest, label
@@ -139,7 +145,6 @@ class ImageUploadView(APIView):
     """
 
     throttle_scope = "image_upload"
-    throttle_classes = [ScopedRateThrottle]
 
     @extend_schema(request=OpenApiTypes.OBJECT, responses=OpenApiTypes.OBJECT, tags=["core"])
     def post(self, request):
@@ -163,9 +168,26 @@ class ImageUploadView(APIView):
             raise exc
         try:
             asset = store_image(principal, upload.read())
+        except AssetQuotaExceeded as exc:
+            quota = QuotaExceeded(
+                str(exc) + (" Create a free account for more storage."
+                            if is_guest(principal) else "")
+            )
+            quota.zen_details = {"quota_bytes": exc.quota, "used_bytes": exc.used,
+                                 "tier": tier.tier}
+            raise quota from exc
         except ImageRejected as exc:
             raise ValidationFailed(str(exc)) from exc
         return Response(asset, status=status.HTTP_201_CREATED)
+
+    def get_throttles(self):
+        """Scoped rate **in addition to** the project defaults.
+
+        Setting `throttle_classes` would have *replaced* them, quietly dropping
+        `GuestThrottle`/`GuestIPThrottle` on a guest-reachable write endpoint —
+        the per-token and per-IP limits §16 says must always apply.
+        """
+        return [*super().get_throttles(), ScopedRateThrottle()]
 
 
 class HealthView(APIView):

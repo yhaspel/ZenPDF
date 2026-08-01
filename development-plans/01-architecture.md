@@ -142,7 +142,18 @@ Deviation from skill: the skill's `docker/` folder lives inside `infra/` (owner 
 
 ## 8. Coordinate system (critical, used by every placement feature)
 
-Client sends geometry as **normalized page coordinates in visual space**: origin top-left of the page *as displayed* (rotation applied), `x,y,w,h ∈ [0,1]` relative to displayed page width/height, plus `page` (0-based). PyMuPDF's page coordinate space is also top-left-origin with rotation applied, so server mapping is `fitz.Rect(x*W, y*H, (x+w)*W, (y+h)*H)` with `W,H = page.rect.width,.height`. The engine converts to PDF-native bottom-left space only where a library requires it (pyHanko visible-signature boxes). One utility: `pdf_engine/geometry.py` — the only place conversions live, with exhaustive tests for rotated pages (0/90/180/270).
+Client sends geometry as **normalized page coordinates in visual space**: origin top-left of the page *as displayed* (rotation applied), `x,y,w,h ∈ [0,1]` relative to displayed page width/height, plus `page` (0-based). Server mapping is `fitz.Rect(x*W, y*H, (x+w)*W, (y+h)*H)` with `W,H = page.rect.width,.height`. The engine converts to PDF-native bottom-left space only where a library requires it (pyHanko visible-signature boxes). One utility: `pdf_engine/geometry.py` — the only place conversions live, with exhaustive tests for rotated pages (0/90/180/270).
+
+⚠ **Corrected 2026-08-01 (phase 3).** This section previously claimed "PyMuPDF's page coordinate space is *also* top-left-origin with rotation applied", full stop. That is true of `page.rect` and `page.search_for`, and **false** of three things phase 3 depends on:
+
+| API | Coordinate space |
+|---|---|
+| `page.rect`, `page.search_for` | **display** (rotation applied) |
+| `page.get_text("words" \| "dict")` | **unrotated** |
+| `annot.rect`, `annot.vertices`, every `page.add_*_annot` | **unrotated** |
+| `page.set_cropbox` | **unrotated** (phase 2's `crop_pages` already de-rotated) |
+
+So on a `/Rotate 90` page the two spaces differ by a quarter turn. The rule is therefore: **normalized geometry is always display space on the wire; the engine de-rotates on the way in (`page.derotation_matrix`) and re-rotates on the way out (`page.rotation_matrix`)** via `geometry.apply_matrix_rect` / `apply_matrix_point`. Omitting it is not a visible error in a round-trip — write and read cancel out, so create→extract agrees perfectly while the *file* disagrees with both. Only a rendered-pixel assertion catches it (`test_a_mark_on_a_rotated_page_renders_where_it_was_placed`).
 
 ## 9. Data model (canonical — phases may add fields only by amending this doc)
 

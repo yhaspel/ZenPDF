@@ -73,9 +73,17 @@ export class AnnotationsFacade {
     return grouped;
   });
 
-  readonly dirty = computed(() => this._drafts().size > 0 || this._removed().size > 0);
+  /**
+   * Whether anything would actually be *sent*.
+   *
+   * Not "are there local edits": drawing a mark and deleting it again before
+   * saving leaves entries in both stores but composes to no ops at all, and the
+   * first cut of this left the badge showing "1 unsaved" and armed the
+   * beforeunload guard over work that did not exist.
+   */
+  readonly pendingChanges = computed(() => this.ops().length);
+  readonly dirty = computed(() => this.pendingChanges() > 0);
   readonly count = computed(() => this.all().length);
-  readonly pendingChanges = computed(() => this._drafts().size + this._removed().size);
 
   readonly selected = computed<Annotation | null>(() => {
     const id = this._selectedId();

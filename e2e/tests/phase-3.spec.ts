@@ -63,6 +63,14 @@ test('phase 3: annotate, save, reload, flatten', async ({ page }) => {
   await page.mouse.move(third.x + third.width - 2, third.y + third.height / 2, { steps: 6 });
   await page.mouse.up();
   await expect(page.locator('[data-test=comment-row]')).toHaveCount(1);
+  // A drag across three words must highlight three words. Counting rows alone
+  // passes even when pointer capture reduces the selection to the one word the
+  // drag started on, so assert the mark is as wide as the run.
+  const markWidth = await page
+    .locator('[data-test=overlay-item][data-shape=quads] rect')
+    .first()
+    .evaluate((el) => (el as SVGRectElement).width.baseVal.value);
+  expect(markWidth).toBeGreaterThan(third.x + third.width - first.x - 6);
 
   // --- 2. A sticky note. ---
   await page.click('[data-test=tool-note]');
@@ -101,6 +109,32 @@ test('phase 3: annotate, save, reload, flatten', async ({ page }) => {
   // Authorship is the display name, never a session id (phase-03 §3).
   await expect(page.locator('[data-test=comment-row]').first()).toContainText('E2E Tester');
 
+  // --- 5b. The sidebar navigates, edits and deletes. ---
+  await expect(page.locator('[data-test=comment-time]').first()).toBeVisible();
+  // Jump to the mark that is on another page and confirm the page followed.
+  await page.click('[data-test=tool-arrow]');
+  await dragOnPage(page, [0.2, 0.5], [0.5, 0.6]);
+  await page.click('[data-test=annot-next]');
+  await expect(page.locator('[data-test=annot-page]')).toContainText('Page 2 / 3');
+  await page.locator('[data-test=comment-jump]').first().click();
+  await expect(page.locator('[data-test=annot-page]')).toContainText('Page 1 / 3');
+
+  // Edit an existing comment through the sidebar.
+  await page.locator('[data-test=comment-edit]').first().click();
+  const sidebarEditor = page.locator('[data-test=comment-editor]');
+  await sidebarEditor.fill('Edited from the sidebar');
+  await sidebarEditor.blur();
+  await expect(page.locator('[data-test=comment-text]').first()).toHaveText(
+    'Edited from the sidebar',
+  );
+
+  // Delete the extra arrow again, then save the edit.
+  const before = await page.locator('[data-test=comment-row]').count();
+  await page.locator('[data-test=comment-delete]').last().click();
+  await expect(page.locator('[data-test=comment-row]')).toHaveCount(before - 1);
+  await page.click('[data-test=annot-save]');
+  await expect(successToast(page, 'Annotations saved')).toBeVisible({ timeout: 60_000 });
+
   // --- 6. Flatten: annotations become part of the page. ---
   await page.click('[data-test=annot-flatten]');
   await page.click('[data-test=confirm-ok]');
@@ -108,13 +142,41 @@ test('phase 3: annotate, save, reload, flatten', async ({ page }) => {
   await expect(page.locator('[data-test=comments-empty]')).toBeVisible();
   await expect(page.locator('[data-test=annot-count]')).toHaveText('(0)');
 
+  // --- 6b. Sidebar navigation and per-comment actions. ---
+  // (Run before flatten, while there are still annotations to act on.)
+
   // --- 7. Both steps are in the version history and revertible. ---
   await page.click('[data-test=annotate-toggle]');
   await page.click('[data-test=tab-history]');
   const versions = page.locator('[data-test=version-row]');
-  await expect(versions).toHaveCount(3); // Original, Annotated, Flattened
+  // Original, Annotated (3 marks), Annotated (sidebar edit + delete), Flattened.
+  await expect(versions).toHaveCount(4);
   await expect(versions.nth(0)).toContainText('Flattened annotations');
   await expect(versions.nth(1)).toContainText('Annotated');
+});
+
+test('phase 3: "clear page" removes only that page\'s marks', async ({ page }) => {
+  await registerAndLogin(page, 'p3clear');
+  await uploadFiles(page, ['text.pdf']);
+  await page.locator('[data-test=doc-card] [data-test=open-doc]').first().click();
+  await page.click('[data-test=annotate-toggle]');
+  await expect(page.locator('[data-test=page-overlay]')).toBeVisible({ timeout: 30_000 });
+  await fitPage(page);
+
+  await page.click('[data-test=tool-square]');
+  await dragOnPage(page, [0.1, 0.1], [0.4, 0.3]);
+  await page.click('[data-test=annot-next]');
+  await dragOnPage(page, [0.1, 0.1], [0.4, 0.3]);
+  await expect(page.locator('[data-test=comment-row]')).toHaveCount(2);
+
+  // On page 2: clearing this page must leave page 1 alone.
+  await page.click('[data-test=annot-clear-page]');
+  await page.click('[data-test=confirm-ok]');
+  await expect(page.locator('[data-test=comment-row]')).toHaveCount(1);
+
+  await page.click('[data-test=annot-clear-all]');
+  await page.click('[data-test=confirm-ok]');
+  await expect(page.locator('[data-test=comments-empty]')).toBeVisible();
 });
 
 test('phase 3: a guest annotates from the public tool page with no login prompt', async ({

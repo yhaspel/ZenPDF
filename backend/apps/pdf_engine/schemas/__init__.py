@@ -115,7 +115,14 @@ ALTERNATE_MIX = {
 # --------------------------------------------------------------------------- #
 # Phase 3 — annotations
 # --------------------------------------------------------------------------- #
-_COLOR = {"type": "string", "pattern": "^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$"}
+# `null` is accepted, not just omitted: extraction reports an unset colour as
+# `null`, and the client edits an annotation by sending back what it was given.
+# A string-only schema meant any annotation loaded from the server 400'd the
+# moment it was edited — and it took the whole batch with it.
+_COLOR = {
+    "type": ["string", "null"],
+    "pattern": "^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$",
+}
 _POINT = {
     "type": "array",
     "items": {"type": "number", "minimum": -0.5, "maximum": 1.5},

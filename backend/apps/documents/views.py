@@ -338,14 +338,21 @@ class ThumbnailView(APIView):
                 {"error": {"code": "not_found", "message": "Page not found.", "details": {}}},
                 status=status.HTTP_404_NOT_FOUND,
             )
-        key = f"thumbs/{document.id}/{version.seq}/p{n}@{width}.png"
+        # `?annots=false` renders the page without its annotations, for the
+        # phase-3 overlay: it draws every annotation itself as editable SVG, so
+        # a raster that already contained them would show each one twice — and
+        # the baked copy would not move when the editable one is dragged. The
+        # flag is part of the cache key, or the two variants would collide.
+        with_annots = request.query_params.get("annots", "true") != "false"
+        suffix = "" if with_annots else "-clean"
+        key = f"thumbs/{document.id}/{version.seq}/p{n}@{width}{suffix}.png"
         storage = get_storage()
         if storage.exists(key):
             png = storage.get_bytes(key)
         else:
             try:
                 blob = storage.get_bytes(version.storage_key)
-                png = engine_render.render_thumbnail(blob, n, width)
+                png = engine_render.render_thumbnail(blob, n, width, annots=with_annots)
                 storage.put_bytes(key, png, content_type="image/png")
             except EngineError as exc:
                 raise ValidationFailed(exc.message) from exc

@@ -124,6 +124,14 @@ def claim_session(session: GuestSession, user) -> dict:
     GuestSession.objects.filter(pk=session.pk).update(
         claimed_by=user, claimed_at=now, storage_bytes_used=0, expires_at=now
     )
+    # `uploads/…` is the one namespace keyed by *principal* rather than by
+    # document (§13), so it is the one thing a metadata-only reparent misses.
+    # Left behind, a guest's stamps sit under a prefix that `guest_purge`
+    # deletes within the hour — and the session was just expired above, so that
+    # sweep is imminent. Re-key them onto the account instead.
+    from .assets import move_assets
+
+    summary["assets"] = move_assets("g", session.id, user)
     user.refresh_from_db(fields=["storage_bytes_used"])
 
     summary["already_claimed"] = False

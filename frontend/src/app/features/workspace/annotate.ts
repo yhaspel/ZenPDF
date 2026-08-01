@@ -24,6 +24,9 @@ import {
   OverlayItem,
   OverlayTool,
   boundsOf,
+  boundsOfPoints,
+  transformPoint,
+  transformRect,
 } from '../../shared/page-overlay/overlay-model';
 import { PageOverlay } from '../../shared/page-overlay/page-overlay';
 import { ToastService } from '../../shared/toast.service';
@@ -92,6 +95,7 @@ export class Annotate {
   readonly initialTool = input<AnnotateTool>('select');
 
   readonly saved = output<Job>();
+  readonly cropped = output<void>();
   readonly conflict = output<void>();
 
   protected annotations = inject(AnnotationsFacade);
@@ -107,6 +111,7 @@ export class Annotate {
   protected zoom = signal(900);
   protected color = signal('#facc15');
   protected strokeWidth = signal(2);
+  protected fontSize = signal(12);
   protected opacity = signal(0.7);
   protected stampName = signal(STANDARD_STAMPS[0]);
   protected stampRef = signal<string | null>(null);
@@ -117,7 +122,6 @@ export class Annotate {
   protected editingText = signal('');
 
   protected readonly stamps = STANDARD_STAMPS;
-  protected readonly markupTools = MARKUP;
 
   protected readonly gesture = computed<OverlayTool>(() => GESTURE[this.tool()]);
   protected readonly dirty = this.annotations.dirty;
@@ -168,6 +172,21 @@ export class Annotate {
     });
   }
 
+  /**
+   * Switching tool re-suggests an opacity, it does not lock one in.
+   *
+   * Translucency is what makes a highlight readable and what makes an arrow
+   * look like a mistake, so the two want different defaults — but forcing the
+   * value at creation time (the first cut of this) made the slider do nothing
+   * for eight of the fourteen tools.
+   */
+  protected setTool(next: AnnotateTool): void {
+    const wasMarkup = MARKUP.includes(this.tool() as AnnotationType);
+    const isMarkup = MARKUP.includes(next as AnnotationType);
+    if (wasMarkup !== isMarkup) this.opacity.set(isMarkup ? 0.7 : 1);
+    this.tool.set(next);
+  }
+
   // ------------------------------------------------------------------ //
   // Mapping
   // ------------------------------------------------------------------ //
@@ -193,14 +212,27 @@ export class Annotate {
       };
     }
     switch (a.type) {
+      // Point-based shapes carry a *derived* bounding rect. Without one the
+      // overlay has nothing to outline or drag, so ink, lines, arrows and
+      // polygons had no selection handles and could not be moved at all —
+      // half the "selection handles (move/resize)" requirement.
       case 'ink':
-        return { ...base, shape: 'ink', ink: a.ink ?? [], rect: undefined, fill: null };
+        return {
+          ...base, shape: 'ink', ink: a.ink ?? [], fill: null,
+          rect: boundsOfPoints((a.ink ?? []).flat()),
+        };
       case 'line':
       case 'arrow':
-        return { ...base, shape: a.type, points: a.vertices ?? [], rect: undefined, fill: null };
+        return {
+          ...base, shape: a.type, points: a.vertices ?? [], fill: null,
+          rect: boundsOfPoints(a.vertices ?? []),
+        };
       case 'polygon':
       case 'polyline':
-        return { ...base, shape: a.type, points: a.vertices ?? [], rect: undefined };
+        return {
+          ...base, shape: a.type, points: a.vertices ?? [],
+          rect: boundsOfPoints(a.vertices ?? []),
+        };
       case 'circle':
         return { ...base, shape: 'ellipse' };
       case 'note':
@@ -243,11 +275,9 @@ export class Annotate {
     } else if (tool === 'ink') {
       if (!draft.ink?.length) return;
       annotation.ink = draft.ink;
-      annotation.opacity = 1;
     } else if (tool === 'line' || tool === 'arrow' || tool === 'polygon' || tool === 'polyline') {
       if (!draft.points?.length) return;
       annotation.vertices = draft.points;
-      annotation.opacity = 1;
     } else {
       if (!draft.rect) return;
       annotation.rect = draft.rect;
@@ -256,16 +286,22 @@ export class Annotate {
     if (tool === 'note') {
       annotation.icon = 'Comment';
       annotation.contents = 'New note';
-      annotation.rect = { x: draft.rect?.x ?? 0, y: draft.rect?.y ?? 0, w: 0.025, h: 0.02 };
+      // Keep the icon on the page. A click in the last 2.5% of the width gave
+      // `x + w > 1`, which the JSON Schema cannot catch (it bounds x and w
+      // separately) — so the whole batch failed in the engine instead, with a
+      // message that named no annotation.
+      const w = 0.025;
+      const h = 0.02;
+      annotation.rect = {
+        x: Math.min(draft.rect?.x ?? 0, 1 - w),
+        y: Math.min(draft.rect?.y ?? 0, 1 - h),
+        w,
+        h,
+      };
     }
     if (tool === 'free_text') {
       annotation.contents = 'Text';
-      annotation.font_size = 12;
-      annotation.color = '#111827';
-      annotation.opacity = 1;
-    }
-    if (tool === 'square' || tool === 'circle') {
-      annotation.opacity = 1;
+      annotation.font_size = this.fontSize();
     }
     if (tool === 'stamp') {
       annotation.stamp_name = this.stampName();
@@ -283,8 +319,39 @@ export class Annotate {
     if (tool === 'note' || tool === 'free_text') this.startEditing(annotation.id);
   }
 
+  /**
+   * The overlay moves a rectangle; the annotation's real geometry follows it.
+   *
+   * Quads, ink strokes and vertices are what the server rebuilds the annotation
+   * from — writing only `rect` (the first cut of this) made a dragged highlight
+   * snap back on the next render and leave a phantom unsaved change.
+   */
   protected onGeometryChanged(change: OverlayGeometryChange): void {
-    if (change.rect) this.annotations.update(change.id, { rect: change.rect });
+    const item = this.annotations.all().find((a) => a.id === change.id);
+    if (!item) return;
+    const { from, rect } = change;
+
+    if (MARKUP.includes(item.type)) {
+      this.annotations.update(change.id, {
+        quads: (item.quads ?? []).map((q) => transformRect(q, from, rect)),
+      });
+      return;
+    }
+    if (item.type === 'ink') {
+      this.annotations.update(change.id, {
+        ink: (item.ink ?? []).map((stroke) =>
+          stroke.map((p) => transformPoint(p, from, rect)),
+        ),
+      });
+      return;
+    }
+    if (item.vertices?.length) {
+      this.annotations.update(change.id, {
+        vertices: item.vertices.map((p) => transformPoint(p, from, rect)),
+      });
+      return;
+    }
+    this.annotations.update(change.id, { rect });
   }
 
   protected onSelectionChanged(id: string | null): void {
@@ -315,6 +382,16 @@ export class Annotate {
     this.editingId.set(null);
   }
 
+  protected async clearPage(): Promise<void> {
+    const here = this.annotations.byPage().get(this.page()) ?? [];
+    if (!here.length) return;
+    if (await this.confirm.ask(
+      `Remove ${here.length} annotation(s) from page ${this.page() + 1}?`, 'Clear page',
+    )) {
+      for (const item of here) this.annotations.remove(item.id);
+    }
+  }
+
   protected async clearAll(): Promise<void> {
     if (!this.annotations.count()) return;
     if (await this.confirm.ask('Remove every annotation in this document?', 'Clear all')) {
@@ -331,6 +408,29 @@ export class Annotate {
    */
   protected authorOf(a: Annotation): string {
     if (a.author) return a.author;
+    return this.guests.principal() === 'user' ? 'You' : 'Guest';
+  }
+
+  /** PDF date strings are `D:YYYYMMDDHHmmSS…`; show something a human reads. */
+  protected timeOf(a: Annotation): string {
+    const raw = a.modified || a.created || '';
+    const m = /^D:(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})/.exec(raw);
+    if (!m) return '';
+    return `${m[3]}/${m[2]} ${m[4]}:${m[5]}`;
+  }
+
+  /**
+   * phase-03: "edit **own** contents inline". An incoming PDF can carry other
+   * people's comments, and silently rewriting those is not markup, it is
+   * forgery — the server preserves their author on update, so the UI must not
+   * offer the edit in the first place.
+   */
+  protected isOwn(a: Annotation): boolean {
+    if (!a.author) return true; // a local draft is always ours
+    return a.author === this.authorOf(a) || a.author === this.myName();
+  }
+
+  protected myName(): string {
     return this.guests.principal() === 'user' ? 'You' : 'Guest';
   }
 
@@ -455,10 +555,17 @@ export class Annotate {
             this.cropRect.set(null);
             this.tool.set('select');
             this.toast.success(`Cropped ${pages.length} page(s)`);
-            this.saved.emit(job);
+            this.cropped.emit();
           } else if (job.status === 'failed') {
             this.busy.set(false);
-            this.toast.error(job.error_message || 'Could not crop');
+            if (job.error_code === 'version_conflict') {
+              // Same recovery the margin dialog had before crop moved onto the
+              // overlay: refresh rather than leave the user staring at an error.
+              this.toast.info('Document changed — refreshed');
+              this.conflict.emit();
+            } else {
+              this.toast.error(job.error_message || 'Could not crop');
+            }
           }
         },
         error: () => {

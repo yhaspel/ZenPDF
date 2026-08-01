@@ -150,6 +150,37 @@ def test_author_defaults_to_guest(fixture_bytes):
     assert A.extract_annotations(out)[0]["author"] == "Guest"
 
 
+def test_a_client_cannot_choose_the_author(fixture_bytes):
+    """§3's "display name, or Guest" must be a *server* fact.
+
+    `author` is accepted on the wire so an extracted annotation round-trips
+    through an update unchanged — but honouring it would let any caller stamp
+    any name into a file, and the guest invariant would be client-controlled.
+    """
+    out, _ = A.apply_annotation_ops(
+        fixture_bytes("text.pdf"),
+        ops=_add({**HIGHLIGHT, "author": "Jane Doe, General Counsel"}),
+        author="Guest",
+    )
+    assert A.extract_annotations(out)[0]["author"] == "Guest"
+
+
+def test_editing_someone_elses_annotation_keeps_their_name(fixture_bytes):
+    """Acrobat behaviour, and the honest one: editing a comment does not make
+    it yours."""
+    first, _ = A.apply_annotation_ops(
+        fixture_bytes("text.pdf"), ops=_add(HIGHLIGHT), author="Alice"
+    )
+    second, _ = A.apply_annotation_ops(
+        first,
+        ops=[{"action": "update", "annotation": {**HIGHLIGHT, "contents": "edited"}}],
+        author="Bob",
+    )
+    item = A.extract_annotations(second)[0]
+    assert item["author"] == "Alice"
+    assert item["contents"] == "edited"
+
+
 def test_author_never_leaks_a_session_id(fixture_bytes):
     """phase-03 §3: authorship is a display name or "Guest" — the file is going
     to be shared, so a session id or IP must never end up inside it."""
@@ -296,18 +327,29 @@ def test_foreign_annotations_are_never_clobbered(fixture_bytes):
     assert [a["author"] for a in remaining] == ["Some Other Tool"]
 
 
-def test_a_batch_of_thirty_is_one_pass(fixture_bytes):
-    """Acceptance: a 30-annotation session saves as ONE job."""
+def test_a_batch_of_thirty_is_one_pass_and_well_under_five_seconds(fixture_bytes):
+    """Acceptance: a 30-annotation session saves as ONE job, <5 s on `default`.
+
+    The time is measured, not inferred from how fast the suite happens to run.
+    """
+    import time
+
     ops = [
         {"action": "add",
          "annotation": {**HIGHLIGHT, "id": f"h{i}",
                         "quads": [{"x": 0.05, "y": 0.02 + i * 0.03, "w": 0.4, "h": 0.02}]}}
         for i in range(30)
     ]
+    started = time.monotonic()
     out, report = A.apply_annotation_ops(fixture_bytes("text.pdf"), ops=ops)
+    elapsed = time.monotonic() - started
+
     assert report["added"] == 30
     assert len(A.extract_annotations(out)) == 30
     assert _pypdf_annot_count(out) == 30
+    # Generous by design: this asserts the op is not accidentally quadratic, not
+    # that a particular machine is fast.
+    assert elapsed < 5.0, f"30-annotation batch took {elapsed:.2f}s"
 
 
 def test_annotations_land_on_the_requested_page(fixture_bytes):
@@ -424,6 +466,100 @@ def test_flatten_form_leaves_annotations_alone(fixture_bytes):
 # --------------------------------------------------------------------------- #
 # Geometry: rotated pages and RTL text
 # --------------------------------------------------------------------------- #
+def _ink_bbox(data: bytes, page: int, predicate) -> tuple[float, float, float, float]:
+    """Where matching pixels actually land, as fractions of the *displayed* page."""
+    doc = fitz.open(stream=data, filetype="pdf")
+    try:
+        pm = doc[page].get_pixmap()
+        xs, ys = [], []
+        for y in range(0, pm.height, 2):
+            for x in range(0, pm.width, 2):
+                if predicate(pm.pixel(x, y)):
+                    xs.append(x / pm.width)
+                    ys.append(y / pm.height)
+    finally:
+        doc.close()
+    assert xs, "nothing matched — the mark did not render at all"
+    return (min(xs), min(ys), max(xs), max(ys))
+
+
+def test_a_mark_on_a_rotated_page_renders_where_it_was_placed(fixture_bytes):
+    """The regression a round-trip test cannot see.
+
+    `page.rect` is rotation-applied but `add_*_annot` takes the page's
+    *unrotated* space, so before the de-rotation was added a mark placed at the
+    top-left of a /Rotate 90 page was written to the top-right — and extraction
+    read it back through the same wrong transform, so create→extract agreed
+    perfectly while the file disagreed with both. Only the rendered pixels can
+    tell you, so this test looks at them.
+    """
+    spec = {"id": "rot-place", "page": 0, "type": "square",
+            "rect": {"x": 0.05, "y": 0.05, "w": 0.20, "h": 0.20},
+            "color": "#ff0000", "width": 4, "opacity": 1.0}
+    out, _ = A.apply_annotation_ops(fixture_bytes("rotated-90.pdf"), ops=_add(spec))
+
+    x0, y0, x1, y1 = _ink_bbox(
+        out, 0, lambda c: c[0] > 150 and c[1] < 100 and c[2] < 100
+    )
+    assert x0 == pytest.approx(0.05, abs=0.02), f"drawn at x {x0:.3f}, expected 0.05"
+    assert y0 == pytest.approx(0.05, abs=0.02), f"drawn at y {y0:.3f}, expected 0.05"
+    assert x1 == pytest.approx(0.25, abs=0.02)
+    assert y1 == pytest.approx(0.25, abs=0.02)
+
+
+def test_the_same_placement_is_unaffected_on_an_unrotated_page(fixture_bytes):
+    """De-rotation must be a no-op when there is no rotation."""
+    spec = {"id": "flat-place", "page": 0, "type": "square",
+            "rect": {"x": 0.05, "y": 0.05, "w": 0.20, "h": 0.20},
+            "color": "#ff0000", "width": 4, "opacity": 1.0}
+    out, _ = A.apply_annotation_ops(fixture_bytes("text.pdf"), ops=_add(spec))
+    x0, y0, _, _ = _ink_bbox(out, 0, lambda c: c[0] > 150 and c[1] < 100 and c[2] < 100)
+    assert x0 == pytest.approx(0.05, abs=0.02)
+    assert y0 == pytest.approx(0.05, abs=0.02)
+
+
+def test_word_boxes_on_a_rotated_page_cover_the_visible_text(fixture_bytes):
+    """The overlay's text layer must sit on top of the text the reader sees.
+
+    `get_text("words")` reports the unrotated space, so without the rotation the
+    transparent word grid landed a quarter turn away and text markup attached to
+    nothing on any rotated page.
+    """
+    data = fixture_bytes("rotated-90.pdf")
+    words = T.page_words(data, 0)
+    assert words["has_text"] is True
+    assert words["rotation"] == 90
+
+    wx0 = min(w["x"] for w in words["words"])
+    wy0 = min(w["y"] for w in words["words"])
+    wx1 = max(w["x"] + w["w"] for w in words["words"])
+    wy1 = max(w["y"] + w["h"] for w in words["words"])
+
+    # Where the glyphs actually are on screen.
+    ix0, iy0, ix1, iy1 = _ink_bbox(data, 0, lambda c: sum(c) < 400)
+
+    assert wx0 <= ix0 + 0.02 and wx1 >= ix1 - 0.02, (
+        f"word grid x {wx0:.3f}..{wx1:.3f} does not cover ink x {ix0:.3f}..{ix1:.3f}"
+    )
+    assert wy0 <= iy0 + 0.02 and wy1 >= iy1 - 0.02, (
+        f"word grid y {wy0:.3f}..{wy1:.3f} does not cover ink y {iy0:.3f}..{iy1:.3f}"
+    )
+
+
+def test_a_rect_that_runs_off_the_page_is_a_validation_error(fixture_bytes):
+    """A note dropped near the right edge produces `x + w > 1`, which the JSON
+    Schema cannot express (it bounds x and w separately). It must still surface
+    as `validation_error` naming the problem, not as a generic `engine_error`
+    that fails a 30-annotation batch with "Operation failed"."""
+    with pytest.raises(InvalidParams) as exc:
+        A.apply_annotation_ops(
+            fixture_bytes("text.pdf"),
+            ops=_add({"id": "edge", "page": 0, "type": "note",
+                      "rect": {"x": 0.99, "y": 0.5, "w": 0.025, "h": 0.02}}),
+        )
+    assert "rect" in str(exc.value)
+
+
 def test_quads_are_correct_on_a_rotated_page(fixture_bytes):
     """§8: normalized coords are *visual* space, so a /Rotate 90 page needs no
     special-casing at the call site — the same numbers mean the same place."""

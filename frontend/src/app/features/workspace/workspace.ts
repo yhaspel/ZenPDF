@@ -50,6 +50,8 @@ export class Workspace {
   protected leftTab = signal<'thumbs' | 'outline' | 'history'>('thumbs');
   protected mode = signal<'view' | 'organize' | 'annotate'>('view');
   protected annotateTool = signal<AnnotateTool>('select');
+  /** Set when Annotate was entered *from* the Organize toolbar's Crop button. */
+  private cropReturnsToOrganize = false;
   protected page = signal(1);
   protected order = signal<number[]>([]);
   protected busy = signal(false);
@@ -124,7 +126,14 @@ export class Workspace {
     });
     // Annotations live in the file, so a new version is a new annotation set —
     // and every cached page word list is stale with it.
+    //
+    // Gated on annotate mode on purpose: reading annotations pulls the whole PDF
+    // out of object storage and parses it in the API process, and it is keyed on
+    // `viewer.doc()`, which is a *new object* after any refresh (a rename, for
+    // instance). Ungated, every existing View/Organize user would pay that cost
+    // on every open for a panel they never open.
     effect(() => {
+      if (this.mode() !== 'annotate') return;
       const doc = this.viewer.doc();
       const seq = this.viewer.currentSeq();
       if (!doc) return;
@@ -353,12 +362,50 @@ export class Workspace {
    */
   startCrop(): void {
     this.annotateTool.set('crop');
+    this.cropReturnsToOrganize = true;
     this.mode.set('annotate');
   }
 
   /** Annotate mode produced a new version (save, flatten or overlay crop). */
   onAnnotationsSaved(): void {
     this.viewer.reload();
+  }
+
+  /**
+   * The overlay crop finished. Crop is an Organize operation that borrows the
+   * overlay, so it hands the user back where they came from — and the tool is
+   * reset, or the next visit to Annotate would open on Crop forever.
+   */
+  onCropApplied(): void {
+    this.viewer.reload();
+    this.annotateTool.set('select');
+    if (this.cropReturnsToOrganize) {
+      this.cropReturnsToOrganize = false;
+      this.mode.set('organize');
+    }
+  }
+
+  /**
+   * Autosave on navigation (phase-03 §2: "autosave every 30 s / on navigation").
+   *
+   * Called by the route guard. Navigation is not an exit, so it does not
+   * interrogate the user — it commits the work and lets them go. Closing the
+   * tab is the exit case, and that is what the `beforeunload` guard covers.
+   */
+  confirmLeave(): boolean {
+    const doc = this.viewer.doc();
+    if (!doc || !this.annotations.dirty()) return true;
+    const job$ = this.annotations.save(doc.id, this.viewer.currentSeq());
+    if (job$) {
+      this.toast.info('Saving your annotations…');
+      job$.subscribe({
+        next: (job) => {
+          if (job.status === 'failed') this.toast.error('Could not save your annotations');
+        },
+        error: () => this.toast.error('Could not save your annotations'),
+      });
+    }
+    return true;
   }
 
   /**

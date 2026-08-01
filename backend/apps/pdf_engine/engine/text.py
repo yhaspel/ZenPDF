@@ -10,7 +10,7 @@ from __future__ import annotations
 import fitz
 
 from ..exceptions import PageOutOfRange, UnsupportedFileError
-from ..geometry import page_rect_to_norm
+from ..geometry import apply_matrix_rect, page_rect_to_norm
 
 
 def _open(data: bytes) -> fitz.Document:
@@ -42,9 +42,15 @@ def page_words(data: bytes, page_index: int) -> dict:
             )
         page = doc[page_index]
         pw, ph = page.rect.width, page.rect.height
+        # `get_text` reports the page's *unrotated* space while `page.rect` is
+        # rotation-applied, so on a /Rotate 90 page the word grid would sit a
+        # quarter turn away from the text the reader can see — and text markup
+        # would attach to nothing (§8, amended).
+        rot = tuple(page.rotation_matrix)
         words = []
         for i, w in enumerate(page.get_text("words")):
             x0, y0, x1, y1, text, block, line, word = w[:8]
+            x0, y0, x1, y1 = apply_matrix_rect(x0, y0, x1, y1, rot)
             nr = page_rect_to_norm(x0, y0, x1, y1, pw, ph)
             words.append({
                 "i": i,

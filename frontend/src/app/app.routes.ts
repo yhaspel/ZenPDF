@@ -1,6 +1,7 @@
 import { Routes } from '@angular/router';
 
 import { accountGuard } from './core/guards/account.guard';
+import { unsavedWorkGuard } from './core/guards/unsaved-work.guard';
 import { TOOL_PAGES } from './core/tool-pages';
 
 /**
@@ -44,6 +45,7 @@ export const routes: Routes = [
       {
         // Open to guests — the entire workspace works with no account.
         path: 'doc/:id',
+        canDeactivate: [unsavedWorkGuard],
         loadComponent: () => import('./features/workspace/workspace').then((m) => m.Workspace),
       },
       {

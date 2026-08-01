@@ -21,6 +21,8 @@ import fitz
 from ..exceptions import InvalidParams, UnsupportedFileError
 from ..geometry import (
     NormRect,
+    apply_matrix_point,
+    apply_matrix_rect,
     norm_to_page_point,
     norm_to_page_rect,
     page_point_to_norm,
@@ -135,7 +137,7 @@ def _page(doc: fitz.Document, index) -> fitz.Page:
 # --------------------------------------------------------------------------- #
 # Extraction
 # --------------------------------------------------------------------------- #
-def _quads_of(annot: fitz.Annot, w: float, h: float) -> list[dict]:
+def _quads_of(annot: fitz.Annot, w: float, h: float, rot) -> list[dict]:
     """Markup vertices arrive as flat groups of 4 corner points per quad."""
     pts = list(annot.vertices or [])
     quads = []
@@ -143,19 +145,25 @@ def _quads_of(annot: fitz.Annot, w: float, h: float) -> list[dict]:
         group = pts[i:i + 4]
         xs = [p[0] for p in group]
         ys = [p[1] for p in group]
-        nr = page_rect_to_norm(min(xs), min(ys), max(xs), max(ys), w, h)
+        x0, y0, x1, y1 = apply_matrix_rect(
+            min(xs), min(ys), max(xs), max(ys), rot
+        )
+        nr = page_rect_to_norm(x0, y0, x1, y1, w, h)
         quads.append({"x": nr.x, "y": nr.y, "w": nr.w, "h": nr.h})
     return quads
 
 
-def _read_annot(annot: fitz.Annot, page_index: int, w: float, h: float) -> dict:
+def _read_annot(annot: fitz.Annot, page_index: int, w: float, h: float,
+                rot) -> dict:
     subtype = annot.type[1]
     kind = _SUBTYPE_TO_TYPE.get(subtype)
     if kind is None:
         return {}
     info = annot.info or {}
     rect = annot.rect
-    nr = page_rect_to_norm(rect.x0, rect.y0, rect.x1, rect.y1, w, h)
+    # Back to display space: `annot.rect` is in the page's unrotated space.
+    x0, y0, x1, y1 = apply_matrix_rect(rect.x0, rect.y0, rect.x1, rect.y1, rot)
+    nr = page_rect_to_norm(x0, y0, x1, y1, w, h)
     colors = annot.colors or {}
     opacity = annot.opacity
     out: dict = {
@@ -175,15 +183,19 @@ def _read_annot(annot: fitz.Annot, page_index: int, w: float, h: float) -> dict:
     }
 
     if kind in MARKUP_TYPES:
-        out["quads"] = _quads_of(annot, w, h)
+        out["quads"] = _quads_of(annot, w, h, rot)
     elif kind == "ink":
         out["ink"] = [
-            [list(page_point_to_norm(p[0], p[1], w, h)) for p in stroke]
+            [
+                list(page_point_to_norm(*apply_matrix_point(p[0], p[1], rot), w, h))
+                for p in stroke
+            ]
             for stroke in (annot.vertices or [])
         ]
     elif kind in {"line", "polygon", "polyline"}:
         out["vertices"] = [
-            list(page_point_to_norm(p[0], p[1], w, h)) for p in (annot.vertices or [])
+            list(page_point_to_norm(*apply_matrix_point(p[0], p[1], rot), w, h))
+            for p in (annot.vertices or [])
         ]
         if kind == "line" and tuple(annot.line_ends or (0, 0))[1]:
             out["type"] = "arrow"
@@ -246,8 +258,9 @@ def extract_annotations(data: bytes, *, pages: list[int] | None = None) -> list[
                 continue
             page = doc[i]
             w, h = page.rect.width, page.rect.height
+            rot = tuple(page.rotation_matrix)
             for annot in page.annots():
-                item = _read_annot(annot, i, w, h)
+                item = _read_annot(annot, i, w, h, rot)
                 if item:
                     out.append(item)
         return out
@@ -258,12 +271,32 @@ def extract_annotations(data: bytes, *, pages: list[int] | None = None) -> list[
 # --------------------------------------------------------------------------- #
 # Writing
 # --------------------------------------------------------------------------- #
+def _norm_rect(value, what: str) -> NormRect:
+    """`NormRect` raises `ValueError` for an off-page rect; that must reach the
+    client as `validation_error`, not as a bare `engine_error` that says
+    "Operation failed"."""
+    try:
+        return NormRect.from_dict(value)
+    except ValueError as exc:
+        raise InvalidParams(f"invalid {what}: {exc}") from exc
+
+
+def _to_annot_rect(norm: NormRect, page: fitz.Page) -> fitz.Rect:
+    """Normalized *display* rect → the page's annotation coordinate space.
+
+    The de-rotation is the whole point: `page.rect` is rotation-applied but
+    `add_*_annot` is not, so on a /Rotate 90 page a mark placed top-left would
+    otherwise be written top-right (§8, amended).
+    """
+    x0, y0, x1, y1 = norm_to_page_rect(norm, page.rect.width, page.rect.height)
+    x0, y0, x1, y1 = apply_matrix_rect(x0, y0, x1, y1, tuple(page.derotation_matrix))
+    return fitz.Rect(x0, y0, x1, y1)
+
+
 def _rect_of(spec: dict, page: fitz.Page) -> fitz.Rect:
     if "rect" not in spec:
         raise InvalidParams(f"'{spec.get('type')}' annotations require a rect")
-    norm = NormRect.from_dict(spec["rect"])
-    x0, y0, x1, y1 = norm_to_page_rect(norm, page.rect.width, page.rect.height)
-    return fitz.Rect(x0, y0, x1, y1)
+    return _to_annot_rect(_norm_rect(spec["rect"], "rect"), page)
 
 
 def _points_of(spec: dict, key: str, page: fitz.Page) -> list[tuple[float, float]]:
@@ -271,14 +304,26 @@ def _points_of(spec: dict, key: str, page: fitz.Page) -> list[tuple[float, float
     if len(raw) < 2:
         raise InvalidParams(f"'{key}' needs at least two points")
     w, h = page.rect.width, page.rect.height
-    return [norm_to_page_point(float(p[0]), float(p[1]), w, h) for p in raw]
+    derot = tuple(page.derotation_matrix)
+    return [
+        apply_matrix_point(*norm_to_page_point(float(p[0]), float(p[1]), w, h), derot)
+        for p in raw
+    ]
 
 
 def _apply_common(annot: fitz.Annot, spec: dict, author: str, *,
-                  set_colors: bool = True) -> None:
+                  set_colors: bool = True, title: str | None = None) -> None:
     """Shared annot properties. `set_colors=False` for FreeText, where the
     creation call already placed the *text* colour in /DA and a stroke write
-    would overwrite it with a border colour the user never chose."""
+    would overwrite it with a border colour the user never chose.
+
+    `spec["author"]` is deliberately **ignored**. The field exists on the wire
+    only so an extracted annotation round-trips through an update unchanged; if
+    it were honoured, a client could stamp any name it liked into a file — and
+    §3's "display name, or Guest" would be client-controlled. `title` carries an
+    existing annotation's author so editing someone else's comment does not
+    reassign it (matching Acrobat).
+    """
     if set_colors:
         stroke = parse_color(spec.get("color"))
         fill = parse_color(spec.get("fill"))
@@ -293,7 +338,7 @@ def _apply_common(annot: fitz.Annot, spec: dict, author: str, *,
     now = fitz.get_pdf_now()
     annot.set_info(
         content=str(spec.get("contents") or ""),
-        title=str(spec.get("author") or author or "Guest"),
+        title=str(title or author or "Guest"),
         creationDate=str(spec.get("created") or now),
         modDate=now,
     )
@@ -348,7 +393,8 @@ def _write_image_ap(doc: fitz.Document, annot: fitz.Annot, rect: fitz.Rect,
 
 
 def _add_annotation(page: fitz.Page, spec: dict, author: str,
-                    image_xrefs: dict[str, int]) -> fitz.Annot:
+                    image_xrefs: dict[str, int], *,
+                    title: str | None = None) -> fitz.Annot:
     kind = spec.get("type")
     if kind not in ANNOTATION_TYPES:
         raise InvalidParams(f"unknown annotation type '{kind}'")
@@ -357,11 +403,9 @@ def _add_annotation(page: fitz.Page, spec: dict, author: str,
         quads = spec.get("quads") or []
         if not quads:
             raise InvalidParams(f"'{kind}' requires at least one quad")
-        w, h = page.rect.width, page.rect.height
-        fitz_quads = []
-        for q in quads:
-            x0, y0, x1, y1 = norm_to_page_rect(NormRect.from_dict(q), w, h)
-            fitz_quads.append(fitz.Rect(x0, y0, x1, y1).quad)
+        fitz_quads = [
+            _to_annot_rect(_norm_rect(q, "quad"), page).quad for q in quads
+        ]
         adder = {
             "highlight": page.add_highlight_annot,
             "underline": page.add_underline_annot,
@@ -403,8 +447,14 @@ def _add_annotation(page: fitz.Page, spec: dict, author: str,
     elif kind == "ink":
         strokes = spec.get("ink") or []
         w, h = page.rect.width, page.rect.height
+        derot = tuple(page.derotation_matrix)
         converted = [
-            [norm_to_page_point(float(p[0]), float(p[1]), w, h) for p in stroke]
+            [
+                apply_matrix_point(
+                    *norm_to_page_point(float(p[0]), float(p[1]), w, h), derot
+                )
+                for p in stroke
+            ]
             for stroke in strokes
             if len(stroke) >= 1
         ]
@@ -426,11 +476,11 @@ def _add_annotation(page: fitz.Page, spec: dict, author: str,
             raise InvalidParams(f"stamp image '{ref}' was not provided")
         rect = _rect_of(spec, page)
         annot = page.add_stamp_annot(rect, stamp=0)
-        _apply_common(annot, spec, author)
+        _apply_common(annot, spec, author, title=title)
         _write_image_ap(page.parent, annot, rect, img_xref, ref)
         return annot
 
-    _apply_common(annot, spec, author, set_colors=kind != "free_text")
+    _apply_common(annot, spec, author, set_colors=kind != "free_text", title=title)
     annot.update()
     return annot
 
@@ -506,11 +556,14 @@ def apply_annotation_ops(data: bytes, *, ops: list[dict], author: str = "Guest",
 
             existing_page, existing = _find(doc, index, nm)
             created = None
+            existing_title = None
             if existing is not None:
                 # Replaying an `add` for an NM that is already there is an
                 # update, not a duplicate — the client replays drafts after a
                 # version conflict (phase-03 §"Save model UX").
-                created = (existing.info or {}).get("creationDate") or None
+                info = existing.info or {}
+                created = info.get("creationDate") or None
+                existing_title = info.get("title") or None
                 existing_page.delete_annot(existing)
                 index.pop(nm, None)
                 report["updated"] += 1
@@ -525,7 +578,7 @@ def apply_annotation_ops(data: bytes, *, ops: list[dict], author: str = "Guest",
             page = _page(doc, spec.get("page", 0))
             if created and not spec.get("created"):
                 spec = {**spec, "created": created}
-            annot = _add_annotation(page, spec, author, image_xrefs)
+            annot = _add_annotation(page, spec, author, image_xrefs, title=existing_title)
             doc.xref_set_key(annot.xref, "NM", fitz.get_pdf_str(nm))
             index[nm] = (page.number, annot.xref)
 

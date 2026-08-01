@@ -82,7 +82,6 @@ export class PageOverlay {
   readonly geometryChanged = output<OverlayGeometryChange>();
   readonly selectionChanged = output<string | null>();
   readonly deleteRequested = output<string>();
-  readonly pageMetrics = output<{ width: number; height: number }>();
 
   private docsSvc = inject(DocumentsService);
   private surface = viewChild<ElementRef<HTMLDivElement>>('surface');
@@ -99,10 +98,6 @@ export class PageOverlay {
 
   protected readonly boxHeight = computed(() =>
     Math.round(this.renderWidth() * this.aspect()),
-  );
-
-  protected readonly isDrawing = computed(
-    () => !this.readonlyMode() && this.tool() !== 'select',
   );
 
   protected readonly cursor = computed(() => {
@@ -161,7 +156,6 @@ export class PageOverlay {
     const img = event.target as HTMLImageElement;
     if (img.naturalWidth > 0) {
       this.aspect.set(img.naturalHeight / img.naturalWidth);
-      this.pageMetrics.emit({ width: img.naturalWidth, height: img.naturalHeight });
     }
   }
 
@@ -249,6 +243,14 @@ export class PageOverlay {
     if (this.pending().length) this.hoverPoint.set(point);
     const drag = this.drag();
     if (!drag) return;
+    if (drag.kind === 'select-text') {
+      // A text selection is measured in *word indices*, not coordinates, and
+      // it is extended by `pointerenter` on the words themselves. This handler
+      // sees the same moves bubbling up from those spans, and writing `point`
+      // into `current` here would overwrite the end-of-selection index with a
+      // y-fraction — collapsing every drag to the single word it started on.
+      return;
+    }
     if (drag.kind === 'ink') {
       this.drag.set({ ...drag, current: point, stroke: [...(drag.stroke ?? []), point] });
       return;
@@ -259,6 +261,12 @@ export class PageOverlay {
   protected onPointerUp(event: PointerEvent): void {
     const drag = this.drag();
     if (!drag) return;
+    if (drag.kind === 'select-text') {
+      // Released off the words (in the margin, say) — still commit what was
+      // selected rather than leaving the drag latched.
+      this.onTextPointerUp();
+      return;
+    }
     const point = this.toNorm(event);
     this.drag.set(null);
 
@@ -272,15 +280,18 @@ export class PageOverlay {
 
     if (drag.kind === 'move' || drag.kind === 'resize') {
       const rect = this.dragRect(drag, point);
-      if (drag.itemId && rect) {
-        this.geometryChanged.emit({ id: drag.itemId, rect });
+      if (drag.itemId && rect && drag.originRect) {
+        this.geometryChanged.emit({ id: drag.itemId, rect, from: drag.originRect });
       }
       return;
     }
 
     const rect = normalizeRect(drag.start, point);
-    // A click, not a drag: too small to be a deliberate shape.
-    if (rect.w < 0.004 && rect.h < 0.004) return;
+    // Reject a click (both tiny) *and* a degenerate drag along one axis: a
+    // zero-height rect is not a shape anyone meant to draw, and the schema
+    // rejects it server-side (`exclusiveMinimum: 0`) as a 400 the user cannot
+    // act on.
+    if (rect.w < 0.004 || rect.h < 0.004) return;
 
     const tool = this.tool();
     if (tool === 'line' || tool === 'arrow') {
@@ -406,7 +417,12 @@ export class PageOverlay {
   protected onTextPointerDown(event: PointerEvent, word: OverlayWord): void {
     if (this.readonlyMode() || this.tool() !== 'text') return;
     event.preventDefault();
-    (event.target as HTMLElement).setPointerCapture?.(event.pointerId);
+    // Deliberately NO `setPointerCapture` here, unlike every other gesture.
+    // Capturing suppresses boundary events on every other element, so
+    // `pointerenter` would never fire on the rest of the words and a drag
+    // across a sentence would select only the word it started on. Extending a
+    // selection *is* the boundary events; the release is caught on the layer
+    // and, as a backstop, on the surface below it.
     this.drag.set({
       kind: 'select-text',
       start: [word.i, word.i],

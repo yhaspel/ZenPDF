@@ -89,8 +89,44 @@ export interface OverlayWord {
 
 export interface OverlayGeometryChange {
   id: string;
-  rect?: NormRect;
-  points?: NormPoint[];
+  /** Where the item is now. */
+  rect: NormRect;
+  /** Where it was, so the consumer can derive the transform for non-rect
+   *  geometry (quads, ink strokes, polygon vertices) rather than losing it. */
+  from: NormRect;
+}
+
+/** Bounding box of loose points — gives ink/lines/polygons a grabbable rect. */
+export function boundsOfPoints(points: NormPoint[]): NormRect | undefined {
+  if (!points.length) return undefined;
+  const xs = points.map((p) => p[0]);
+  const ys = points.map((p) => p[1]);
+  const x = Math.min(...xs);
+  const y = Math.min(...ys);
+  return { x, y, w: Math.max(...xs) - x, h: Math.max(...ys) - y };
+}
+
+/**
+ * Map a point through the affine transform that takes `from` onto `to`.
+ *
+ * This is what lets a highlight, an ink stroke or a polygon be dragged: the
+ * overlay only ever moves a *rectangle*, and the feature re-derives its real
+ * geometry from how that rectangle moved. A zero-width or zero-height source
+ * (a horizontal line) scales by 1 on that axis instead of dividing by zero.
+ */
+export function transformPoint(p: NormPoint, from: NormRect, to: NormRect): NormPoint {
+  const sx = from.w > 1e-6 ? to.w / from.w : 1;
+  const sy = from.h > 1e-6 ? to.h / from.h : 1;
+  return [
+    clamp01(to.x + (p[0] - from.x) * sx),
+    clamp01(to.y + (p[1] - from.y) * sy),
+  ];
+}
+
+export function transformRect(r: NormRect, from: NormRect, to: NormRect): NormRect {
+  const [x, y] = transformPoint([r.x, r.y], from, to);
+  const [x2, y2] = transformPoint([r.x + r.w, r.y + r.h], from, to);
+  return { x, y, w: Math.max(0, x2 - x), h: Math.max(0, y2 - y) };
 }
 
 export const clamp01 = (v: number): number => Math.min(1, Math.max(0, v));

@@ -71,8 +71,11 @@ describe('AnnotationsFacade', () => {
     facade.remove('a1');
     expect(facade.ops()).toEqual([]);
     expect(facade.count()).toBe(0);
-    // …but the session is still clean, because nothing needs sending.
-    expect(facade.dirty()).toBe(true);
+    // …and the session is clean again: drawing a mark and removing it before
+    // saving composes to nothing, so the "unsaved" badge and the beforeunload
+    // guard must not stay armed over work that does not exist.
+    expect(facade.dirty()).toBe(false);
+    expect(facade.pendingChanges()).toBe(0);
   });
 
   it('emits a delete op for an annotation the server knows about', () => {

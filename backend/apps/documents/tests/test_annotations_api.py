@@ -335,3 +335,198 @@ def test_annotations_survive_a_download_and_reopen(api, uploaded_doc):
     annots = reader.pages[0].get("/Annots", []) or []
     subtypes = [(a.get_object() or {}).get("/Subtype") for a in annots]
     assert "/Highlight" in subtypes
+
+
+# --------------------------------------------------------------------------- #
+# Image-asset hardening (found by the security lens of the phase-3 self-review)
+# --------------------------------------------------------------------------- #
+def _png_bomb(width: int, height: int) -> bytes:
+    """A tiny PNG that *decodes* to width×height. All-zero scanlines compress to
+    almost nothing, which is exactly what makes it a bomb: the byte cap sees a
+    small file and the pixel cap — if it runs after the decode — sees a dead
+    process."""
+    import struct
+    import zlib
+
+    def chunk(tag: bytes, payload: bytes) -> bytes:
+        return (struct.pack(">I", len(payload)) + tag + payload
+                + struct.pack(">I", zlib.crc32(tag + payload) & 0xFFFFFFFF))
+
+    ihdr = struct.pack(">IIBBBBB", width, height, 8, 0, 0, 0, 0)  # 8-bit greyscale
+    # Compress row by row: materializing the raw scanlines would allocate the
+    # very gigabytes this test exists to prove we never allocate.
+    compressor = zlib.compressobj(9)
+    row = b"\x00" + b"\x00" * width
+    parts = [compressor.compress(row) for _ in range(height)]
+    parts.append(compressor.flush())
+    return (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", ihdr)
+            + chunk(b"IDAT", b"".join(parts)) + chunk(b"IEND", b""))
+
+
+def test_a_decompression_bomb_is_refused_from_its_header(api):
+    """40000x40000 = 1.6 Gpx ≈ 2.9 GB decoded, from ~1.5 MB of input — inside
+    every byte cap. It must be refused *before* anything is allocated, because
+    this runs in the API process where §12's worker memory limits do not apply
+    and the OOM killer leaves no exception to catch."""
+    from apps.core.assets import ImageRejected, header_dimensions, normalize_png
+
+    bomb = _png_bomb(40000, 40000)
+    assert len(bomb) < 5 * 1024 * 1024
+    assert header_dimensions(bomb) == (40000, 40000)
+    with pytest.raises(ImageRejected):
+        normalize_png(bomb, max_bytes=5 * 1024 * 1024)
+
+    resp = _upload_image(api, data=bomb, name="bomb.png")
+    assert resp.status_code == 400
+    assert resp.json()["error"]["code"] == "validation_error"
+
+
+def test_header_dimensions_reads_png_and_jpeg_without_decoding():
+    from apps.core.assets import header_dimensions
+
+    assert header_dimensions(_png_bomb(1234, 567)) == (1234, 567)
+    pix = fitz.Pixmap(fitz.csRGB, fitz.IRect(0, 0, 80, 40))
+    pix.set_rect(pix.irect, (1, 2, 3))
+    assert header_dimensions(pix.tobytes("jpeg")) == (80, 40)
+    assert header_dimensions(b"not an image at all") is None
+
+
+def test_stored_images_are_metered_against_the_storage_quota(guest):
+    """Normalization re-encodes to lossless PNG, which is routinely several times
+    larger than the JPEG that arrived — an unmetered namespace would let a small
+    upload become storage nothing ever accounted for."""
+    from apps.core.models import GuestSession
+
+    assert _upload_image(guest).status_code == 201
+    session = GuestSession.resolve(guest.token)
+    assert session.storage_bytes_used > 0
+
+
+def test_image_upload_refuses_when_it_would_exceed_the_quota(guest):
+    from django.test import override_settings
+
+    from apps.documents.tests.test_ingest import tiers_with
+
+    with override_settings(TIERS=tiers_with("guest", storage_mb=0)):
+        resp = _upload_image(guest)
+    assert resp.status_code == 429
+    assert resp.json()["error"]["code"] == "quota_exceeded"
+
+
+def test_image_upload_keeps_the_guest_throttles(api):
+    """The scoped rate is *added* to the defaults. Replacing them would silently
+    drop the per-token and per-IP guest limits on a guest-reachable write."""
+    from apps.core.throttling import GuestIPThrottle, GuestThrottle
+    from apps.core.views import ImageUploadView
+
+    classes = {type(t) for t in ImageUploadView().get_throttles()}
+    assert GuestThrottle in classes
+    assert GuestIPThrottle in classes
+
+
+def test_claiming_a_session_carries_its_uploaded_images(guest, user):
+    """`uploads/…` is the one namespace keyed by principal, so a metadata-only
+    reparent misses it — and the session is expired by the claim, so the next
+    `guest_purge` would delete the bytes within the hour."""
+    from apps.core.assets import principal_prefix
+    from apps.core.claim import claim_session
+    from apps.core.models import GuestSession
+    from apps.core.tasks import guest_purge
+    from apps.pdf_engine.storage import get_storage
+
+    ref = _upload_image(guest).json()["ref"]
+    session = GuestSession.resolve(guest.token)
+    assert get_storage().list_prefix(principal_prefix(session))
+
+    summary = claim_session(session, user)
+    assert summary["assets"] == 1
+    assert get_storage().list_prefix(principal_prefix(session)) == []
+    assert get_storage().exists(f"{principal_prefix(user)}{ref}.png")
+
+    # And the purge that follows the claim cannot take them away.
+    guest_purge()
+    assert get_storage().exists(f"{principal_prefix(user)}{ref}.png")
+
+
+def test_the_overlay_raster_excludes_annotations(api, uploaded_doc):
+    """The overlay draws every annotation itself as editable SVG, so its page
+    raster must not already contain them — otherwise each one renders twice and
+    the baked copy does not move when the editable one is dragged."""
+    _annotate(api, uploaded_doc["id"], [
+        {"action": "add", "annotation": {**HIGHLIGHT, "color": "#ff0000", "opacity": 1.0}},
+    ])
+    base = f"/api/documents/{uploaded_doc['id']}/pages/0/thumbnail/?w=600"
+
+    def red_pixels(url: str) -> int:
+        png = api.get(url).content
+        pix = fitz.Pixmap(png)
+        return sum(
+            1
+            for y in range(0, pix.height, 2)
+            for x in range(0, pix.width, 2)
+            if pix.pixel(x, y)[0] > 200 and pix.pixel(x, y)[1] < 120
+        )
+
+    assert red_pixels(base) > 0, "the default raster still shows annotations"
+    assert red_pixels(f"{base}&annots=false") == 0
+
+
+def test_an_extracted_annotation_can_be_sent_straight_back_as_an_update(api, uploaded_doc):
+    """The edit round-trip, end to end.
+
+    The client edits an annotation by patching the object the server gave it, so
+    every field extraction produces must also validate on the way in. `null`
+    colours are the case that broke: `GET /annotations/` reports an unset fill
+    as `null`, and a string-only schema rejected it — failing the entire batch
+    the first time anyone edited a saved comment.
+    """
+    _annotate(api, uploaded_doc["id"], [{"action": "add", "annotation": HIGHLIGHT}])
+    loaded = api.get(
+        f"/api/documents/{uploaded_doc['id']}/annotations/"
+    ).json()["annotations"][0]
+    assert loaded["fill"] is None, "this test is only meaningful while fill is unset"
+
+    job = _annotate(
+        api, uploaded_doc["id"],
+        [{"action": "update", "annotation": {**loaded, "contents": "edited"}}],
+        base_seq=2,
+    )
+    assert job["status"] == "succeeded", job
+    again = api.get(
+        f"/api/documents/{uploaded_doc['id']}/annotations/"
+    ).json()["annotations"]
+    assert len(again) == 1
+    assert again[0]["contents"] == "edited"
+
+
+@pytest.mark.parametrize("kind", ["highlight", "square", "ink", "arrow", "note", "stamp"])
+def test_every_extracted_type_revalidates_on_the_way_back_in(api, uploaded_doc, kind):
+    """Same contract as above, across the shapes that carry different fields."""
+    specs = {
+        "highlight": HIGHLIGHT,
+        "square": {"id": "s", "page": 0, "type": "square",
+                   "rect": {"x": 0.1, "y": 0.1, "w": 0.2, "h": 0.1}, "color": "#ff0000"},
+        "ink": {"id": "i", "page": 0, "type": "ink",
+                "ink": [[[0.2, 0.5], [0.25, 0.52], [0.3, 0.5]]], "color": "#006600"},
+        "arrow": {"id": "a", "page": 0, "type": "arrow",
+                  "vertices": [[0.1, 0.9], [0.5, 0.92]], "color": "#000000"},
+        "note": {"id": "n", "page": 0, "type": "note",
+                 "rect": {"x": 0.5, "y": 0.5, "w": 0.03, "h": 0.03}, "contents": "hi"},
+        "stamp": {"id": "t", "page": 0, "type": "stamp",
+                  "rect": {"x": 0.6, "y": 0.1, "w": 0.3, "h": 0.06},
+                  "stamp_name": "Approved"},
+    }
+    _annotate(api, uploaded_doc["id"], [{"action": "add", "annotation": specs[kind]}])
+    loaded = api.get(
+        f"/api/documents/{uploaded_doc['id']}/annotations/"
+    ).json()["annotations"][0]
+
+    resp = api.post(
+        f"/api/documents/{uploaded_doc['id']}/operations/",
+        {"type": "annotate_batch", "params": {"ops": [{"action": "update", "annotation": loaded}]},
+         "base_version_seq": 2},
+        format="json",
+    )
+    assert resp.status_code == 202, resp.content
+    job = api.get(f"/api/jobs/{resp.json()['id']}/").json()
+    assert job["status"] == "succeeded", job

@@ -59,6 +59,56 @@ def sniff(data: bytes) -> str | None:
     return None
 
 
+def header_dimensions(data: bytes) -> tuple[int, int] | None:
+    """(width, height) read from the file header, WITHOUT decoding the image.
+
+    This is the whole defence against a decompression bomb: a 1.5 MB PNG of
+    zeros decodes to 40000×40000 = 1.6 Gpx ≈ 2.9 GB, which is inside every byte
+    cap we have and is allocated *in the API process*, where none of §12's worker
+    memory limits apply. Checking the pixel count after `fitz.Pixmap(data)` is
+    checking after the damage: on Linux the OOM killer takes the worker, so there
+    is not even an exception to catch.
+
+    Returns None when the header cannot be parsed; the caller then refuses.
+    """
+    if data.startswith(b"\x89PNG\r\n\x1a\n"):
+        # IHDR is the mandatory first chunk: 8-byte signature, 4-byte length,
+        # 4-byte type, then width and height as big-endian uint32.
+        if len(data) < 24 or data[12:16] != b"IHDR":
+            return None
+        return (int.from_bytes(data[16:20], "big"), int.from_bytes(data[20:24], "big"))
+
+    if data.startswith(b"\xff\xd8\xff"):
+        # Walk the marker segments to the first SOFn, which carries the size.
+        i = 2
+        n = len(data)
+        while i + 3 < n:
+            if data[i] != 0xFF:
+                i += 1
+                continue
+            marker = data[i + 1]
+            if marker in (0xD8, 0x01) or 0xD0 <= marker <= 0xD7:
+                i += 2
+                continue
+            if i + 4 > n:
+                return None
+            length = int.from_bytes(data[i + 2:i + 4], "big")
+            # SOF0..SOF15, excluding the non-frame markers DHT/JPG/DAC.
+            if 0xC0 <= marker <= 0xCF and marker not in (0xC4, 0xC8, 0xCC):
+                if i + 9 > n:
+                    return None
+                return (
+                    int.from_bytes(data[i + 7:i + 9], "big"),
+                    int.from_bytes(data[i + 5:i + 7], "big"),
+                )
+            if length < 2:
+                return None
+            i += 2 + length
+        return None
+
+    return None
+
+
 def normalize_png(data: bytes, *, max_bytes: int) -> tuple[bytes, int, int]:
     """Decode → re-encode as PNG. Returns (png_bytes, width, height).
 
@@ -74,11 +124,21 @@ def normalize_png(data: bytes, *, max_bytes: int) -> tuple[bytes, int, int]:
         )
     if sniff(data) is None:
         raise ImageRejected("Only PNG and JPEG images are supported.")
+
+    # Refuse on the *header* — before any allocation. See `header_dimensions`.
+    dims = header_dimensions(data)
+    if dims is None:
+        raise ImageRejected("That image could not be read.")
+    width, height = dims
+    if width <= 0 or height <= 0 or width * height > MAX_IMAGE_PIXELS:
+        raise ImageRejected("That image is too large to process.")
+
     try:
         pix = fitz.Pixmap(data)
     except Exception as exc:  # noqa: BLE001
         raise ImageRejected("That image could not be read.") from exc
     try:
+        # The header could still be lying; re-check what actually decoded.
         if pix.width * pix.height > MAX_IMAGE_PIXELS:
             raise ImageRejected("That image is too large to process.")
         # CMYK has no PNG representation; convert through RGB.
@@ -89,18 +149,71 @@ def normalize_png(data: bytes, *, max_bytes: int) -> tuple[bytes, int, int]:
         pix = None
 
 
+class AssetQuotaExceeded(ValueError):
+    """Storing this asset would push the principal over its storage quota."""
+
+    def __init__(self, message: str, *, quota: int, used: int):
+        super().__init__(message)
+        self.quota = quota
+        self.used = used
+
+
 def store_image(principal, data: bytes) -> dict:
-    """Validate, normalize and store. Returns the wire shape for the API."""
+    """Validate, normalize, meter and store. Returns the wire shape for the API.
+
+    The stored object is metered against the principal's storage quota like
+    every other write. It is not optional bookkeeping: normalization re-encodes
+    to *lossless* PNG, which measured 3–5× larger than the JPEG that came in, so
+    an unmetered namespace would let a ≤5 MB upload become ~120 MB of storage
+    that no quota, usage panel or purge ever saw.
+    """
     from apps.pdf_engine.storage import get_storage
 
     from . import limits as L
 
-    png, width, height = normalize_png(
-        data, max_bytes=L.for_principal(principal).max_image_upload_bytes
-    )
+    tier = L.for_principal(principal)
+    png, width, height = normalize_png(data, max_bytes=tier.max_image_upload_bytes)
+
+    used = L.storage_used(principal)
+    if used + len(png) > tier.storage_bytes:
+        raise AssetQuotaExceeded(
+            "Storing this image would exceed your storage quota.",
+            quota=tier.storage_bytes, used=used,
+        )
+
     ref = secrets.token_urlsafe(18).replace("=", "")[:32]
     get_storage().put_bytes(asset_key(principal, ref), png, content_type="image/png")
+    L.bump_storage(principal, len(png))
     return {"ref": ref, "width": width, "height": height, "content_type": "image/png"}
+
+
+def move_assets(from_kind: str, from_id, to_principal) -> int:
+    """Re-key one principal's assets onto another. Used by claim-on-signup.
+
+    `uploads/…` is the one namespace whose key contains the *principal*, which
+    breaks the §13 property claim relies on ("blob keys are principal-independent,
+    so claiming is a metadata-only reparent"). Without this, registering would
+    orphan a guest's stamps under a prefix `guest_purge` deletes within the hour —
+    losing them exactly at the moment the funnel is selling persistence.
+    """
+    from apps.pdf_engine.storage import get_storage
+
+    storage = get_storage()
+    source = f"uploads/{from_kind}/{from_id}/"
+    target = principal_prefix(to_principal)
+    moved = 0
+    for key in storage.list_prefix(source):
+        try:
+            storage.put_bytes(
+                f"{target}{key[len(source):]}",
+                storage.get_bytes(key),
+                content_type="image/png",
+            )
+            storage.delete(key)
+            moved += 1
+        except Exception:  # noqa: BLE001
+            continue
+    return moved
 
 
 def load_images(principal, refs) -> dict[str, bytes]:

@@ -62,6 +62,7 @@
         [selectedPages]="selected()"
         [initialTool]="annotateTool()"
         (saved)="onAnnotationsSaved()"
+        (cropped)="onCropApplied()"
         (conflict)="onAnnotationConflict()"
       />
     } @else {
