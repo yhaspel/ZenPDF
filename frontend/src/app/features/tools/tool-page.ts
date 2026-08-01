@@ -10,6 +10,7 @@ import {
 import { Meta, Title } from '@angular/platform-browser';
 import { Router, RouterLink } from '@angular/router';
 
+import { ConvertFacade } from '../../abstraction/convert.facade';
 import { GuestFacade } from '../../abstraction/guest.facade';
 import { JobsFacade } from '../../abstraction/jobs.facade';
 import { UploadFacade } from '../../abstraction/upload.facade';
@@ -20,6 +21,9 @@ import { saveBlob } from '../../shared/save-blob';
 import { UploadDropzone } from '../../shared/upload-dropzone';
 
 type Phase = 'idle' | 'uploading' | 'running' | 'done' | 'error';
+
+/** Tools whose input is not a PDF, so it is parked and converted (phase-06). */
+const IMPORT_KINDS = new Set(['word-to-pdf', 'jpg-to-pdf', 'html-to-pdf']);
 
 /**
  * A public, server-rendered tool page that **is** the tool (§21.6).
@@ -41,6 +45,7 @@ export class ToolPage {
   private docsSvc = inject(DocumentsService);
   private uploads = inject(UploadFacade);
   private jobs = inject(JobsFacade);
+  private convert = inject(ConvertFacade);
   private router = inject(Router);
   private title = inject(Title);
   private meta = inject(Meta);
@@ -51,6 +56,8 @@ export class ToolPage {
   protected error = signal('');
   protected results = signal<DocumentModel[]>([]);
   protected picked = signal<File[]>([]);
+  /** Set when the tool produced a downloadable file rather than a document. */
+  protected exportJob = signal<Job | null>(null);
 
   protected readonly ready = computed(() => this.picked().length >= this.tool().minFiles);
   protected readonly busy = computed(() =>
@@ -142,7 +149,7 @@ export class ToolPage {
     // per-request, so two concurrent tokenless uploads would create two
     // sessions — and a merge across them would then see only one file (§21.2).
     this.guests.ensureSession().subscribe({
-      next: () => this.uploadAll(),
+      next: () => (IMPORT_KINDS.has(this.tool().kind) ? this.importAll() : this.uploadAll()),
       error: (err) => this.fail(err),
     });
   }
@@ -166,10 +173,57 @@ export class ToolPage {
     }
   }
 
+  /**
+   * Import tools (`word-to-pdf`, `jpg-to-pdf`, `html-to-pdf`) never touch the
+   * document upload endpoint: the file is not a PDF, so ingest would reject it.
+   * It is parked as a conversion source and turned into a document by
+   * `convert_from` (phase-06).
+   */
+  private importAll(): void {
+    const files = this.picked();
+    const jobs: Job[] = [];
+    let remaining = files.length;
+    this.phase.set('running');
+    for (const file of files) {
+      this.convert.importFile(file).subscribe({
+        next: (job) => {
+          if (job.status === 'succeeded') {
+            jobs.push(job);
+            if (--remaining === 0) this.onSuccess(jobs[0]);
+          } else if (job.status === 'failed') {
+            this.phase.set('error');
+            this.error.set(job.error_message || 'That file could not be converted.');
+          }
+        },
+        error: (err) => this.fail(err),
+      });
+    }
+  }
+
   private dispatch(docs: DocumentModel[]): void {
     this.phase.set('running');
     const tool = this.tool();
     const primary = docs[0];
+
+    // Compare needs two documents and a place to show the result; the answer is
+    // a report, not a file, so the workspace is the only sensible destination.
+    if (tool.kind === 'compare') {
+      this.router.navigate(['/app/doc', primary.id], {
+        queryParams: { mode: 'compare', other: docs[1]?.id },
+      });
+      return;
+    }
+
+    // Export tools produce a downloadable artefact rather than a new document.
+    const exports: Partial<Record<typeof tool.kind, { format: string; extra?: object }>> = {
+      'pdf-to-word': { format: 'docx' },
+      'pdf-to-jpg': { format: 'images', extra: { image_format: 'jpg', dpi: 150 } },
+    };
+    const wanted = exports[tool.kind];
+    if (wanted) {
+      this.trackExport(primary, wanted.format, wanted.extra ?? {});
+      return;
+    }
 
     // Inherently interactive tools: there is no "one click and download"
     // version of arranging pages, marking a document up or rewriting its text.
@@ -211,6 +265,10 @@ export class ToolPage {
       // the workspace for anything finer.
       watermark: { type: 'watermark', params: { text: 'DRAFT', under: true, opacity: 0.25 } },
       'page-numbers': { type: 'page_numbers', params: { position: 'bottom-center', format: '{page}' } },
+      // Phase 6's two one-shot document tools. OCR defaults to English here and
+      // offers the full language list in the workspace.
+      ocr: { type: 'ocr', params: { languages: ['eng'] } },
+      repair: { type: 'repair', params: {} },
     };
     const op = single[tool.kind];
     this.track(
@@ -264,6 +322,55 @@ export class ToolPage {
     }
   }
 
+  private trackExport(doc: DocumentModel, format: string, extra: object): void {
+    this.jobs.dispatch(
+      this.docsSvc.operation(doc.id, {
+        type: 'convert_to',
+        params: { format, ...extra },
+        base_version_seq: doc.current_version?.seq ?? null,
+      }),
+    ).subscribe({
+      next: (job) => {
+        if (job.status === 'succeeded') {
+          this.exportJob.set(job);
+          this.results.set([doc]);
+          this.phase.set('done');
+        } else if (job.status === 'failed') {
+          this.phase.set('error');
+          this.error.set(job.error_message || 'That conversion did not work.');
+        }
+      },
+      error: (err) => this.fail(err),
+    });
+  }
+
+  /** What each import tool's dropzone offers — see `UploadDropzone.accept`. */
+  acceptFor(kind: string): string {
+    if (kind === 'word-to-pdf') {
+      return '.doc,.docx,.odt,.rtf,.txt,.xls,.xlsx,.ods,.csv,.ppt,.pptx,.odp';
+    }
+    if (kind === 'jpg-to-pdf') return 'image/*,.png,.jpg,.jpeg,.tif,.tiff,.bmp,.gif,.webp';
+    if (kind === 'html-to-pdf') return '.html,.htm,text/html';
+    return 'application/pdf,.pdf';
+  }
+
+  /** The converted file's name, for the download button. */
+  convertedName(): string {
+    const info = this.exportJob()?.result?.['export'] as { filename?: string } | undefined;
+    return info?.filename ?? 'converted file';
+  }
+
+  /** The converted file, when the tool produced one instead of a document. */
+  downloadConverted(): void {
+    const job = this.exportJob();
+    if (!job) return;
+    const info = job.result?.['export'] as { filename?: string } | undefined;
+    this.convert.download(job).subscribe({
+      next: (blob) => saveBlob(blob, info?.filename ?? 'converted'),
+      error: () => this.error.set('That download has expired. Convert it again.'),
+    });
+  }
+
   private fail(err: { error?: { error?: { message?: string } } }): void {
     this.phase.set('error');
     this.error.set(err?.error?.error?.message ?? 'Something went wrong. Try again.');
@@ -283,6 +390,7 @@ export class ToolPage {
   reset(): void {
     this.picked.set([]);
     this.results.set([]);
+    this.exportJob.set(null);
     this.error.set('');
     this.phase.set('idle');
   }

@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, output, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, input, output, signal } from '@angular/core';
 
 @Component({
   selector: 'app-upload-dropzone',
@@ -15,12 +15,12 @@ import { ChangeDetectionStrategy, Component, output, signal } from '@angular/cor
       data-test="dropzone"
     >
       <span class="text-3xl">⬆️</span>
-      <span class="font-medium text-slate-600">Drop PDFs here or click to browse</span>
-      <span class="text-xs text-slate-400">Only PDF files are accepted</span>
+      <span class="font-medium text-slate-600">{{ prompt() }}</span>
+      <span class="text-xs text-slate-400">{{ hint() }}</span>
       <input
         type="file"
         class="hidden"
-        accept="application/pdf,.pdf"
+        [accept]="accept()"
         multiple
         (change)="onSelect($event)"
         data-test="file-input"
@@ -29,6 +29,15 @@ import { ChangeDetectionStrategy, Component, output, signal } from '@angular/cor
   `,
 })
 export class UploadDropzone {
+  /**
+   * What the file picker offers. Phase 6 made this worth having: the import
+   * tools take a Word file or a photograph, and a dropzone that only accepts
+   * PDFs on the Word-to-PDF page is a dead end with no explanation.
+   */
+  readonly accept = input('application/pdf,.pdf');
+  readonly prompt = input('Drop PDFs here or click to browse');
+  readonly hint = input('Only PDF files are accepted');
+
   readonly filesPicked = output<File[]>();
   protected dragging = signal(false);
 
@@ -40,8 +49,23 @@ export class UploadDropzone {
   onDrop(e: DragEvent): void {
     e.preventDefault();
     this.dragging.set(false);
-    const files = Array.from(e.dataTransfer?.files ?? []).filter((f) => f.type === 'application/pdf' || f.name.endsWith('.pdf'));
+    // A dropped file is filtered against the same `accept` list the picker
+    // uses, so the two routes into the tool behave the same way.
+    const files = Array.from(e.dataTransfer?.files ?? []).filter((f) => this.accepts(f));
     if (files.length) this.filesPicked.emit(files);
+  }
+
+  private accepts(file: File): boolean {
+    const patterns = this.accept().split(',').map((p) => p.trim().toLowerCase());
+    const name = file.name.toLowerCase();
+    const type = (file.type || '').toLowerCase();
+    return patterns.some((pattern) =>
+      pattern.startsWith('.')
+        ? name.endsWith(pattern)
+        : pattern.endsWith('/*')
+          ? type.startsWith(pattern.slice(0, -1))
+          : type === pattern,
+    );
   }
 
   onSelect(e: Event): void {

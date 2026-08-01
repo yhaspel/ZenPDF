@@ -3,11 +3,12 @@ import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 
 import { AuthFacade } from '../../abstraction/auth.facade';
+import { ConvertFacade } from '../../abstraction/convert.facade';
 import { DocumentsFacade } from '../../abstraction/documents.facade';
 import { FoldersFacade } from '../../abstraction/folders.facade';
 import { JobsFacade } from '../../abstraction/jobs.facade';
 import { UploadFacade, UploadItem } from '../../abstraction/upload.facade';
-import { DocumentModel } from '../../core/models/models';
+import { DocumentModel, Job } from '../../core/models/models';
 import { DocumentsService } from '../../core/services/documents.service';
 import { JobsService } from '../../core/services/jobs.service';
 import { ConfirmService } from '../../shared/confirm.service';
@@ -17,6 +18,15 @@ import { saveBlob } from '../../shared/save-blob';
 import { Spinner } from '../../shared/spinner';
 import { ToastService } from '../../shared/toast.service';
 import { UploadDropzone } from '../../shared/upload-dropzone';
+
+/** Everything the conversion routes accept, for the dropzone's picker. */
+const IMPORTABLE = 'application/pdf,.pdf,.doc,.docx,.odt,.rtf,.txt,.xls,.xlsx,'
+  + '.ods,.csv,.ppt,.pptx,.odp,image/*,.png,.jpg,.jpeg,.tif,.tiff,.bmp,.gif,'
+  + '.webp,.html,.htm';
+
+function isPdf(file: File): boolean {
+  return file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
+}
 
 @Component({
   selector: 'app-dashboard',
@@ -31,6 +41,7 @@ export class Dashboard {
   /** Surfaces what signing up just rescued — the payoff must not be silent. */
   protected auth = inject(AuthFacade);
   private jobs = inject(JobsFacade);
+  protected convert = inject(ConvertFacade);
   private jobsSvc = inject(JobsService);
   private docsSvc = inject(DocumentsService);
   private router = inject(Router);
@@ -42,6 +53,10 @@ export class Dashboard {
   protected editingTitle = signal('');
   protected selected = signal<string[]>([]);
   protected newFolder = signal('');
+  /** Files and addresses currently being converted into PDFs. */
+  protected importing = signal<string[]>([]);
+  protected importUrl = signal('');
+  protected readonly importable = IMPORTABLE;
 
   constructor() {
     this.docs.load();
@@ -76,11 +91,56 @@ export class Dashboard {
     }
   }
 
+  /**
+   * The dropzone takes anything we can turn into a PDF (phase-06: "import UX is
+   * unified with upload"). PDFs are ingested; a Word file, a photograph or an
+   * HTML page is parked and converted, which is the same gesture for the user
+   * and two entirely different paths underneath.
+   */
   onFilesPicked(files: File[]): void {
-    this.upload.uploadFiles(files, this.docs.folder(), () => {
-      this.docs.load();
-      this.toast.success('Uploaded');
+    const pdfs = files.filter((f) => isPdf(f));
+    const others = files.filter((f) => !isPdf(f));
+    if (pdfs.length) {
+      this.upload.uploadFiles(pdfs, this.docs.folder(), () => {
+        this.docs.load();
+        this.toast.success('Uploaded');
+      });
+    }
+    for (const file of others) {
+      this.importing.update((names) => [...names, file.name]);
+      this.convert.importFile(file).subscribe({
+        next: (job) => this.onImported(job, file.name),
+        error: () => this.failImport(file.name),
+      });
+    }
+  }
+
+  importFromUrl(): void {
+    const url = this.importUrl().trim();
+    if (!url) return;
+    this.importing.update((names) => [...names, url]);
+    this.convert.importUrl(url).subscribe({
+      next: (job) => {
+        this.onImported(job, url);
+        if (job.status === 'succeeded') this.importUrl.set('');
+      },
+      error: (err) => this.failImport(url, err?.error?.error?.message),
     });
+  }
+
+  private onImported(job: Job, label: string): void {
+    if (job.status === 'succeeded') {
+      this.importing.update((names) => names.filter((n) => n !== label));
+      this.docs.load();
+      this.toast.success('Converted to PDF');
+    } else if (job.status === 'failed') {
+      this.failImport(label, job.error_message);
+    }
+  }
+
+  private failImport(label: string, message?: string): void {
+    this.importing.update((names) => names.filter((n) => n !== label));
+    this.toast.error(message || `Could not convert ${label}`);
   }
 
   retryRepair(item: UploadItem): void {
