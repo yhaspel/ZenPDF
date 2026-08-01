@@ -12,7 +12,7 @@ This file is the **single source of truth for execution status**. Every agent se
 | **2B — Anonymous access** | [phase-02b-anonymous-access.md](phase-02b-anonymous-access.md) | ✅ Complete | 2026-08-01 | 2026-08-01 | Login gate removed; principal model, tiered limits, claim-on-signup, SSR tool pages. 2 criteria deferred to Phase 8 (features don't exist yet) — see Human review queue |
 | 3 — Annotations | [phase-03-annotations.md](phase-03-annotations.md) | ✅ Complete | 2026-08-01 | 2026-08-01 | Overlay primitive for 4/5/7/8; crop migrated onto it |
 | 4 — Content editing | [phase-04-content-editing.md](phase-04-content-editing.md) | ✅ Complete | 2026-08-01 | 2026-08-02 | 17 ops; scanned gate awaits P6 to enable its CTA |
-| 5 — Forms | [phase-05-forms.md](phase-05-forms.md) | ⬜ Not started | — | — | |
+| 5 — Forms | [phase-05-forms.md](phase-05-forms.md) | 🔵 In progress | 2026-08-02 | — | |
 | 6 — OCR, conversion & compare | [phase-06-ocr-conversion-compare.md](phase-06-ocr-conversion-compare.md) | ⬜ Not started | — | — | |
 | 7 — Security & redaction | [phase-07-security-redaction.md](phase-07-security-redaction.md) | ⬜ Not started | — | — | |
 | 8 — E-signatures | [phase-08-esignatures.md](phase-08-esignatures.md) | ⬜ Not started | — | — | Human gate: legal text + prod cert |
@@ -46,6 +46,15 @@ Status values: ⬜ Not started · 🔵 In progress · 🟡 Blocked · 🟠 Await
 ## Phase sections
 
 _(Created by the executing agent per protocol step 2. Keep newest phase at top.)_
+
+### Phase 5 — Forms · 🔵 In progress (started 2026-08-02)
+
+**Acceptance criteria** (copied verbatim from phase-05-forms.md):
+- [ ] **Guest parity + tool pages (§20 DoD item 9, §21.6):** every tool in this phase works end-to-end with no account, and ships its public SSR page — `/fill-pdf-form` — with unique title/meta/H1 and an entry in the generated `sitemap.xml`.
+- [ ] Form fixture fillable end-to-end in-browser; saved values visible in external viewers.
+- [ ] Build a form from a blank PDF: 6 field types placed, named, filled, exported, flattened.
+- [ ] Import round-trip: export JSON → clear → import → identical values.
+- [ ] XFA document degrades gracefully with the warning banner.
 
 ### Phase 4 — Content Editing · ✅ Complete (2026-08-02)
 
