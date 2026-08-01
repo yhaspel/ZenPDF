@@ -11,7 +11,7 @@ This file is the **single source of truth for execution status**. Every agent se
 | 2 — Page organization | [phase-02-page-organization.md](phase-02-page-organization.md) | ✅ Complete | 2026-07-19 | 2026-07-19 | 14 page ops via job pipeline |
 | **2B — Anonymous access** | [phase-02b-anonymous-access.md](phase-02b-anonymous-access.md) | ✅ Complete | 2026-08-01 | 2026-08-01 | Login gate removed; principal model, tiered limits, claim-on-signup, SSR tool pages. 2 criteria deferred to Phase 8 (features don't exist yet) — see Human review queue |
 | 3 — Annotations | [phase-03-annotations.md](phase-03-annotations.md) | ✅ Complete | 2026-08-01 | 2026-08-01 | Overlay primitive for 4/5/7/8; crop migrated onto it |
-| 4 — Content editing | [phase-04-content-editing.md](phase-04-content-editing.md) | ⬜ Not started | — | — | |
+| 4 — Content editing | [phase-04-content-editing.md](phase-04-content-editing.md) | 🔵 In progress | 2026-08-01 | — | |
 | 5 — Forms | [phase-05-forms.md](phase-05-forms.md) | ⬜ Not started | — | — | |
 | 6 — OCR, conversion & compare | [phase-06-ocr-conversion-compare.md](phase-06-ocr-conversion-compare.md) | ⬜ Not started | — | — | |
 | 7 — Security & redaction | [phase-07-security-redaction.md](phase-07-security-redaction.md) | ⬜ Not started | — | — | |
@@ -46,6 +46,16 @@ Status values: ⬜ Not started · 🔵 In progress · 🟡 Blocked · 🟠 Await
 ## Phase sections
 
 _(Created by the executing agent per protocol step 2. Keep newest phase at top.)_
+
+### Phase 4 — Content Editing · 🔵 In progress (started 2026-08-01)
+
+**Acceptance criteria** (copied verbatim from phase-04-content-editing.md):
+- [ ] **Guest parity + tool pages (§20 DoD item 9, §21.6):** every tool in this phase works end-to-end with no account, and ships its public SSR page — `/edit-pdf` `/watermark-pdf` `/add-page-numbers` — with unique title/meta/H1 and an entry in the generated `sitemap.xml`.
+- [ ] Click-to-edit works on the text fixture with visually acceptable output (side-by-side pixel diff <15% in edited block region for same-text roundtrip sanity test).
+- [ ] Scanned-page gate appears on scanned fixture with working OCR CTA (disabled until P6, tooltip "coming with OCR tool" — then enabled).
+- [ ] Find & replace with preview/deselect works across a 50-page doc in <60 s.
+- [ ] All stamp tools produce correct output honoring range + skip-first.
+- [ ] Whiteout vs Redact distinction communicated in UI (copy reviewed).
 
 ### Phase 3 — Annotations & Markup · ✅ Complete (2026-08-01)
 
