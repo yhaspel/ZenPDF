@@ -31,6 +31,7 @@ from apps.jobs.models import Job
 from apps.jobs.serializers import JobSerializer
 from apps.pdf_engine import registry
 from apps.pdf_engine.engine import annotations as engine_annotations
+from apps.pdf_engine.engine import content as engine_content
 from apps.pdf_engine.engine import render as engine_render
 from apps.pdf_engine.engine import search_text
 from apps.pdf_engine.engine import text as engine_text
@@ -410,6 +411,22 @@ class OutlineView(APIView):
         return Response({"outline": info["toc"]})
 
 
+def _page_read_model(request, pk, fn):
+    """Shared shape for the per-page read models: own the document, pick the
+    version, run one pure engine function."""
+    document = _owned_document(request, pk)
+    version = _select_version(document, request)
+    try:
+        page = int(request.query_params.get("page", 0))
+    except ValueError:
+        page = 0
+    try:
+        blob = get_storage().get_bytes(version.storage_key)
+        return fn(blob, page)
+    except EngineError as exc:
+        raise ValidationFailed(exc.message) from exc
+
+
 class AnnotationListView(APIView):
     """`GET /api/documents/{id}/annotations/?version=` (phase-03).
 
@@ -461,6 +478,35 @@ class TextWordsView(APIView):
         except EngineError as exc:
             raise ValidationFailed(exc.message) from exc
         return Response({"page": page, **words})
+
+
+class TextBlocksView(APIView):
+    """`GET /api/documents/{id}/text-blocks/?page=` (phase-04 "Read model").
+
+    The editable unit is a *block*: PyMuPDF's own grouping, distilled to the
+    text, its box and the dominant span style. `is_scanned_page` is what the
+    editor gates on — a page of pixels has nothing to click.
+    """
+
+    @extend_schema(tags=["content"], responses=OpenApiTypes.OBJECT)
+    def get(self, request, pk):
+        return Response(_page_read_model(request, pk, engine_content.text_blocks))
+
+
+class PageImagesView(APIView):
+    """`GET /api/documents/{id}/images/?page=` — xref, size and box per image."""
+
+    @extend_schema(tags=["content"], responses=OpenApiTypes.OBJECT)
+    def get(self, request, pk):
+        return Response(_page_read_model(request, pk, engine_content.page_images))
+
+
+class PageLinksView(APIView):
+    """`GET /api/documents/{id}/links/?page=` — existing link annotations."""
+
+    @extend_schema(tags=["content"], responses=OpenApiTypes.OBJECT)
+    def get(self, request, pk):
+        return Response(_page_read_model(request, pk, engine_content.page_links))
 
 
 class TextSearchView(APIView):

@@ -23,6 +23,7 @@ from apps.core.principals import (
 from apps.jobs.models import Job
 from apps.pdf_engine import registry
 from apps.pdf_engine.engine import annotations as A
+from apps.pdf_engine.engine import content as C
 from apps.pdf_engine.engine import pages as P
 from apps.pdf_engine.engine import render as R
 from apps.pdf_engine.exceptions import EngineError
@@ -142,16 +143,29 @@ def _annotation_images(job: Job, params: dict) -> dict[str, bytes]:
     """Resolve `image_ref`s in an annotate batch to bytes, scoped to the job's
     principal — the key is derived from the principal, so a ref can never reach
     another principal's asset (§13, `core.assets`)."""
-    from apps.core.assets import load_images
-
     refs = [
         (op.get("annotation") or {}).get("image_ref")
         for op in (params.get("ops") or [])
     ]
+    return _load_images(job, [r for r in refs if r])
+
+
+def _load_images(job: Job, refs) -> dict[str, bytes]:
+    from apps.core.assets import load_images
+
     refs = [r for r in refs if r]
     if not refs:
         return {}
     return load_images(principal_of(job), refs)
+
+
+def _one_image(job: Job, ref) -> bytes:
+    """The single uploaded image an op needs, or a validation error naming it."""
+    images = _load_images(job, [ref])
+    data = images.get(str(ref or ""))
+    if not data:
+        raise EngineError(f"Image '{ref}' was not found. Upload it again.")
+    return data
 
 
 def _apply_single(op, primary_bytes, params, source_bytes, *, job=None):
@@ -219,6 +233,80 @@ def _apply_single(op, primary_bytes, params, source_bytes, *, job=None):
         label = {"annotations": "Flattened annotations", "form": "Flattened form",
                  "all": "Flattened"}[what]
         return "version", data, label, None
+
+    # --- Phase 4: content editing ------------------------------------- #
+    if t == "edit_text":
+        data = C.edit_text(primary_bytes, edits=params["edits"])
+        return "version", data, f"Edited text ({len(params['edits'])} block(s))", None
+    if t == "add_text":
+        data = C.add_text(primary_bytes, boxes=params["boxes"])
+        return "version", data, f"Added text ({len(params['boxes'])} box(es))", None
+    if t == "whiteout":
+        data = C.whiteout(primary_bytes, rects=params["rects"],
+                          color=params.get("color"))
+        return "version", data, f"Whiteout ({len(params['rects'])} area(s))", None
+    if t == "find_replace":
+        data, report = C.find_replace(
+            primary_bytes, find=params["find"], replace=params.get("replace", ""),
+            match_case=params.get("match_case", False), pages=params.get("pages"),
+            dry_run=params.get("dry_run", False), only=params.get("only"),
+        )
+        if data is None:
+            # A dry run inspects the document and changes nothing, so it must
+            # not mint a version — the review UI is a read, expressed as a job
+            # only because the search runs on the worker.
+            return "report", report, "", report
+        return "version", data, f"Replaced {report['replaced']} match(es)", report
+    if t == "add_image":
+        data = C.add_image(primary_bytes, page=params["page"], rect=params["rect"],
+                           image=_one_image(job, params["image_ref"]),
+                           keep_aspect=params.get("keep_aspect", True))
+        return "version", data, "Added image", None
+    if t == "replace_image":
+        data = C.replace_image(primary_bytes, page=params["page"], xref=params["xref"],
+                               image=_one_image(job, params["image_ref"]))
+        return "version", data, "Replaced image", None
+    if t == "delete_image":
+        data = C.delete_image(primary_bytes, page=params["page"], xref=params["xref"])
+        return "version", data, "Deleted image", None
+    if t == "add_link":
+        data = C.add_link(primary_bytes, **params)
+        return "version", data, "Added link", None
+    if t == "edit_link":
+        data = C.edit_link(primary_bytes, **params)
+        return "version", data, "Edited link", None
+    if t == "delete_link":
+        data = C.delete_link(primary_bytes, page=params["page"], index=params["index"])
+        return "version", data, "Deleted link", None
+    if t == "header_footer":
+        data = C.header_footer(primary_bytes, **params)
+        return "version", data, "Header/footer", None
+    if t == "page_numbers":
+        data = C.page_numbers(primary_bytes, **params)
+        return "version", data, "Page numbers", None
+    if t == "bates":
+        data, report = C.bates(primary_bytes, **params)
+        return "version", data, f"Bates {report['first']}–{report['last']}", report
+    if t == "watermark":
+        image_ref = params.pop("image_ref", None)
+        data = C.watermark(
+            primary_bytes,
+            image=_one_image(job, image_ref) if image_ref else None,
+            **params,
+        )
+        return "version", data, "Watermark", None
+    if t == "overlay_pdf":
+        data = C.overlay_pdf(
+            primary_bytes, source_bytes[0], mode=params.get("mode", "foreground"),
+            range=params.get("range"), overlay_page=params.get("overlay_page", 0),
+        )
+        return "version", data, "Overlay applied", None
+    if t == "set_metadata":
+        data = C.set_metadata(primary_bytes, **params)
+        return "version", data, "Metadata updated", None
+    if t == "set_bookmarks":
+        data = C.set_bookmarks(primary_bytes, toc=params["toc"])
+        return "version", data, f"Bookmarks ({len(params['toc'])})", None
     raise EngineError(f"Unsupported single-document op '{t}'")
 
 
@@ -265,6 +353,18 @@ def run_operation(self, job_id: str):
             # Last point before the result is committed — honour a cancel that
             # arrived while the engine was working.
             if _canceled(job):
+                return
+
+            if kind == "report":
+                # Inspection only (find & replace dry run): no bytes changed, so
+                # no version. Minting one would put "Replaced 0 matches" in the
+                # history every time somebody searched.
+                #
+                # Wrapped in `report` so both halves of the two-step flow answer
+                # the same shape — the executed call reports under `report` too,
+                # and a client that had to branch on which call it made would be
+                # one refactor away from reading the wrong key.
+                job.mark_succeeded({"report": payload})
                 return
 
             if kind == "version":

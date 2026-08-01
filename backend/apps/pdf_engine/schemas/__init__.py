@@ -241,3 +241,305 @@ FLATTEN = {
     "properties": {"what": {"enum": ["annotations", "form", "all"]}},
     "additionalProperties": False,
 }
+
+
+# --------------------------------------------------------------------------- #
+# Phase 4 — content editing
+# --------------------------------------------------------------------------- #
+_TEXT_STYLE = {
+    "type": "object",
+    "properties": {
+        "font_family": {"enum": ["helvetica", "sans-serif", "times", "serif",
+                                 "courier", "monospace"]},
+        "size": {"type": "number", "minimum": 4, "maximum": 200},
+        "color": _COLOR,
+        "align": {"enum": ["left", "center", "right", "justify"]},
+        "bold": {"type": "boolean"},
+        "italic": {"type": "boolean"},
+    },
+    "additionalProperties": False,
+}
+# `pages` omitted means every page; `skip_first` is the "not on the cover" case
+# every stamping tool needs.
+_RANGE = {
+    "type": "object",
+    "properties": {
+        "pages": {"type": "array", "items": {"type": "integer", "minimum": 0}},
+        "skip_first": {"type": "boolean"},
+    },
+    "additionalProperties": False,
+}
+_POSITION = {
+    "enum": ["top-left", "top-center", "top-right",
+             "bottom-left", "bottom-center", "bottom-right"],
+}
+_IMAGE_REF = {"type": "string", "pattern": "^[A-Za-z0-9_-]{6,64}$"}
+
+EDIT_TEXT = {
+    "type": "object",
+    "required": ["edits"],
+    "properties": {
+        "edits": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 200,
+            "items": {
+                "type": "object",
+                "required": ["page", "block_bbox", "new_text"],
+                "properties": {
+                    "page": {"type": "integer", "minimum": 0},
+                    "block_bbox": _NORM_RECT,
+                    "new_text": {"type": "string", "maxLength": 20000},
+                    "style": _TEXT_STYLE,
+                },
+                "additionalProperties": False,
+            },
+        },
+    },
+    "additionalProperties": False,
+}
+
+ADD_TEXT = {
+    "type": "object",
+    "required": ["boxes"],
+    "properties": {
+        "boxes": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 200,
+            "items": {
+                "type": "object",
+                "required": ["page", "rect", "text"],
+                "properties": {
+                    "page": {"type": "integer", "minimum": 0},
+                    "rect": _NORM_RECT,
+                    "text": {"type": "string", "maxLength": 20000},
+                    "style": _TEXT_STYLE,
+                },
+                "additionalProperties": False,
+            },
+        },
+    },
+    "additionalProperties": False,
+}
+
+WHITEOUT = {
+    "type": "object",
+    "required": ["rects"],
+    "properties": {
+        "rects": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 500,
+            "items": {
+                "type": "object",
+                "required": ["page", "rect"],
+                "properties": {
+                    "page": {"type": "integer", "minimum": 0},
+                    "rect": _NORM_RECT,
+                },
+                "additionalProperties": False,
+            },
+        },
+        "color": _COLOR,
+    },
+    "additionalProperties": False,
+}
+
+FIND_REPLACE = {
+    "type": "object",
+    "required": ["find"],
+    "properties": {
+        "find": {"type": "string", "minLength": 1, "maxLength": 500},
+        "replace": {"type": "string", "maxLength": 500},
+        "match_case": {"type": "boolean"},
+        "pages": {"type": "array", "items": {"type": "integer", "minimum": 0}},
+        "dry_run": {"type": "boolean"},
+        # Match ids from the dry run the user chose to keep.
+        "only": {"type": "array", "items": {"type": "string", "maxLength": 32},
+                 "maxItems": 5000},
+    },
+    "additionalProperties": False,
+}
+
+ADD_IMAGE = {
+    "type": "object",
+    "required": ["page", "rect", "image_ref"],
+    "properties": {
+        "page": {"type": "integer", "minimum": 0},
+        "rect": _NORM_RECT,
+        "image_ref": _IMAGE_REF,
+        "keep_aspect": {"type": "boolean"},
+    },
+    "additionalProperties": False,
+}
+REPLACE_IMAGE = {
+    "type": "object",
+    "required": ["page", "xref", "image_ref"],
+    "properties": {
+        "page": {"type": "integer", "minimum": 0},
+        "xref": {"type": "integer", "minimum": 1},
+        "image_ref": _IMAGE_REF,
+    },
+    "additionalProperties": False,
+}
+DELETE_IMAGE = {
+    "type": "object",
+    "required": ["page", "xref"],
+    "properties": {
+        "page": {"type": "integer", "minimum": 0},
+        "xref": {"type": "integer", "minimum": 1},
+    },
+    "additionalProperties": False,
+}
+
+_LINK_TARGET = {
+    "kind": {"enum": ["uri", "page"]},
+    "uri": {"type": "string", "maxLength": 2000},
+    "page_target": {"type": "integer", "minimum": 0},
+}
+ADD_LINK = {
+    "type": "object",
+    "required": ["page", "rect"],
+    "properties": {
+        "page": {"type": "integer", "minimum": 0},
+        "rect": _NORM_RECT,
+        **_LINK_TARGET,
+    },
+    "additionalProperties": False,
+}
+EDIT_LINK = {
+    "type": "object",
+    "required": ["page", "index", "rect"],
+    "properties": {
+        "page": {"type": "integer", "minimum": 0},
+        "index": {"type": "integer", "minimum": 0},
+        "rect": _NORM_RECT,
+        **_LINK_TARGET,
+    },
+    "additionalProperties": False,
+}
+DELETE_LINK = {
+    "type": "object",
+    "required": ["page", "index"],
+    "properties": {
+        "page": {"type": "integer", "minimum": 0},
+        "index": {"type": "integer", "minimum": 0},
+    },
+    "additionalProperties": False,
+}
+
+HEADER_FOOTER = {
+    "type": "object",
+    "required": ["segments"],
+    "properties": {
+        "segments": {
+            "type": "object",
+            "properties": {p: {"type": "string", "maxLength": 300}
+                           for p in _POSITION["enum"]},
+            "additionalProperties": False,
+            "minProperties": 1,
+        },
+        "style": _TEXT_STYLE,
+        "margin": {"type": "number", "minimum": 0, "maximum": 200},
+        "range": _RANGE,
+        "start_at": {"type": "integer", "minimum": 0},
+    },
+    "additionalProperties": False,
+}
+
+PAGE_NUMBERS = {
+    "type": "object",
+    "properties": {
+        "position": _POSITION,
+        "format": {"type": "string", "maxLength": 100},
+        "start_at": {"type": "integer", "minimum": 0},
+        "style": _TEXT_STYLE,
+        "margin": {"type": "number", "minimum": 0, "maximum": 200},
+        "range": _RANGE,
+    },
+    "additionalProperties": False,
+}
+
+BATES = {
+    "type": "object",
+    "properties": {
+        "prefix": {"type": "string", "maxLength": 50},
+        "suffix": {"type": "string", "maxLength": 50},
+        "start": {"type": "integer", "minimum": 0},
+        "digits": {"type": "integer", "minimum": 1, "maximum": 12},
+        "position": _POSITION,
+        "style": _TEXT_STYLE,
+        "margin": {"type": "number", "minimum": 0, "maximum": 200},
+        "range": _RANGE,
+    },
+    "additionalProperties": False,
+}
+
+WATERMARK = {
+    "type": "object",
+    "properties": {
+        "text": {"type": "string", "maxLength": 200},
+        "image_ref": _IMAGE_REF,
+        "opacity": {"type": "number", "exclusiveMinimum": 0, "maximum": 1},
+        "rotation": {"type": "integer", "minimum": -360, "maximum": 360},
+        "scale": {"type": "number", "exclusiveMinimum": 0, "maximum": 5},
+        "tiled": {"type": "boolean"},
+        "color": _COLOR,
+        "size": {"type": "number", "minimum": 4, "maximum": 200},
+        "under": {"type": "boolean"},
+        "range": _RANGE,
+    },
+    "additionalProperties": False,
+    # Exactly the "needs text or an image" rule the engine enforces, stated so
+    # the rejection happens before a job is created.
+    "anyOf": [{"required": ["text"]}, {"required": ["image_ref"]}],
+}
+
+OVERLAY_PDF = {
+    "type": "object",
+    "required": ["overlay_document_id"],
+    "properties": {
+        "overlay_document_id": {"type": "string"},
+        "mode": {"enum": ["foreground", "background"]},
+        "overlay_page": {"type": "integer", "minimum": 0},
+        "range": _RANGE,
+    },
+    "additionalProperties": False,
+}
+
+SET_METADATA = {
+    "type": "object",
+    "properties": {
+        "title": {"type": "string", "maxLength": 500},
+        "author": {"type": "string", "maxLength": 500},
+        "subject": {"type": "string", "maxLength": 500},
+        "keywords": {"type": "string", "maxLength": 500},
+        "creator": {"type": "string", "maxLength": 500},
+        "producer": {"type": "string", "maxLength": 500},
+        "clear": {"type": "boolean"},
+    },
+    "additionalProperties": False,
+}
+
+SET_BOOKMARKS = {
+    "type": "object",
+    "required": ["toc"],
+    "properties": {
+        "toc": {
+            "type": "array",
+            "maxItems": 5000,
+            "items": {
+                "type": "array",
+                "minItems": 3,
+                "maxItems": 3,
+                "prefixItems": [
+                    {"type": "integer", "minimum": 1, "maximum": 12},
+                    {"type": "string", "maxLength": 500},
+                    {"type": "integer", "minimum": 1},
+                ],
+            },
+        },
+    },
+    "additionalProperties": False,
+}
