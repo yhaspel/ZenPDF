@@ -51,7 +51,7 @@ FF_RADIO = 1 << 15
 # Printable on purpose — see `_build_radio_group`.
 _RADIO_SEP = "\u2400zenradio\u2400"
 
-# `/Q` quadding \u2014 how the value sits in the box.
+# `/Q` quadding — how the value sits in the box.
 _ALIGN = {"left": 0, "center": 1, "right": 2}
 
 
@@ -231,7 +231,9 @@ def fill_form(data: bytes, *, values: dict, flatten_after: bool = False) -> tupl
     doc = _open(data)
     try:
         remaining = dict(values)
-        filled = 0
+        # Counted by *field*, not by widget: a radio group is several widgets
+        # and one answer, and "imported 3 field(s)" for one choice is a lie.
+        touched: set[str] = set()
         for index in range(doc.page_count):
             page = doc[index]
             for widget in page.widgets():
@@ -256,11 +258,11 @@ def fill_form(data: bytes, *, values: dict, flatten_after: bool = False) -> tupl
                         # keeps its old text — and "clear the form", which is
                         # half of the import round trip, silently did nothing.
                         doc.xref_set_key(widget.xref, "V", fitz.get_pdf_str(""))
-                    filled += 1
+                    touched.add(name)
                     remaining.pop(name, None)
                     continue
                 widget.update()
-                filled += 1
+                touched.add(name)
                 remaining.pop(name, None)
 
         if remaining:
@@ -275,7 +277,7 @@ def fill_form(data: bytes, *, values: dict, flatten_after: bool = False) -> tupl
         from .annotations import flatten_annotations
 
         out = flatten_annotations(out, what="form")
-    return out, {"filled": filled, "flattened": bool(flatten_after)}
+    return out, {"filled": len(touched), "flattened": bool(flatten_after)}
 
 
 def _is_radio_kid(doc: fitz.Document, widget) -> bool:
@@ -399,6 +401,8 @@ def _add_simple_field(page: fitz.Page, spec: dict) -> None:
 
     align = spec.get("align")
     if align:
+        if align not in _ALIGN:
+            raise InvalidParams(f"align must be one of {list(_ALIGN)}")
         # `/Q` — quadding. PyMuPDF's Widget has no attribute for it, so it goes
         # in by hand after the widget exists.
         xref = getattr(added, "xref", 0) or widget.xref
@@ -501,10 +505,13 @@ def _add_signature_field(raw: bytes, spec: dict) -> bytes:
     try:
         page = _page(doc, int(spec.get("page", 0)))
         rect = _rect_for(spec, page)
-        height = page.mediabox.y1
-        # pyHanko boxes are PDF-native: origin bottom-left. This is the one
-        # place §8 says a conversion is legitimate.
-        box = (rect.x0, height - rect.y1, rect.x1, height - rect.y0)
+        # pyHanko boxes are PDF-native: origin bottom-left, in the page's own
+        # user space. This is the one place §8 says a conversion is legitimate.
+        # `transformation_matrix` maps PDF space → PyMuPDF's; its inverse is the
+        # way back, and it carries the page's own origin, so a MediaBox that
+        # does not start at (0, 0) lands correctly too.
+        native = (rect * ~page.transformation_matrix).normalize()
+        box = (native.x0, native.y0, native.x1, native.y1)
         page_number = int(spec.get("page", 0))
     finally:
         doc.close()

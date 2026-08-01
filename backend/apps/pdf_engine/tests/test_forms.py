@@ -246,6 +246,21 @@ def test_a_signature_field_is_a_real_sig_field():
     assert names.get("Signature1") == "/Sig"
 
 
+def test_a_signature_field_lands_where_it_was_placed():
+    """pyHanko boxes are PDF-native (origin bottom-left); everything else in
+    the engine is §8 top-left. Getting the flip wrong puts the signature
+    placeholder at the other end of the page, which nothing else would catch."""
+    built, _ = F.edit_fields_batch(_blank(), ops=[
+        {"action": "add", "field": {"name": "sig", "type": "signature", "page": 0,
+                                    "rect": {"x": 0.1, "y": 0.1, "w": 0.3, "h": 0.05}}},
+    ])
+    field = next(f for f in F.read_form(built)["fields"] if f["name"] == "sig")
+    assert field["rect"]["x"] == pytest.approx(0.1, abs=0.01)
+    assert field["rect"]["y"] == pytest.approx(0.1, abs=0.01)
+    assert field["rect"]["w"] == pytest.approx(0.3, abs=0.01)
+    assert field["rect"]["h"] == pytest.approx(0.05, abs=0.01)
+
+
 def test_radio_options_are_mutually_exclusive():
     """The property that makes a radio group a radio group: selecting one
     option clears the others. Each kid carries its own export value — PyMuPDF's
