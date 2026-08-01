@@ -16,7 +16,12 @@ import tempfile
 
 import fitz
 
-from ..exceptions import DocumentEncryptedError, EngineError, InvalidParams
+from ..exceptions import (
+    DocumentEncryptedError,
+    EngineError,
+    InvalidParams,
+    UnsupportedFileError,
+)
 
 # Shipped in the worker image (phase-06). Hebrew is there because the owner's
 # own documents are RTL, and it is an acceptance criterion.
@@ -57,7 +62,10 @@ def _check_languages(languages) -> list[str]:
 
 
 def page_count(data: bytes) -> int:
-    doc = fitz.open(stream=data, filetype="pdf")
+    try:
+        doc = fitz.open(stream=data, filetype="pdf")
+    except Exception as exc:  # noqa: BLE001
+        raise UnsupportedFileError(f"Could not open PDF: {exc}") from exc
     try:
         return doc.page_count
     finally:

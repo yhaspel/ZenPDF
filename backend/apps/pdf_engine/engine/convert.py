@@ -101,12 +101,16 @@ def images_to_pdf(images: list[bytes], *, fit: str = "a4") -> bytes:
     try:
         for blob in images:
             try:
-                src = fitz.open(stream=blob)
+                image = fitz.open(stream=blob)
+                # An image document cannot be drawn onto a PDF page directly —
+                # `show_pdf_page` refuses anything that is not a PDF. Converting
+                # first also handles a multipage TIFF for free: every frame
+                # becomes a page, so the loop below covers both cases.
+                src = fitz.open("pdf", image.convert_to_pdf())
+                image.close()
             except Exception as exc:  # noqa: BLE001
                 raise UnsupportedFileError(f"That image could not be read: {exc}") from exc
             try:
-                # `fitz.open` on a multipage TIFF gives one page per frame, so
-                # the loop below covers the single-image case for free.
                 for page in src:
                     rect = page.rect
                     if fit == "a4":
