@@ -234,13 +234,16 @@ export class Forms {
     input.value = '';
     if (!file) return;
     const format = file.name.toLowerCase().endsWith('.csv') ? 'csv' : 'json';
-    file.text().then((text) => {
-      this.busy.set(true);
-      this.forms.importData(this.docId(), this.currentSeq(), format, text).subscribe({
-        next: (job) => this.onJob(job, 'Form data imported'),
-        error: () => this.fail(),
-      });
-    });
+    file.text().then(
+      (text) => {
+        this.busy.set(true);
+        this.forms.importData(this.docId(), this.currentSeq(), format, text).subscribe({
+          next: (job) => this.onJob(job, 'Form data imported'),
+          error: () => this.fail(),
+        });
+      },
+      () => this.toast.error('That file could not be read'),
+    );
   }
 
   // ------------------------------------------------------------------ //
