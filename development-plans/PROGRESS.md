@@ -9,7 +9,7 @@ This file is the **single source of truth for execution status**. Every agent se
 | 0 — Foundation | [phase-00-foundation.md](phase-00-foundation.md) | ✅ Complete | 2026-07-19 | 2026-07-19 | Auth, jobs, Docker stack, infra scripts |
 | 1 — Documents & viewer | [phase-01-documents-and-viewer.md](phase-01-documents-and-viewer.md) | ✅ Complete | 2026-07-19 | 2026-07-19 | Ingest, viewer, versions, search, trash |
 | 2 — Page organization | [phase-02-page-organization.md](phase-02-page-organization.md) | ✅ Complete | 2026-07-19 | 2026-07-19 | 14 page ops via job pipeline |
-| **2B — Anonymous access** | [phase-02b-anonymous-access.md](phase-02b-anonymous-access.md) | ⬜ Not started | — | — | **Next up.** Inserted 2026-07-31: removes the login gate; principal model + tiered limits + SSR tool pages |
+| **2B — Anonymous access** | [phase-02b-anonymous-access.md](phase-02b-anonymous-access.md) | 🔵 In progress | 2026-08-01 | — | Inserted 2026-07-31: removes the login gate; principal model + tiered limits + SSR tool pages |
 | 3 — Annotations | [phase-03-annotations.md](phase-03-annotations.md) | ⬜ Not started | — | — | Now depends on 2B |
 | 4 — Content editing | [phase-04-content-editing.md](phase-04-content-editing.md) | ⬜ Not started | — | — | |
 | 5 — Forms | [phase-05-forms.md](phase-05-forms.md) | ⬜ Not started | — | — | |
@@ -46,6 +46,24 @@ Status values: ⬜ Not started · 🔵 In progress · 🟡 Blocked · 🟠 Await
 ## Phase sections
 
 _(Created by the executing agent per protocol step 2. Keep newest phase at top.)_
+
+### Phase 2B — Anonymous Access · 🔵 In progress (started 2026-08-01)
+
+**Acceptance criteria** (copied verbatim from phase-02b-anonymous-access.md):
+- [ ] A cold browser with no account completes merge, split, compress, rotate, delete-pages, extract and organize end-to-end from the public tool pages, and downloads the results — with zero login prompts in the path.
+- [ ] `/app/doc/:id` is fully usable as a guest; only `/app/dashboard`, `/app/sign*`, `/app/settings` redirect, and each redirect states *why*.
+- [ ] Guest isolation proven router-wide by tests (guest↛guest, guest↛user, user↛guest); expired token yields 410 `guest_expired`.
+- [ ] No ownership check outside `apps/core/principals.py` references `request.user` (proved by test, not by review).
+- [ ] Guest tier limits enforced at their boundaries; exceeding yields the standard error shape with copy that names the account upgrade.
+- [ ] `guest_purge` hard-deletes an expired session's rows *and* its storage blobs; nothing orphaned.
+- [ ] Register-from-guest claims every document in one transaction; over-quota claim is refused whole with an itemized message.
+- [ ] Sign-request creation as a guest returns `account_required`; **no code path lets an anonymous party choose a recipient address** (system mail to addresses already fixed by an account-owned request is expected and allowed).
+- [ ] A guest can complete a `self_sign` using an ephemeral uploaded/drawn signature (`signature_upload_ref`, §10) without a `SavedSignature` row.
+- [ ] `MAX_PAGES` is enforced at ingest for both tiers (it was not enforced at all before this phase).
+- [ ] All seven Phase-2 tool pages are server-rendered with unique title/meta/H1 and appear in a generated `sitemap.xml`; `robots.txt` disallows `/app/`, `/s/`, `/api/`.
+- [ ] Existing Phase 0–2 acceptance criteria still pass for authenticated users (no regression from the refactor), **except the two listed as superseded under Tests above**, which are rewritten in this phase rather than re-ticked as written.
+
+**Baseline before any change (2026-08-01):** `./infra/up.sh && ./infra/test.sh --e2e` → backend **132 passed**, frontend **11 passed**, e2e **3 passed**. (The prompt predicted 125/9/3; the repo gained tests in commit `b723f9b` after that prompt was written.)
 
 ### Phase 2 — Page Organization · ✅ Complete (2026-07-19)
 
@@ -111,6 +129,12 @@ _(Created by the executing agent per protocol step 2. Keep newest phase at top.)
 
 _(None yet.)_
 
+## Session log — Phase 2B (2026-08-01)
+
+**Preflight.** Cleared the planning session's leftovers: stale `.git/index.lock` (0 bytes, 2026-07-31 19:54; the only `git` process running was the long-lived `fsmonitor--daemon`, not a writer) and the empty `development-plans/_to_delete/`. All uncommitted paths confirmed under `development-plans/`. Toolchain: git 2.50.1, Docker 29.4.1, `gh` authenticated.
+
+**Baseline.** First full run was red on **e2e `phase-2.spec.ts`** — `[data-test=confirm-ok]` never appeared after `op-delete`. Re-ran the spec alone (green) and the whole suite again (3/3 green), so it is a **flake, not a broken base**: the spec clicks `organize-page` `nth(0)` immediately after the rotate toast, and the `viewer.reload()` → `pages.clear()` effect can wipe that selection mid-click, in which case `op-delete` shows "Select one or more pages first" instead of the confirm dialog. Slower on the session's first run because `ng serve` compiles cold. Not fixed here — it belongs to Phase 2 and this phase does not own it; logged in the Human review queue instead.
+
 ## Human review queue
 
 | Added | Item | Phase | GATE? | Resolved |
@@ -122,6 +146,7 @@ _(None yet.)_
 | 2026-07-31 | **Guest TTL tuning** — 24 h sliding / 72 h cap is a judgement call made without usage data. Revisit with real storage numbers before launch; shorter is cheaper and a stronger privacy claim, longer is friendlier mid-task. | 2B | No | ⬜ |
 | 2026-07-31 | **SSR added mid-project** — `@angular/ssr` on an existing zoneless v22 app can surface hydration mismatches. The plan deliberately SSRs only tool/landing pages and leaves the viewer client-rendered; validate that split early in 2B rather than at the end. | 2B | No | ⬜ |
 | 2026-07-31 | **Turnstile account + keys** — needed before `CAPTCHA_ENABLED=true` in any public deploy. Owner-executed. | 2B/9 | No | ⬜ |
+| 2026-08-01 | **`e2e/phase-2.spec.ts` is flaky** — the delete step races `viewer.reload()` → `pages.clear()`, which can wipe the page selection between the click and `op-delete`, so the confirm dialog never opens. Failed once, then passed on two consecutive re-runs. Belongs to Phase 2; not fixed in 2B. Fix is to re-assert the selection after the preceding toast (or have the spec wait for the reloaded organize grid). | 2 | No | ⬜ |
 | 2026-07-31 | **Ad-revenue assumption unvalidated** — the whole strategy rests on organic tool-page traffic converting to ad impressions at a viable RPM. Worth a sanity check against real AdSense figures for utility sites before committing further engineering to the ad path. | 9 | No | ⬜ |
 
 ## Session log
