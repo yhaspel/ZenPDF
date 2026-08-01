@@ -8,6 +8,7 @@ from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import extend_schema
 from rest_framework import generics, status
 from rest_framework.exceptions import NotFound
+from rest_framework.negotiation import DefaultContentNegotiation
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -529,8 +530,24 @@ class FormView(APIView):
             raise ValidationFailed(exc.message) from exc
 
 
+class _OwnFormatParam(DefaultContentNegotiation):
+    """`?format=` belongs to the endpoint here, not to DRF.
+
+    DRF reads `?format=` as a renderer override, so `format=csv` 404s during
+    content negotiation — before the view ever runs — and `format=json` only
+    works by accident. The phase-05 contract spells the parameter `json|csv`,
+    so negotiation is pinned to the first renderer and the view reads the
+    parameter itself. Errors still come back as JSON.
+    """
+
+    def select_renderer(self, request, renderers, format_suffix=None):
+        return renderers[0], renderers[0].media_type
+
+
 class FormExportView(APIView):
     """`GET /api/documents/{id}/form/export/?format=json|csv` — current values."""
+
+    content_negotiation_class = _OwnFormatParam
 
     @extend_schema(tags=["forms"], responses=OpenApiTypes.BINARY)
     def get(self, request, pk):
