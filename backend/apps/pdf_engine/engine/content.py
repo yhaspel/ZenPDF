@@ -19,6 +19,7 @@ is not.
 from __future__ import annotations
 
 import html
+from datetime import UTC
 
 import fitz
 
@@ -738,9 +739,9 @@ def _tokens(text: str, *, page_number: int, total: int, date: str) -> str:
 
 
 def _today() -> str:
-    from datetime import datetime, timezone as tz
+    from datetime import datetime
 
-    return datetime.now(tz.utc).strftime("%Y-%m-%d")
+    return datetime.now(UTC).strftime("%Y-%m-%d")
 
 
 def _draw_band(page: fitz.Page, position: str, text: str, style: dict,
