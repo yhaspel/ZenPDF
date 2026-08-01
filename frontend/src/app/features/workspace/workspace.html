@@ -32,6 +32,12 @@
                 [class.text-indigo-600]="mode() !== 'annotate'" data-test="annotate-toggle">
           {{ mode() === 'annotate' ? 'Done' : 'Annotate' }}
         </button>
+        <button (click)="mode.set(mode() === 'forms' ? 'view' : 'forms')"
+                class="rounded px-3 py-1 font-medium"
+                [class.bg-indigo-600]="mode() === 'forms'" [class.text-white]="mode() === 'forms'"
+                [class.text-indigo-600]="mode() !== 'forms'" data-test="forms-toggle">
+          {{ mode() === 'forms' ? 'Done' : 'Forms' }}
+        </button>
         <button (click)="dialog.set('split')" class="rounded px-2 py-1 text-slate-600 hover:bg-slate-100" data-test="tool-split">Split</button>
         <button (click)="dialog.set('compress')" class="rounded px-2 py-1 text-slate-600 hover:bg-slate-100" data-test="tool-compress">Compress</button>
       </div>
@@ -68,6 +74,16 @@
         (saved)="onEditSaved()"
         (conflict)="onAnnotationConflict()"
         (ocrRequested)="onOcrRequested()"
+      />
+    } @else if (mode() === 'forms') {
+      <app-forms
+        [docId]="doc.id"
+        [pageCount]="viewer.pageCount()"
+        [currentSeq]="viewer.currentSeq()"
+        [src]="contentUrl()"
+        [httpHeaders]="authHeaders()"
+        (saved)="onFormsSaved()"
+        (conflict)="onAnnotationConflict()"
       />
     } @else if (mode() === 'annotate') {
       <app-annotate

@@ -7,6 +7,7 @@ import {
   Annotation,
   DocumentModel,
   DocumentVersion,
+  FormModel,
   ImageAsset,
   Job,
   OutlineItem,
@@ -133,6 +134,22 @@ export class DocumentsService {
     return this.http.get<{ page: number; links: PageLink[] }>(
       `${this.base}/documents/${id}/links/`, { params: hp },
     );
+  }
+
+  /** Phase 5 — the AcroForm read model. */
+  form(id: string, version?: number | null): Observable<FormModel> {
+    let hp = new HttpParams();
+    if (version) hp = hp.set('version', String(version));
+    return this.http.get<FormModel>(`${this.base}/documents/${id}/form/`, { params: hp });
+  }
+
+  /** Current field values as a downloadable file. */
+  exportForm(id: string, format: 'json' | 'csv'): Observable<Blob> {
+    const hp = new HttpParams().set('format', format);
+    return this.http.get(`${this.base}/documents/${id}/form/export/`, {
+      params: hp,
+      responseType: 'blob',
+    });
   }
 
   /** Ephemeral image asset (§13 `uploads/…`) → an opaque, principal-scoped ref. */

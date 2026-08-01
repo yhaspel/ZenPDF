@@ -20,6 +20,7 @@ import { saveBlob } from '../../shared/save-blob';
 import { ToastService } from '../../shared/toast.service';
 import { Annotate, AnnotateTool } from './annotate';
 import { Edit } from './edit';
+import { Forms } from './forms';
 
 // `crop` left the dialog list in Phase 3: it is now drawn on the overlay
 // (Human review queue, 2026-07-19 — "revisit crop to use it then").
@@ -30,7 +31,7 @@ type Dialog = null | 'split' | 'scale' | 'nup' | 'compress' | 'insert';
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
     FormsModule, RouterLink, NgxExtendedPdfViewerModule, CdkDropList, CdkDrag, PdfThumbnail,
-    Annotate, Edit,
+    Annotate, Edit, Forms,
   ],
   templateUrl: './workspace.html',
 })
@@ -49,7 +50,7 @@ export class Workspace {
   private confirm = inject(ConfirmService);
 
   protected leftTab = signal<'thumbs' | 'outline' | 'history'>('thumbs');
-  protected mode = signal<'view' | 'organize' | 'annotate' | 'edit'>('view');
+  protected mode = signal<'view' | 'organize' | 'annotate' | 'edit' | 'forms'>('view');
   protected annotateTool = signal<AnnotateTool>('select');
   /** Set when Annotate was entered *from* the Organize toolbar's Crop button. */
   private cropReturnsToOrganize = false;
@@ -117,7 +118,7 @@ export class Workspace {
     // *be* the tool, with no login prompt anywhere in the path).
     this.route.queryParamMap.pipe(takeUntilDestroyed()).subscribe((params) => {
       const mode = params.get('mode');
-      if (mode === 'annotate' || mode === 'edit') this.mode.set(mode);
+      if (mode === 'annotate' || mode === 'edit' || mode === 'forms') this.mode.set(mode);
     });
     // reset organize order whenever the version changes
     effect(() => {
@@ -375,6 +376,11 @@ export class Workspace {
 
   /** Edit mode produced a new version. */
   onEditSaved(): void {
+    this.viewer.reload();
+  }
+
+  /** Forms mode produced a new version (fill, flatten, import or field edits). */
+  onFormsSaved(): void {
     this.viewer.reload();
   }
 
