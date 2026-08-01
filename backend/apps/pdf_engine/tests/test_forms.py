@@ -228,8 +228,9 @@ def test_alignment_is_written_onto_the_field():
 
 def test_a_signature_field_is_a_real_sig_field():
     """Routed through pyHanko, so phase 8 can sign into it."""
-    import pikepdf
     import io as _io
+
+    import pikepdf
 
     built, _ = F.edit_fields_batch(_blank(), ops=[
         {"action": "add", "field": {"name": "Signature1", "type": "signature",
