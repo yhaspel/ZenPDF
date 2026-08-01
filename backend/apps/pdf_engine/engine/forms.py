@@ -51,6 +51,9 @@ FF_RADIO = 1 << 15
 # Printable on purpose — see `_build_radio_group`.
 _RADIO_SEP = "\u2400zenradio\u2400"
 
+# `/Q` quadding \u2014 how the value sits in the box.
+_ALIGN = {"left": 0, "center": 1, "right": 2}
+
 
 def _open(data: bytes) -> fitz.Document:
     try:
@@ -103,6 +106,22 @@ def _on_states(widget) -> list[str]:
     return [s.lstrip("/") for s in normal if s and s.lstrip("/") != "Off"]
 
 
+def _default_of(doc: fitz.Document, widget) -> str:
+    """`/DV` — what "Reset form" would put back. PyMuPDF exposes `/V` only.
+
+    Looked up on the widget and then on its parent, because a radio kid keeps
+    the value on the parent field.
+    """
+    for path in ("DV", "Parent/DV"):
+        kind, raw = doc.xref_get_key(widget.xref, path)
+        if kind == "string":
+            return str(raw).strip()
+        if kind == "name":
+            state = str(raw).lstrip("/")
+            return "" if state == "Off" else state
+    return ""
+
+
 def read_form(data: bytes) -> dict:
     """The form read model (phase-05 §"Read model")."""
     doc = _open(data)
@@ -152,6 +171,7 @@ def read_form(data: bytes) -> dict:
                     "value": "" if widget.field_value in (None, "Off", False)
                     else (widget.field_value if not isinstance(widget.field_value, bool)
                           else "Yes"),
+                    "default": _default_of(doc, widget),
                     "options": list(widget.choice_values or on_states),
                     "flags": {
                         "required": bool(flags & FF_REQUIRED),
@@ -375,7 +395,14 @@ def _add_simple_field(page: fitz.Page, spec: dict) -> None:
         widget.field_value = default
     else:
         raise InvalidParams(f"unsupported field type '{kind}'")
-    page.add_widget(widget)
+    added = page.add_widget(widget)
+
+    align = spec.get("align")
+    if align:
+        # `/Q` — quadding. PyMuPDF's Widget has no attribute for it, so it goes
+        # in by hand after the widget exists.
+        xref = getattr(added, "xref", 0) or widget.xref
+        page.parent.xref_set_key(xref, "Q", str(_ALIGN[align]))
 
 
 def _build_radio_group(raw: bytes, spec: dict) -> bytes:

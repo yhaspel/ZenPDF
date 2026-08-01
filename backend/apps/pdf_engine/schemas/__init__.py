@@ -583,6 +583,7 @@ _FIELD_SPEC = {
         "multiline": {"type": "boolean"},
         "max_len": {"type": "integer", "minimum": 0, "maximum": 10000},
         "font_size": {"type": "number", "minimum": 4, "maximum": 96},
+        "align": {"enum": ["left", "center", "right"]},
     },
     "additionalProperties": False,
 }

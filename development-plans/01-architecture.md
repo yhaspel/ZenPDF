@@ -210,7 +210,7 @@ All document mutations/derivations run as Jobs with `type` from this registry. P
 | set_bookmarks | 4 | PyMuPDF | toc[] (nested) |
 | fill_form | 5 | PyMuPDF | values {field_name: value}, flatten_after bool |
 | edit_form_fields_batch | 5 | PyMuPDF (+pyHanko for signature fields) | ops[]: add/update/delete of field specs {type, name, rect §8, page, options…} |
-| import_form_data | 5 | PyMuPDF | format ∈ {json, csv}, file ref |
+| import_form_data | 5 | PyMuPDF | format ∈ {json, csv}, data (the file's text, inline, ≤ 2 MB), flatten_after bool |
 | ocr | 6 | OCRmyPDF | languages[], deskew bool, rotate_pages bool, clean bool, force bool |
 | convert_from | 6 | Gotenberg / PyMuPDF | source upload (docx/xlsx/pptx/odt/rtf/txt/img/html) or url → new document |
 | convert_to | 6 | pdf2docx / PyMuPDF / pymupdf4llm / OCRmyPDF | target ∈ {docx, images(png/jpg+dpi), txt, md, html, pdfa} → export |

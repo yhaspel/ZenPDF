@@ -50,6 +50,22 @@ def test_read_form_reports_the_fixture_fields(fixture_bytes):
     assert 0 <= names["full_name"]["rect"]["x"] <= 1
 
 
+def test_the_read_model_carries_the_reset_value(fixture_bytes):
+    """`default` is `/DV` — what the field goes back to on "Reset form", and a
+    separate thing from `/V`. PyMuPDF's Widget exposes only the latter."""
+    doc = fitz.open(stream=fixture_bytes("form.pdf"), filetype="pdf")
+    try:
+        widget = next(w for w in doc[0].widgets() if w.field_name == "full_name")
+        doc.xref_set_key(widget.xref, "DV", fitz.get_pdf_str("Your name here"))
+        data = doc.tobytes()
+    finally:
+        doc.close()
+
+    field = next(f for f in F.read_form(data)["fields"] if f["name"] == "full_name")
+    assert field["default"] == "Your name here"
+    assert field["value"] == ""  # untouched by a default
+
+
 def test_a_document_without_a_form_says_so(fixture_bytes):
     model = F.read_form(fixture_bytes("text.pdf"))
     assert model["has_form"] is False
@@ -189,6 +205,25 @@ def test_build_a_form_from_a_blank_pdf_with_all_six_types():
 
     flat = flatten_annotations(filled, what="form")
     assert _widgets(flat) == []
+
+
+def test_alignment_is_written_onto_the_field():
+    """`align` is `/Q` in the field dict — the property panel offers it, and
+    PyMuPDF's Widget has no attribute that carries it."""
+    built, _ = F.edit_fields_batch(_blank(), ops=[
+        {"action": "add", "field": {"name": "centred", "type": "text", "page": 0,
+                                    "rect": _rect(0.1), "align": "center"}},
+        {"action": "add", "field": {"name": "plain", "type": "text", "page": 0,
+                                    "rect": _rect(0.2)}},
+    ])
+    doc = fitz.open(stream=built, filetype="pdf")
+    try:
+        quadding = {w.field_name: doc.xref_get_key(w.xref, "Q")
+                    for w in doc[0].widgets()}
+    finally:
+        doc.close()
+    assert quadding["centred"] == ("int", "1")
+    assert quadding["plain"][0] == "null"
 
 
 def test_a_signature_field_is_a_real_sig_field():
