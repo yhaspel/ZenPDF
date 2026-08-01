@@ -227,6 +227,75 @@ def test_replayed_add_updates_instead_of_duplicating(fixture_bytes):
     assert len(A.extract_annotations(out2)) == 1
 
 
+def test_update_can_move_an_annotation_to_another_page(fixture_bytes):
+    """The index is (page, xref); moving pages must not orphan the old object."""
+    spec = {**HIGHLIGHT, "id": "traveller", "page": 0}
+    out, _ = A.apply_annotation_ops(fixture_bytes("text.pdf"), ops=_add(spec))
+    out2, report = A.apply_annotation_ops(
+        out, ops=[{"action": "update", "annotation": {**spec, "page": 2}}]
+    )
+    assert report["updated"] == 1
+    items = A.extract_annotations(out2)
+    assert len(items) == 1, "the annotation must not exist on both pages"
+    assert items[0]["page"] == 2
+    assert _pypdf_annot_count(out2, page=0) == 0
+    assert _pypdf_annot_count(out2, page=2) == 1
+
+
+def test_two_ops_on_the_same_id_in_one_batch_leave_one_annotation(fixture_bytes):
+    """Autosave can compose an add and a later edit of the same draft."""
+    out, report = A.apply_annotation_ops(
+        fixture_bytes("text.pdf"),
+        ops=[
+            {"action": "add", "annotation": {**HIGHLIGHT, "id": "dup", "contents": "first"}},
+            {"action": "update", "annotation": {**HIGHLIGHT, "id": "dup", "contents": "second"}},
+        ],
+    )
+    items = A.extract_annotations(out)
+    assert len(items) == 1
+    assert items[0]["contents"] == "second"
+    assert report["added"] == 1 and report["updated"] == 1
+
+
+def test_delete_then_readd_in_one_batch(fixture_bytes):
+    out, _ = A.apply_annotation_ops(fixture_bytes("text.pdf"), ops=_add(HIGHLIGHT))
+    out2, _ = A.apply_annotation_ops(
+        out,
+        ops=[
+            {"action": "delete", "annotation": {"id": HIGHLIGHT["id"]}},
+            {"action": "add", "annotation": {**HIGHLIGHT, "contents": "reborn"}},
+        ],
+    )
+    items = A.extract_annotations(out2)
+    assert len(items) == 1
+    assert items[0]["contents"] == "reborn"
+
+
+def test_foreign_annotations_are_never_clobbered(fixture_bytes):
+    """An annotation we did not write (no addressable NM of ours) must survive a
+    batch untouched — we only ever act on ids the client named."""
+    doc = fitz.open(stream=fixture_bytes("text.pdf"), filetype="pdf")
+    try:
+        page = doc[0]
+        foreign = page.add_rect_annot(fitz.Rect(50, 600, 200, 700))
+        foreign.set_info(title="Some Other Tool")
+        foreign.update()
+        with_foreign = doc.tobytes()
+    finally:
+        doc.close()
+
+    out, _ = A.apply_annotation_ops(with_foreign, ops=_add(HIGHLIGHT))
+    items = A.extract_annotations(out)
+    assert len(items) == 2
+    assert any(a["author"] == "Some Other Tool" for a in items)
+
+    out2, _ = A.apply_annotation_ops(
+        out, ops=[{"action": "delete", "annotation": {"id": HIGHLIGHT["id"]}}]
+    )
+    remaining = A.extract_annotations(out2)
+    assert [a["author"] for a in remaining] == ["Some Other Tool"]
+
+
 def test_a_batch_of_thirty_is_one_pass(fixture_bytes):
     """Acceptance: a 30-annotation session saves as ONE job."""
     ops = [
