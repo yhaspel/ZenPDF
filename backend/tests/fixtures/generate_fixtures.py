@@ -5,9 +5,9 @@ Run inside the api/worker image (needs fitz + pikepdf):
     python tests/fixtures/generate_fixtures.py
 
 Produces, under tests/fixtures/pdfs/:
-    text.pdf, unicode.pdf, form.pdf, scanned.pdf, encrypted.pdf,
-    rotated-90.pdf, corrupt.pdf, large-generated.pdf, hebrew-rtl.pdf,
-    xfa-form.pdf
+    text.pdf, unicode.pdf, form.pdf, form-multi.pdf, scanned.pdf,
+    encrypted.pdf, rotated-90.pdf, corrupt.pdf, large-generated.pdf,
+    hebrew-rtl.pdf, xfa-form.pdf
 
 Committed to the repo so tests don't regenerate; re-run to refresh.
 """
@@ -71,6 +71,38 @@ def make_form():
     page.add_widget(check)
 
     doc.save(os.path.join(OUT, "form.pdf"))
+    doc.close()
+
+
+def make_multi_form():
+    """A form with more than one field type, for the fill-mode E2E.
+
+    `form.pdf` stays the minimal two-field case most unit tests assert against;
+    this one carries a text box, a checkbox, a drop-down and a list, so the
+    browser path can be driven across four kinds of widget.
+    """
+    doc = fitz.open()
+    page = doc.new_page(width=595, height=842)
+    page.insert_text((72, 80), "Conference registration", fontsize=20)
+
+    def field(name, kind, y, height=25, **extra):
+        widget = fitz.Widget()
+        widget.field_name = name
+        widget.field_type = kind
+        widget.rect = fitz.Rect(180, y, 400, y + height)
+        for key, value in extra.items():
+            setattr(widget, key, value)
+        page.insert_text((72, y + 16), name.capitalize(), fontsize=11)
+        page.add_widget(widget)
+
+    field("attendee", fitz.PDF_WIDGET_TYPE_TEXT, 120, field_value="")
+    field("vegetarian", fitz.PDF_WIDGET_TYPE_CHECKBOX, 165, height=20, field_value=False)
+    field("ticket", fitz.PDF_WIDGET_TYPE_COMBOBOX, 205,
+          choice_values=["standard", "student", "speaker"], field_value="standard")
+    field("track", fitz.PDF_WIDGET_TYPE_LISTBOX, 245,
+          choice_values=["backend", "frontend", "design"], field_value="backend")
+
+    doc.save(os.path.join(OUT, "form-multi.pdf"))
     doc.close()
 
 
@@ -197,6 +229,7 @@ if __name__ == "__main__":
     make_text()
     make_unicode()
     make_form()
+    make_multi_form()
     make_scanned()
     make_rotated()
     make_large()

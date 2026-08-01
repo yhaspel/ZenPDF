@@ -351,8 +351,12 @@ def run_operation(self, job_id: str):
     job.mark_running()
 
     document = job.document
-    op = registry.get_op(job.type)
     try:
+        # Inside the try: a job that has been marked running and then throws
+        # before anything catches it stays `running` for ever, and the client
+        # polls a job that will never reach a terminal state. That is exactly
+        # what a worker holding a stale registry looked like.
+        op = registry.get_op(job.type)
         with doc_lock(str(document.id)):
             document.refresh_from_db()
             current = document.current_version
