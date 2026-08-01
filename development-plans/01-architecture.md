@@ -127,7 +127,7 @@ Deviation from skill: the skill's `docker/` folder lives inside `infra/` (owner 
 - **Error shape (all non-2xx):** `{"error": {"code": "<machine_code>", "message": "<human>", "details": {…}}}`. Implemented via a global DRF exception handler in `apps/core`. Key codes: `validation_error`, `not_found`, `version_conflict` (409), `quota_exceeded` (429), `throttled` (429), `file_too_large` (413), `unsupported_file` (415), `document_encrypted` (423), `token_invalid` (401 public sign), `token_expired` (410 public sign — expired/completed/canceled requests), `account_required` (403 — guest hit an account-only feature; UI turns this into a signup prompt, never a dead end), `guest_expired` (410 — guest session/document past TTL, §21), `captcha_required` (403 — heavy op needs a challenge, §17).
 - IDs are UUIDv4. All timestamps UTC ISO-8601. All list endpoints filterable/sortable via query params.
 - OpenAPI: drf-spectacular; schema at `/api/schema/`, Swagger UI `/api/docs/` (dev-only). Every endpoint annotated; the schema is part of each phase's DoD.
-- URL map (top level): `/api/auth/*` (JWT obtain/refresh) and **`/api/users/register/`** (the built route — note it is *not* `/api/auth/register/`; both accept an optional guest token to claim, §21.5), `/api/guest/session/` (mint/inspect guest session), `/api/guest/claim/` (transfer guest work to the authenticated account), `/api/users/*`, `/api/config/` (public: feature flags, **per-tier limits**, ads client id), `/api/folders/` (account-only), `/api/documents/…`, `/api/operations/` (cross-document ops), `/api/jobs/…`, `/api/signatures/`, `/api/sign-requests/…`, `/api/public/sign/{token}/…` (AllowAny + throttle), `/api/verify/` (signature verification), `/api/health/`.
+- URL map (top level): `/api/auth/*` (JWT obtain/refresh) and **`/api/users/register/`** (the built route — note it is *not* `/api/auth/register/`; both accept an optional guest token to claim, §21.5), `/api/guest/session/` (mint/inspect guest session), `/api/guest/claim/` (transfer guest work to the authenticated account), `/api/uploads/image/` (ephemeral image asset → opaque `ref`, §13), `/api/users/*`, `/api/config/` (public: feature flags, **per-tier limits**, ads client id), `/api/folders/` (account-only), `/api/documents/…` (incl. `…/annotations/`, `…/text-words/` read models, phase 3), `/api/operations/` (cross-document ops), `/api/jobs/…`, `/api/signatures/`, `/api/sign-requests/…`, `/api/public/sign/{token}/…` (AllowAny + throttle), `/api/verify/` (signature verification), `/api/health/`.
 
 ## 7. Frontend conventions (Angular 22)
 
@@ -142,7 +142,18 @@ Deviation from skill: the skill's `docker/` folder lives inside `infra/` (owner 
 
 ## 8. Coordinate system (critical, used by every placement feature)
 
-Client sends geometry as **normalized page coordinates in visual space**: origin top-left of the page *as displayed* (rotation applied), `x,y,w,h ∈ [0,1]` relative to displayed page width/height, plus `page` (0-based). PyMuPDF's page coordinate space is also top-left-origin with rotation applied, so server mapping is `fitz.Rect(x*W, y*H, (x+w)*W, (y+h)*H)` with `W,H = page.rect.width,.height`. The engine converts to PDF-native bottom-left space only where a library requires it (pyHanko visible-signature boxes). One utility: `pdf_engine/geometry.py` — the only place conversions live, with exhaustive tests for rotated pages (0/90/180/270).
+Client sends geometry as **normalized page coordinates in visual space**: origin top-left of the page *as displayed* (rotation applied), `x,y,w,h ∈ [0,1]` relative to displayed page width/height, plus `page` (0-based). Server mapping is `fitz.Rect(x*W, y*H, (x+w)*W, (y+h)*H)` with `W,H = page.rect.width,.height`. The engine converts to PDF-native bottom-left space only where a library requires it (pyHanko visible-signature boxes). One utility: `pdf_engine/geometry.py` — the only place conversions live, with exhaustive tests for rotated pages (0/90/180/270).
+
+⚠ **Corrected 2026-08-01 (phase 3).** This section previously claimed "PyMuPDF's page coordinate space is *also* top-left-origin with rotation applied", full stop. That is true of `page.rect` and `page.search_for`, and **false** of three things phase 3 depends on:
+
+| API | Coordinate space |
+|---|---|
+| `page.rect`, `page.search_for` | **display** (rotation applied) |
+| `page.get_text("words" \| "dict")` | **unrotated** |
+| `annot.rect`, `annot.vertices`, every `page.add_*_annot` | **unrotated** |
+| `page.set_cropbox` | **unrotated** (phase 2's `crop_pages` already de-rotated) |
+
+So on a `/Rotate 90` page the two spaces differ by a quarter turn. The rule is therefore: **normalized geometry is always display space on the wire; the engine de-rotates on the way in (`page.derotation_matrix`) and re-rotates on the way out (`page.rotation_matrix`)** via `geometry.apply_matrix_rect` / `apply_matrix_point`. Omitting it is not a visible error in a round-trip — write and read cancel out, so create→extract agrees perfectly while the *file* disagrees with both. Only a rendered-pixel assertion catches it (`test_a_mark_on_a_rotated_page_renders_where_it_was_placed`).
 
 ## 9. Data model (canonical — phases may add fields only by amending this doc)
 
@@ -230,7 +241,9 @@ Workers: prefork, `max_memory_per_child=1.5 GB`, non-root, open PDFs per-task (n
 
 ## 13. Storage
 
-Bucket `zenpdf`, all private. Keys: `docs/{document_id}/v{seq}.pdf` · `thumbs/{document_id}/{seq}/p{page}@{w}.png` · `sigs/{user_id}/{signature_id}.png` · `sigs/guest/{guest_session_id}/{ref}.png` (ephemeral, purged with the session) · `sign/{sign_request_id}/{final.pdf|certificate.pdf}` · `exports/{job_id}/{filename}` (TTL 24 h via beat GC). Guest documents use the **same key layout** (keyed by document id, not principal) so claiming a session (§21.5) is a metadata-only reparent — no blob copying. Guest blobs are deleted by `guest_purge` (§15) when the session expires.
+Bucket `zenpdf`, all private. Keys: `docs/{document_id}/v{seq}.pdf` · `thumbs/{document_id}/{seq}/p{page}@{w}.png` · **`uploads/{g|u}/{principal_id}/{ref}.png`** (added phase 3 — ephemeral *image* assets a principal uploaded: custom stamps, image watermarks, inserted images; guest ones purged with the session) · `sigs/{user_id}/{signature_id}.png` · `sigs/guest/{guest_session_id}/{ref}.png` (ephemeral, purged with the session) · `sign/{sign_request_id}/{final.pdf|certificate.pdf}` · `exports/{job_id}/{filename}` (TTL 24 h via beat GC).
+
+**`uploads/…` refs are principal-derived, never client-supplied paths.** The API returns an opaque `ref` (`^[A-Za-z0-9_-]{6,64}$`) and every read rebuilds the key from the *caller's* principal, so a ref cannot address another principal's asset even if it leaks. Uploaded images are re-encoded to PNG on the way in, which normalizes the format for the engine and drops EXIF (GPS included) before it can be pasted into a document the user is about to share. Guest documents use the **same key layout** (keyed by document id, not principal) so claiming a session (§21.5) is a metadata-only reparent — no blob copying. Guest blobs are deleted by `guest_purge` (§15) when the session expires.
 
 **Delivery default = API proxy with HTTP Range support** (`GET /api/documents/{id}/content/?version=` streams; Range honored so PDF.js can chunk; `Cache-Control: private` + ETag=sha256). Rationale: avoids depending on SeaweedFS presign/CORS behavior locally. Optimization flag `PRESIGNED_DELIVERY=true` → 302 to presigned GET generated against `S3_PUBLIC_ENDPOINT` (browser-reachable host — signatures bind the host header; documented gotcha). Thumbnails: `GET /api/documents/{id}/pages/{n}/thumbnail/?w=240&version=` — proxied, long Cache-Control, rendered on demand + cached to storage. Uploads: multipart to API (streamed to storage; size-capped). Direct-to-storage presigned PUT = backlog optimization.
 
@@ -256,6 +269,7 @@ core.limits.for_principal(principal) -> Limits   # principal = User | GuestSessi
 |---|---|---|---|
 | Storage | 200 MB / session | 2 GB | 20 GB |
 | Max upload | 25 MB | 100 MB | 500 MB |
+| Max **image** upload (stamps/watermarks/signatures, §13 `uploads/…`) | 5 MB | 10 MB | 25 MB |
 | Max pages / doc | 300 | 2000 | 5000 |
 | Concurrent running jobs | 1 | 3 | 6 |
 | **Metered ops** (see definition below) | 5 / hour | 40 / hour | 200 / hour |

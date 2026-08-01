@@ -58,6 +58,60 @@ def norm_to_page_rect(rect: NormRect, page_width: float, page_height: float):
     return (x0, y0, x1, y1)
 
 
+Matrix = tuple[float, float, float, float, float, float]
+IDENTITY: Matrix = (1.0, 0.0, 0.0, 1.0, 0.0, 0.0)
+
+
+def apply_matrix_point(x: float, y: float, m: Matrix) -> tuple[float, float]:
+    """Apply a PDF matrix `(a, b, c, d, e, f)` to a point.
+
+    Needed because **display space and annotation space are not the same thing
+    on a rotated page** (§8 amended). `page.rect` and `page.search_for` are
+    rotation-applied, but `page.get_text("words")`, `annot.rect` and every
+    `add_*_annot` call are in the page's *unrotated* space. On a /Rotate 90 page
+    the two differ by a quarter turn, so a mark placed where the user clicked
+    lands on the far side of the page unless it is de-rotated first.
+
+    Kept as plain tuples so this module still has no fitz dependency: callers
+    pass `tuple(page.derotation_matrix)` / `tuple(page.rotation_matrix)`.
+    """
+    a, b, c, d, e, f = m
+    return (a * x + c * y + e, b * x + d * y + f)
+
+
+def apply_matrix_rect(x0: float, y0: float, x1: float, y1: float,
+                      m: Matrix) -> tuple[float, float, float, float]:
+    """Apply a matrix to a rect and re-normalize it.
+
+    Both corners are transformed and then min/max'd: a rotation maps top-left to
+    bottom-left, so taking the results in order would produce an inside-out rect.
+    """
+    ax, ay = apply_matrix_point(x0, y0, m)
+    bx, by = apply_matrix_point(x1, y1, m)
+    return (min(ax, bx), min(ay, by), max(ax, bx), max(ay, by))
+
+
+def norm_to_page_point(nx: float, ny: float, page_width: float,
+                       page_height: float) -> tuple[float, float]:
+    """Map a normalized visual-space point onto the page's displayed rect.
+
+    Ink strokes, polygon vertices and line endpoints are points, not rects, and
+    §8 is explicit that *all* conversions live here — so they get their own pair
+    rather than each caller multiplying by the page size inline.
+    """
+    if page_width <= 0 or page_height <= 0:
+        raise ValueError("page dimensions must be positive")
+    return (float(nx) * page_width, float(ny) * page_height)
+
+
+def page_point_to_norm(x: float, y: float, page_width: float,
+                       page_height: float) -> tuple[float, float]:
+    """Inverse of norm_to_page_point."""
+    if page_width <= 0 or page_height <= 0:
+        raise ValueError("page dimensions must be positive")
+    return (float(x) / page_width, float(y) / page_height)
+
+
 def page_rect_to_norm(x0: float, y0: float, x1: float, y1: float,
                       page_width: float, page_height: float) -> NormRect:
     """Inverse of norm_to_page_rect — used to return search hits as normalized rects."""

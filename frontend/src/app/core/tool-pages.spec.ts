@@ -10,6 +10,7 @@ import { TOOL_PAGES, TOOL_SLUGS, toolBySlug } from './tool-pages';
  */
 describe('tool pages', () => {
   const EXPECTED = [
+    // Phase 2B
     'merge-pdf',
     'split-pdf',
     'compress-pdf',
@@ -17,9 +18,11 @@ describe('tool pages', () => {
     'delete-pdf-pages',
     'extract-pdf-pages',
     'organize-pdf',
+    // Phase 3
+    'annotate-pdf',
   ];
 
-  it('ships exactly the seven Phase-2 slugs', () => {
+  it('ships exactly the slugs its phases have shipped', () => {
     expect(TOOL_SLUGS).toEqual(EXPECTED);
   });
 

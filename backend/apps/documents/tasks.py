@@ -22,6 +22,7 @@ from apps.core.principals import (
 )
 from apps.jobs.models import Job
 from apps.pdf_engine import registry
+from apps.pdf_engine.engine import annotations as A
 from apps.pdf_engine.engine import pages as P
 from apps.pdf_engine.engine import render as R
 from apps.pdf_engine.exceptions import EngineError
@@ -125,7 +126,35 @@ def _save_new_version(*, document, data, label, created_by, job):
     return version
 
 
-def _apply_single(op, primary_bytes, params, source_bytes):
+def _author_of(job: Job) -> str:
+    """The annotation author to embed in the file (phase-03 §3).
+
+    A guest has no display name, and the session id / IP must never reach a file
+    the user is about to share — so a guest is simply "Guest".
+    """
+    principal = principal_of(job)
+    if principal is None or is_guest(principal):
+        return "Guest"
+    return (getattr(principal, "display_name", "") or "").strip() or "You"
+
+
+def _annotation_images(job: Job, params: dict) -> dict[str, bytes]:
+    """Resolve `image_ref`s in an annotate batch to bytes, scoped to the job's
+    principal — the key is derived from the principal, so a ref can never reach
+    another principal's asset (§13, `core.assets`)."""
+    from apps.core.assets import load_images
+
+    refs = [
+        (op.get("annotation") or {}).get("image_ref")
+        for op in (params.get("ops") or [])
+    ]
+    refs = [r for r in refs if r]
+    if not refs:
+        return {}
+    return load_images(principal_of(job), refs)
+
+
+def _apply_single(op, primary_bytes, params, source_bytes, *, job=None):
     """Return (kind, payload, label, report). kind ∈ {version, documents}."""
     t = op.type
     if t == "rotate_pages":
@@ -175,6 +204,21 @@ def _apply_single(op, primary_bytes, params, source_bytes):
                         every_n=params.get("every_n", 1), max_mb=params.get("max_mb", 5.0),
                         base_title=params.get("base_title", "Document"))
         return "documents", items, "Split", None
+    if t == "annotate_batch":
+        data, report = A.apply_annotation_ops(
+            primary_bytes,
+            ops=params["ops"],
+            author=_author_of(job) if job is not None else "Guest",
+            images=_annotation_images(job, params) if job is not None else {},
+        )
+        touched = report["added"] + report["updated"] + report["deleted"]
+        return "version", data, f"Annotated ({touched} change(s))", report
+    if t == "flatten":
+        what = params.get("what", "annotations")
+        data = A.flatten_annotations(primary_bytes, what=what)
+        label = {"annotations": "Flattened annotations", "form": "Flattened form",
+                 "all": "Flattened"}[what]
+        return "version", data, label, None
     raise EngineError(f"Unsupported single-document op '{t}'")
 
 
@@ -214,7 +258,9 @@ def run_operation(self, job_id: str):
                     src_doc = _source_document(job, src_id)
                     source_bytes.append(_version_bytes(src_doc.current_version))
 
-            kind, payload, label, report = _apply_single(op, primary_bytes, job.params, source_bytes)
+            kind, payload, label, report = _apply_single(
+                op, primary_bytes, job.params, source_bytes, job=job
+            )
 
             # Last point before the result is committed — honour a cancel that
             # arrived while the engine was working.

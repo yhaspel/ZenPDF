@@ -171,9 +171,13 @@ export class ToolPage {
     const tool = this.tool();
     const primary = docs[0];
 
-    if (tool.kind === 'organize') {
-      // Organizing is inherently interactive — hand straight to the workspace.
-      this.router.navigate(['/app/doc', primary.id]);
+    if (tool.kind === 'organize' || tool.kind === 'annotate') {
+      // Inherently interactive: there is no "one click and download" version of
+      // arranging pages or marking a document up. Hand straight to the
+      // workspace, opened on the right mode — still with no login in the path.
+      this.router.navigate(['/app/doc', primary.id], {
+        queryParams: tool.kind === 'annotate' ? { mode: 'annotate' } : {},
+      });
       return;
     }
     if (tool.kind === 'merge') {

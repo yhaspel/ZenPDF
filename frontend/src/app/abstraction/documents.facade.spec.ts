@@ -17,6 +17,7 @@ describe('DocumentsFacade', () => {
     tier: 'free' as const,
     storage_mb: 2048,
     max_upload_mb: 100,
+    max_image_upload_mb: 10,
     max_pages: 2000,
     max_concurrent_jobs: 3,
     metered_ops_per_hour: 40,

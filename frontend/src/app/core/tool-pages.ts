@@ -13,7 +13,8 @@ export type ToolKind =
   | 'rotate'
   | 'delete-pages'
   | 'extract-pages'
-  | 'organize';
+  | 'organize'
+  | 'annotate';
 
 export interface ToolFaq {
   q: string;
@@ -275,6 +276,44 @@ export const TOOL_PAGES: ToolPageDef[] = [
     minFiles: 1,
     multiple: false,
     cta: 'Organize PDF',
+  },
+  {
+    slug: 'annotate-pdf',
+    kind: 'annotate',
+    title: 'Annotate PDF — highlight, comment and draw on a PDF free | ZenPDF',
+    metaDescription:
+      'Highlight text, add sticky notes, draw shapes and sign off on a PDF in your browser. Free, no account, no watermark. Files auto-delete within 24 hours.',
+    h1: 'Annotate a PDF',
+    intro: [
+      'Mark up a document: highlight text, underline or strike it through, drop a sticky note, draw a box or an arrow, sketch freehand, and stamp it Approved. Drop the file in and the markup tools open straight away — no account, no watermark, nothing held back behind a signup form.',
+      'The marks are written into the PDF as real annotations, the same kind Acrobat and Preview create. That matters more than it sounds: whoever you send the file to sees your comments in whatever reader they already use, and can reply to them there. Nothing depends on them visiting this site.',
+      'Highlighting works off the document\'s own text layer, so a highlight follows the words rather than sitting in an approximate box over them. That includes right-to-left text such as Hebrew and Arabic, where each word is measured individually.',
+      'Everything you draw is collected into one save, so a session of thirty comments becomes a single new version of the document rather than thirty. The version history keeps each save, and you can revert to any earlier state.',
+      'When the markup is final you can flatten it. Flattening paints the annotations permanently into the page: they stop being editable objects and become part of the artwork, which is what you want before sending a signed-off copy to someone who should not be able to move your comments around. It is not reversible in the file itself — but the version before flattening is still in the history.',
+      'A scanned page with no text layer can still take notes, shapes and freehand drawing; only text highlighting needs words to attach to. Run OCR on the document first if you need to highlight a scan.',
+      'Without an account, files are deleted automatically within 24 hours. Creating a free account keeps them in a library instead, raises the size and page limits, and lets you send documents out for signature.',
+    ],
+    faq: [
+      {
+        q: 'Will my comments show up in Acrobat or Preview?',
+        a: 'Yes. ZenPDF writes standard PDF annotations, so any conforming reader shows them — and can edit or reply to them.',
+      },
+      {
+        q: 'What is the difference between saving and flattening?',
+        a: 'Saving keeps your marks as annotations that can still be moved, edited or deleted. Flattening bakes them into the page permanently so nobody can change them. The pre-flatten version stays in your history either way.',
+      },
+      {
+        q: 'Can I highlight text on a scanned document?',
+        a: 'Not directly — a scan is an image with no text layer for a highlight to attach to. Notes, boxes, arrows and freehand drawing all work. Run OCR first if you need real text highlighting.',
+      },
+      {
+        q: 'Who is shown as the author of my comments?',
+        a: 'Your display name if you have an account, otherwise simply "Guest". Nothing identifying — no session id, no IP address — is ever written into the file.',
+      },
+    ],
+    minFiles: 1,
+    multiple: false,
+    cta: 'Annotate PDF',
   },
 ];
 

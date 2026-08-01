@@ -19,5 +19,8 @@ urlpatterns = [
     path("documents/<uuid:pk>/versions/<int:seq>/revert/", views.RevertVersionView.as_view(), name="document-revert"),
     path("documents/<uuid:pk>/outline/", views.OutlineView.as_view(), name="document-outline"),
     path("documents/<uuid:pk>/text-search/", views.TextSearchView.as_view(), name="document-text-search"),
+    # Phase 3 — annotations read model + the overlay's text layer
+    path("documents/<uuid:pk>/annotations/", views.AnnotationListView.as_view(), name="document-annotations"),
+    path("documents/<uuid:pk>/text-words/", views.TextWordsView.as_view(), name="document-text-words"),
     path("documents/<uuid:pk>/operations/", views.DocumentOperationView.as_view(), name="document-operations"),
 ]

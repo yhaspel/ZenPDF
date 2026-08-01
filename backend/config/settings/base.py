@@ -138,6 +138,10 @@ REST_FRAMEWORK = {
         "guest": config("THROTTLE_GUEST", default="40/min"),
         "auth": config("THROTTLE_AUTH", default="10/min"),
         "public_sign": config("THROTTLE_PUBLIC_SIGN", default="20/min"),
+        # Image assets (stamps, watermarks, signatures) are small and rare per
+        # session, but each one decodes an untrusted file — so the endpoint gets
+        # its own scope rather than sharing the general write budget.
+        "image_upload": config("THROTTLE_IMAGE_UPLOAD", default="60/hour"),
     },
     "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
     "TEST_REQUEST_DEFAULT_FORMAT": "json",
@@ -302,6 +306,7 @@ TIERS = {
     "guest": {
         "storage_mb": GUEST_STORAGE_QUOTA_MB,
         "max_upload_mb": GUEST_MAX_UPLOAD_MB,
+        "max_image_upload_mb": config("GUEST_MAX_IMAGE_UPLOAD_MB", default=5, cast=int),
         "max_pages": GUEST_MAX_PAGES,
         "max_concurrent_jobs": config("GUEST_MAX_CONCURRENT_JOBS", default=1, cast=int),
         "metered_ops_per_hour": config("GUEST_METERED_OPS_PER_HOUR", default=5, cast=int),
@@ -315,6 +320,7 @@ TIERS = {
     "free": {
         "storage_mb": USER_STORAGE_QUOTA_MB,
         "max_upload_mb": MAX_UPLOAD_MB,
+        "max_image_upload_mb": config("MAX_IMAGE_UPLOAD_MB", default=10, cast=int),
         "max_pages": MAX_PAGES,
         "max_concurrent_jobs": MAX_CONCURRENT_JOBS,
         "metered_ops_per_hour": config("FREE_METERED_OPS_PER_HOUR", default=40, cast=int),
@@ -328,6 +334,7 @@ TIERS = {
     "pro": {
         "storage_mb": config("PRO_STORAGE_QUOTA_MB", default=20480, cast=int),
         "max_upload_mb": config("PRO_MAX_UPLOAD_MB", default=500, cast=int),
+        "max_image_upload_mb": config("PRO_MAX_IMAGE_UPLOAD_MB", default=25, cast=int),
         "max_pages": config("PRO_MAX_PAGES", default=5000, cast=int),
         "max_concurrent_jobs": config("PRO_MAX_CONCURRENT_JOBS", default=6, cast=int),
         "metered_ops_per_hour": config("PRO_METERED_OPS_PER_HOUR", default=200, cast=int),

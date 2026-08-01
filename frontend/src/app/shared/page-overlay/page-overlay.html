@@ -1,0 +1,226 @@
+<div
+  #surface
+  class="relative select-none bg-white shadow-sm ring-1 ring-slate-200"
+  [style.width.px]="renderWidth()"
+  [style.height.px]="boxHeight()"
+  [style.cursor]="cursor()"
+  (pointerdown)="onPointerDown($event)"
+  (pointermove)="onPointerMove($event)"
+  (pointerup)="onPointerUp($event)"
+  (pointercancel)="onPointerUp($event)"
+  (dblclick)="finishPending()"
+  data-test="page-overlay"
+>
+  @if (imageUrl(); as src) {
+    <img
+      [src]="src"
+      [alt]="'Page ' + (page() + 1)"
+      class="pointer-events-none absolute inset-0 h-full w-full object-contain"
+      (load)="onImageLoad($event)"
+      draggable="false"
+    />
+  } @else {
+    <div class="absolute inset-0 flex items-center justify-center bg-slate-50 text-sm text-slate-300">
+      Rendering page {{ page() + 1 }}…
+    </div>
+  }
+
+  <!-- Text layer: transparent word boxes. Only interactive for the text tool,
+       so it never swallows clicks meant for shapes. -->
+  @if (tool() === 'text' && words().length) {
+    <div class="absolute inset-0" data-test="overlay-text-layer" (pointerup)="onTextPointerUp()">
+      @for (word of words(); track trackWord($index, word)) {
+        <span
+          class="absolute cursor-text rounded-[1px]"
+          [class.bg-indigo-300/50]="isWordSelected(word)"
+          [style.left.px]="px(word.x)"
+          [style.top.px]="pyv(word.y)"
+          [style.width.px]="px(word.w)"
+          [style.height.px]="pyv(word.h)"
+          (pointerdown)="onTextPointerDown($event, word)"
+          (pointerenter)="onTextPointerEnter(word)"
+          data-test="overlay-word"
+        ></span>
+      }
+    </div>
+  }
+
+  <!-- Shape layer -->
+  <svg
+    class="pointer-events-none absolute inset-0"
+    [attr.width]="renderWidth()"
+    [attr.height]="boxHeight()"
+    [attr.viewBox]="'0 0 ' + renderWidth() + ' ' + boxHeight()"
+  >
+    <defs>
+      <marker id="zen-arrow" viewBox="0 0 10 10" refX="9" refY="5"
+              markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+        <path d="M 0 0 L 10 5 L 0 10 z" fill="context-stroke" />
+      </marker>
+    </defs>
+
+    @for (item of items(); track trackItem($index, item)) {
+      @if (item.page === page()) {
+        <g
+          [attr.opacity]="item.opacity ?? 1"
+          class="pointer-events-auto"
+          [class.cursor-move]="tool() === 'select' && !item.locked"
+          (pointerdown)="onItemPointerDown($event, item)"
+          data-test="overlay-item"
+          [attr.data-item-id]="item.id"
+          [attr.data-shape]="item.shape"
+        >
+          @switch (item.shape) {
+            @case ('quads') {
+              @for (quad of item.quads ?? []; track $index) {
+                <rect
+                  [attr.x]="px(quad.x)" [attr.y]="pyv(quad.y)"
+                  [attr.width]="px(quad.w)" [attr.height]="pyv(quad.h)"
+                  [attr.fill]="item.fill ?? item.stroke ?? '#facc15'"
+                  [attr.fill-opacity]="0.45"
+                  [attr.stroke]="item.stroke ?? 'none'"
+                  [attr.stroke-width]="0"
+                />
+              }
+            }
+            @case ('ellipse') {
+              <ellipse
+                [attr.cx]="px((item.rect?.x ?? 0) + (item.rect?.w ?? 0) / 2)"
+                [attr.cy]="pyv((item.rect?.y ?? 0) + (item.rect?.h ?? 0) / 2)"
+                [attr.rx]="px((item.rect?.w ?? 0) / 2)"
+                [attr.ry]="pyv((item.rect?.h ?? 0) / 2)"
+                [attr.fill]="item.fill ?? 'none'"
+                [attr.stroke]="item.stroke ?? '#0f172a'"
+                [attr.stroke-width]="strokePx(item)"
+              />
+            }
+            @case ('line') {
+              <line
+                [attr.x1]="px(item.points?.[0]?.[0] ?? 0)" [attr.y1]="pyv(item.points?.[0]?.[1] ?? 0)"
+                [attr.x2]="px(item.points?.[1]?.[0] ?? 0)" [attr.y2]="pyv(item.points?.[1]?.[1] ?? 0)"
+                [attr.stroke]="item.stroke ?? '#0f172a'"
+                [attr.stroke-width]="strokePx(item)"
+                stroke-linecap="round"
+              />
+            }
+            @case ('arrow') {
+              <line
+                [attr.x1]="px(item.points?.[0]?.[0] ?? 0)" [attr.y1]="pyv(item.points?.[0]?.[1] ?? 0)"
+                [attr.x2]="px(item.points?.[1]?.[0] ?? 0)" [attr.y2]="pyv(item.points?.[1]?.[1] ?? 0)"
+                [attr.stroke]="item.stroke ?? '#0f172a'"
+                [attr.stroke-width]="strokePx(item)"
+                stroke-linecap="round"
+                marker-end="url(#zen-arrow)"
+              />
+            }
+            @case ('polygon') {
+              <polygon
+                [attr.points]="pointsAttr(item.points)"
+                [attr.fill]="item.fill ?? 'none'"
+                [attr.stroke]="item.stroke ?? '#0f172a'"
+                [attr.stroke-width]="strokePx(item)"
+              />
+            }
+            @case ('polyline') {
+              <polyline
+                [attr.points]="pointsAttr(item.points)"
+                fill="none"
+                [attr.stroke]="item.stroke ?? '#0f172a'"
+                [attr.stroke-width]="strokePx(item)"
+                stroke-linejoin="round"
+              />
+            }
+            @case ('ink') {
+              <path
+                [attr.d]="inkPath(item.ink)"
+                fill="none"
+                [attr.stroke]="item.stroke ?? '#0f172a'"
+                [attr.stroke-width]="strokePx(item)"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
+            }
+            @default {
+              <rect
+                [attr.x]="px(item.rect?.x ?? 0)" [attr.y]="pyv(item.rect?.y ?? 0)"
+                [attr.width]="px(item.rect?.w ?? 0)" [attr.height]="pyv(item.rect?.h ?? 0)"
+                [attr.fill]="item.fill ?? 'none'"
+                [attr.stroke]="item.stroke ?? '#0f172a'"
+                [attr.stroke-width]="strokePx(item)"
+                rx="2"
+              />
+            }
+          }
+        </g>
+      }
+    }
+
+    <!-- Live previews -->
+    @if (previewRect(); as rect) {
+      <rect
+        [attr.x]="px(rect.x)" [attr.y]="pyv(rect.y)"
+        [attr.width]="px(rect.w)" [attr.height]="pyv(rect.h)"
+        [attr.fill]="drawFill() ?? 'none'"
+        [attr.stroke]="drawStroke()"
+        stroke-dasharray="4 3"
+        [attr.stroke-width]="2"
+        data-test="overlay-preview"
+      />
+    }
+    @if (previewLine(); as pts) {
+      <line
+        [attr.x1]="px(pts[0][0])" [attr.y1]="pyv(pts[0][1])"
+        [attr.x2]="px(pts[1][0])" [attr.y2]="pyv(pts[1][1])"
+        [attr.stroke]="drawStroke()" [attr.stroke-width]="2" stroke-dasharray="4 3"
+      />
+    }
+    @if (previewInk(); as strokes) {
+      <path [attr.d]="inkPath(strokes)" fill="none"
+            [attr.stroke]="drawStroke()" [attr.stroke-width]="drawWidth()"
+            stroke-linecap="round" stroke-linejoin="round" />
+    }
+    @if (pendingPreview(); as pts) {
+      <polyline [attr.points]="pointsAttr(pts)" fill="none"
+                [attr.stroke]="drawStroke()" [attr.stroke-width]="2" stroke-dasharray="4 3" />
+      @for (p of pts; track $index) {
+        <circle [attr.cx]="px(p[0])" [attr.cy]="pyv(p[1])" r="3" [attr.fill]="drawStroke()" />
+      }
+    }
+  </svg>
+
+  <!-- Selection chrome: outline, label badge and resize handles -->
+  @for (item of items(); track trackItem($index, item)) {
+    @if (item.page === page() && item.id === selectedId() && item.rect) {
+      <div
+        class="pointer-events-none absolute border border-dashed border-indigo-500"
+        [style.left.px]="px(item.rect.x)"
+        [style.top.px]="pyv(item.rect.y)"
+        [style.width.px]="px(item.rect.w)"
+        [style.height.px]="pyv(item.rect.h)"
+        data-test="overlay-selection"
+      ></div>
+      @if (!readonlyMode() && !item.locked) {
+        @for (handle of ['nw', 'ne', 'sw', 'se']; track handle) {
+          <button
+            type="button"
+            class="absolute h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-sm border border-white bg-indigo-600"
+            [style.left.px]="px(item.rect.x + (handle === 'ne' || handle === 'se' ? item.rect.w : 0))"
+            [style.top.px]="pyv(item.rect.y + (handle === 'sw' || handle === 'se' ? item.rect.h : 0))"
+            [style.cursor]="handle === 'nw' || handle === 'se' ? 'nwse-resize' : 'nesw-resize'"
+            (pointerdown)="onHandlePointerDown($event, item, $any(handle))"
+            [attr.aria-label]="'Resize ' + handle"
+            data-test="overlay-handle"
+          ></button>
+        }
+      }
+    }
+    @if (item.page === page() && item.label && item.rect) {
+      <span
+        class="pointer-events-none absolute -translate-y-full rounded bg-slate-800/85 px-1 text-[10px] leading-4 text-white"
+        [style.left.px]="px(item.rect.x)"
+        [style.top.px]="pyv(item.rect.y)"
+        data-test="overlay-label"
+      >{{ item.label }}</span>
+    }
+  }
+</div>

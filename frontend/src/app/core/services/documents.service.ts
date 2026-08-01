@@ -4,10 +4,13 @@ import { Observable } from 'rxjs';
 
 import { environment } from '../../../environments/environment';
 import {
+  Annotation,
   DocumentModel,
   DocumentVersion,
+  ImageAsset,
   Job,
   OutlineItem,
+  PageWords,
   Paginated,
   SearchHit,
 } from '../models/models';
@@ -84,6 +87,31 @@ export class DocumentsService {
       `${this.base}/documents/${id}/text-search/`,
       { params: hp },
     );
+  }
+
+  /** Phase 3 — annotations read straight out of the PDF (no sidecar table). */
+  annotations(id: string, version?: number | null, page?: number): Observable<{ version: number; annotations: Annotation[] }> {
+    let hp = new HttpParams();
+    if (version) hp = hp.set('version', String(version));
+    if (page !== undefined) hp = hp.set('page', String(page));
+    return this.http.get<{ version: number; annotations: Annotation[] }>(
+      `${this.base}/documents/${id}/annotations/`,
+      { params: hp },
+    );
+  }
+
+  /** The overlay's text layer — word rects for turning a selection into quads. */
+  textWords(id: string, page: number, version?: number | null): Observable<PageWords> {
+    let hp = new HttpParams().set('page', String(page));
+    if (version) hp = hp.set('version', String(version));
+    return this.http.get<PageWords>(`${this.base}/documents/${id}/text-words/`, { params: hp });
+  }
+
+  /** Ephemeral image asset (§13 `uploads/…`) → an opaque, principal-scoped ref. */
+  uploadImage(file: File): Observable<ImageAsset> {
+    const form = new FormData();
+    form.append('file', file);
+    return this.http.post<ImageAsset>(`${this.base}/uploads/image/`, form);
   }
 
   operation(id: string, body: { type: string; params: unknown; base_version_seq?: number | null }): Observable<Job> {

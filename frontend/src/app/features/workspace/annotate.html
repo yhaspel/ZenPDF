@@ -1,0 +1,242 @@
+<div class="flex min-h-0 flex-1" data-test="annotate-mode">
+  <!-- Tool palette -->
+  <aside class="flex w-52 shrink-0 flex-col gap-3 overflow-y-auto border-r border-slate-200 bg-white p-3 text-sm">
+    <div>
+      <p class="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-400">Tools</p>
+      <div class="grid grid-cols-2 gap-1">
+        <button class="rounded border border-slate-200 px-2 py-1 text-left"
+                [class.bg-indigo-600]="tool() === 'select'" [class.text-white]="tool() === 'select'"
+                (click)="setTool('select')" data-test="tool-select">↖ Select</button>
+        <button class="rounded border border-slate-200 px-2 py-1 text-left"
+                [class.bg-indigo-600]="tool() === 'highlight'" [class.text-white]="tool() === 'highlight'"
+                (click)="setTool('highlight')" data-test="tool-highlight">▨ Highlight</button>
+        <button class="rounded border border-slate-200 px-2 py-1 text-left"
+                [class.bg-indigo-600]="tool() === 'underline'" [class.text-white]="tool() === 'underline'"
+                (click)="setTool('underline')" data-test="tool-underline">U̲ Underline</button>
+        <button class="rounded border border-slate-200 px-2 py-1 text-left"
+                [class.bg-indigo-600]="tool() === 'strikeout'" [class.text-white]="tool() === 'strikeout'"
+                (click)="setTool('strikeout')" data-test="tool-strikeout">S̶ Strike</button>
+        <button class="rounded border border-slate-200 px-2 py-1 text-left"
+                [class.bg-indigo-600]="tool() === 'squiggly'" [class.text-white]="tool() === 'squiggly'"
+                (click)="setTool('squiggly')" data-test="tool-squiggly">∿ Squiggly</button>
+        <button class="rounded border border-slate-200 px-2 py-1 text-left"
+                [class.bg-indigo-600]="tool() === 'note'" [class.text-white]="tool() === 'note'"
+                (click)="setTool('note')" data-test="tool-note">💬 Note</button>
+        <button class="rounded border border-slate-200 px-2 py-1 text-left"
+                [class.bg-indigo-600]="tool() === 'free_text'" [class.text-white]="tool() === 'free_text'"
+                (click)="setTool('free_text')" data-test="tool-free-text">T Text box</button>
+        <button class="rounded border border-slate-200 px-2 py-1 text-left"
+                [class.bg-indigo-600]="tool() === 'square'" [class.text-white]="tool() === 'square'"
+                (click)="setTool('square')" data-test="tool-square">▭ Rect</button>
+        <button class="rounded border border-slate-200 px-2 py-1 text-left"
+                [class.bg-indigo-600]="tool() === 'circle'" [class.text-white]="tool() === 'circle'"
+                (click)="setTool('circle')" data-test="tool-circle">◯ Ellipse</button>
+        <button class="rounded border border-slate-200 px-2 py-1 text-left"
+                [class.bg-indigo-600]="tool() === 'line'" [class.text-white]="tool() === 'line'"
+                (click)="setTool('line')" data-test="tool-line">╱ Line</button>
+        <button class="rounded border border-slate-200 px-2 py-1 text-left"
+                [class.bg-indigo-600]="tool() === 'arrow'" [class.text-white]="tool() === 'arrow'"
+                (click)="setTool('arrow')" data-test="tool-arrow">➔ Arrow</button>
+        <button class="rounded border border-slate-200 px-2 py-1 text-left"
+                [class.bg-indigo-600]="tool() === 'polygon'" [class.text-white]="tool() === 'polygon'"
+                (click)="setTool('polygon')" data-test="tool-polygon">⬟ Polygon</button>
+        <button class="rounded border border-slate-200 px-2 py-1 text-left"
+                [class.bg-indigo-600]="tool() === 'polyline'" [class.text-white]="tool() === 'polyline'"
+                (click)="setTool('polyline')" data-test="tool-polyline">⌇ Polyline</button>
+        <button class="rounded border border-slate-200 px-2 py-1 text-left"
+                [class.bg-indigo-600]="tool() === 'ink'" [class.text-white]="tool() === 'ink'"
+                (click)="setTool('ink')" data-test="tool-ink">✎ Draw</button>
+        <button class="rounded border border-slate-200 px-2 py-1 text-left"
+                [class.bg-indigo-600]="tool() === 'stamp'" [class.text-white]="tool() === 'stamp'"
+                (click)="setTool('stamp')" data-test="tool-stamp">✔ Stamp</button>
+        <button class="rounded border border-slate-200 px-2 py-1 text-left"
+                [class.bg-indigo-600]="tool() === 'crop'" [class.text-white]="tool() === 'crop'"
+                (click)="setTool('crop')" data-test="tool-crop">◱ Crop</button>
+      </div>
+      @if (tool() === 'polygon' || tool() === 'polyline') {
+        <p class="mt-1 text-[11px] text-slate-400">Click to add points, Enter or double-click to finish, Esc to cancel.</p>
+      }
+    </div>
+
+    <div>
+      <label class="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Colour</label>
+      <input type="color" [ngModel]="color()" (ngModelChange)="color.set($event)"
+             class="mt-1 h-8 w-full cursor-pointer rounded border border-slate-200" data-test="annot-color" />
+    </div>
+    <div>
+      <label class="text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+        Line width — {{ strokeWidth() }}
+      </label>
+      <input type="range" min="1" max="12" [ngModel]="strokeWidth()" (ngModelChange)="strokeWidth.set(+$event)"
+             class="w-full" data-test="annot-width" />
+    </div>
+    <div>
+      <label class="text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+        Opacity — {{ (opacity() * 100).toFixed(0) }}%
+      </label>
+      <input type="range" min="0.1" max="1" step="0.1" [ngModel]="opacity()" (ngModelChange)="opacity.set(+$event)"
+             class="w-full" data-test="annot-opacity" />
+    </div>
+
+    @if (tool() === 'free_text') {
+      <div>
+        <label class="text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+          Font size — {{ fontSize() }}pt
+        </label>
+        <input type="range" min="6" max="48" [ngModel]="fontSize()" (ngModelChange)="fontSize.set(+$event)"
+               class="w-full" data-test="annot-font-size" />
+      </div>
+    }
+
+    @if (tool() === 'stamp') {
+      <div>
+        <label class="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Stamp</label>
+        <select [ngModel]="stampName()" (ngModelChange)="stampName.set($event)"
+                class="mt-1 w-full rounded border border-slate-200 px-2 py-1" data-test="stamp-name">
+          @for (name of stamps; track name) { <option [value]="name">{{ name }}</option> }
+        </select>
+      </div>
+    }
+
+    <div>
+      <label class="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Custom stamp</label>
+      <input type="file" accept="image/png,image/jpeg" (change)="onStampFile($event)"
+             class="mt-1 w-full text-[11px]" data-test="stamp-upload" />
+      @if (stampRef()) {
+        <p class="text-[11px] text-emerald-600">Image ready — drag a box to place it.</p>
+      }
+    </div>
+
+    @if (tool() === 'crop') {
+      <div class="rounded border border-amber-200 bg-amber-50 p-2">
+        <p class="text-[11px] text-amber-800">
+          Drag the area to keep. Applies to the pages selected in Organize, or all pages.
+        </p>
+        <button class="mt-2 w-full rounded bg-amber-600 px-2 py-1 text-white disabled:opacity-40"
+                [disabled]="!cropRect() || busy()" (click)="applyCrop()" data-test="apply-crop">
+          Apply crop
+        </button>
+      </div>
+    }
+  </aside>
+
+  <!-- Page + overlay -->
+  <main class="flex min-h-0 flex-1 flex-col bg-slate-100">
+    <div class="flex items-center gap-2 border-b border-slate-200 bg-white px-4 py-2 text-sm">
+      <button (click)="prevPage()" [disabled]="page() === 0"
+              class="rounded px-2 py-1 disabled:opacity-30" data-test="annot-prev">‹</button>
+      <span class="text-slate-500" data-test="annot-page">Page {{ page() + 1 }} / {{ pageCount() }}</span>
+      <button (click)="nextPage()" [disabled]="page() >= pageCount() - 1"
+              class="rounded px-2 py-1 disabled:opacity-30" data-test="annot-next">›</button>
+
+      <span class="mx-2 h-4 w-px bg-slate-200"></span>
+      <button (click)="zoomOut()" class="rounded px-2 py-1" data-test="annot-zoom-out">−</button>
+      <span class="text-xs text-slate-400">{{ zoom() }}px</span>
+      <button (click)="zoomIn()" class="rounded px-2 py-1" data-test="annot-zoom-in">+</button>
+
+      <div class="ml-auto flex items-center gap-2">
+        @if (dirty()) {
+          <span class="rounded-full bg-amber-100 px-2 py-0.5 text-xs text-amber-700" data-test="annot-dirty">
+            {{ annotations.pendingChanges() }} unsaved
+          </span>
+        } @else if (lastSavedAt()) {
+          <span class="text-xs text-slate-400" data-test="annot-clean">All changes saved</span>
+        }
+        <button (click)="save()" [disabled]="busy() || !dirty()"
+                class="rounded bg-indigo-600 px-3 py-1 font-medium text-white disabled:opacity-40"
+                data-test="annot-save">Save</button>
+        <button (click)="flatten()" [disabled]="busy()"
+                class="rounded border border-slate-300 px-3 py-1 disabled:opacity-40"
+                data-test="annot-flatten">Flatten</button>
+      </div>
+    </div>
+
+    <div class="min-h-0 flex-1 overflow-auto p-6">
+      <div class="mx-auto w-fit">
+        <app-page-overlay
+          [docId]="docId()"
+          [page]="page()"
+          [version]="currentSeq() ?? undefined"
+          [renderWidth]="zoom()"
+          [items]="overlayItems()"
+          [tool]="gesture()"
+          [words]="words()"
+          [selectedId]="annotations.selectedId()"
+          [drawStroke]="color()"
+          [drawWidth]="strokeWidth()"
+          (created)="onCreated($event)"
+          (geometryChanged)="onGeometryChanged($event)"
+          (selectionChanged)="onSelectionChanged($event)"
+          (deleteRequested)="onDeleteRequested($event)"
+        />
+      </div>
+    </div>
+  </main>
+
+  <!-- Comments sidebar -->
+  <aside class="flex w-64 shrink-0 flex-col border-l border-slate-200 bg-white" data-test="comments-sidebar">
+    <div class="flex items-center justify-between border-b border-slate-200 px-3 py-2">
+      <span class="text-sm font-medium text-slate-700">
+        Comments
+        <span class="text-slate-400" data-test="annot-count">({{ annotations.count() }})</span>
+      </span>
+      <span class="flex gap-2 text-xs">
+        <button class="text-slate-500 hover:underline" (click)="clearPage()" data-test="annot-clear-page">
+          Clear page
+        </button>
+        <button class="text-rose-600 hover:underline" (click)="clearAll()" data-test="annot-clear-all">
+          Clear all
+        </button>
+      </span>
+    </div>
+    <div class="min-h-0 flex-1 overflow-y-auto p-2">
+      @if (!annotations.count()) {
+        <p class="p-2 text-xs text-slate-400" data-test="comments-empty">
+          Nothing marked up yet. Pick a tool and draw on the page.
+        </p>
+      }
+      @for (group of comments(); track group.page) {
+        <p class="mt-2 px-1 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+          Page {{ group.page + 1 }}
+        </p>
+        @for (item of group.items; track trackAnnotation($index, item)) {
+          <div class="mb-1 rounded border p-2 text-xs"
+               [class.border-indigo-400]="annotations.selectedId() === item.id"
+               [class.border-slate-100]="annotations.selectedId() !== item.id"
+               data-test="comment-row">
+            <button class="block w-full text-left" (click)="jumpTo(item)" data-test="comment-jump">
+              <span class="font-medium text-slate-700">{{ authorOf(item) }}</span>
+              <span class="ml-1 text-slate-400">{{ item.type.replace('_', ' ') }}</span>
+              @if (timeOf(item); as when) {
+                <span class="ml-1 text-slate-300" data-test="comment-time">{{ when }}</span>
+              }
+            </button>
+            @if (editingId() === item.id) {
+              <textarea
+                class="mt-1 w-full rounded border border-indigo-300 p-1"
+                rows="2"
+                [ngModel]="editingText()"
+                (ngModelChange)="editingText.set($event)"
+                (blur)="commitEditing()"
+                data-test="comment-editor"
+              ></textarea>
+            } @else {
+              <p class="mt-1 whitespace-pre-wrap text-slate-600" data-test="comment-text">{{ snippet(item) }}</p>
+            }
+            <div class="mt-1 flex gap-2">
+              @if (isOwn(item)) {
+                <button class="text-indigo-600 hover:underline" (click)="startEditing(item.id)"
+                        data-test="comment-edit">Edit</button>
+              } @else {
+                <span class="text-slate-300" title="This comment was made by someone else"
+                      data-test="comment-foreign">by {{ item.author }}</span>
+              }
+              <button class="text-rose-600 hover:underline" (click)="onDeleteRequested(item.id)"
+                      data-test="comment-delete">Delete</button>
+            </div>
+          </div>
+        }
+      }
+    </div>
+  </aside>
+</div>

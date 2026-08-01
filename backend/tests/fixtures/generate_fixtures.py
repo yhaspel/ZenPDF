@@ -6,7 +6,7 @@ Run inside the api/worker image (needs fitz + pikepdf):
 
 Produces, under tests/fixtures/pdfs/:
     text.pdf, unicode.pdf, form.pdf, scanned.pdf, encrypted.pdf,
-    rotated-90.pdf, corrupt.pdf, large-generated.pdf
+    rotated-90.pdf, corrupt.pdf, large-generated.pdf, hebrew-rtl.pdf
 
 Committed to the repo so tests don't regenerate; re-run to refresh.
 """
@@ -115,6 +115,36 @@ def make_encrypted():
     pdf.close()
 
 
+def make_hebrew():
+    """RTL fixture (phase-03 risk: 'text-layer selection quality on odd PDFs').
+
+    `insert_htmlbox` is used rather than `insert_text` because it is the only
+    route that applies bidi reordering — with `insert_text` the glyphs land in
+    logical order, which is not what a reader sees and would make any quads test
+    assert the wrong thing. Owner locale is Hebrew, so this is a real case.
+    """
+    doc = fitz.open()
+    page = doc.new_page(width=595, height=842)
+    page.insert_htmlbox(
+        fitz.Rect(60, 60, 535, 200),
+        '<div dir="rtl" style="font-size:22px">שלום עולם — מסמך בדיקה</div>',
+    )
+    page.insert_htmlbox(
+        fitz.Rect(60, 220, 535, 340),
+        '<div dir="rtl" style="font-size:14px">'
+        "זהו קובץ בדיקה של ZenPDF עבור הערות והדגשות בעברית."
+        "</div>",
+    )
+    # A mixed-direction line: numbers and Latin inside RTL text are where naive
+    # quad math goes wrong.
+    page.insert_htmlbox(
+        fitz.Rect(60, 360, 535, 460),
+        '<div dir="rtl" style="font-size:14px">חשבונית מספר 2026-0007 בסך 1,250 ש"ח</div>',
+    )
+    doc.save(os.path.join(OUT, "hebrew-rtl.pdf"))
+    doc.close()
+
+
 def make_corrupt():
     """Valid PDF with its trailer/xref chopped off: pikepdf rejects, fitz repairs."""
     doc = _text_doc(1, "Corrupt fixture")
@@ -133,6 +163,7 @@ if __name__ == "__main__":
     make_rotated()
     make_large()
     make_encrypted()
+    make_hebrew()
     make_corrupt()
     print("Fixtures written to", OUT)
     for name in sorted(os.listdir(OUT)):

@@ -68,6 +68,12 @@ def guest_purge() -> dict:
             document.save(update_fields=["current_version"])
             document.delete()
             stats["documents"] += 1
+        # Ephemeral image assets (custom stamps, watermarks, signatures) live
+        # outside the document tree at `uploads/g/{session}/…` (§13), so the
+        # document sweep above cannot reach them.
+        from .assets import purge_principal_assets
+
+        stats["blobs"] += purge_principal_assets("g", session.id)
         # Jobs and usage counters cascade from the session row itself.
         session.delete()
         stats["sessions"] += 1
