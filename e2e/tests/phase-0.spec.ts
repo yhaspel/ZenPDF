@@ -17,15 +17,32 @@ test('phase 0: register, login, session guard', async ({ page }) => {
   await page.click('[data-test=demo-job]');
   await expect(page.locator('[data-test=toast-success]')).toBeVisible();
 
-  // Logout → login page; guard blocks /app
+  // Logout → login page.
   await page.click('[data-test=logout]');
   await expect(page).toHaveURL(/\/auth\/login/);
+
+  // ⚠ Rewritten in Phase 2B — supersedes phase-00's "`/app/**` redirects
+  // unauthenticated users". The app-wide guard is gone: only the three
+  // account-only routes redirect, and a rejection routes to **register** with
+  // a reason rendered as copy, never a bare login wall (§7, §21.3).
   await page.goto('/app/dashboard');
-  await expect(page).toHaveURL(/\/auth\/login/);
+  await expect(page).toHaveURL(/\/auth\/register\?.*reason=library/);
+  await expect(page.locator('[data-test=register-reason]')).toBeVisible();
 
   // Log back in
+  await page.goto('/auth/login');
   await page.fill('[data-test=email]', email);
   await page.fill('[data-test=password]', 'strongpass123');
   await page.click('[data-test=submit]');
   await expect(page).toHaveURL(/\/app\/dashboard/);
+});
+
+test('phase 0 (2B): /app/doc/:id is NOT gated — it renders for a guest', async ({ page }) => {
+  // The other half of the superseded criterion: the workspace route must render
+  // for either principal. A guest with no document lands on the workspace shell
+  // rather than being bounced to a login form.
+  await page.context().clearCookies();
+  await page.goto('/app/doc/00000000-0000-0000-0000-000000000000');
+  await expect(page).toHaveURL(/\/app\/doc\//);
+  await expect(page.locator('[data-test=login-form]')).toHaveCount(0);
 });
