@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import contextlib
 import hashlib
+import logging
 
 from celery import shared_task
 from django.conf import settings
@@ -24,12 +25,15 @@ from apps.jobs.models import Job
 from apps.pdf_engine import registry
 from apps.pdf_engine.engine import annotations as A
 from apps.pdf_engine.engine import content as C
+from apps.pdf_engine.engine import forms as F
 from apps.pdf_engine.engine import pages as P
 from apps.pdf_engine.engine import render as R
 from apps.pdf_engine.exceptions import EngineError
 from apps.pdf_engine.storage import get_storage
 
 from .models import Document, DocumentVersion
+
+logger = logging.getLogger(__name__)
 
 THUMB_PAGES = 20
 THUMB_WIDTH = 240
@@ -314,6 +318,24 @@ def _apply_single(op, primary_bytes, params, source_bytes, *, job=None):
     if t == "set_bookmarks":
         data = C.set_bookmarks(primary_bytes, toc=params["toc"])
         return "version", data, f"Bookmarks ({len(params['toc'])})", None
+
+    # --- Phase 5: forms ------------------------------------------------ #
+    if t == "fill_form":
+        data, report = F.fill_form(primary_bytes, values=params["values"],
+                                   flatten_after=params.get("flatten_after", False))
+        label = "Form filled" + (" and flattened" if report["flattened"] else "")
+        return "version", data, label, report
+    if t == "edit_form_fields_batch":
+        data, report = F.edit_fields_batch(primary_bytes, ops=params["ops"])
+        touched = report["added"] + report["updated"] + report["deleted"]
+        return "version", data, f"Form edited ({touched} field(s))", report
+    if t == "import_form_data":
+        values = F.parse_form_data(params["data"].encode(), fmt=params["format"])
+        if not values:
+            raise EngineError("That file contained no field values.")
+        data, report = F.fill_form(primary_bytes, values=values,
+                                   flatten_after=params.get("flatten_after", False))
+        return "version", data, f"Form data imported ({report['filled']} field(s))", report
     raise EngineError(f"Unsupported single-document op '{t}'")
 
 
@@ -332,8 +354,12 @@ def run_operation(self, job_id: str):
     job.mark_running()
 
     document = job.document
-    op = registry.get_op(job.type)
     try:
+        # Inside the try: a job that has been marked running and then throws
+        # before anything catches it stays `running` for ever, and the client
+        # polls a job that will never reach a terminal state. That is exactly
+        # what a worker holding a stale registry looked like.
+        op = registry.get_op(job.type)
         with doc_lock(str(document.id)):
             document.refresh_from_db()
             current = document.current_version
@@ -400,6 +426,10 @@ def run_operation(self, job_id: str):
     except Document.DoesNotExist:
         job.mark_failed("not_found", "A referenced document was not found.")
     except Exception as exc:  # noqa: BLE001
+        # Logged as well as recorded on the job: an unexpected exception is an
+        # operator problem (a stale worker, a broken dependency), and marking
+        # the job failed makes it look like ordinary user-facing validation.
+        logger.exception("job %s failed unexpectedly", job.id)
         job.mark_failed("engine_error", f"Operation failed: {exc}")
 
 

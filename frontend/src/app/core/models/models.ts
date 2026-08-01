@@ -332,6 +332,71 @@ export interface ReplaceReport {
   dry_run: boolean;
 }
 
+// --------------------------------------------------------------------------- //
+// Phase 5 — forms
+// --------------------------------------------------------------------------- //
+export type FormFieldType =
+  | 'text' | 'checkbox' | 'radio' | 'combobox' | 'listbox' | 'signature';
+
+/** One placement of a field. A radio group has one per option. */
+export interface FormWidget {
+  page: number;
+  rect: Rect;
+  on_value: string;
+}
+
+export interface FormField {
+  name: string;
+  type: FormFieldType;
+  page: number;
+  rect: Rect;
+  value: string;
+  /** `/DV` — what "reset form" would put back. */
+  default: string;
+  /** `/Q` — so the property panel prefills what the field actually has. */
+  align: 'left' | 'center' | 'right';
+  /** `/DA`'s size. 0 means "auto", which is PDF for "fit the box". */
+  font_size: number;
+  options: string[];
+  flags: { required: boolean; readonly: boolean; multiline: boolean; password: boolean };
+  max_len: number;
+  widgets: FormWidget[];
+}
+
+export interface FormModel {
+  has_form: boolean;
+  /** XFA fields are a partial fallback — the UI warns rather than pretending. */
+  is_xfa: boolean;
+  /** The field list was capped — a document claiming thousands of fields. */
+  truncated: boolean;
+  fields: FormField[];
+}
+
+/** What the builder sends: one entry of `edit_form_fields_batch`'s `ops`. */
+export interface FormFieldSpec {
+  name: string;
+  type?: FormFieldType;
+  page?: number;
+  rect?: Rect;
+  rects?: Rect[];
+  options?: string[];
+  default?: string | boolean | null;
+  required?: boolean;
+  readonly?: boolean;
+  multiline?: boolean;
+  max_len?: number;
+  font_size?: number;
+  align?: 'left' | 'center' | 'right';
+}
+
+export interface FormFieldOp {
+  action: 'add' | 'update' | 'delete';
+  field: FormFieldSpec;
+}
+
+/** A value as it travels to `fill_form`. */
+export type FormValue = string | boolean;
+
 export type StampPosition =
   | 'top-left' | 'top-center' | 'top-right'
   | 'bottom-left' | 'bottom-center' | 'bottom-right';

@@ -543,3 +543,97 @@ SET_BOOKMARKS = {
     },
     "additionalProperties": False,
 }
+
+
+# --------------------------------------------------------------------------- #
+# Phase 5 — forms
+# --------------------------------------------------------------------------- #
+FILL_FORM = {
+    "type": "object",
+    "required": ["values"],
+    "properties": {
+        # Values are typed by the *field*, not by the wire: a checkbox accepts a
+        # bool or "yes"/"on", a choice field accepts one of its options.
+        #
+        # Bounded on both axes, like every other schema here. Params are stored
+        # on the Job row and echoed on every poll, so an uncapped map is a
+        # quota-free write into Postgres and a read amplifier — a guest could
+        # park megabytes per job and re-download them 40×/minute.
+        "values": {
+            "type": "object",
+            "minProperties": 1,
+            "maxProperties": 1000,
+            "additionalProperties": {
+                "type": ["string", "boolean", "number", "null"],
+                "maxLength": 20000,
+            },
+        },
+        "flatten_after": {"type": "boolean"},
+    },
+    "additionalProperties": False,
+}
+
+_FIELD_SPEC = {
+    "type": "object",
+    "required": ["name"],
+    "properties": {
+        "name": {"type": "string", "minLength": 1, "maxLength": 200},
+        "type": {"enum": ["text", "checkbox", "radio", "combobox", "listbox",
+                          "signature"]},
+        "page": {"type": "integer", "minimum": 0},
+        "rect": _NORM_RECT,
+        # A radio group is N placements of one field, so it carries N rects.
+        "rects": {"type": "array", "items": _NORM_RECT, "minItems": 2, "maxItems": 50},
+        # `minLength: 1` is load-bearing: an empty option becomes `Name("/")`,
+        # which pikepdf refuses — a 500-shaped failure for a 400-shaped input.
+        "options": {"type": "array",
+                    "items": {"type": "string", "minLength": 1, "maxLength": 200},
+                    "maxItems": 200},
+        "default": {"type": ["string", "boolean", "null"]},
+        "required": {"type": "boolean"},
+        "readonly": {"type": "boolean"},
+        "multiline": {"type": "boolean"},
+        "max_len": {"type": "integer", "minimum": 0, "maximum": 10000},
+        "font_size": {"type": "number", "minimum": 4, "maximum": 96},
+        "align": {"enum": ["left", "center", "right"]},
+    },
+    "additionalProperties": False,
+}
+
+EDIT_FORM_FIELDS_BATCH = {
+    "type": "object",
+    "required": ["ops"],
+    "properties": {
+        "ops": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 200,
+            "items": {
+                "type": "object",
+                "required": ["action", "field"],
+                "properties": {
+                    "action": {"enum": ["add", "update", "delete"]},
+                    "field": _FIELD_SPEC,
+                },
+                "additionalProperties": False,
+            },
+        },
+    },
+    "additionalProperties": False,
+}
+
+IMPORT_FORM_DATA = {
+    "type": "object",
+    "required": ["format", "data"],
+    "properties": {
+        "format": {"enum": ["json", "csv"]},
+        # The file contents, inline: form data is small and this keeps the
+        # import on the same job pipeline as every other mutation. The cap is
+        # ~25 000 `name,value` rows — far past any real form — and is what
+        # keeps the payload, which is retained on the Job row and echoed on
+        # every poll, from becoming a quota-free store-and-amplify.
+        "data": {"type": "string", "maxLength": 500_000},
+        "flatten_after": {"type": "boolean"},
+    },
+    "additionalProperties": False,
+}

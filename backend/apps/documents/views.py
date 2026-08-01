@@ -8,6 +8,7 @@ from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import extend_schema
 from rest_framework import generics, status
 from rest_framework.exceptions import NotFound
+from rest_framework.negotiation import DefaultContentNegotiation
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -32,6 +33,7 @@ from apps.jobs.serializers import JobSerializer
 from apps.pdf_engine import registry
 from apps.pdf_engine.engine import annotations as engine_annotations
 from apps.pdf_engine.engine import content as engine_content
+from apps.pdf_engine.engine import forms as engine_forms
 from apps.pdf_engine.engine import render as engine_render
 from apps.pdf_engine.engine import search_text
 from apps.pdf_engine.engine import text as engine_text
@@ -507,6 +509,61 @@ class PageLinksView(APIView):
     @extend_schema(tags=["content"], responses=OpenApiTypes.OBJECT)
     def get(self, request, pk):
         return Response(_page_read_model(request, pk, engine_content.page_links))
+
+
+class FormView(APIView):
+    """`GET /api/documents/{id}/form/` (phase-05 §"Read model").
+
+    Reports `is_xfa` alongside the fields: an XFA document's AcroForm layer is a
+    partial fallback, so filling it in may not carry the user's answers. The UI
+    warns rather than letting them find out later.
+    """
+
+    @extend_schema(tags=["forms"], responses=OpenApiTypes.OBJECT)
+    def get(self, request, pk):
+        document = _owned_document(request, pk)
+        version = _select_version(document, request)
+        try:
+            blob = get_storage().get_bytes(version.storage_key)
+            return Response(engine_forms.read_form(blob))
+        except EngineError as exc:
+            raise ValidationFailed(exc.message) from exc
+
+
+class _OwnFormatParam(DefaultContentNegotiation):
+    """`?format=` belongs to the endpoint here, not to DRF.
+
+    DRF reads `?format=` as a renderer override, so `format=csv` 404s during
+    content negotiation — before the view ever runs — and `format=json` only
+    works by accident. The phase-05 contract spells the parameter `json|csv`,
+    so negotiation is pinned to the first renderer and the view reads the
+    parameter itself. Errors still come back as JSON.
+    """
+
+    def select_renderer(self, request, renderers, format_suffix=None):
+        return renderers[0], renderers[0].media_type
+
+
+class FormExportView(APIView):
+    """`GET /api/documents/{id}/form/export/?format=json|csv` — current values."""
+
+    content_negotiation_class = _OwnFormatParam
+
+    @extend_schema(tags=["forms"], responses=OpenApiTypes.BINARY)
+    def get(self, request, pk):
+        document = _owned_document(request, pk)
+        version = _select_version(document, request)
+        fmt = request.query_params.get("format", "json")
+        try:
+            blob = get_storage().get_bytes(version.storage_key)
+            payload, filename, content_type = engine_forms.export_form_data(blob, fmt=fmt)
+        except EngineError as exc:
+            raise ValidationFailed(exc.message) from exc
+        response = HttpResponse(payload, content_type=content_type)
+        # Always an attachment: this is user content, and §17/phase-10 keep
+        # user content out of the inline-render path.
+        response["Content-Disposition"] = f'attachment; filename="{filename}"'
+        return response
 
 
 class TextSearchView(APIView):

@@ -41,6 +41,20 @@ describe('GuestFacade', () => {
     expect(facade.principal()).toBe('user');
   });
 
+  it('notices a JWT that arrives after the principal was first read', () => {
+    // The order that broke it: something reads `principal()` on the login page,
+    // before there is a token, and the computed caches `null` — because the
+    // JWT was a plain getter with no signal behind it. Everything derived from
+    // it then stayed logged-out for the rest of the session, which is what
+    // stripped the credential off the PDF viewer's own fetch.
+    expect(facade.principal()).toBeNull();
+    tokens.set('jwt-access', 'jwt-refresh');
+    expect(facade.principal()).toBe('user');
+
+    tokens.clear();
+    expect(facade.principal()).toBeNull();
+  });
+
   it('clears the token and shows an inline notice when the session expires', () => {
     facade.captureToken('raw-guest-token');
     facade.onSessionExpired();

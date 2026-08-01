@@ -24,6 +24,8 @@ describe('tool pages', () => {
     'edit-pdf',
     'watermark-pdf',
     'add-page-numbers',
+    // Phase 5
+    'fill-pdf-form',
   ];
 
   it('ships exactly the slugs its phases have shipped', () => {

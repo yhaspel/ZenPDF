@@ -37,6 +37,28 @@ def test_redelivered_task_does_not_run_twice(api, uploaded_doc):
     assert api.get(f"/api/jobs/{job['id']}/").json()["status"] == "succeeded"
 
 
+def test_a_job_that_cannot_start_ends_failed_rather_than_running(api, uploaded_doc):
+    """A worker that cannot even resolve the op must still finish the job.
+
+    Anything that throws after `mark_running` but outside the handler leaves the
+    job `running` for ever, and the client polls something that will never reach
+    a terminal state. A worker holding a stale registry is exactly that case.
+    """
+    from apps.core.principals import job_owner_kwargs, principal_of_document
+    from apps.documents.models import Document
+    from apps.documents.tasks import run_operation
+    from apps.jobs.models import Job
+
+    document = Document.objects.get(id=uploaded_doc["id"])
+    job = Job.objects.create(document=document, type="no_such_op", params={},
+                             **job_owner_kwargs(principal_of_document(document)))
+    run_operation(str(job.id))
+
+    job.refresh_from_db()
+    assert job.status == "failed"
+    assert job.error_message
+
+
 def test_base_version_conflict(api, uploaded_doc):
     job = _op(api, uploaded_doc["id"], "rotate_pages", {"pages": [0], "degrees": 90}, base_seq=99)
     assert job["status"] == "failed"

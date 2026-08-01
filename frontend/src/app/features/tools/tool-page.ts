@@ -179,6 +179,7 @@ export class ToolPage {
       organize: '',
       annotate: 'annotate',
       edit: 'edit',
+      'fill-form': 'forms',
     };
     if (tool.kind in interactive) {
       const mode = interactive[tool.kind];

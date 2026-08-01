@@ -26,5 +26,8 @@ urlpatterns = [
     path("documents/<uuid:pk>/text-blocks/", views.TextBlocksView.as_view(), name="document-text-blocks"),
     path("documents/<uuid:pk>/images/", views.PageImagesView.as_view(), name="document-images"),
     path("documents/<uuid:pk>/links/", views.PageLinksView.as_view(), name="document-links"),
+    # Phase 5 — forms
+    path("documents/<uuid:pk>/form/", views.FormView.as_view(), name="document-form"),
+    path("documents/<uuid:pk>/form/export/", views.FormExportView.as_view(), name="document-form-export"),
     path("documents/<uuid:pk>/operations/", views.DocumentOperationView.as_view(), name="document-operations"),
 ]

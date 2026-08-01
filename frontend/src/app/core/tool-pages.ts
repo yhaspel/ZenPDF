@@ -17,7 +17,8 @@ export type ToolKind =
   | 'annotate'
   | 'edit'
   | 'watermark'
-  | 'page-numbers';
+  | 'page-numbers'
+  | 'fill-form';
 
 export interface ToolFaq {
   q: string;
@@ -421,6 +422,49 @@ export const TOOL_PAGES: ToolPageDef[] = [
     minFiles: 1,
     multiple: false,
     cta: 'Add page numbers',
+  },
+  {
+    slug: 'fill-pdf-form',
+    kind: 'fill-form',
+    title: 'Fill out a PDF form online free — no account | ZenPDF',
+    metaDescription:
+      'Fill in a PDF form in your browser and save the answers into the file. Flatten it so nobody can change them. Free, no account, no watermark.',
+    h1: 'Fill out a PDF form',
+    intro: [
+      'Open a PDF form, type into the fields, and save your answers into the file itself. The document you download is a normal PDF that shows your answers in Acrobat, Preview, or whatever the person on the other end happens to use.',
+      'That is the part most "fill a PDF" tools get wrong. Printing the form, writing on it and scanning it back turns a crisp document into a photograph of one; typing into an overlay that only exists on a website leaves you with a file whose values disappear elsewhere. Here the values are written into the form fields, which is where a PDF form keeps them.',
+      'Every kind of field a PDF form can have works: text boxes, checkboxes, radio groups where choosing one option clears the others, drop-down lists and multi-choice lists. Fields marked read-only by whoever made the form stay read-only, because a form that lets you edit a locked field is lying to you.',
+      'When you are finished you can flatten the form. Flattening prints your answers onto the page and removes the fields, so the values can no longer be changed — the right final step before sending a completed form back. It cannot be undone in the file, but the version before flattening stays in your history.',
+      'You can also export what you typed as JSON or CSV, and import it back into the same form later — or into next year\'s copy of it. Filling in the same 30-field form every quarter is exactly the kind of thing a computer should be doing for you.',
+      'If the document has no form fields at all, you can add them: drag a box on the page, pick a field type, name it, and save. That is the same builder used to turn a flat questionnaire into something people can actually type into.',
+      'One honest limitation: XFA forms — a legacy Adobe format that stores the form as XML rather than as PDF fields — are not supported. We detect them and say so, rather than showing you a half-rendered fallback and letting you discover later that your answers went nowhere.',
+      'No account is needed and nothing is watermarked. Guest files are deleted automatically within 24 hours; a free account keeps them in a library instead.',
+    ],
+    faq: [
+      {
+        q: 'Will my answers show up if I open the file in Acrobat?',
+        a: 'Yes. The values are written into the PDF\'s own form fields, so any conforming reader shows them. Flatten the form if you want them printed onto the page permanently.',
+      },
+      {
+        q: 'What is flattening, and should I do it?',
+        a: 'Flattening bakes the values into the page and removes the fields, so nobody can change your answers afterwards. It is the usual last step before sending a completed form back. The version before flattening stays in your history.',
+      },
+      {
+        q: 'The form will not let me type in a field.',
+        a: 'That field is marked read-only by whoever created the form. We honour that rather than letting you fill in something the recipient\'s software will ignore.',
+      },
+      {
+        q: 'My PDF has no fields to fill in.',
+        a: 'Then it is a flat document that looks like a form. Use the form builder to draw the fields onto it — text boxes, checkboxes, radio groups and lists — and it becomes fillable.',
+      },
+      {
+        q: 'Can I reuse the answers on another copy of the same form?',
+        a: 'Yes. Export the data as JSON or CSV, then import it into the other copy. Fields are matched by name.',
+      },
+    ],
+    minFiles: 1,
+    multiple: false,
+    cta: 'Fill out form',
   },
 ];
 
