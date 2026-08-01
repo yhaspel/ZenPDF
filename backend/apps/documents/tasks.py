@@ -24,8 +24,11 @@ from apps.core.principals import (
 from apps.jobs.models import Job
 from apps.pdf_engine import registry
 from apps.pdf_engine.engine import annotations as A
+from apps.pdf_engine.engine import compare as CMP
 from apps.pdf_engine.engine import content as C
+from apps.pdf_engine.engine import convert as CV
 from apps.pdf_engine.engine import forms as F
+from apps.pdf_engine.engine import ocr as O
 from apps.pdf_engine.engine import pages as P
 from apps.pdf_engine.engine import render as R
 from apps.pdf_engine.exceptions import EngineError
@@ -129,6 +132,24 @@ def _save_new_version(*, document, data, label, created_by, job):
     L.bump_storage(document.principal, size)
     generate_thumbnails_task.delay(str(document.id), seq, min(pages, THUMB_PAGES), THUMB_WIDTH)
     return version
+
+
+def _save_export(job: Job, payload: dict) -> dict:
+    """Store an export artefact at `exports/{job_id}/{filename}` (§13, §15).
+
+    Metered against the principal's storage like every other write: a 300-DPI
+    image export of a long document is bigger than the document, and an
+    unmetered namespace is a quota hole with a download button on it.
+    """
+    key = f"exports/{job.id}/{payload['filename']}"
+    get_storage().put_bytes(key, payload["data"], content_type=payload["content_type"])
+    L.bump_storage(principal_of(job), len(payload["data"]))
+    return {
+        "filename": payload["filename"],
+        "content_type": payload["content_type"],
+        "size_bytes": len(payload["data"]),
+        "storage_key": key,
+    }
 
 
 def _author_of(job: Job) -> str:
@@ -336,6 +357,38 @@ def _apply_single(op, primary_bytes, params, source_bytes, *, job=None):
         data, report = F.fill_form(primary_bytes, values=values,
                                    flatten_after=params.get("flatten_after", False))
         return "version", data, f"Form data imported ({report['filled']} field(s))", report
+
+    # --- Phase 6: OCR, conversion, compare, repair --------------------- #
+    if t == "ocr":
+        data, report = O.ocr(
+            primary_bytes,
+            languages=params.get("languages"),
+            deskew=params.get("deskew", False),
+            rotate_pages=params.get("rotate_pages", False),
+            clean=params.get("clean", False),
+            force=params.get("force", False),
+        )
+        langs = "+".join(report["languages"])
+        return "version", data, f"OCR ({langs})", report
+    if t == "repair":
+        from apps.pdf_engine.engine.validate import repair_pdf
+
+        data = repair_pdf(primary_bytes)
+        return "version", data, "Repaired", None
+    if t == "compare":
+        report = CMP.compare(primary_bytes, source_bytes[0],
+                             offset=params.get("offset", 0),
+                             visual=params.get("visual", True))
+        return "report", report, "Compared", report
+    if t == "convert_to":
+        blob, filename, content_type, report = CV.convert_to(
+            primary_bytes,
+            target=params["format"],
+            dpi=params.get("dpi", 150),
+            image_format=params.get("image_format", "png"),
+        )
+        return "export", {"data": blob, "filename": filename,
+                          "content_type": content_type}, f"Exported {params['format']}", report
     raise EngineError(f"Unsupported single-document op '{t}'")
 
 
@@ -400,6 +453,15 @@ def run_operation(self, job_id: str):
                 job.mark_succeeded({"report": payload})
                 return
 
+            if kind == "export":
+                # A downloadable artefact, not a new version of the document:
+                # a Word file or a zip of page images is not a PDF this document
+                # could ever advance to (§15, phase-06). It lands under
+                # `exports/{job_id}/` and is swept by the 24 h TTL.
+                job.mark_succeeded({"export": _save_export(job, payload), **
+                                    ({"report": report} if report else {})})
+                return
+
             if kind == "version":
                 version = _save_new_version(document=document, data=payload, label=label,
                                             created_by=created_by_user(job), job=job)
@@ -461,6 +523,28 @@ def run_cross_document_operation(self, job_id: str):
                                    reverse_b=job.params.get("reverse_b", False))
             title = f"Mixed — {a.title} + {b.title}"
             folder = a.folder
+        elif job.type == "convert_from":
+            # Anything → PDF → a *new* document. No primary document in the
+            # URL, which is what makes this a cross-document op: the input is
+            # an uploaded file or a web address, not something in the library.
+            from apps.core.assets import load_source
+
+            url = (job.params.get("url") or "").strip()
+            if url:
+                data, title = CV.convert_from(url=url)
+            else:
+                ref = job.params.get("upload_ref")
+                if not ref:
+                    job.mark_failed("validation_error",
+                                    "Provide a file to convert or a web address.")
+                    return
+                blob, filename = load_source(principal_of(job), str(ref))
+                data, title = CV.convert_from(
+                    data=blob,
+                    filename=job.params.get("filename") or filename,
+                    fit=job.params.get("fit", "a4"),
+                )
+            folder = None
         else:
             job.mark_failed("validation_error", f"Unsupported cross-doc op '{job.type}'.")
             return

@@ -10,10 +10,15 @@ class EngineError(Exception):
 
     code = "engine_error"
 
-    def __init__(self, message: str = "", *, details: dict | None = None):
+    def __init__(self, message: str = "", *, details: dict | None = None,
+                 code: str | None = None):
         super().__init__(message or self.__doc__ or self.code)
         self.message = message or (self.__doc__ or self.code)
         self.details = details or {}
+        # Per-instance override, for taxonomies that are a list of outcomes
+        # rather than a class hierarchy — phase-06's OCR failures name six.
+        if code:
+            self.code = code
 
 
 class InvalidParams(EngineError):

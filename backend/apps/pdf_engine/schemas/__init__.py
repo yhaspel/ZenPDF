@@ -637,3 +637,67 @@ IMPORT_FORM_DATA = {
     },
     "additionalProperties": False,
 }
+
+
+# --------------------------------------------------------------------------- #
+# Phase 6 — OCR, conversion, compare, repair
+# --------------------------------------------------------------------------- #
+OCR = {
+    "type": "object",
+    "properties": {
+        "languages": {
+            "type": "array",
+            "items": {"type": "string", "minLength": 2, "maxLength": 8},
+            "minItems": 1,
+            "maxItems": 5,
+        },
+        "deskew": {"type": "boolean"},
+        "rotate_pages": {"type": "boolean"},
+        "clean": {"type": "boolean"},
+        # Re-OCR pages that already have text. Off by default so a born-digital
+        # PDF never has its real text layer replaced by a guess at a picture.
+        "force": {"type": "boolean"},
+    },
+    "additionalProperties": False,
+}
+
+CONVERT_TO = {
+    "type": "object",
+    "required": ["format"],
+    "properties": {
+        "format": {"enum": ["docx", "images", "txt", "md", "html", "pdfa"]},
+        "dpi": {"type": "integer", "minimum": 72, "maximum": 300},
+        "image_format": {"enum": ["png", "jpg"]},
+    },
+    "additionalProperties": False,
+}
+
+CONVERT_FROM = {
+    "type": "object",
+    "properties": {
+        # Exactly one source: an uploaded file (by ref) or a web address.
+        "upload_ref": {"type": "string", "minLength": 1, "maxLength": 200},
+        "filename": {"type": "string", "minLength": 1, "maxLength": 255},
+        "url": {"type": "string", "minLength": 1, "maxLength": 2000},
+        "fit": {"enum": ["a4", "original"]},
+    },
+    "additionalProperties": False,
+}
+
+COMPARE = {
+    "type": "object",
+    "required": ["other_document_id"],
+    "properties": {
+        "other_document_id": {"type": "string", "minLength": 1, "maxLength": 64},
+        # Index-based alignment with a manual offset (phase-06 v1).
+        "offset": {"type": "integer", "minimum": -500, "maximum": 500},
+        "visual": {"type": "boolean"},
+    },
+    "additionalProperties": False,
+}
+
+REPAIR = {
+    "type": "object",
+    "properties": {},
+    "additionalProperties": False,
+}

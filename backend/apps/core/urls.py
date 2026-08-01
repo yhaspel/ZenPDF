@@ -6,6 +6,7 @@ from .views import (
     GuestSessionView,
     HealthView,
     ImageUploadView,
+    SourceUploadView,
 )
 
 urlpatterns = [
@@ -17,4 +18,6 @@ urlpatterns = [
     # Ephemeral image assets: custom stamps (P3), images/watermarks (P4),
     # signatures (P8) — §13 `uploads/{g|u}/{principal}/{ref}.png`.
     path("uploads/image/", ImageUploadView.as_view(), name="image-upload"),
+    # Conversion sources: office/image/html files awaiting convert_from (P6).
+    path("uploads/source/", SourceUploadView.as_view(), name="source-upload"),
 ]

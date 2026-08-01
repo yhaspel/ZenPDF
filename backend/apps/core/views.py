@@ -10,10 +10,11 @@ from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 
+from apps.pdf_engine.exceptions import EngineError
 from apps.pdf_engine.storage import storage_healthy
 
 from . import limits as L
-from .assets import AssetQuotaExceeded, ImageRejected, store_image
+from .assets import AssetQuotaExceeded, ImageRejected, store_image, store_source
 from .authentication import require_principal
 from .claim import claim_session
 from .exceptions import (
@@ -187,6 +188,52 @@ class ImageUploadView(APIView):
         `GuestThrottle`/`GuestIPThrottle` on a guest-reachable write endpoint —
         the per-token and per-IP limits §16 says must always apply.
         """
+        return [*super().get_throttles(), ScopedRateThrottle()]
+
+
+class SourceUploadView(APIView):
+    """`POST /api/uploads/source/` — a file waiting to be converted (phase-06).
+
+    The other half of "import UX is unified with upload": the dashboard dropzone
+    accepts a .docx or a .tiff, parks it here, and runs `convert_from` against
+    the ref. Guest-accessible for the same reason the image upload is —
+    Word-to-PDF is the archetypal no-account tool.
+    """
+
+    throttle_scope = "image_upload"
+
+    @extend_schema(request=OpenApiTypes.OBJECT, responses=OpenApiTypes.OBJECT, tags=["core"])
+    def post(self, request):
+        upload = request.FILES.get("file")
+        if upload is None:
+            raise ValidationFailed("No file was uploaded (field 'file').")
+        principal = require_principal(request, mint=True)
+        if principal is None:
+            raise AccountRequired("Guest access is disabled; sign in to upload.")
+        tier = L.for_principal(principal)
+        if upload.size > tier.max_upload_bytes:
+            exc = FileTooLarge(
+                f"Files must be {tier.max_upload_bytes // (1024 * 1024)} MB or smaller."
+                + (" Create a free account to upload larger files."
+                   if is_guest(principal) else "")
+            )
+            exc.zen_details = {"max_upload_bytes": tier.max_upload_bytes, "tier": tier.tier}
+            raise exc
+        try:
+            asset = store_source(principal, upload.read(), upload.name or "file")
+        except AssetQuotaExceeded as exc:
+            quota = QuotaExceeded(
+                str(exc) + (" Create a free account for more storage."
+                            if is_guest(principal) else "")
+            )
+            quota.zen_details = {"quota_bytes": exc.quota, "used_bytes": exc.used,
+                                 "tier": tier.tier}
+            raise quota from exc
+        except (ImageRejected, EngineError) as exc:
+            raise ValidationFailed(str(exc)) from exc
+        return Response(asset, status=status.HTTP_201_CREATED)
+
+    def get_throttles(self):
         return [*super().get_throttles(), ScopedRateThrottle()]
 
 

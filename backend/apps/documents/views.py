@@ -652,9 +652,26 @@ class CrossDocumentOperationView(APIView):
         except EngineError as exc:
             raise ValidationFailed(exc.message) from exc
 
-        # Ownership + encryption check on every source document. No minting:
-        # every input is a document the caller already owns.
-        principal = _principal(request)
+        if op_type == "convert_from":
+            # Layer 1 of the SSRF guard, at the edge (§17, phase-06): checked
+            # here so the user gets an immediate 400 rather than a job that
+            # fails a minute later, and again in the worker because params are
+            # stored and could be replayed.
+            url = (params.get("url") or "").strip()
+            if url:
+                from apps.core.urlguard import check_url
+
+                try:
+                    check_url(url)
+                except EngineError as exc:
+                    raise ValidationFailed(exc.message) from exc
+            elif not params.get("upload_ref"):
+                raise ValidationFailed("Provide a file to convert or a web address.")
+
+        # Ownership + encryption check on every source document. Minting only
+        # where there are none to own: `convert_from` starts from an uploaded
+        # file or a URL, so a guest converting one may have no session yet.
+        principal = _principal(request, write=not op.source_id_params)
         if principal is None:
             raise NotFound("Not found.")
         ids = []
