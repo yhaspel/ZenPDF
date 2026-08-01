@@ -11,8 +11,9 @@ import hashlib
 
 from celery import shared_task
 from django.conf import settings
-from django.db.models import F
 
+from apps.core import limits as L
+from apps.core.principals import is_guest, owned_by, owner_kwargs, principal_of
 from apps.jobs.models import Job
 from apps.pdf_engine import registry
 from apps.pdf_engine.engine import pages as P
@@ -69,21 +70,28 @@ def _measure(data: bytes) -> tuple[str, int, int]:
     return sha, pages, len(data)
 
 
-def _bump_storage(user_id, delta: int) -> None:
-    from django.contrib.auth import get_user_model
-
-    get_user_model().objects.filter(id=user_id).update(
-        storage_bytes_used=F("storage_bytes_used") + delta
-    )
-
-
 def _version_bytes(version: DocumentVersion) -> bytes:
     return get_storage().get_bytes(version.storage_key)
 
 
-def _create_document_from_bytes(*, owner, folder, title, data, created_by, job, label="Original"):
+def _source_document(job: Job, doc_id) -> Document:
+    """Re-check ownership of a *source* document inside the worker (§21.2).
+
+    Scoped through `owned_by(..., principal_of(job))`. The pre-2B spelling —
+    `Document.objects.get(id=…, owner=job.user)` — becomes `owner_id IS NULL`
+    for a guest job, matching any guest's document with that id.
+    """
+    return owned_by(Document.objects.all(), principal_of(job)).get(id=doc_id)
+
+
+def _create_document_from_bytes(*, principal, folder, title, data, created_by, job,
+                                label="Original"):
+    from .services import guest_expiry
+
     doc = Document.objects.create(
-        owner=owner, folder=folder, title=title[:255], status=Document.Status.PROCESSING
+        **owner_kwargs(principal),
+        expires_at=guest_expiry() if is_guest(principal) else None,
+        folder=folder, title=title[:255], status=Document.Status.PROCESSING,
     )
     sha, pages, size = _measure(data)
     key = f"docs/{doc.id}/v1.pdf"
@@ -92,7 +100,7 @@ def _create_document_from_bytes(*, owner, folder, title, data, created_by, job, 
         storage_key=key, size_bytes=size, page_count=pages, sha256=sha,
         label=label, created_by=created_by, job=job, seq=1,
     )
-    _bump_storage(owner.id, size)
+    L.bump_storage(principal, size)
     generate_thumbnails_task.delay(str(doc.id), 1, min(pages, THUMB_PAGES), THUMB_WIDTH)
     return doc
 
@@ -106,7 +114,7 @@ def _save_new_version(*, document, data, label, created_by, job):
         storage_key=key, size_bytes=size, page_count=pages, sha256=sha,
         label=label, created_by=created_by, job=job, seq=seq,
     )
-    _bump_storage(document.owner_id, size)
+    L.bump_storage(document.principal, size)
     generate_thumbnails_task.delay(str(document.id), seq, min(pages, THUMB_PAGES), THUMB_WIDTH)
     return version
 
@@ -197,7 +205,7 @@ def run_operation(self, job_id: str):
             for key in op.source_id_params:
                 src_id = job.params.get(key)
                 if src_id:
-                    src_doc = Document.objects.get(id=src_id, owner=job.user)
+                    src_doc = _source_document(job, src_id)
                     source_bytes.append(_version_bytes(src_doc.current_version))
 
             kind, payload, label, report = _apply_single(op, primary_bytes, job.params, source_bytes)
@@ -220,8 +228,9 @@ def run_operation(self, job_id: str):
                 created = []
                 for item in payload:
                     new_doc = _create_document_from_bytes(
-                        owner=job.user, folder=document.folder, title=item["title"],
-                        data=item["data"], created_by=job.user, job=job,
+                        principal=principal_of(job), folder=document.folder,
+                        title=item["title"], data=item["data"],
+                        created_by=job.user, job=job,
                     )
                     created.append(str(new_doc.id))
                 job.mark_succeeded({"documents": created})
@@ -246,7 +255,7 @@ def run_cross_document_operation(self, job_id: str):
     try:
         if job.type == "merge":
             ids = job.params["document_ids"]
-            docs = [Document.objects.get(id=i, owner=job.user) for i in ids]
+            docs = [_source_document(job, i) for i in ids]
             datas = [_version_bytes(d.current_version) for d in docs]
             titles = [d.title for d in docs]
             data = P.merge(datas, titles=titles)
@@ -254,8 +263,8 @@ def run_cross_document_operation(self, job_id: str):
             title = f"Merged — {docs[0].title}{extra}"
             folder = docs[0].folder
         elif job.type == "alternate_mix":
-            a = Document.objects.get(id=job.params["document_a"], owner=job.user)
-            b = Document.objects.get(id=job.params["document_b"], owner=job.user)
+            a = _source_document(job, job.params["document_a"])
+            b = _source_document(job, job.params["document_b"])
             data = P.alternate_mix(_version_bytes(a.current_version),
                                    _version_bytes(b.current_version),
                                    reverse_b=job.params.get("reverse_b", False))
@@ -269,7 +278,7 @@ def run_cross_document_operation(self, job_id: str):
             return
 
         new_doc = _create_document_from_bytes(
-            owner=job.user, folder=folder, title=title, data=data,
+            principal=principal_of(job), folder=folder, title=title, data=data,
             created_by=job.user, job=job,
         )
         job.mark_succeeded({"documents": [str(new_doc.id)]})

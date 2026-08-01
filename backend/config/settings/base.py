@@ -44,6 +44,8 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     "corsheaders.middleware.CorsMiddleware",
+    # Echoes a lazily-minted X-Guest-Token on the response that created it (§21.2).
+    "apps.core.middleware.GuestTokenMiddleware",
     "django.middleware.security.SecurityMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
@@ -106,11 +108,15 @@ STATIC_ROOT = BASE_DIR / "staticfiles"
 
 # --- DRF --------------------------------------------------------------------
 REST_FRAMEWORK = {
+    # One authenticator resolves a request to exactly one principal: a User via
+    # JWT, or a GuestSession via X-Guest-Token (§21.2).
     "DEFAULT_AUTHENTICATION_CLASSES": (
-        "rest_framework_simplejwt.authentication.JWTAuthentication",
+        "apps.core.authentication.PrincipalAuthentication",
     ),
+    # Either principal satisfies the default; account-only endpoints declare
+    # IsAccount explicitly and answer 403 `account_required` (§6, §21.3).
     "DEFAULT_PERMISSION_CLASSES": (
-        "rest_framework.permissions.IsAuthenticated",
+        "apps.core.permissions.IsPrincipal",
     ),
     "DEFAULT_PAGINATION_CLASS": "apps.core.pagination.DefaultPagination",
     "PAGE_SIZE": 50,
@@ -123,10 +129,13 @@ REST_FRAMEWORK = {
     "DEFAULT_THROTTLE_CLASSES": (
         "apps.core.throttling.BurstAnonThrottle",
         "apps.core.throttling.SustainedUserThrottle",
+        "apps.core.throttling.GuestThrottle",
+        "apps.core.throttling.GuestIPThrottle",
     ),
     "DEFAULT_THROTTLE_RATES": {
         "anon": config("THROTTLE_ANON", default="30/min"),
         "user": config("THROTTLE_USER", default="120/min"),
+        "guest": config("THROTTLE_GUEST", default="40/min"),
         "auth": config("THROTTLE_AUTH", default="10/min"),
         "public_sign": config("THROTTLE_PUBLIC_SIGN", default="20/min"),
     },
@@ -165,6 +174,14 @@ CORS_ALLOWED_ORIGINS = config(
     default="http://localhost:4200,http://127.0.0.1:4200",
     cast=Csv(),
 )
+# The SPA sends the guest credential and must be able to *read* a freshly minted
+# one off the response — a cross-origin browser hides unlisted response headers.
+CORS_ALLOW_HEADERS = (
+    "accept", "accept-encoding", "authorization", "content-type", "dnt",
+    "origin", "user-agent", "x-csrftoken", "x-requested-with",
+    "x-guest-token", "x-captcha-token",
+)
+CORS_EXPOSE_HEADERS = ["X-Guest-Token"]
 
 # --- Celery (§12) -----------------------------------------------------------
 REDIS_URL = config("REDIS_URL", default="redis://redis:6379/0")
@@ -179,6 +196,7 @@ CELERY_TASK_DEFAULT_QUEUE = "default"
 # type -> queue routing is driven by the operation registry; explicit routes for
 # the demo/internal tasks:
 CELERY_TASK_ROUTES = {
+    "apps.core.tasks.guest_purge": {"queue": "default"},
     "apps.jobs.tasks.noop_sleep": {"queue": "default"},
     "apps.documents.tasks.run_operation": {"queue": "default"},
     "apps.documents.tasks.run_cross_document_operation": {"queue": "heavy"},
@@ -198,8 +216,27 @@ CELERY_BEAT_SCHEDULE = {
         "task": "apps.jobs.tasks.reap_stalled_jobs",
         "schedule": 300.0,
     },
+    # Expired guest sessions are hard-deleted hourly, rows and blobs (§15, §21.4).
+    "guest-purge": {
+        "task": "apps.core.tasks.guest_purge",
+        "schedule": 3600.0,
+    },
 }
 JOB_STALL_TIMEOUT = config("JOB_STALL_TIMEOUT", default=1800, cast=int)
+
+# --- Cache (§16) ------------------------------------------------------------
+# Throttle buckets and the short-window metered-op counters live here. It must
+# be Redis, not the per-process LocMem default: with several API workers a
+# per-process bucket means each worker enforces its own private rate limit.
+# A separate Redis db keeps them off the broker's keyspace.
+CACHE_URL = config("CACHE_URL", default=REDIS_URL.rsplit("/", 1)[0] + "/1")
+CACHES = {
+    "default": {
+        "BACKEND": "django.core.cache.backends.redis.RedisCache",
+        "LOCATION": CACHE_URL,
+        "KEY_PREFIX": "zen",
+    }
+}
 
 # --- Redis locks (§11) ------------------------------------------------------
 DOC_LOCK_TIMEOUT = 120
@@ -236,6 +273,72 @@ VERSION_RETENTION = config("VERSION_RETENTION", default=50, cast=int)
 SIGN_REQUESTS_PER_MONTH = config("SIGN_REQUESTS_PER_MONTH", default=30, cast=int)
 OCR_PAGES_PER_MONTH = config("OCR_PAGES_PER_MONTH", default=2000, cast=int)
 MAX_CONCURRENT_JOBS = config("MAX_CONCURRENT_JOBS", default=3, cast=int)
+
+# --- Anonymous access (§19, §21) --------------------------------------------
+GUEST_ACCESS_ENABLED = config("GUEST_ACCESS_ENABLED", default=True, cast=bool)
+GUEST_TTL_HOURS = config("GUEST_TTL_HOURS", default=24, cast=int)
+GUEST_TTL_MAX_HOURS = config("GUEST_TTL_MAX_HOURS", default=72, cast=int)
+GUEST_STORAGE_QUOTA_MB = config("GUEST_STORAGE_QUOTA_MB", default=200, cast=int)
+GUEST_MAX_UPLOAD_MB = config("GUEST_MAX_UPLOAD_MB", default=25, cast=int)
+GUEST_MAX_PAGES = config("GUEST_MAX_PAGES", default=300, cast=int)
+CAPTCHA_ENABLED = config("CAPTCHA_ENABLED", default=False, cast=bool)
+TURNSTILE_SITE_KEY = config("TURNSTILE_SITE_KEY", default="")
+TURNSTILE_SECRET_KEY = config("TURNSTILE_SECRET_KEY", default="")
+TURNSTILE_VERIFY_URL = config(
+    "TURNSTILE_VERIFY_URL",
+    default="https://challenges.cloudflare.com/turnstile/v0/siteverify",
+)
+# Salted so a stored hash is not a reversible IP. Rotating this voids the IP leg
+# of the guest throttle key for live sessions, so rotate no *faster* than
+# GUEST_TTL_MAX_HOURS — by then every stored hash has aged out (§17).
+GUEST_IP_HASH_SALT = config("GUEST_IP_HASH_SALT", default="dev-rotate-me")
+
+# --- Tiers (§16) ------------------------------------------------------------
+# Limits are tier-resolved, never hardcoded at a call site: every check goes
+# through apps.core.limits.for_principal(). The `free` row is driven by the
+# existing env knobs (§19 calls them "the free overrides"); `pro` is a config
+# row only — no billing, no purchase path, no upgrade UI in v1 (§21.7).
+TIERS = {
+    "guest": {
+        "storage_mb": GUEST_STORAGE_QUOTA_MB,
+        "max_upload_mb": GUEST_MAX_UPLOAD_MB,
+        "max_pages": GUEST_MAX_PAGES,
+        "max_concurrent_jobs": config("GUEST_MAX_CONCURRENT_JOBS", default=1, cast=int),
+        "metered_ops_per_hour": config("GUEST_METERED_OPS_PER_HOUR", default=5, cast=int),
+        "ocr_pages_per_day": config("GUEST_OCR_PAGES_PER_DAY", default=50, cast=int),
+        "ocr_pages_per_month": 0,
+        "sign_requests_per_month": 0,   # 0 ⇒ account_required, not quota_exceeded
+        "version_retention": config("GUEST_VERSION_RETENTION", default=10, cast=int),
+        "library": False,
+        "ads": True,
+    },
+    "free": {
+        "storage_mb": USER_STORAGE_QUOTA_MB,
+        "max_upload_mb": MAX_UPLOAD_MB,
+        "max_pages": MAX_PAGES,
+        "max_concurrent_jobs": MAX_CONCURRENT_JOBS,
+        "metered_ops_per_hour": config("FREE_METERED_OPS_PER_HOUR", default=40, cast=int),
+        "ocr_pages_per_day": 0,          # 0 ⇒ no daily window; the monthly cap applies
+        "ocr_pages_per_month": OCR_PAGES_PER_MONTH,
+        "sign_requests_per_month": SIGN_REQUESTS_PER_MONTH,
+        "version_retention": VERSION_RETENTION,
+        "library": True,
+        "ads": True,
+    },
+    "pro": {
+        "storage_mb": config("PRO_STORAGE_QUOTA_MB", default=20480, cast=int),
+        "max_upload_mb": config("PRO_MAX_UPLOAD_MB", default=500, cast=int),
+        "max_pages": config("PRO_MAX_PAGES", default=5000, cast=int),
+        "max_concurrent_jobs": config("PRO_MAX_CONCURRENT_JOBS", default=6, cast=int),
+        "metered_ops_per_hour": config("PRO_METERED_OPS_PER_HOUR", default=200, cast=int),
+        "ocr_pages_per_day": 0,
+        "ocr_pages_per_month": config("PRO_OCR_PAGES_PER_MONTH", default=20000, cast=int),
+        "sign_requests_per_month": config("PRO_SIGN_REQUESTS_PER_MONTH", default=300, cast=int),
+        "version_retention": config("PRO_VERSION_RETENTION", default=200, cast=int),
+        "library": True,
+        "ads": False,
+    },
+}
 
 # Allow large multipart uploads to stream to storage (§13). The hard cap is
 # enforced in the ingest view against MAX_UPLOAD_MB.

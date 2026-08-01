@@ -17,6 +17,15 @@ DATABASES = {"default": {"ENGINE": "django.db.backends.sqlite3", "NAME": ":memor
 CELERY_TASK_ALWAYS_EAGER = True
 CELERY_TASK_EAGER_PROPAGATES = True
 
+# Hermetic cache — throttle buckets and metered-op windows must not need Redis
+# to run the suite (§18). Single-process tests, so LocMem is equivalent.
+CACHES = {
+    "default": {
+        "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+        "LOCATION": "zenpdf-test",
+    }
+}
+
 # Filesystem-backed object storage so tests don't require the storage container.
 STORAGE_BACKEND = "filesystem"
 STORAGE_FS_ROOT = tempfile.mkdtemp(prefix="zenpdf-test-storage-")

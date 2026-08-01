@@ -1,43 +1,47 @@
 from django.conf import settings
 from drf_spectacular.utils import extend_schema
 from rest_framework import generics, status
-from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from apps.core.authentication import require_principal
+from apps.core.principals import job_owner_kwargs, owned_by
+
 from .models import Job
 from .serializers import JobSerializer
+
+
+def _principal(request, *, write: bool = False):
+    return require_principal(request, mint=write)
 
 
 class JobListView(generics.ListAPIView):
     """List the caller's jobs; filter by `status` and `document` (§9)."""
 
     serializer_class = JobSerializer
-    permission_classes = [IsAuthenticated]
     filterset_fields = ["status", "document", "type"]
     ordering_fields = ["created_at", "finished_at"]
 
     def get_queryset(self):
-        return Job.objects.filter(user=self.request.user)
+        return owned_by(Job.objects.all(), _principal(self.request))
 
 
 class JobDetailView(generics.RetrieveAPIView):
     serializer_class = JobSerializer
-    permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        # User-scoped → others' jobs 404 (cross-user isolation).
-        return Job.objects.filter(user=self.request.user)
+        # Principal-scoped → another principal's jobs 404 (§21.2).
+        return owned_by(Job.objects.all(), _principal(self.request))
 
 
 class JobCancelView(APIView):
     """Cancel a job — revokes the task if still queued (§11)."""
 
-    permission_classes = [IsAuthenticated]
-
     @extend_schema(request=None, responses=JobSerializer, tags=["jobs"])
     def post(self, request, pk):
-        job = generics.get_object_or_404(Job.objects.filter(user=request.user), pk=pk)
+        job = generics.get_object_or_404(
+            owned_by(Job.objects.all(), _principal(request)), pk=pk
+        )
         if job.status == Job.Status.QUEUED:
             if job.celery_task_id:
                 try:
@@ -56,8 +60,6 @@ class JobCancelView(APIView):
 class DemoJobView(APIView):
     """Enqueue a noop job — phase-0 pipeline smoke test / dashboard dev button."""
 
-    permission_classes = [IsAuthenticated]
-
     @extend_schema(request=None, responses=JobSerializer, tags=["jobs"])
     def post(self, request):
         # Dev/e2e/test only — never a public prod endpoint.
@@ -67,7 +69,10 @@ class DemoJobView(APIView):
                 {"error": {"code": "not_found", "message": "Not available.", "details": {}}},
                 status=status.HTTP_404_NOT_FOUND,
             )
-        job = Job.objects.create(user=request.user, type="noop_sleep", params={"seconds": 1.0})
+        principal = _principal(request, write=True)
+        job = Job.objects.create(
+            **job_owner_kwargs(principal), type="noop_sleep", params={"seconds": 1.0}
+        )
         from .tasks import noop_sleep
 
         async_result = noop_sleep.delay(str(job.id), 1.0)

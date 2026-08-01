@@ -50,3 +50,29 @@ class Command(BaseCommand):
                 self.stdout.write(self.style.SUCCESS(f"Uploaded {title}"))
             except Exception as exc:  # noqa: BLE001
                 self.stdout.write(self.style.WARNING(f"Failed to upload {filename}: {exc}"))
+
+        self._seed_expired_guest()
+
+    def _seed_expired_guest(self) -> None:
+        """An already-expired guest session with a document, so `guest_purge`
+        is exercisable locally (`celery call apps.core.tasks.guest_purge`)."""
+        from apps.core.models import GuestSession
+
+        if GuestSession.objects.exists():
+            self.stdout.write("Guest fixture already present; skipping.")
+            return
+        path = os.path.join(FIXTURES, "text.pdf")
+        if not os.path.exists(path):
+            return
+        session, _raw = GuestSession.mint(ip="127.0.0.1", user_agent="seed_dev")
+        with open(path, "rb") as fh:
+            data = fh.read()
+        try:
+            ingest_pdf(session, data, "Expired guest sample")
+        except Exception as exc:  # noqa: BLE001
+            self.stdout.write(self.style.WARNING(f"Guest fixture failed: {exc}"))
+            return
+        session.expire_now()
+        self.stdout.write(self.style.SUCCESS(
+            "Created an expired guest session + document (guest_purge fixture)"
+        ))
