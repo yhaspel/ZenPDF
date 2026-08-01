@@ -6,7 +6,8 @@ Run inside the api/worker image (needs fitz + pikepdf):
 
 Produces, under tests/fixtures/pdfs/:
     text.pdf, unicode.pdf, form.pdf, scanned.pdf, encrypted.pdf,
-    rotated-90.pdf, corrupt.pdf, large-generated.pdf, hebrew-rtl.pdf
+    rotated-90.pdf, corrupt.pdf, large-generated.pdf, hebrew-rtl.pdf,
+    xfa-form.pdf
 
 Committed to the repo so tests don't regenerate; re-run to refresh.
 """
@@ -145,6 +146,43 @@ def make_hebrew():
     doc.close()
 
 
+def make_xfa():
+    """An XFA form (phase-05 corpus addition).
+
+    XFA describes the form in an XML payload that readers other than Acrobat
+    largely ignore, with the AcroForm fields beside it as a partial fallback.
+    Built by hand rather than taken from a public sample so the fixture is
+    small, license-free and minimal — what matters for the test is the `/XFA`
+    key the detector looks for, plus a real AcroForm field so "degrades
+    gracefully" means something.
+    """
+    doc = fitz.open()
+    page = doc.new_page(width=595, height=842)
+    page.insert_text((72, 80), "XFA sample form", fontsize=18)
+    widget = fitz.Widget()
+    widget.field_name = "legacy_name"
+    widget.field_type = fitz.PDF_WIDGET_TYPE_TEXT
+    widget.rect = fitz.Rect(72, 120, 400, 145)
+    widget.field_value = ""
+    page.add_widget(widget)
+    raw = doc.tobytes()
+    doc.close()
+
+    pdf = pikepdf.open(io.BytesIO(raw))
+    xml = (
+        b'<?xml version="1.0" encoding="UTF-8"?>'
+        b'<xdp:xdp xmlns:xdp="http://ns.adobe.com/xdp/">'
+        b'<template xmlns="http://www.xfa.org/schema/xfa-template/3.0/">'
+        b'<subform name="form1"><field name="legacy_name"/></subform>'
+        b"</template></xdp:xdp>"
+    )
+    pdf.Root.AcroForm.XFA = pikepdf.Array([
+        pikepdf.String("xdp"), pdf.make_stream(xml),
+    ])
+    pdf.save(os.path.join(OUT, "xfa-form.pdf"))
+    pdf.close()
+
+
 def make_corrupt():
     """Valid PDF with its trailer/xref chopped off: pikepdf rejects, fitz repairs."""
     doc = _text_doc(1, "Corrupt fixture")
@@ -164,6 +202,7 @@ if __name__ == "__main__":
     make_large()
     make_encrypted()
     make_hebrew()
+    make_xfa()
     make_corrupt()
     print("Fixtures written to", OUT)
     for name in sorted(os.listdir(OUT)):

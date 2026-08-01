@@ -72,6 +72,11 @@ OPERATIONS: dict[str, Op] = {
                       source_id_params=("overlay_document_id",)),
     "set_metadata": Op("set_metadata", "default", S.SET_METADATA, "version"),
     "set_bookmarks": Op("set_bookmarks", "default", S.SET_BOOKMARKS, "version"),
+    # Phase 5 — forms (§10, §12: `default` queue)
+    "fill_form": Op("fill_form", "default", S.FILL_FORM, "version"),
+    "edit_form_fields_batch": Op("edit_form_fields_batch", "default",
+                                 S.EDIT_FORM_FIELDS_BATCH, "version"),
+    "import_form_data": Op("import_form_data", "default", S.IMPORT_FORM_DATA, "version"),
 }
 
 

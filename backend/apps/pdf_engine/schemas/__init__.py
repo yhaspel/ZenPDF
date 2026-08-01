@@ -543,3 +543,81 @@ SET_BOOKMARKS = {
     },
     "additionalProperties": False,
 }
+
+
+# --------------------------------------------------------------------------- #
+# Phase 5 — forms
+# --------------------------------------------------------------------------- #
+FILL_FORM = {
+    "type": "object",
+    "required": ["values"],
+    "properties": {
+        # Values are typed by the *field*, not by the wire: a checkbox accepts a
+        # bool or "yes"/"on", a choice field accepts one of its options.
+        "values": {
+            "type": "object",
+            "minProperties": 1,
+            "additionalProperties": {"type": ["string", "boolean", "number", "null"]},
+        },
+        "flatten_after": {"type": "boolean"},
+    },
+    "additionalProperties": False,
+}
+
+_FIELD_SPEC = {
+    "type": "object",
+    "required": ["name"],
+    "properties": {
+        "name": {"type": "string", "minLength": 1, "maxLength": 200},
+        "type": {"enum": ["text", "checkbox", "radio", "combobox", "listbox",
+                          "signature"]},
+        "page": {"type": "integer", "minimum": 0},
+        "rect": _NORM_RECT,
+        # A radio group is N placements of one field, so it carries N rects.
+        "rects": {"type": "array", "items": _NORM_RECT, "minItems": 2, "maxItems": 50},
+        "options": {"type": "array", "items": {"type": "string", "maxLength": 200},
+                    "maxItems": 200},
+        "default": {"type": ["string", "boolean", "null"]},
+        "required": {"type": "boolean"},
+        "readonly": {"type": "boolean"},
+        "multiline": {"type": "boolean"},
+        "max_len": {"type": "integer", "minimum": 0, "maximum": 10000},
+        "font_size": {"type": "number", "minimum": 4, "maximum": 96},
+    },
+    "additionalProperties": False,
+}
+
+EDIT_FORM_FIELDS_BATCH = {
+    "type": "object",
+    "required": ["ops"],
+    "properties": {
+        "ops": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 200,
+            "items": {
+                "type": "object",
+                "required": ["action", "field"],
+                "properties": {
+                    "action": {"enum": ["add", "update", "delete"]},
+                    "field": _FIELD_SPEC,
+                },
+                "additionalProperties": False,
+            },
+        },
+    },
+    "additionalProperties": False,
+}
+
+IMPORT_FORM_DATA = {
+    "type": "object",
+    "required": ["format", "data"],
+    "properties": {
+        "format": {"enum": ["json", "csv"]},
+        # The file contents, inline: form data is small and this keeps the
+        # import on the same job pipeline as every other mutation.
+        "data": {"type": "string", "maxLength": 2_000_000},
+        "flatten_after": {"type": "boolean"},
+    },
+    "additionalProperties": False,
+}

@@ -25,6 +25,9 @@ def _endpoints(doc_id):
         ("get", f"/api/documents/{doc_id}/text-blocks/?page=0"),
         ("get", f"/api/documents/{doc_id}/images/?page=0"),
         ("get", f"/api/documents/{doc_id}/links/?page=0"),
+        # Phase 5 read models
+        ("get", f"/api/documents/{doc_id}/form/"),
+        ("get", f"/api/documents/{doc_id}/form/export/"),
         ("patch", f"/api/documents/{doc_id}/"),
         ("delete", f"/api/documents/{doc_id}/"),
         ("post", f"/api/documents/{doc_id}/restore/"),

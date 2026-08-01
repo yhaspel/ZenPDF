@@ -24,6 +24,7 @@ from apps.jobs.models import Job
 from apps.pdf_engine import registry
 from apps.pdf_engine.engine import annotations as A
 from apps.pdf_engine.engine import content as C
+from apps.pdf_engine.engine import forms as F
 from apps.pdf_engine.engine import pages as P
 from apps.pdf_engine.engine import render as R
 from apps.pdf_engine.exceptions import EngineError
@@ -314,6 +315,24 @@ def _apply_single(op, primary_bytes, params, source_bytes, *, job=None):
     if t == "set_bookmarks":
         data = C.set_bookmarks(primary_bytes, toc=params["toc"])
         return "version", data, f"Bookmarks ({len(params['toc'])})", None
+
+    # --- Phase 5: forms ------------------------------------------------ #
+    if t == "fill_form":
+        data, report = F.fill_form(primary_bytes, values=params["values"],
+                                   flatten_after=params.get("flatten_after", False))
+        label = "Form filled" + (" and flattened" if report["flattened"] else "")
+        return "version", data, label, report
+    if t == "edit_form_fields_batch":
+        data, report = F.edit_fields_batch(primary_bytes, ops=params["ops"])
+        touched = report["added"] + report["updated"] + report["deleted"]
+        return "version", data, f"Form edited ({touched} field(s))", report
+    if t == "import_form_data":
+        values = F.parse_form_data(params["data"].encode(), fmt=params["format"])
+        if not values:
+            raise EngineError("That file contained no field values.")
+        data, report = F.fill_form(primary_bytes, values=values,
+                                   flatten_after=params.get("flatten_after", False))
+        return "version", data, f"Form data imported ({report['filled']} field(s))", report
     raise EngineError(f"Unsupported single-document op '{t}'")
 
 
