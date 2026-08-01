@@ -4,6 +4,8 @@
 
 Depends on: Phase 0. Conventions: 01-architecture §§8–16.
 
+> **⚠ Amended 2026-07-31 — this phase was built account-only and is retrofitted by [Phase 2B](phase-02b-anonymous-access.md).** Everything below still describes the correct behaviour for an *authenticated* principal, but `owner`-based ownership, the `IsAuthenticated` default, and the app-wide auth guard are all superseded by the principal model in 01-architecture §21. Read §21 before touching ingest, the document endpoints, or the frontend guards.
+
 ## Backend
 
 ### Models (activate from §9)
@@ -56,7 +58,7 @@ E2E: upload 2 PDFs → open one → jump via thumbnail → find text → rename 
 - [ ] In-viewer text search highlights hits; outline navigates; 500-page fixture scrolls smoothly (virtualized rendering by viewer).
 - [ ] Version history shows "Original"; revert appears after any later-phase op (verified again in P2).
 - [ ] Trash → gone from library, restorable for 30 days (beat purge configured), purge updates storage meter.
-- [ ] A second account cannot access the first account's documents by ID (proved by tests).
+- [ ] A second account cannot access the first account's documents by ID (proved by tests). *(Phase 2B extends this fixture to guest↛guest, guest↛user and user↛guest.)*
 - [ ] Encrypted fixture opens with password, operations blocked with clear messaging.
 
 ## Risks

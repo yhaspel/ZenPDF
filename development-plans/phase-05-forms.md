@@ -26,6 +26,8 @@ Golden: fill every field type on form fixture and re-extract equals set values; 
 E2E: open form fixture → fill 4 field types in-browser → save → reload shows values → export JSON → flatten → download.
 
 ## Acceptance criteria
+
+- [ ] **Guest parity + tool pages (§20 DoD item 9, §21.6):** every tool in this phase works end-to-end with no account, and ships its public SSR page — `/fill-pdf-form` — with unique title/meta/H1 and an entry in the generated `sitemap.xml`.
 - [ ] Form fixture fillable end-to-end in-browser; saved values visible in external viewers.
 - [ ] Build a form from a blank PDF: 6 field types placed, named, filled, exported, flattened.
 - [ ] Import round-trip: export JSON → clear → import → identical values.

@@ -2,6 +2,21 @@
 
 Every feature surfaced in research (00-research-findings.md) is mapped below. Status: **P#** = planned in that phase · **BL** = backlog (post-v1, consciously deferred) · **OUT** = out of scope (with reason). This table is the completeness proof for the plan.
 
+## Access tier (amended 2026-07-31 — anonymous-first, 01-architecture §21)
+
+Everything in the tables below is **usable with no account** except the short list here. The rule: file-in → file-out works for guests, always. Account-only features each carry a written reason in §21.3.
+
+| Account required | Reason |
+|---|---|
+| Persistent library, folders, starring, trash | Inherently stateful — no durable identity, no library |
+| Version history beyond session TTL (24 h sliding / 72 h cap) | Same; guests get full history *within* the session |
+| Saved signatures & initials | Reusable credential-like assets; guests sign with an ephemeral signature instead |
+| **Sending** signature requests (phase-08 §8B) | ESIGN/UETA sender attribution; and only an authenticated owner may *choose a recipient address* (§17e) |
+| Higher tier limits (storage, upload size, page count, heavy-op rate) | The upgrade itself |
+| Usage **history across sessions** | Needs durable counters. Guests still see *current-session* usage via `/api/users/me/usage/` (storage, ops used, time remaining) — they just have no cross-session history. |
+
+Notably **guest-accessible**: all page ops, annotations, content editing, forms, OCR, every conversion, encryption/permissions, redaction, sanitize, **self-sign**, `/verify`, and completing a signature request at `/s/:token`.
+
 ## Viewing & navigation
 
 | Feature | Status | Notes |
@@ -129,16 +144,22 @@ Every feature surfaced in research (00-research-findings.md) is mapped below. St
 
 | Feature | Status | Notes |
 |---|---|---|
-| Multi-user accounts (JWT), private workspace | P0/P1 | |
+| Anonymous guest sessions (no login), principal model, tiered limits | **P2B** | §21 — the access model |
+| Public SSR tool pages (`/merge-pdf`, `/split-pdf`, …) + sitemap | **P2B**, then one per phase | SEO *is* the acquisition channel for an ad model (§21.6) |
+| Claim-on-signup (guest work → account) | **P2B** | the conversion lever |
+| Guest TTL purge (24 h sliding / 72 h cap) | **P2B** | privacy posture + bounded storage cost |
+| Multi-user accounts (JWT), private workspace | P0/P1 | now an *upgrade*, not a gate |
 | Folders, starring, trash (30-day), search library | P1 | |
 | Async job engine + progress UI | P0/P1 | |
-| Quotas & anti-abuse throttles | P1 baseline, P9 tightened | |
-| Ad slots + consent management (CMP) + ads.txt + privacy/terms | P9 | revenue model |
+| Quotas & anti-abuse throttles | P1 baseline, **P2B tier-resolved + guest controls**, P9 tightened | §16/§17 |
+| Ad slots + consent management (CMP) + ads.txt + privacy/terms | P9 | revenue model; primary audience is **guests** |
+| `pro` tier defined in config (no billing, no checkout, not purchasable) | P2B | §21.7 — keeps limits tier-resolved if billing is ever added |
 | Public landing page (SEO) | P0 shell, P9 polished | |
-| Usage dashboard (`/api/users/me/usage`) | P9 | |
+| Usage dashboard (`/api/users/me/usage`) | **P1 (shipped)**, guest-aware in P2B, settings UI in P9 | endpoint already exists since P1 |
 | Batch processing across many files | BL | pipelines/automation (Stirling-style) |
 | Public REST API keys, teams/sharing, share links, real-time co-editing | BL | post-v1 |
 | Accessibility of ZenPDF UI (WCAG 2.1 AA) | P10 | distinct from PDF remediation tooling (OUT) |
 | Account deletion + data export (privacy) | P10 | GDPR-style flows |
-| AI assistant (chat/summarize), billing/subscriptions | OUT | removed by owner decision 2026-07-19 |
+| AI assistant (chat/summarize), billing/subscriptions | OUT | removed by owner decision 2026-07-19; reaffirmed 2026-07-31 (a `pro` tier is *defined* but not purchasable — §21.7) |
+| Ad-removal-only paid plan | BL | if billing is ever added, sell utility (limits, priority, batch, API) with ad-removal as a perk — ad-removal alone converts poorly against free ad blockers |
 | Desktop/offline apps, mobile apps | OUT | web-only v1 |

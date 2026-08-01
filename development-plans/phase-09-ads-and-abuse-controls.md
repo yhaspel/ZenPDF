@@ -1,8 +1,12 @@
 # Phase 9 — Ads & Abuse Controls (free-to-use revenue model)
 
-**Goal:** monetize with ads (owner decision 2026-07-19: free product, ad revenue, no billing/subscriptions), with privacy compliance (consent management) — and harden the free tier against abuse, since there is no paywall friction.
+**Goal:** monetize with ads (owner decision 2026-07-19: free product, ad revenue, no billing/subscriptions — reaffirmed 2026-07-31, with a `pro` tier *defined but not purchasable*, §21.7), with privacy compliance (consent management) — and finish hardening the free tier against abuse.
 
-Depends on: Phase 8 (product is feature-complete enough to launch); quota plumbing from §16 exists since P1.
+Depends on: Phase 8 (product is feature-complete enough to launch); tiered limits and the principal model from §§16/21 exist since **Phase 2B**.
+
+> **⚠ Rescoped 2026-07-31 by the anonymous-first decision (01-architecture §21).** Two things moved *out* of this phase because they became load-bearing the moment the login wall came down, and now ship in [Phase 2B](phase-02b-anonymous-access.md): **(1) the core abuse controls** — guest throttling keyed on token+IP, Turnstile on heavy ops, tier caps, TTL purge; **(2) the per-tool public pages** — they are now SSR tool pages that land *with their phase* (§21.6), not marketing pages written at the end. What remains here is ads + consent + legal + landing polish, plus the *account-side* abuse controls below.
+>
+> **Also note:** the primary ad audience is now **guests**, not logged-in users — the CMP must work for a visitor with no account, and the post-result surface on tool pages is the highest-value slot. The "email verification before first upload" gate below applies **only to registered accounts**; it must never be applied to a guest, which would reintroduce the wall this decision removed.
 
 ## 9A — Advertising
 
@@ -25,8 +29,8 @@ Domain + HTTPS live; substantive public content (landing + legal + about/tools p
 
 ## 9B — Abuse controls (tightening §16)
 
-- **Signup friction:** email verification required before first upload (`email_verified` gate, resend flow); optional Cloudflare Turnstile on register + public sign endpoints behind `CAPTCHA_ENABLED` flag (adapter pattern, off in dev).
-- **Throttle matrix finalized** (per §16 + tuning): auth 10/min/IP, upload 20/hour/user, operations 60/hour/user (heavy ops 20/hour), public-sign 20/min/IP + 200/day/token, verify 10/min/IP. Job concurrency 3/user (queued beyond). 429s carry `Retry-After`.
+- **Signup friction (accounts only — never guests):** email verification required before an *account* may send a sign request or claim above the free storage tier (`email_verified` gate, resend flow). ⚠ **Changed 2026-07-31:** this must NOT gate uploading, since guests upload freely and a verified-email-to-upload rule would be strictly worse for a registered user than staying anonymous. Turnstile on register + public sign endpoints behind `CAPTCHA_ENABLED` (guest heavy-op challenge already shipped in Phase 2B).
+- **Throttle matrix finalized.** ⚠ **§16 is authoritative for per-tier numbers — do not restate them here.** As of the 2026-07-31 amendment the tiers are guest / free / pro with metered ops at 5 / 40 / 200 per hour and job concurrency 1 / 3 / 6; the older "operations 60/hour, heavy 20/hour, concurrency 3" figures in this line are superseded and had no guest row at all. What remains this phase's job: auth 10/min/IP, upload 20/hour/**account**, public-sign 20/min/IP + 200/day/token, verify 10/min/IP, and tuning §16's defaults against real traffic. 429s carry `Retry-After`.
 - **Email abuse:** sign-request recipients cap (10/request), monthly envelope quota (§16: 30/mo), per-domain recipient sanity (no >50 distinct recipients/day/user), unsubscribe/complaint handling: `List-Unsubscribe` header on notification mail + suppression list model (`core.EmailSuppression`) honored by all senders; abuse-report contact in every mail footer.
 - **Content abuse:** report-abuse endpoint + page for signing links (`/s/:token` footer "Report this request") → flags SignRequest for admin review, auto-pauses after 3 distinct reports (status canceled-by-abuse, owner notified). Django admin list views for User/Document/SignRequest with ban/soft-delete actions (admin enabled but IP-gated per §17 in prod).
 - **Storage hygiene:** dormant-account policy documented only (no auto-delete in v1); oversized-account report (admin command).
@@ -41,7 +45,8 @@ E2E: fresh signup → verify email via Mailpit → upload allowed; decline conse
 - [ ] With ads on + consent granted: slots render in the three allowed surfaces only; ceremony/editor/verify provably ad-free.
 - [ ] Consent banner appears for EEA-simulated visitors; declining yields non-personalized ads; choice persisted.
 - [ ] Legal pages live, linked, and matching real system behavior (retention numbers cross-checked against beat config in a test).
-- [ ] Unverified accounts cannot upload or send sign requests; verified flow smooth (<1 min via Mailpit locally).
+- [ ] Unverified accounts cannot send sign requests (uploading stays open — guests can upload, so accounts must too); verified flow smooth (<1 min via Mailpit locally).
+- [ ] Ads render for a guest with consent granted, and the CMP consent flow completes with no account.
 - [ ] All throttle/quota limits return the standard error shape with human-readable messaging in the UI.
 
 ## Risks

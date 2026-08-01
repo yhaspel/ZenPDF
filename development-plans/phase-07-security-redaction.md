@@ -31,6 +31,8 @@ Golden: encrypt→probe requires password, permissions bits verified via pikepdf
 E2E: protect doc → reopen (password prompt) → unlock → redact all emails via preset (review shows 3, uncheck 1, apply 2) → download → text search proves removal → sanitize.
 
 ## Acceptance criteria
+
+- [ ] **Guest parity + tool pages (§20 DoD item 9, §21.6):** every tool in this phase works end-to-end with no account, and ships its public SSR page — `/protect-pdf` `/unlock-pdf` `/redact-pdf` — with unique title/meta/H1 and an entry in the generated `sitemap.xml`.
 - [ ] Password-protect + unlock round-trip through UI; permissions visibly enforced in external viewers (spot-check print-restricted output).
 - [ ] Pattern redaction on the PII fixture removes content irrecoverably (extraction + raw-bytes grep in test), clean-copy default prevents history leakage.
 - [ ] Redaction of a region overlapping an image blacks out image content, not just overlay.

@@ -2,13 +2,13 @@
 
 **Goal:** full markup toolset writing **real PDF annotations** (interoperable with Acrobat/Preview): text markup, notes, free text, shapes, ink, stamps; comments sidebar; flatten. Also: the overlay interaction layer reaches production quality here (reused by phases 4/5/7/8).
 
-Depends on: Phase 2 (overlay primitive started in crop).
+Depends on: Phase 2 (overlay primitive started in crop) **and Phase 2B (principal model — annotations must work for a guest)**.
 
 ## Design decisions
 
 1. **PDF-native storage.** Annotations live in the PDF file itself (PyMuPDF creates standard annots), not in a sidecar DB. Reading = extract to JSON; writing = `annotate_batch` op producing a new version. Rationale: downloads/interop "just work"; versioning/undo comes free; no dual-source-of-truth drift.
 2. **Session batching.** The client accumulates changes locally (overlay renders drafts instantly) and commits explicit **Save** (or autosave every 30 s / on navigation) as ONE `annotate_batch` job — avoids a version per keystroke. Unsaved-changes guard on exit.
-3. **Identity.** Each annot's `title` (author) = user display name; `NM` (name) = client-generated UUID so batch updates/deletes address stable IDs across extract/apply cycles.
+3. **Identity.** Each annot's `title` (author) = user display name, or **`"Guest"` for a guest principal** (no display name exists; do not leak the session id or IP into the PDF — it is embedded in a file the user will share); `NM` (name) = client-generated UUID so batch updates/deletes address stable IDs across extract/apply cycles.
 4. We do NOT use PDF.js's built-in annotation editor UI (its model doesn't round-trip through our pipeline); the overlay layer is ours. PDF.js *renders* existing annotations.
 
 ## Backend
@@ -36,7 +36,8 @@ Golden: each annot type round-trips (create → extract → fields match; open o
 ## Acceptance criteria
 - [ ] All listed tools usable; annotations visible after download in an external viewer (manual check with Preview/Acrobat reader on the exported file).
 - [ ] Save of a 30-annotation session = ONE job, <5 s on default queue.
-- [ ] Comments sidebar navigates and edits; authorship shows display name.
+- [ ] Comments sidebar navigates and edits; authorship shows display name (or "Guest").
+- [ ] Annotating works end-to-end as a guest, and `/annotate-pdf` ships as a public SSR tool page in the sitemap (§20 DoD item 9, §21.6).
 - [ ] Flatten produces a version where text markup is permanent and no annotation objects remain.
 - [ ] Autosave + unsaved-changes guard verified.
 

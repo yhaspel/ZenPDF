@@ -4,6 +4,8 @@
 
 Depends on: nothing. Everything below lands in this phase.
 
+> **⚠ Amended 2026-07-31 — the routing/guard parts of this phase are superseded by [Phase 2B](phase-02b-anonymous-access.md).** 01-architecture §7 and §21 remove the app-wide auth guard: `/app/doc/:id` must render for a guest. The `authGuard` on `/app/**` below is correct only as *originally built*; 2B narrows it to `accountGuard` on `/app/dashboard`, `/app/sign*`, `/app/settings`. Phase 0's ✅ status stands — this is a retrofit, not a reopening.
+
 ## 0.1 Scaffold-day verification checklist (do first, ~30 min)
 
 Versions were verified 2026-07-19; re-check the ⚠ items before pinning:
@@ -55,7 +57,7 @@ Backend: register→login→refresh→me flow; wrong-password/dupe-email; health
 ## Acceptance criteria
 
 - [ ] Fresh clone + `./infra/up.sh` on a clean machine → all containers healthy, migrations applied, seed user works, URL table printed. Total time under ~10 min on first build.
-- [ ] Register + login from the UI; refresh keeps session; logout works; `/app/**` redirects unauthenticated users.
+- [ ] Register + login from the UI; refresh keeps session; logout works; `/app/**` redirects unauthenticated users. **⚠ Superseded by Phase 2B** — after 2B the correct assertion is that only `/app/dashboard`, `/app/sign*` and `/app/settings` redirect, and `/app/doc/:id` renders for a guest. Do not re-tick this criterion as written.
 - [ ] `GET /api/docs/` renders the OpenAPI UI listing auth/users/jobs/config/health.
 - [ ] Demo job runs: API enqueues, worker executes, UI toast on completion (temporary dev button on dashboard).
 - [ ] Mailpit UI reachable; a test email (management command) lands in it.
