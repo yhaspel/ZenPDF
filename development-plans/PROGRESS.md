@@ -13,7 +13,7 @@ This file is the **single source of truth for execution status**. Every agent se
 | 3 — Annotations | [phase-03-annotations.md](phase-03-annotations.md) | ✅ Complete | 2026-08-01 | 2026-08-01 | Overlay primitive for 4/5/7/8; crop migrated onto it |
 | 4 — Content editing | [phase-04-content-editing.md](phase-04-content-editing.md) | ✅ Complete | 2026-08-01 | 2026-08-02 | 17 ops; scanned gate awaits P6 to enable its CTA |
 | 5 — Forms | [phase-05-forms.md](phase-05-forms.md) | ✅ Complete | 2026-08-02 | 2026-08-02 | Fill + form builder; four PyMuPDF limits worked around at the PDF level |
-| 6 — OCR, conversion & compare | [phase-06-ocr-conversion-compare.md](phase-06-ocr-conversion-compare.md) | ⬜ Not started | — | — | |
+| 6 — OCR, conversion & compare | [phase-06-ocr-conversion-compare.md](phase-06-ocr-conversion-compare.md) | 🔵 In progress | 2026-08-02 | — | |
 | 7 — Security & redaction | [phase-07-security-redaction.md](phase-07-security-redaction.md) | ⬜ Not started | — | — | |
 | 8 — E-signatures | [phase-08-esignatures.md](phase-08-esignatures.md) | ⬜ Not started | — | — | Human gate: legal text + prod cert |
 | 9 — Ads & abuse controls | [phase-09-ads-and-abuse-controls.md](phase-09-ads-and-abuse-controls.md) | ⬜ Not started | — | — | Human-owned: AdSense/CMP accounts, legal pages |
@@ -46,6 +46,16 @@ Status values: ⬜ Not started · 🔵 In progress · 🟡 Blocked · 🟠 Await
 ## Phase sections
 
 _(Created by the executing agent per protocol step 2. Keep newest phase at top.)_
+
+### Phase 6 — OCR, Conversion & Compare · 🔵 In progress (started 2026-08-02)
+
+**Acceptance criteria** (copied verbatim from phase-06-ocr-conversion-compare.md):
+- [ ] **Guest parity + tool pages (§20 DoD item 9, §21.6):** every tool in this phase works end-to-end with no account, and ships its public SSR page — `/ocr-pdf` `/pdf-to-word` `/word-to-pdf` `/jpg-to-pdf` `/pdf-to-jpg` `/html-to-pdf` `/compare-pdf` `/repair-pdf` — with unique title/meta/H1 and an entry in the generated `sitemap.xml`.
+- [ ] Scanned fixture: OCR completes <60 s/10 pages, text selectable, P4 editor now allowed on it.
+- [ ] All six export formats + four import routes produce valid outputs from the UI.
+- [ ] URL→PDF refuses `http://169.254.169.254/`, `http://localhost:8000/`, `file:///etc/passwd` with clear errors (tests prove).
+- [ ] Compare UI: synced scroll, clickable change list, obviously-correct results on the crafted pair.
+- [ ] Hebrew OCR: heb fixture produces RTL text correctly extractable (owner-relevant check).
 
 ### Phase 5 — Forms · ✅ Complete (2026-08-02)
 
