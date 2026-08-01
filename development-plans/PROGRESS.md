@@ -63,7 +63,7 @@ _(Created by the executing agent per protocol step 2. Keep newest phase at top.)
 |---|---|
 | 1. Acceptance criteria on a fresh stack | ✅ 6 of 6, evidence above (one criterion's *measurement* reinterpreted with a written reason) |
 | 2. Migrations idempotent from zero | ✅ fresh volumes → all migrations applied; Phase 4 adds **no** migration (edits produce versions, §14) |
-| 3. Tests green; coverage gates | ✅ backend **438 passed** (was 338), frontend **82 passed** (was 73), e2e **17 passed** (was 11). Coverage: `apps` **92%** (gate 85), `pdf_engine` **92%** (gate 90) |
+| 3. Tests green; coverage gates | ✅ backend **453 passed** (was 338), frontend **84 passed** (was 73), e2e **17 passed** (was 11). Coverage: `apps` **92%** (gate 85), `pdf_engine` **92%** (gate 90) |
 | 4. Playwright happy path | ✅ `e2e/phase-4.spec.ts` — 6 specs |
 | 5. OpenAPI updated & accurate | ✅ `manage.py spectacular` → **0 warnings, 0 errors**; the three read models documented |
 | 6. Lint clean | ✅ `ruff` clean; `manage.py check` clean. `mypy`/`eslint` remain the repo-wide debt Phase 10 owns |
@@ -283,6 +283,8 @@ Final numbers after the review fixes: backend **232 passed**, frontend **40**, e
 7. **The overlay's loading placeholder intercepted pointer events.**
 
 **Final numbers:** backend **438**, frontend **82**, e2e **17**; `apps` coverage **92%**, `pdf_engine` **92%**; schema 0 warnings / 0 errors.
+
+**Self-review (Step 3.7) — eleven further defects, all fixed on the branch.** The regression lens came back clean; the other three found them. The two that mattered most were both about rotated pages: `search_for` answers in *unrotated* space (the code asserted the opposite), which broke find & replace, `match_case`, the review-list context and the replacement's style on any rotated page — **and had been silently breaking Phase 1's find bar since it shipped**; and every text edit on a landscape-rotated page failed with `text_overflow` telling the user their text was too long. Also: adjacent occurrences were silently deleted ("banana" + "na" reported one match and dropped one), a same-length-but-wider replacement ("cat"→"CAT") aborted the whole job, `get_image_rects` decoded every embedded image in the API process (1.1 MB PDF → 1.7 GB) and multiplied duplicate placements N², all three read models returned 500 for ordinary print PDFs, `watermark.rotation` was silently snapped to 90° steps so the spec'd −45° rendered vertical, `fits_at_size` never reached the client, and staged edits were keyed by a per-page block number so editing page 2 destroyed page 1's edit.
 
 **➡ Handoff — Phase 5 is next.** The overlay takes field rectangles the same way it took annotations and text blocks: map to `OverlayItem`, consume `OverlayDraft`. `flatten` already supports `what=form` and is tested (`test_flatten_form_leaves_annotations_alone`). `core.assets` provides image refs if the form builder needs them. Note for Phase 6: flipping the scanned-page gate on is a single input — `<app-edit [ocrAvailable]="true">` — plus wiring `ocrRequested` to the OCR dialog.
 
