@@ -1,3 +1,5 @@
+⚠ Superseded by `prompt-3-phases-03-10.md` (2026-08-01) — do not run.
+
 # One-Shot Prompt 2 — Execute Phases 3–7 (Annotations → Content Editing → Forms → OCR/Conversion/Compare → Security & Redaction)
 
 **Usage:** start an agent session (e.g. Claude Code) with its working directory at the **ZenPDF repo root**, Docker daemon running, and paste everything below the line as the prompt. **Precondition: Phases 0–2B are ✅ in `PROGRESS.md`.**
