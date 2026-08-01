@@ -37,6 +37,9 @@ _SAVE = dict(garbage=4, deflate=True, deflate_images=True, deflate_fonts=True)
 
 FIELD_TYPES = ("text", "checkbox", "radio", "combobox", "listbox", "signature")
 
+# How many distinct fields the read model will report — see `read_form`.
+MAX_FIELDS = 2000
+
 _WIDGET_TO_TYPE = {
     fitz.PDF_WIDGET_TYPE_TEXT: "text",
     fitz.PDF_WIDGET_TYPE_CHECKBOX: "checkbox",
@@ -202,6 +205,7 @@ def read_form(data: bytes) -> dict:
         xfa = is_xfa(doc)
         by_name: dict[str, dict] = {}
         order: list[str] = []
+        truncated = False
         for index in range(doc.page_count):
             page = doc[index]
             pw, ph = page.rect.width, page.rect.height
@@ -209,6 +213,15 @@ def read_form(data: bytes) -> dict:
             for widget in page.widgets():
                 name = widget.field_name or ""
                 if not name:
+                    continue
+                if name not in by_name and len(order) >= MAX_FIELDS:
+                    # This endpoint scans every page synchronously and answers
+                    # in one unpaginated response. Measured: a 6.3 MB PDF with
+                    # 30 000 widgets — inside the guest caps — cost 4.3 s of API
+                    # CPU and an 11 MB response, repeatable at the throttle
+                    # limit. No real form has 2 000 fields; one that claims to
+                    # is a lever, so it is reported as truncated instead.
+                    truncated = True
                     continue
                 kind = _WIDGET_TO_TYPE.get(widget.field_type, "text")
                 is_radio = kind == "radio" or (kind == "checkbox"
@@ -277,6 +290,7 @@ def read_form(data: bytes) -> dict:
         return {
             "has_form": bool(fields),
             "is_xfa": xfa,
+            "truncated": truncated,
             "fields": fields,
         }
     finally:
@@ -474,7 +488,13 @@ def export_form_data(data: bytes, *, fmt: str = "json") -> tuple[bytes, str, str
 
 
 def parse_form_data(payload: bytes, *, fmt: str = "json") -> dict:
-    """JSON `{name: value}` or CSV (`name,value` rows, or a single wide row)."""
+    """JSON `{name: value}` or CSV (`name,value` rows, or a single wide row).
+
+    A `name,value` header wins when both readings are possible — it is what our
+    own export writes. The two shapes are genuinely indistinguishable for a form
+    whose fields are *called* `name` and `value`, which is why the preference is
+    stated here rather than guessed at per file.
+    """
     if fmt not in {"json", "csv"}:
         raise InvalidParams("format must be 'json' or 'csv'")
     text = payload.decode("utf-8-sig", errors="replace")

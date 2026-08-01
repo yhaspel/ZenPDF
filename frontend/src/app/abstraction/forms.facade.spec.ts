@@ -26,6 +26,7 @@ function field(over: Partial<FormField> = {}): FormField {
 const MODEL: FormModel = {
   has_form: true,
   is_xfa: false,
+  truncated: false,
   fields: [
     field(),
     field({ name: 'agree', type: 'checkbox', value: '', options: ['Yes'] }),
@@ -136,7 +137,7 @@ describe('FormsFacade', () => {
   it('switching document drops the previous form', () => {
     load();
     facade.setValue('full_name', 'Ada');
-    load({ has_form: false, is_xfa: false, fields: [] }, 'doc-2');
+    load({ has_form: false, is_xfa: false, truncated: false, fields: [] }, 'doc-2');
     expect(facade.dirty()).toBe(false);
     expect(facade.hasForm()).toBe(false);
   });

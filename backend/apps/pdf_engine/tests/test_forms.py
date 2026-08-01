@@ -85,6 +85,28 @@ def test_the_read_model_carries_the_reset_value(fixture_bytes):
     assert field["value"] == ""  # untouched by a default
 
 
+def test_a_pathological_field_count_is_truncated_rather_than_served_whole():
+    """The endpoint scans every page synchronously and answers unpaginated, so
+    a document claiming tens of thousands of fields is an amplifier: 30 000
+    widgets measured at 4.3 s of API CPU and an 11 MB response, repeatable at
+    the throttle limit."""
+    doc = fitz.open()
+    page = doc.new_page(width=595, height=842)
+    for i in range(F.MAX_FIELDS + 50):
+        widget = fitz.Widget()
+        widget.field_name = f"f{i}"
+        widget.field_type = fitz.PDF_WIDGET_TYPE_TEXT
+        widget.rect = fitz.Rect(10, 10, 60, 25)
+        widget.field_value = ""
+        page.add_widget(widget)
+    data = doc.tobytes()
+    doc.close()
+
+    model = F.read_form(data)
+    assert len(model["fields"]) == F.MAX_FIELDS
+    assert model["truncated"] is True
+
+
 def test_a_document_without_a_form_says_so(fixture_bytes):
     model = F.read_form(fixture_bytes("text.pdf"))
     assert model["has_form"] is False

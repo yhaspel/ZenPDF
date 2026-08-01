@@ -8,6 +8,14 @@
               (click)="tab.set('build')" data-test="tab-build">Form builder</button>
     </div>
 
+    @if (forms.model()?.truncated) {
+      <p class="m-3 rounded border border-amber-300 bg-amber-50 p-2 text-[11px] text-amber-800"
+         data-test="truncated-warning">
+        This document has an unusual number of form fields, so only the first
+        few thousand are listed. Filling in the ones shown still works.
+      </p>
+    }
+
     @if (forms.isXfa()) {
       <p class="m-3 rounded border border-amber-300 bg-amber-50 p-2 text-[11px] text-amber-800"
          data-test="xfa-warning">

@@ -367,6 +367,8 @@ export interface FormModel {
   has_form: boolean;
   /** XFA fields are a partial fallback — the UI warns rather than pretending. */
   is_xfa: boolean;
+  /** The field list was capped — a document claiming thousands of fields. */
+  truncated: boolean;
   fields: FormField[];
 }
 
