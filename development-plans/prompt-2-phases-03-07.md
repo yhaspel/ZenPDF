@@ -1,8 +1,8 @@
 # One-Shot Prompt 2 — Execute Phases 3–7 (Annotations → Content Editing → Forms → OCR/Conversion/Compare → Security & Redaction)
 
-**Usage:** start an agent session (e.g. Claude Code) with its working directory at the **ZenPDF repo root**, Docker daemon running, and paste everything below the line as the prompt. **Precondition: Prompt 1 (Phases 0–2) has been executed to completion.**
+**Usage:** start an agent session (e.g. Claude Code) with its working directory at the **ZenPDF repo root**, Docker daemon running, and paste everything below the line as the prompt. **Precondition: Phases 0–2B are ✅ in `PROGRESS.md`.**
 
-> **⚠ Stale as of 2026-07-31 — do not run this prompt yet.** [Phase 2B (anonymous access)](phase-02b-anonymous-access.md) was inserted before Phase 3 and changes ownership semantics across `documents`, `jobs` and `core` (01-architecture **§21**, normative). Running Phases 3–7 first would write eight phases of `filter(owner=request.user)` that 2B then has to unpick. **Execute Phase 2B first**, then update this prompt's precondition to "Phases 0–2B are ✅" and add §21 to the Step 1 reading list before using it.
+> **✅ Unblocked 2026-08-01 — Phase 2B has landed.** Ownership now flows through `apps/core/principals.py` (01-architecture **§21**, normative) and a grep test fails the build on `request.user` / `job.user` / `owner=` / `context["request"].user` outside that module. **Add §21 to the Step 1 reading list**, and when writing phases 3–7: scope querysets with `owned_by(qs, principal)`, create rows with `owner_kwargs(...)`, resolve worker ownership with `principal_of(job)`, put new limits in `settings.TIERS` behind `core.limits.for_principal()`, and leave `IsPrincipal` as the default permission unless a feature is genuinely account-only (§21.3, with a written reason). Each phase also ships its public tool page by appending to `frontend/src/app/core/tool-pages.ts` — routes, prerendering and `sitemap.xml` are generated from that table.
 
 ---
 
