@@ -44,6 +44,18 @@ def _user_field(qs_or_obj: Any) -> str:
     return _USER_FIELD.get(_model_of(qs_or_obj).__name__, "owner")
 
 
+def accepts_guests(qs_or_obj: Any) -> bool:
+    """Whether this model can be owned by a GuestSession at all.
+
+    `Folder`, `SavedSignature`, `SignRequest`, `Recipient`, `SignField` and
+    `AuditEvent` are account-only (§21.2) and have no `guest_session` column, so
+    filtering one by a guest principal is a `FieldError`, not an empty result.
+    Answering "nothing" is both correct and what the caller means.
+    """
+    model = _model_of(qs_or_obj)
+    return any(f.name == "guest_session" for f in model._meta.get_fields())
+
+
 def is_guest(principal: Any) -> bool:
     """True for a GuestSession principal. Avoids importing core.models at call
     sites (and avoids isinstance checks against a circular import)."""
@@ -87,7 +99,9 @@ def owned_by(qs, principal: Any):
         return qs.none()
     field = _user_field(qs)
     if is_guest(principal):
-        return qs.filter(guest_session=principal)
+        # An account-only model can never be guest-owned — match nothing rather
+        # than raising FieldError on a column that does not exist.
+        return qs.filter(guest_session=principal) if accepts_guests(qs) else qs.none()
     return qs.filter(**{field: principal})
 
 
@@ -96,6 +110,8 @@ def owns(obj: Any, principal: Any) -> bool:
         return False
     field = _user_field(obj)
     if is_guest(principal):
+        if not accepts_guests(obj):
+            return False
         return getattr(obj, "guest_session_id", None) == principal.pk
     # An account never owns a guest row, even if the id types happened to match.
     if getattr(obj, "guest_session_id", None) is not None:

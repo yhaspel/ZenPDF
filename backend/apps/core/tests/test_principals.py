@@ -227,6 +227,43 @@ def _session_pk(client):
     return GuestSession.objects.get(token_hash=hash_guest_token(client.token)).pk
 
 
+def test_owned_by_returns_nothing_for_a_guest_on_an_account_only_model(guest_session, user):
+    """`Folder` has no `guest_session` column (§21.2), so filtering it by a
+    guest principal is a FieldError — a 500, not an empty result."""
+    from apps.documents.models import Folder
+
+    session, _ = guest_session
+    Folder.objects.create(owner=user, name="Alice's folder")
+    assert owned_by(Folder.objects.all(), session).count() == 0
+    assert owned_by(Folder.objects.all(), user).count() == 1
+
+
+def test_guest_uploading_into_a_folder_gets_404_not_500(guest, fixture_bytes, user):
+    """The reachable path for the bug above: `POST /api/documents/` with a
+    `folder` id, as a guest."""
+    from django.core.files.uploadedfile import SimpleUploadedFile
+
+    from apps.documents.models import Folder
+
+    folder = Folder.objects.create(owner=user, name="Alice's folder")
+    upload = SimpleUploadedFile(
+        "text.pdf", fixture_bytes("text.pdf"), content_type="application/pdf"
+    )
+    resp = guest.post(
+        "/api/documents/", {"file": upload, "folder": str(folder.id)}, format="multipart"
+    )
+    assert resp.status_code == 404, resp.content
+
+
+def test_owns_is_false_for_a_guest_against_an_account_only_model(guest_session, user):
+    from apps.documents.models import Folder
+
+    session, _ = guest_session
+    folder = Folder.objects.create(owner=user, name="Alice's folder")
+    assert owns(folder, session) is False
+    assert owns(folder, user) is True
+
+
 def test_assert_owned_raises_404_never_403(uploaded_doc, guest_session):
     from rest_framework.exceptions import NotFound
 

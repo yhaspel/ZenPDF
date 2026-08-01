@@ -45,6 +45,30 @@ def test_first_write_mints_and_returns_the_token_once(guest, fixture_bytes):
     assert GuestSession.objects.count() == 1
 
 
+def test_probing_document_ids_never_mints_a_session(anon, uploaded_doc):
+    """Only a genuine first write may create a row.
+
+    Operations, reverts and cross-document ops all target a document the caller
+    must already own, so they must not mint: otherwise anyone POSTing at random
+    document ids creates a GuestSession per probe and then gets a 404 anyway.
+    """
+    doc_id = uploaded_doc["id"]
+    probes = [
+        ("post", f"/api/documents/{doc_id}/operations/",
+         {"type": "rotate_pages", "params": {"pages": [0], "degrees": 90}}),
+        ("post", f"/api/documents/{doc_id}/versions/1/revert/", {}),
+        ("post", "/api/operations/",
+         {"type": "merge", "params": {"document_ids": [doc_id, doc_id]}}),
+        ("post", f"/api/documents/{'0' * 8}-0000-0000-0000-000000000000/operations/",
+         {"type": "rotate_pages", "params": {"pages": [0], "degrees": 90}}),
+    ]
+    for method, path, body in probes:
+        resp = getattr(anon, method)(path, body, format="json")
+        assert resp.status_code == 404, f"{path} → {resp.status_code}"
+        assert "X-Guest-Token" not in resp.headers
+    assert GuestSession.objects.count() == 0
+
+
 def test_explicit_mint_endpoint(anon):
     resp = anon.post("/api/guest/session/")
     assert resp.status_code == 201

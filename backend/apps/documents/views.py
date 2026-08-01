@@ -7,6 +7,7 @@ from django.utils import timezone
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import extend_schema
 from rest_framework import generics, status
+from rest_framework.exceptions import NotFound
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -366,9 +367,9 @@ class VersionListView(generics.ListAPIView):
 class RevertVersionView(APIView):
     @extend_schema(request=None, responses=JobSerializer, tags=["documents"])
     def post(self, request, pk, seq):
-        document = _owned_document(request, pk, write=True)
+        document = _owned_document(request, pk)
         generics.get_object_or_404(document.versions, seq=seq)
-        principal = _principal(request, write=True)
+        principal = _principal(request)
         _guard_operation(request, "revert_version", principal)
         current = document.current_version
         job = Job.objects.create(
@@ -428,8 +429,11 @@ class DocumentOperationView(APIView):
 
     @extend_schema(request=OperationRequestSerializer, responses=JobSerializer, tags=["operations"])
     def post(self, request, pk):
-        document = _owned_document(request, pk, write=True)
-        principal = _principal(request, write=True)
+        # No `write=True`: an operation targets a document the caller already
+        # owns, so they already have a principal. Minting before the ownership
+        # check would create a session row for anyone probing document ids.
+        document = _owned_document(request, pk)
+        principal = _principal(request)
         serializer = OperationRequestSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         op_type = serializer.validated_data["type"]
@@ -480,17 +484,17 @@ class CrossDocumentOperationView(APIView):
         except EngineError as exc:
             raise ValidationFailed(exc.message) from exc
 
-        # Ownership + encryption check on every source document. `write=True`
-        # because a cross-document op is itself a write: a guest merging two
-        # files it just uploaded already has a session, but minting here keeps
-        # the entrypoint honest if the sources arrived some other way.
-        principal = _principal(request, write=True)
+        # Ownership + encryption check on every source document. No minting:
+        # every input is a document the caller already owns.
+        principal = _principal(request)
+        if principal is None:
+            raise NotFound("Not found.")
         ids = []
         for key in op.source_id_params:
             val = params.get(key)
             ids.extend(val if isinstance(val, list) else [val])
         for doc_id in ids:
-            doc = _owned_document(request, doc_id, write=True)
+            doc = _owned_document(request, doc_id)
             if doc.is_encrypted:
                 raise DocumentEncrypted()
         _guard_operation(request, op_type, principal)
