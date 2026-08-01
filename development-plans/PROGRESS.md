@@ -10,7 +10,7 @@ This file is the **single source of truth for execution status**. Every agent se
 | 1 — Documents & viewer | [phase-01-documents-and-viewer.md](phase-01-documents-and-viewer.md) | ✅ Complete | 2026-07-19 | 2026-07-19 | Ingest, viewer, versions, search, trash |
 | 2 — Page organization | [phase-02-page-organization.md](phase-02-page-organization.md) | ✅ Complete | 2026-07-19 | 2026-07-19 | 14 page ops via job pipeline |
 | **2B — Anonymous access** | [phase-02b-anonymous-access.md](phase-02b-anonymous-access.md) | ✅ Complete | 2026-08-01 | 2026-08-01 | Login gate removed; principal model, tiered limits, claim-on-signup, SSR tool pages. 2 criteria deferred to Phase 8 (features don't exist yet) — see Human review queue |
-| 3 — Annotations | [phase-03-annotations.md](phase-03-annotations.md) | ⬜ Not started | — | — | Now depends on 2B |
+| 3 — Annotations | [phase-03-annotations.md](phase-03-annotations.md) | 🔵 In progress | 2026-08-01 | — | Now depends on 2B |
 | 4 — Content editing | [phase-04-content-editing.md](phase-04-content-editing.md) | ⬜ Not started | — | — | |
 | 5 — Forms | [phase-05-forms.md](phase-05-forms.md) | ⬜ Not started | — | — | |
 | 6 — OCR, conversion & compare | [phase-06-ocr-conversion-compare.md](phase-06-ocr-conversion-compare.md) | ⬜ Not started | — | — | |
@@ -46,6 +46,16 @@ Status values: ⬜ Not started · 🔵 In progress · 🟡 Blocked · 🟠 Await
 ## Phase sections
 
 _(Created by the executing agent per protocol step 2. Keep newest phase at top.)_
+
+### Phase 3 — Annotations & Markup · 🔵 In progress (started 2026-08-01)
+
+**Acceptance criteria** (copied verbatim from phase-03-annotations.md):
+- [ ] All listed tools usable; annotations visible after download in an external viewer (manual check with Preview/Acrobat reader on the exported file).
+- [ ] Save of a 30-annotation session = ONE job, <5 s on default queue.
+- [ ] Comments sidebar navigates and edits; authorship shows display name (or "Guest").
+- [ ] Annotating works end-to-end as a guest, and `/annotate-pdf` ships as a public SSR tool page in the sitemap (§20 DoD item 9, §21.6).
+- [ ] Flatten produces a version where text markup is permanent and no annotation objects remain.
+- [ ] Autosave + unsaved-changes guard verified.
 
 ### Phase 2B — Anonymous Access · ✅ Complete (2026-08-01)
 
