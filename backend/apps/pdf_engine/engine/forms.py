@@ -25,7 +25,13 @@ import json
 import fitz
 
 from ..exceptions import InvalidParams, PageOutOfRange, UnsupportedFileError
-from ..geometry import NormRect, apply_matrix_rect, norm_to_page_rect, page_rect_to_norm_clamped
+from ..geometry import (
+    NormRect,
+    apply_matrix_rect,
+    norm_to_page_rect,
+    page_rect_to_norm_clamped,
+    page_rect_to_pdf_native,
+)
 
 _SAVE = dict(garbage=4, deflate=True, deflate_images=True, deflate_fonts=True)
 
@@ -122,6 +128,21 @@ def _default_of(doc: fitz.Document, widget) -> str:
     return ""
 
 
+def _align_of(doc: fitz.Document, widget) -> str:
+    """`/Q` back out again — the property panel prefills from this.
+
+    Without it the panel showed "Left" for every saved field, and applying any
+    other property then wrote left-alignment over a centred one.
+    """
+    for path in ("Q", "Parent/Q"):
+        kind, raw = doc.xref_get_key(widget.xref, path)
+        if kind == "int":
+            for name, code in _ALIGN.items():
+                if code == int(raw):
+                    return name
+    return "left"
+
+
 def read_form(data: bytes) -> dict:
     """The form read model (phase-05 §"Read model")."""
     doc = _open(data)
@@ -172,6 +193,7 @@ def read_form(data: bytes) -> dict:
                     else (widget.field_value if not isinstance(widget.field_value, bool)
                           else "Yes"),
                     "default": _default_of(doc, widget),
+                    "align": _align_of(doc, widget),
                     "options": list(widget.choice_values or on_states),
                     "flags": {
                         "required": bool(flags & FF_REQUIRED),
@@ -505,13 +527,9 @@ def _add_signature_field(raw: bytes, spec: dict) -> bytes:
     try:
         page = _page(doc, int(spec.get("page", 0)))
         rect = _rect_for(spec, page)
-        # pyHanko boxes are PDF-native: origin bottom-left, in the page's own
-        # user space. This is the one place §8 says a conversion is legitimate.
-        # `transformation_matrix` maps PDF space → PyMuPDF's; its inverse is the
-        # way back, and it carries the page's own origin, so a MediaBox that
-        # does not start at (0, 0) lands correctly too.
-        native = (rect * ~page.transformation_matrix).normalize()
-        box = (native.x0, native.y0, native.x1, native.y1)
+        # pyHanko boxes are PDF-native (origin bottom-left) — the one conversion
+        # §8 sanctions, and it lives in `geometry.py` with every other one.
+        box = page_rect_to_pdf_native(rect.x0, rect.y0, rect.x1, rect.y1, page)
         page_number = int(spec.get("page", 0))
     finally:
         doc.close()

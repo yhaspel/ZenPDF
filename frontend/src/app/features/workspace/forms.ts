@@ -309,6 +309,7 @@ export class Forms {
       required: existing.flags.required,
       readonly: existing.flags.readonly,
       multiline: existing.flags.multiline,
+      align: existing.align,
     } : null);
     this.draftIsNew = isNew || staged?.action === 'add';
     this.draftOriginal = spec;
@@ -398,6 +399,7 @@ export class Forms {
         required: existing.flags.required,
         readonly: existing.flags.readonly,
         multiline: existing.flags.multiline,
+        align: existing.align,
       });
     }
     if (this.selectedName() === name) this.select(name, this.draftIsNew);

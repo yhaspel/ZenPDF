@@ -44,9 +44,6 @@ export class FormsFacade {
   readonly fields = computed<FormField[]>(() => this._model()?.fields ?? []);
   readonly hasForm = computed(() => this._model()?.has_form ?? false);
   readonly isXfa = computed(() => this._model()?.is_xfa ?? false);
-  readonly fillable = computed(() =>
-    this.fields().filter((f) => f.type !== 'signature' && !f.flags.readonly),
-  );
 
   /** Only the values that differ from what is already in the file get sent. */
   readonly changed = computed<Record<string, FormValue>>(() => {

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import contextlib
 import hashlib
+import logging
 
 from celery import shared_task
 from django.conf import settings
@@ -31,6 +32,8 @@ from apps.pdf_engine.exceptions import EngineError
 from apps.pdf_engine.storage import get_storage
 
 from .models import Document, DocumentVersion
+
+logger = logging.getLogger(__name__)
 
 THUMB_PAGES = 20
 THUMB_WIDTH = 240
@@ -423,6 +426,10 @@ def run_operation(self, job_id: str):
     except Document.DoesNotExist:
         job.mark_failed("not_found", "A referenced document was not found.")
     except Exception as exc:  # noqa: BLE001
+        # Logged as well as recorded on the job: an unexpected exception is an
+        # operator problem (a stale worker, a broken dependency), and marking
+        # the job failed makes it look like ordinary user-facing validation.
+        logger.exception("job %s failed unexpectedly", job.id)
         job.mark_failed("engine_error", f"Operation failed: {exc}")
 
 

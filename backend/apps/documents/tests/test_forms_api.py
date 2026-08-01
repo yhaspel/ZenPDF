@@ -110,11 +110,24 @@ def test_a_guest_fills_a_form_end_to_end(guest, guest_form_doc):
 
 def test_saved_values_are_in_the_downloaded_file(api, form_doc):
     """"Saved values visible in external viewers" — asserted on the bytes that
-    leave the API, read back through PyMuPDF's widget layer."""
+    leave the API, and read back with **pypdf**, not the library that wrote
+    them. A second implementation agreeing is as close as a test gets to "it
+    opens correctly in Acrobat"; the rendering judgement itself is in the
+    Human review queue."""
+    import io
+
+    from pypdf import PdfReader
+
     _op(api, form_doc["id"], "fill_form", {"values": {"full_name": "Ada"}})
     blob = b"".join(api.get(
         f"/api/documents/{form_doc['id']}/download/"
     ).streaming_content)
+
+    reader = PdfReader(io.BytesIO(blob))
+    fields = reader.get_fields() or {}
+    assert str(fields["full_name"].get("/V")) == "Ada"
+
+    # PyMuPDF agrees, on the same bytes.
     doc = fitz.open(stream=blob, filetype="pdf")
     try:
         values = {w.field_name: w.field_value for page in doc for w in page.widgets()}

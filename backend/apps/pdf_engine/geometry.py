@@ -150,3 +150,19 @@ def page_rect_to_norm(x0: float, y0: float, x1: float, y1: float,
         w=(hi_x - lo_x) / page_width,
         h=(hi_y - lo_y) / page_height,
     )
+
+
+def page_rect_to_pdf_native(x0: float, y0: float, x1: float, y1: float,
+                            page) -> tuple[float, float, float, float]:
+    """PyMuPDF page space → the PDF's own user space (origin bottom-left).
+
+    The one conversion §8 sanctions, for libraries that speak PDF natively —
+    pyHanko's visible-signature boxes in phases 5 and 8. It goes through the
+    inverse of the page's `transformation_matrix` rather than "height minus y",
+    because that carries the page's own origin: a MediaBox that does not start
+    at (0, 0) still lands where it was placed.
+    """
+    inverse = ~page.transformation_matrix
+    ax, ay = apply_matrix_point(x0, y0, inverse)
+    bx, by = apply_matrix_point(x1, y1, inverse)
+    return (min(ax, bx), min(ay, by), max(ax, bx), max(ay, by))

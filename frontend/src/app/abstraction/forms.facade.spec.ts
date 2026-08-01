@@ -13,6 +13,7 @@ function field(over: Partial<FormField> = {}): FormField {
     rect: { x: 0.1, y: 0.1, w: 0.4, h: 0.03 },
     value: '',
     default: '',
+    align: 'left',
     options: [],
     flags: { required: false, readonly: false, multiline: false, password: false },
     max_len: 0,

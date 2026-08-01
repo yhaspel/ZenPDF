@@ -353,6 +353,8 @@ export interface FormField {
   value: string;
   /** `/DV` — what "reset form" would put back. */
   default: string;
+  /** `/Q` — so the property panel prefills what the field actually has. */
+  align: 'left' | 'center' | 'right';
   options: string[];
   flags: { required: boolean; readonly: boolean; multiline: boolean; password: boolean };
   max_len: number;
