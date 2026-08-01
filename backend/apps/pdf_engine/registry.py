@@ -16,7 +16,10 @@ class Op:
     type: str
     queue: str
     schema: dict
-    produces: str  # "version" | "documents"
+    # "version" | "documents" | "version_or_report" — the last one is
+    # `find_replace`, whose dry run inspects the document and changes nothing,
+    # so it must not mint a version (§10, amended).
+    produces: str
     source_id_params: tuple = field(default_factory=tuple)
 
     @property
@@ -49,6 +52,26 @@ OPERATIONS: dict[str, Op] = {
     # Phase 3 — annotations (§10, §12: both on the `default` queue)
     "annotate_batch": Op("annotate_batch", "default", S.ANNOTATE_BATCH, "version"),
     "flatten": Op("flatten", "default", S.FLATTEN, "version"),
+    # Phase 4 — content editing (§10; §12 puts text/image edits and stamps on
+    # `default`)
+    "edit_text": Op("edit_text", "default", S.EDIT_TEXT, "version"),
+    "add_text": Op("add_text", "default", S.ADD_TEXT, "version"),
+    "whiteout": Op("whiteout", "default", S.WHITEOUT, "version"),
+    "find_replace": Op("find_replace", "default", S.FIND_REPLACE, "version_or_report"),
+    "add_image": Op("add_image", "default", S.ADD_IMAGE, "version"),
+    "replace_image": Op("replace_image", "default", S.REPLACE_IMAGE, "version"),
+    "delete_image": Op("delete_image", "default", S.DELETE_IMAGE, "version"),
+    "add_link": Op("add_link", "default", S.ADD_LINK, "version"),
+    "edit_link": Op("edit_link", "default", S.EDIT_LINK, "version"),
+    "delete_link": Op("delete_link", "default", S.DELETE_LINK, "version"),
+    "header_footer": Op("header_footer", "default", S.HEADER_FOOTER, "version"),
+    "page_numbers": Op("page_numbers", "default", S.PAGE_NUMBERS, "version"),
+    "bates": Op("bates", "default", S.BATES, "version"),
+    "watermark": Op("watermark", "default", S.WATERMARK, "version"),
+    "overlay_pdf": Op("overlay_pdf", "default", S.OVERLAY_PDF, "version",
+                      source_id_params=("overlay_document_id",)),
+    "set_metadata": Op("set_metadata", "default", S.SET_METADATA, "version"),
+    "set_bookmarks": Op("set_bookmarks", "default", S.SET_BOOKMARKS, "version"),
 }
 
 

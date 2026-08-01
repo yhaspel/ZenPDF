@@ -14,7 +14,10 @@ export type ToolKind =
   | 'delete-pages'
   | 'extract-pages'
   | 'organize'
-  | 'annotate';
+  | 'annotate'
+  | 'edit'
+  | 'watermark'
+  | 'page-numbers';
 
 export interface ToolFaq {
   q: string;
@@ -314,6 +317,110 @@ export const TOOL_PAGES: ToolPageDef[] = [
     minFiles: 1,
     multiple: false,
     cta: 'Annotate PDF',
+  },
+  {
+    slug: 'edit-pdf',
+    kind: 'edit',
+    title: 'Edit PDF — change the text in a PDF online free | ZenPDF',
+    metaDescription:
+      'Click a paragraph and rewrite it, add text, whiteout, swap images and fix links — in your browser, free, no account, no watermark.',
+    h1: 'Edit a PDF',
+    intro: [
+      'Change the words that are already in a PDF. Click a paragraph, type over it, and ZenPDF rewrites that part of the page. You can also add new text anywhere, paint over something with whiteout, replace or delete images, and fix links that point at the wrong place.',
+      'PDFs were never designed to be edited, and it is worth knowing what that means before you start. A PDF stores positioned glyphs, not paragraphs, so editing is block-scoped: the block you change is redrawn, and the rest of the page stays exactly where it was. Text does not reflow from one block to the next, and if your replacement is much longer than the original it will be shrunk to fit — or you will be told the size it would need, so you can widen the box instead.',
+      'The replacement font is a close approximation rather than an exact match. Most PDFs embed only the characters they actually use, so the original font often physically cannot render the letters you just typed. We substitute a matching family at the same size, which looks right in body text and can be noticeable in a display font.',
+      'Find and replace works in two steps on purpose. The first pass only looks: you get a list of every match with the text around it, and you untick the ones you want to keep. Only then is anything changed. Replacing 40 occurrences when you meant 3 is exactly the mistake this avoids.',
+      'Scanned pages are a different problem. A scan is a photograph of text, so there is nothing to click — the editor says so and points you at OCR, which adds a real text layer the editor can then work with.',
+      'Whiteout is not redaction. Painting a white box over something hides it visually, but the text is still in the file and can be copied straight back out. If you need it gone, use the redaction tool, which removes the content itself.',
+      'Every change creates a new version rather than overwriting, so you can compare, revert, or take a different approach without losing what you had.',
+    ],
+    faq: [
+      {
+        q: 'Can I edit any PDF?',
+        a: 'Any PDF with a real text layer. Scans are pictures of text — run OCR on them first and then the editor works normally.',
+      },
+      {
+        q: 'Why does the font look slightly different after editing?',
+        a: 'Most PDFs embed only the characters the document actually uses, so the original font often cannot draw the letters you typed. We substitute a matching family at the same size.',
+      },
+      {
+        q: 'Why will my new text not fit?',
+        a: 'Editing is block-scoped and does not reflow the page, so a longer replacement has to fit the original box. We shrink it up to a point, and past that we tell you the size that would fit so you can widen the box instead.',
+      },
+      {
+        q: 'Is whiteout the same as redacting?',
+        a: 'No. Whiteout hides content visually while leaving it in the file; anyone can copy it back out. Redaction removes the content itself.',
+      },
+    ],
+    minFiles: 1,
+    multiple: false,
+    cta: 'Edit PDF',
+  },
+  {
+    slug: 'watermark-pdf',
+    kind: 'watermark',
+    title: 'Watermark PDF — add a text or image watermark free | ZenPDF',
+    metaDescription:
+      'Stamp DRAFT, CONFIDENTIAL or your logo across a PDF. Adjustable opacity, tiling, and behind-the-text placement. Free, no account.',
+    h1: 'Add a watermark to a PDF',
+    intro: [
+      'Mark a document as a draft, as confidential, or as yours. This page stamps a diagonal DRAFT across every page, behind the content, at a readable opacity — one click, then download.',
+      'By default the watermark is drawn behind the page content rather than on top of it. That is a deliberate choice: a watermark over the text makes the document harder to read and, if it is opaque enough to be obvious, harder to use. Behind the content it is clearly visible, the text stays crisp, and the document stays searchable.',
+      'Tiling repeats the mark across the whole page, which is what you want when the point is to make the document awkward to pass off as an original. A single centred mark is quieter and usually enough for an internal draft.',
+      'A watermark added here is part of the page, not an overlay a reader can switch off. It is not a security feature — anyone determined can remove it with the same class of tool you are using now — but it does travel with the file and it does make provenance obvious at a glance.',
+      'For anything more specific — your own wording, a logo instead of a word, a different angle, colour or opacity, tiling, or a watermark on only some pages — open the document in the workspace afterwards and use the Stamps panel, which exposes all of it.',
+      'No account is needed and the result is not itself watermarked by us. Guest files are deleted automatically within 24 hours.',
+    ],
+    faq: [
+      {
+        q: 'Will the watermark cover my text?',
+        a: 'Not by default — it is drawn behind the content, so the page stays readable and the text stays selectable. You can put it in front if you want it to dominate.',
+      },
+      {
+        q: 'Can I use my logo instead of a word?',
+        a: 'Yes, from the Stamps panel in the workspace: upload a PNG or JPEG and it is placed with the same opacity and tiling controls. This page does the common text case in one click.',
+      },
+      {
+        q: 'Does a watermark stop people copying my document?',
+        a: 'No. It makes provenance obvious, which is usually the real goal, but it is not a security control. To remove content permanently, use redaction; to restrict opening or printing, use the protect tool.',
+      },
+    ],
+    minFiles: 1,
+    multiple: false,
+    cta: 'Add watermark',
+  },
+  {
+    slug: 'add-page-numbers',
+    kind: 'page-numbers',
+    title: 'Add page numbers to a PDF online free | ZenPDF',
+    metaDescription:
+      'Number the pages of a PDF. Choose the position and format, start at any number, and skip the cover page. Free, no account, no watermark.',
+    h1: 'Add page numbers to a PDF',
+    intro: [
+      'Number the pages of a document that arrived without numbers, or renumber one whose numbering no longer matches after pages were added or removed.',
+      'This page numbers every page in the bottom centre — the usual answer — and hands you the file. For anything else, open the document in the workspace: the Stamps panel offers six positions, any starting number, skipping the cover page, and a format field where "Page 3 of 12" is as easy as "3".',
+      'Numbering starting at any value matters more often than it sounds. A chapter that begins on page 47 of a bound report should say 47, not 1. And a cover page usually should not be numbered at all. Both are single controls in the workspace panel.',
+      'The number is drawn into the page content, so it is part of the file and shows up wherever the document is opened or printed. It is not a header a reader can toggle.',
+      'Numbers printed onto pages do not renumber themselves if you later add or remove pages — they are content, not a field. Reorder first, number second, and if the document changes afterwards just number it again from the version before.',
+      'Free, no account, and nothing is watermarked. A running header or footer and Bates numbering for legal work are in the same Stamps panel.',
+    ],
+    faq: [
+      {
+        q: 'Can I skip the cover page?',
+        a: 'Yes, from the Stamps panel in the workspace — one checkbox. Numbering then starts on the second page, and you choose what number it starts at. This page numbers every page.',
+      },
+      {
+        q: 'Can I write "Page 3 of 12"?',
+        a: 'Yes, in the workspace: the format field accepts tokens for the page number, the total page count and the date, mixed with any text you like.',
+      },
+      {
+        q: 'Will the numbers update if I add pages later?',
+        a: 'No. They are drawn into the page, not calculated on the fly. Add or remove pages first, then number — or revert to the version before numbering and number it again.',
+      },
+    ],
+    minFiles: 1,
+    multiple: false,
+    cta: 'Add page numbers',
   },
 ];
 

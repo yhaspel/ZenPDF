@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import fitz
 
+from ..colors import format_color, parse_color
 from ..exceptions import InvalidParams, UnsupportedFileError
 from ..geometry import (
     NormRect,
@@ -73,37 +74,6 @@ _SUBTYPE_TO_TYPE = {
 # Marker key written on Stamp annots we built from an uploaded image, so a
 # round-trip can tell them apart from a standard stamp (and re-offer the image).
 _IMAGE_STAMP_KEY = "ZenImageStamp"
-
-
-# --------------------------------------------------------------------------- #
-# Colors — PDF works in 0..1 floats, the wire uses #rrggbb
-# --------------------------------------------------------------------------- #
-def parse_color(value) -> tuple[float, float, float] | None:
-    """'#rrggbb' | '#rgb' | [r,g,b] (0..1) → (r, g, b) floats; None passes through."""
-    if value is None:
-        return None
-    if isinstance(value, (list, tuple)):
-        if len(value) != 3:
-            raise InvalidParams("color arrays must have exactly 3 components")
-        return tuple(max(0.0, min(1.0, float(c))) for c in value)  # type: ignore[return-value]
-    text = str(value).strip().lstrip("#")
-    if len(text) == 3:
-        text = "".join(c * 2 for c in text)
-    if len(text) != 6:
-        raise InvalidParams(f"invalid color {value!r}; expected #rrggbb")
-    try:
-        return tuple(int(text[i:i + 2], 16) / 255.0 for i in (0, 2, 4))  # type: ignore[return-value]
-    except ValueError as exc:
-        raise InvalidParams(f"invalid color {value!r}") from exc
-
-
-def format_color(components) -> str | None:
-    if not components:
-        return None
-    vals = list(components)[:3]
-    if len(vals) < 3:  # grayscale or CMYK stroke — normalize to gray
-        vals = [vals[0]] * 3 if vals else [0.0, 0.0, 0.0]
-    return "#" + "".join(f"{max(0, min(255, round(c * 255))):02x}" for c in vals)
 
 
 # --------------------------------------------------------------------------- #

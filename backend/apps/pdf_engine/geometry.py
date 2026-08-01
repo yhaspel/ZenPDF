@@ -112,6 +112,31 @@ def page_point_to_norm(x: float, y: float, page_width: float,
     return (float(x) / page_width, float(y) / page_height)
 
 
+def page_rect_to_norm_clamped(x0: float, y0: float, x1: float, y1: float,
+                              page_width: float, page_height: float) -> NormRect:
+    """`page_rect_to_norm`, but clamped into the page instead of raising.
+
+    For **read models**, which report where things already are. Real documents
+    routinely place content outside the visible page — a CropBox inset for trim
+    marks, or a full-bleed image deliberately overhanging the edge — and
+    answering "this file is invalid" to a request that only asked *what is on
+    page 1* turns an ordinary print PDF into a 500. Writers keep the strict
+    version, because there a rect outside the page is a client bug worth naming.
+    """
+    if page_width <= 0 or page_height <= 0:
+        raise ValueError("page dimensions must be positive")
+    lo_x, hi_x = sorted((x0, x1))
+    lo_y, hi_y = sorted((y0, y1))
+    left = min(max(lo_x / page_width, 0.0), 1.0)
+    top = min(max(lo_y / page_height, 0.0), 1.0)
+    right = min(max(hi_x / page_width, 0.0), 1.0)
+    bottom = min(max(hi_y / page_height, 0.0), 1.0)
+    # A rect entirely off-page collapses; give it a sliver so it stays a valid
+    # NormRect (which requires positive extent) and is visibly degenerate.
+    return NormRect(x=left, y=top,
+                    w=max(right - left, 1e-6), h=max(bottom - top, 1e-6))
+
+
 def page_rect_to_norm(x0: float, y0: float, x1: float, y1: float,
                       page_width: float, page_height: float) -> NormRect:
     """Inverse of norm_to_page_rect — used to return search hits as normalized rects."""

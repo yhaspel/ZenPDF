@@ -20,6 +20,10 @@ describe('tool pages', () => {
     'organize-pdf',
     // Phase 3
     'annotate-pdf',
+    // Phase 4
+    'edit-pdf',
+    'watermark-pdf',
+    'add-page-numbers',
   ];
 
   it('ships exactly the slugs its phases have shipped', () => {

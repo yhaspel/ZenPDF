@@ -22,5 +22,9 @@ urlpatterns = [
     # Phase 3 — annotations read model + the overlay's text layer
     path("documents/<uuid:pk>/annotations/", views.AnnotationListView.as_view(), name="document-annotations"),
     path("documents/<uuid:pk>/text-words/", views.TextWordsView.as_view(), name="document-text-words"),
+    # Phase 4 — content read models
+    path("documents/<uuid:pk>/text-blocks/", views.TextBlocksView.as_view(), name="document-text-blocks"),
+    path("documents/<uuid:pk>/images/", views.PageImagesView.as_view(), name="document-images"),
+    path("documents/<uuid:pk>/links/", views.PageLinksView.as_view(), name="document-links"),
     path("documents/<uuid:pk>/operations/", views.DocumentOperationView.as_view(), name="document-operations"),
 ]

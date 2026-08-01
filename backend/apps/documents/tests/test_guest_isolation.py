@@ -23,6 +23,10 @@ def _endpoints(doc_id):
         # sweep, because the failure mode it guards is one missed queryset.
         ("get", f"/api/documents/{doc_id}/annotations/"),
         ("get", f"/api/documents/{doc_id}/text-words/?page=0"),
+        # Phase 4 read models
+        ("get", f"/api/documents/{doc_id}/text-blocks/?page=0"),
+        ("get", f"/api/documents/{doc_id}/images/?page=0"),
+        ("get", f"/api/documents/{doc_id}/links/?page=0"),
         ("patch", f"/api/documents/{doc_id}/"),
         ("delete", f"/api/documents/{doc_id}/"),
         ("post", f"/api/documents/{doc_id}/restore/"),

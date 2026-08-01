@@ -148,12 +148,17 @@ Client sends geometry as **normalized page coordinates in visual space**: origin
 
 | API | Coordinate space |
 |---|---|
-| `page.rect`, `page.search_for` | **display** (rotation applied) |
+| `page.rect` | **display** (rotation applied) |
+| `page.search_for` | **unrotated** — measured; an unrotated page makes it indistinguishable from display, so this is easy to get wrong and invisible until a rotated page shows up |
 | `page.get_text("words" \| "dict")` | **unrotated** |
+| `page.insert_htmlbox` | **display** — the one writer that applies the rotation itself |
+| `page.draw_rect`, `page.insert_image`, `page.show_pdf_page` | **unrotated** |
 | `annot.rect`, `annot.vertices`, every `page.add_*_annot` | **unrotated** |
 | `page.set_cropbox` | **unrotated** (phase 2's `crop_pages` already de-rotated) |
 
 So on a `/Rotate 90` page the two spaces differ by a quarter turn. The rule is therefore: **normalized geometry is always display space on the wire; the engine de-rotates on the way in (`page.derotation_matrix`) and re-rotates on the way out (`page.rotation_matrix`)** via `geometry.apply_matrix_rect` / `apply_matrix_point`. Omitting it is not a visible error in a round-trip — write and read cancel out, so create→extract agrees perfectly while the *file* disagrees with both. Only a rendered-pixel assertion catches it (`test_a_mark_on_a_rotated_page_renders_where_it_was_placed`).
+
+**Replacing text is the exception to the rule.** `edit_text`/`add_text`/`find_replace` write in the page's *unrotated* space with the rotation temporarily zeroed, because the glyphs they replace were laid down there — the replacement then rotates with the page exactly as the original did. Using the display rect instead fails outright on a /Rotate 90 page: the display box of a normal line of text is tall and narrow, so horizontal layout cannot fit it. Stamps (headers, page numbers, Bates) do the opposite and use display space, because a page number should read upright *to the viewer* regardless of how the page is rotated.
 
 ## 9. Data model (canonical — phases may add fields only by amending this doc)
 
@@ -164,7 +169,7 @@ So on a `/Rotate 90` page the two spaces differ by a quarter turn. The rule is t
 **documents.Folder**: id, owner FK, parent FK null, name; unique(owner, parent, name). **Account-only** — guests have a flat session workspace, no folders.
 **documents.Document**: id, **owner FK null**, **guest_session FK null** (exactly one of owner/guest_session non-null — enforced by a DB `CheckConstraint`, §21.2), **expires_at null** (set for guest documents; null once owned by a user), folder FK null, title, status ∈ {ready, processing, error}, page_count, size_bytes, is_encrypted bool, starred bool, metadata JSON (author/subject/keywords/dates, populated at ingest — amended 2026-07-19, P1), current_version FK→DocumentVersion null, error_message, last_opened_at, trashed_at null, created_at, updated_at.
 **documents.DocumentVersion**: id, document FK (`versions`), seq int (unique per document, starts 1), storage_key, size_bytes, page_count, sha256, label (e.g. "Original", "OCR", "Signed"), created_by FK user null, job FK null, created_at. Immutable.
-**jobs.Job**: id, **user FK null**, **guest_session FK null** (same one-of constraint), document FK null, type (operation type, §10), params JSON, base_version_seq int null, status ∈ {queued, running, succeeded, failed, canceled}, progress 0–100, error_code, error_message, result JSON null, celery_task_id, created_at, started_at, finished_at.
+**jobs.Job**: id, **user FK null**, **guest_session FK null** (same one-of constraint), document FK null, type (operation type, §10), params JSON, base_version_seq int null, status ∈ {queued, running, succeeded, failed, canceled}, progress 0–100, error_code, error_message, **error_details JSON** (structured half of the §6 error shape — added phase 4), result JSON null, celery_task_id, created_at, started_at, finished_at.
 **esign.SavedSignature**: id, user FK (**account-only**; guests draw an ephemeral signature held client-side for the session), kind ∈ {signature, initials}, method ∈ {draw, type, upload}, storage_key (PNG, alpha), typed_text, font, is_default, created_at.
 **esign.SignRequest**: id, owner FK, document FK, source_version FK, title, message, status ∈ {draft, sent, completed, declined, expired, canceled}, envelope_code (human-short, stamped on pages, e.g. `ZEN-8F3KQ2`), expires_at, reminder_every_days int=3, sent_at, completed_at, final_key, certificate_key, final_sha256, created_at.
 **esign.Recipient**: id, sign_request FK (`recipients`), email, name, role ∈ {signer, approver, viewer, cc}, order int=1 (same order ⇒ parallel group; groups proceed in ascending order), status ∈ {pending, notified, viewed, consented, completed, declined}, token (urlsafe 43ch, unique), consent_at/ip/user_agent, decline_reason, last_notified_at, completed_at.
@@ -221,7 +226,9 @@ All document mutations/derivations run as Jobs with `type` from this registry. P
 | generate_thumbnails (internal) | 1 | PyMuPDF | version, pages, width |
 | revert_version | 1 | storage copy (no engine) | seq → new head version copied from v{seq} (§14) |
 
-Version-producing ops → `result: {document_id, version_id, seq}` (split/merge/extract-as-new/convert_from → `{documents: [...]}`). Export ops → `result: {export_key, filename, content_type, size}` + `GET /api/jobs/{id}/download`.
+Version-producing ops → `result: {document_id, version_id, seq}` (split/merge/extract-as-new/convert_from → `{documents: [...]}`). Export ops → `result: {export_key, filename, content_type, size}` + `GET /api/jobs/{id}/download`. **Inspection ops** → `result: {report: {…}}` and **no version**: `find_replace` with `dry_run: true` is the only one today, and minting a version for a search would put "Replaced 0 matches" in the history every time somebody looked (added phase 4).
+
+Failures carry the §6 error shape's structured half in `Job.error_details` — `text_overflow`'s `fits_at_size` is the reason it exists, since the UI has to offer "shrink to N pt" and N is computed by the engine.
 
 ## 11. Job pipeline
 
