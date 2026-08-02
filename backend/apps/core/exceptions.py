@@ -106,8 +106,8 @@ class EmailNotVerified(ZenAPIException):
     """An account tried to send mail in its own name before confirming it (§9B).
 
     403 with its own code so the UI can offer "resend the link" rather than a
-    generic refusal. It gates sending for signature only — never uploading,
-    which a guest does freely.
+    generic refusal. It gates **sending for signature** and **claiming above
+    the free storage tier** — never uploading, which a guest does freely.
     """
 
     status_code = status.HTTP_403_FORBIDDEN

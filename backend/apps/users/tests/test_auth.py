@@ -6,7 +6,8 @@ pytestmark = pytest.mark.django_db
 
 def test_register_login_me_refresh_flow(anon):
     r = anon.post("/api/users/register/",
-                  {"email": "NEW@Example.com", "password": "strongpass123", "display_name": "New"},
+                  {"email": "NEW@Example.com", "password": "strongpass123",
+                   "display_name": "New", "accept_terms": True},
                   format="json")
     assert r.status_code == 201, r.content
     assert r.json()["email"] == "new@example.com"  # normalized lowercase
@@ -36,14 +37,14 @@ def test_login_wrong_password(anon, user):
 
 def test_register_duplicate_email(anon, user):
     r = anon.post("/api/users/register/",
-                  {"email": "Alice@Example.com", "password": "strongpass123"}, format="json")
+                  {"email": "Alice@Example.com", "password": "strongpass123", "accept_terms": True}, format="json")
     assert r.status_code == 400
     assert r.json()["error"]["code"] == "validation_error"
 
 
 def test_register_weak_password(anon):
     r = anon.post("/api/users/register/",
-                  {"email": "weak@example.com", "password": "123"}, format="json")
+                  {"email": "weak@example.com", "password": "123", "accept_terms": True}, format="json")
     assert r.status_code == 400
 
 

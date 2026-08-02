@@ -83,9 +83,11 @@ def advance(sign_request, *, request=None) -> str:
         return "completed"
     pending = next_to_notify(sign_request)
     if pending:
-        notify_recipients(sign_request, pending)
+        mailed = notify_recipients(sign_request, pending)
         record(sign_request, "sent", request=request,
-               to=[r.email for r in pending], stage="routing")
+               to=[r.email for r in mailed],
+               not_delivered=[r.email for r in pending if r not in mailed],
+               stage="routing")
         return "notified"
     return "waiting"
 

@@ -8,6 +8,10 @@ import {
   SignRequestModel,
 } from '../../core/models/models';
 import { EsignService } from '../../core/services/esign.service';
+import {
+  VerificationService,
+  isEmailNotVerified,
+} from '../../core/services/verification.service';
 import { OverlayDraft, OverlayItem } from '../../shared/page-overlay/overlay-model';
 import { PageOverlay } from '../../shared/page-overlay/page-overlay';
 import { ToastService } from '../../shared/toast.service';
@@ -258,10 +262,20 @@ export class RequestBuilder {
       },
       error: (err) => {
         this.busy.set(false);
+        if (isEmailNotVerified(err)) {
+          // Not a toast: the way out of this refusal is a button, and a toast
+          // that fades takes it with it.
+          this.needsVerification.set(true);
+          return;
+        }
         this.toast.error(err?.error?.error?.message || 'Could not send that.');
       },
     });
   }
+
+  /** The verification gate, answered where it is hit (§9B). */
+  protected needsVerification = signal(false);
+  protected verification = inject(VerificationService);
 
   protected fieldsFor(recipientId: string): number {
     return this.fields().filter((f) => f.recipient_id === recipientId).length;

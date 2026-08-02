@@ -21,3 +21,12 @@ class DocumentAdmin(admin.ModelAdmin):
     list_filter = ("status", "starred")
     search_fields = ("title", "owner__email")
     inlines = [VersionInline]
+    # Soft delete, not destroy: the 30-day trash window is what makes a
+    # mistaken moderation call recoverable (§9B).
+    actions = ["move_to_trash"]
+
+    @admin.action(description="Move to trash (recoverable for 30 days)")
+    def move_to_trash(self, request, queryset):
+        from apps.esign.admin import _soft_delete_documents
+
+        _soft_delete_documents(self, request, queryset)

@@ -140,7 +140,16 @@
         [subtitle]="docs.trashed() ? '' : 'Upload a PDF to get started'" />
     } @else {
       <div class="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4" data-test="doc-grid">
-        @for (doc of docs.documents(); track doc.id) {
+        @for (doc of docs.documents(); track doc.id; let i = $index) {
+          <!-- One inline card, on narrow screens only (§9A). The right rail is
+               desktop-only, so without this a phone sees no ad at all on the
+               page where people spend the most time — and more than one in the
+               list would turn a library into a feed. -->
+          @if (i === 3) {
+            <div class="col-span-2 xl:hidden" data-test="ad-card-mobile">
+              <app-ad-slot name="dashboard-inline" [height]="250" />
+            </div>
+          }
           <div class="group relative rounded-xl bg-white p-3 shadow-sm transition hover:shadow-md" data-test="doc-card">
             @if (!docs.trashed()) {
               <input type="checkbox" [checked]="isSelected(doc.id)" (change)="toggleSelect(doc)"
@@ -196,3 +205,5 @@
     <app-ad-slot name="dashboard-rail" [height]="600" />
   </aside>
 </div>
+
+<app-site-footer />

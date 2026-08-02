@@ -2,7 +2,7 @@ import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { Component } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
-import { provideRouter } from '@angular/router';
+import { Router, provideRouter } from '@angular/router';
 
 import { ConfigService } from '../core/services/config.service';
 import { ConsentService } from '../core/services/consent.service';
@@ -39,7 +39,11 @@ describe('AdSlot', () => {
     document.head.querySelectorAll('script[src*="adsbygoogle"]')
       .forEach((node) => node.remove());
     TestBed.configureTestingModule({
-      providers: [provideHttpClient(), provideHttpClientTesting(), provideRouter([])],
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideRouter([{ path: '**', children: [] }]),
+      ],
     });
     http = TestBed.inject(HttpTestingController);
   });
@@ -119,9 +123,21 @@ describe('AdSlot', () => {
   });
 
   it('names the routes that never carry advertising', () => {
-    // The signing ceremony, the verification page and the legal pages are
-    // trust surfaces. This is a code-level refusal, not a convention.
-    expect(AdSlot.FORBIDDEN).toEqual(['/s/', '/verify', '/legal/']);
+    // The signing ceremony, the verification page, the legal pages and the
+    // document canvas are trust surfaces — and the canvas is also where
+    // somebody is mid-way through redacting a contract. This is a code-level
+    // refusal, not a convention.
+    expect(AdSlot.FORBIDDEN).toEqual(['/s/', '/verify', '/legal/', '/app/doc']);
+  });
+
+  it('renders nothing on a forbidden route, whoever wires it up', async () => {
+    loadConfig(ADS_ON);
+    TestBed.inject(ConsentService).set('granted');
+    await TestBed.inject(Router).navigateByUrl('/app/doc/abc');
+    const fixture = TestBed.createComponent(Host);
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('[data-test=ad-slot-landing]'))
+      .toBeNull();
   });
 });
 

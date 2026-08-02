@@ -13,6 +13,7 @@ remove.
 from __future__ import annotations
 
 from django.conf import settings
+from django.core.cache import cache
 from django.core.signing import BadSignature, SignatureExpired, TimestampSigner
 
 from apps.core import mail
@@ -42,6 +43,22 @@ def user_from_verification_token(token: str):
     return get_user_model().objects.filter(pk=user_id).first()
 
 
+#: One verification mail per account per this many seconds. Registration never
+#: proves the address belongs to whoever typed it, so an uncapped resend is a
+#: mailbomb pointed at a stranger — and this mail is transactional, so the
+#: suppression list will not stop it. Per *account*, not per IP: a per-IP limit
+#: is bypassed by registering the victim's address again from somewhere else.
+RESEND_COOLDOWN_SECONDS = 120
+
+
+def _cooldown_key(user) -> str:
+    return f"verify-email-sent:{user.pk}"
+
+
+def verification_send_allowed(user) -> bool:
+    return cache.get(_cooldown_key(user)) is None
+
+
 def send_verification_email(user) -> None:
     link = f"{settings.FRONTEND_BASE_URL}/verify-email/{verification_token(user)}"
     body = "\n".join([
@@ -55,6 +72,7 @@ def send_verification_email(user) -> None:
         "You can keep using everything else in the meantime — this only "
         "unlocks sending documents to other people.",
     ])
+    cache.set(_cooldown_key(user), 1, RESEND_COOLDOWN_SECONDS)
     # Transactional: somebody who unsubscribed from signing mail still has to
     # be able to confirm their own address, or they are locked out of their
     # own account by a preference about somebody else's document.

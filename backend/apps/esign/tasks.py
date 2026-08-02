@@ -211,7 +211,8 @@ def sign_reminders() -> dict:
             last = recipient.last_notified_at
             if last and (now - last).days < cadence:
                 continue
-            emails.notify_reminder(sign_request, recipient)
+            if not emails.notify_reminder(sign_request, recipient):
+                continue
             record(sign_request, "reminder_sent", recipient=recipient)
             sent += 1
     if sent:

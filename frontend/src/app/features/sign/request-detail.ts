@@ -1,7 +1,12 @@
 import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 
-import { AuditEventModel, SignRequestModel } from '../../core/models/models';
+import {
+  AuditEventModel,
+  SIGN_STATUS_LABELS,
+  SignRequestModel,
+  SignRequestStatus,
+} from '../../core/models/models';
 import { EsignService } from '../../core/services/esign.service';
 import { saveBlob } from '../../shared/save-blob';
 import { ToastService } from '../../shared/toast.service';
@@ -20,6 +25,12 @@ import { ToastService } from '../../shared/toast.service';
   templateUrl: './request-detail.html',
 })
 export class RequestDetail {
+  /** `canceled_by_abuse` is not a phrase to show somebody about their own
+   *  contract. */
+  protected statusLabel(status: SignRequestStatus): string {
+    return SIGN_STATUS_LABELS[status] ?? status;
+  }
+
   private route = inject(ActivatedRoute);
   private esign = inject(EsignService);
   private toast = inject(ToastService);

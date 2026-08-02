@@ -9,6 +9,7 @@ import {
   signal,
   viewChild,
 } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { NavigationEnd, Router } from '@angular/router';
 
 import { ConfigService } from '../core/services/config.service';
@@ -64,10 +65,17 @@ export class AdSlot {
   private router = inject(Router);
   private unit = viewChild<ElementRef<HTMLElement>>('unit');
 
-  /** Routes that never carry advertising, whatever anybody wires up (§9A). */
-  static readonly FORBIDDEN = ['/s/', '/verify', '/legal/'];
+  /** Routes that never carry advertising, whatever anybody wires up (§9A).
+   *
+   *  `/app/doc` is the editor and viewer canvas: somebody is mid-way through
+   *  redacting a contract there, and an ad beside the page they are working on
+   *  is both a trust problem and a misclick waiting to happen. */
+  static readonly FORBIDDEN = ['/s/', '/verify', '/legal/', '/app/doc'];
 
-  private url = signal(typeof location !== 'undefined' ? location.pathname : '');
+  // Seeded from the router, not `location`: a slot created *after* navigation
+  // (which is every slot on a lazily-rendered page) would otherwise miss the
+  // `NavigationEnd` that already fired and read the wrong route.
+  private url = signal(this.router.url);
   private pushed = false;
 
   protected readonly client = computed(() => this.config.ads().client_id ?? '');
@@ -82,7 +90,9 @@ export class AdSlot {
   });
 
   constructor() {
-    this.router.events.subscribe((event) => {
+    // `Router` outlives every slot, so an unmanaged subscription keeps each
+    // destroyed component (and its host element) reachable for the session.
+    this.router.events.pipe(takeUntilDestroyed()).subscribe((event) => {
       if (event instanceof NavigationEnd) this.url.set(event.urlAfterRedirects);
     });
     effect(() => {
@@ -99,6 +109,27 @@ export class AdSlot {
 }
 
 let scriptRequested = false;
+
+/** Whether the provider script was ever appended in this page's life. */
+export function providerScriptLoaded(): boolean {
+  return scriptRequested;
+}
+
+/**
+ * Take the tag back out when consent is withdrawn (§9A).
+ *
+ * Removing the element stops nothing that is already running — a third-party
+ * script cannot be un-executed — so the honest teardown is to drop the element
+ * *and* reload, which is what `ConsentService` does. Without the reload,
+ * "withdraw consent" would only mean "hide the boxes".
+ */
+export function unloadProviderScript(): void {
+  if (typeof document === 'undefined') return;
+  document
+    .querySelectorAll('script[src*="googlesyndication.com"]')
+    .forEach((node) => node.remove());
+  scriptRequested = false;
+}
 
 /** Appended once per page, and only from a slot that is allowed to render. */
 export function loadProviderScript(client: string): void {

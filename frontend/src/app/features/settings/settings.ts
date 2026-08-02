@@ -1,20 +1,20 @@
-import { ChangeDetectionStrategy, Component, inject } from '@angular/core';
+import { DatePipe } from '@angular/common';
+import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-
-import { HttpClient } from '@angular/common/http';
-import { signal } from '@angular/core';
 
 import { AuthFacade } from '../../abstraction/auth.facade';
 import { DocumentsFacade } from '../../abstraction/documents.facade';
-import { environment } from '../../../environments/environment';
+import { Job } from '../../core/models/models';
 import { ConfigService } from '../../core/services/config.service';
+import { JobsService } from '../../core/services/jobs.service';
 import { ConsentService } from '../../core/services/consent.service';
+import { VerificationService } from '../../core/services/verification.service';
 import { ToastService } from '../../shared/toast.service';
 
 @Component({
   selector: 'app-settings',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [FormsModule],
+  imports: [FormsModule, DatePipe],
   template: `
     <div class="mx-auto max-w-2xl p-6">
       <h1 class="mb-6 text-2xl font-bold text-slate-800">Settings</h1>
@@ -93,6 +93,43 @@ import { ToastService } from '../../shared/toast.service';
             </tbody>
           </table>
         }
+
+        <!-- What actually ran (§9B). The counters above say how much of the
+             month is gone; this says *what* spent it, which is the question
+             somebody asks when the number surprises them. -->
+        <h3 class="mt-6 text-sm font-semibold text-slate-700">Recent jobs</h3>
+        <div class="mt-2 flex gap-1 text-xs">
+          @for (option of jobFilters; track option.value) {
+            <button class="rounded-full border px-2 py-0.5"
+                    [class.border-indigo-400]="jobFilter() === option.value"
+                    [class.text-indigo-700]="jobFilter() === option.value"
+                    [class.border-slate-200]="jobFilter() !== option.value"
+                    [class.text-slate-500]="jobFilter() !== option.value"
+                    (click)="setJobFilter(option.value)"
+                    [attr.data-test]="'job-filter-' + (option.value || 'all')">
+              {{ option.label }}
+            </button>
+          }
+        </div>
+        @if (jobs().length) {
+          <table class="mt-2 w-full text-left text-sm" data-test="job-history">
+            <tbody class="text-slate-600">
+              @for (job of jobs(); track job.id) {
+                <tr class="border-b border-slate-100" data-test="job-row">
+                  <td class="py-1">{{ job.type }}</td>
+                  <td class="py-1 text-slate-400">{{ job.status }}</td>
+                  <td class="py-1 text-right text-slate-400">
+                    {{ job.created_at | date: 'd MMM, HH:mm' }}
+                  </td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        } @else {
+          <p class="mt-2 text-sm text-slate-400" data-test="job-history-empty">
+            Nothing yet.
+          </p>
+        }
       </div>
 
       <!-- Somebody who said yes (or no) to ads can change their mind. A
@@ -127,32 +164,43 @@ export class Settings {
   protected docs = inject(DocumentsFacade);
   protected consent = inject(ConsentService);
   private config = inject(ConfigService);
-  private http = inject(HttpClient);
   private toast = inject(ToastService);
   protected displayName = '';
-  protected sendingVerification = signal(false);
-  protected sentVerification = signal(false);
 
   protected readonly adsEnabled = () => this.config.ads().enabled;
+  protected verification = inject(VerificationService);
+  private jobsSvc = inject(JobsService);
+  protected jobs = signal<Job[]>([]);
+  protected jobFilter = signal('');
+  protected readonly jobFilters = [
+    { value: '', label: 'All' },
+    { value: 'succeeded', label: 'Succeeded' },
+    { value: 'failed', label: 'Failed' },
+    { value: 'running', label: 'Running' },
+  ];
+  protected sendingVerification = this.verification.sending;
+  protected sentVerification = this.verification.sent;
 
   constructor() {
     this.displayName = this.auth.user()?.display_name ?? '';
     this.docs.refreshUsage();
+    this.loadJobs();
+  }
+
+  protected setJobFilter(value: string): void {
+    this.jobFilter.set(value);
+    this.loadJobs();
+  }
+
+  private loadJobs(): void {
+    this.jobsSvc.list(this.jobFilter() || undefined).subscribe({
+      next: (page) => this.jobs.set(page.results.slice(0, 20)),
+      error: () => this.jobs.set([]),
+    });
   }
 
   resendVerification(): void {
-    this.sendingVerification.set(true);
-    this.http.post(`${environment.apiUrl}/users/verify/send/`, {}).subscribe({
-      next: () => {
-        this.sendingVerification.set(false);
-        this.sentVerification.set(true);
-        this.toast.success('Check your inbox for the link');
-      },
-      error: () => {
-        this.sendingVerification.set(false);
-        this.toast.error('Could not send that just now');
-      },
-    });
+    this.verification.resend();
   }
 
   save(): void {

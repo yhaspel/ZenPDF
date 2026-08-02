@@ -22,8 +22,8 @@ from django.db import transaction
 from django.db.models import F, Sum
 from django.utils import timezone
 
-from .exceptions import QuotaExceeded
-from .limits import for_principal
+from .exceptions import EmailNotVerified, QuotaExceeded
+from .limits import for_principal, for_tier
 from .models import GuestSession, UsageCounter
 
 COUNTER_FIELDS = ("sign_requests", "ocr_pages", "conversions", "heavy_ops")
@@ -75,6 +75,18 @@ def preflight(session: GuestSession, user) -> dict:
             ],
         }
         raise exc
+
+    # §9B: an unverified account may claim, but only up to the free tier's
+    # storage. Above that, prove the address first — this is the one lever that
+    # makes bulk throwaway accounts expensive, and it deliberately does *not*
+    # touch uploading, which stays open to guests and accounts alike (§21).
+    if projected > for_tier("free").storage_bytes and not getattr(
+            user, "email_verified", False):
+        raise EmailNotVerified(
+            "Confirm your email address to keep this much in one account. "
+            "Everything you uploaded is still here — check your inbox for the "
+            "link, or ask for a new one in Settings."
+        )
     return summary
 
 

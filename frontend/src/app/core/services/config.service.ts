@@ -38,12 +38,39 @@ export class ConfigService {
   }
 }
 
-/** A rough region for the consent rule: the country half of the browser's
- *  locale, which is the only thing available without asking for a permission
- *  or geolocating an address. Unknown is treated as "ask" server-side. */
+/**
+ * A rough region for the consent rule, without asking for a permission or
+ * geolocating an address.
+ *
+ * **The IANA timezone, not the locale.** `navigator.language` is a *UI
+ * preference*: `en-US` is the most common value in the world, including on
+ * machines in Berlin and Paris, so reading the country out of it would tell a
+ * German visitor they are American and skip the banner they are entitled to.
+ * `Europe/Berlin` tracks where the machine actually is. Unknown maps to no
+ * region at all, which the server treats as "ask".
+ */
 export function regionOfBrowser(): string {
-  if (typeof navigator === 'undefined') return '';
-  const locale = navigator.language || '';
-  const parts = locale.split('-');
-  return parts.length > 1 ? parts[parts.length - 1].toUpperCase() : '';
+  const zone = typeof Intl !== 'undefined'
+    ? (Intl.DateTimeFormat().resolvedOptions().timeZone || '') : '';
+  return ZONE_REGIONS[zone] ?? '';
 }
+
+/** IANA zone → ISO country, for the zones the consent list cares about. A
+ *  visitor from anywhere else lands on the server's "ask" default, which is
+ *  the safe direction to be wrong in. */
+const ZONE_REGIONS: Record<string, string> = {
+  'Europe/Vienna': 'AT', 'Europe/Brussels': 'BE', 'Europe/Sofia': 'BG',
+  'Europe/Zagreb': 'HR', 'Asia/Nicosia': 'CY', 'Europe/Prague': 'CZ',
+  'Europe/Copenhagen': 'DK', 'Europe/Tallinn': 'EE', 'Europe/Helsinki': 'FI',
+  'Europe/Paris': 'FR', 'Europe/Berlin': 'DE', 'Europe/Busingen': 'DE',
+  'Europe/Athens': 'GR', 'Europe/Budapest': 'HU', 'Europe/Dublin': 'IE',
+  'Europe/Rome': 'IT', 'Europe/Riga': 'LV', 'Europe/Vilnius': 'LT',
+  'Europe/Luxembourg': 'LU', 'Europe/Malta': 'MT', 'Europe/Amsterdam': 'NL',
+  'Europe/Warsaw': 'PL', 'Europe/Lisbon': 'PT', 'Atlantic/Azores': 'PT',
+  'Atlantic/Madeira': 'PT', 'Europe/Bucharest': 'RO', 'Europe/Bratislava': 'SK',
+  'Europe/Ljubljana': 'SI', 'Europe/Madrid': 'ES', 'Africa/Ceuta': 'ES',
+  'Atlantic/Canary': 'ES', 'Europe/Stockholm': 'SE', 'Europe/London': 'GB',
+  'Europe/Belfast': 'GB', 'Europe/Zurich': 'CH', 'Europe/Oslo': 'NO',
+  'Europe/Reykjavik': 'IS', 'Atlantic/Reykjavik': 'IS',
+  'Europe/Vaduz': 'LI',
+};

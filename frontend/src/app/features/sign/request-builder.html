@@ -224,6 +224,28 @@
             not change what these people are asked to sign.
           </p>
 
+          @if (needsVerification()) {
+            <div class="mt-4 rounded-lg border border-amber-300 bg-amber-50 p-4"
+                 data-test="verify-gate">
+              <p class="text-sm text-amber-900">
+                Confirm your email address before sending documents to other
+                people. We sent a link when you signed up — everything you have
+                built here is saved.
+              </p>
+              @if (verification.failure(); as message) {
+                <p class="mt-2 text-sm text-amber-800" data-test="verify-gate-error">
+                  {{ message }}
+                </p>
+              }
+              <button class="mt-2 rounded-lg border border-amber-400 px-3 py-1 text-sm text-amber-900"
+                      [disabled]="verification.sending()"
+                      (click)="verification.resend()"
+                      data-test="verify-gate-resend">
+                {{ verification.sent() ? 'Sent — check your inbox' : 'Send me the link again' }}
+              </button>
+            </div>
+          }
+
           <div class="mt-4 flex gap-2">
             <button class="rounded-lg bg-emerald-600 px-4 py-2 font-medium text-white disabled:opacity-40"
                     [disabled]="busy()" (click)="send()" data-test="send-request">

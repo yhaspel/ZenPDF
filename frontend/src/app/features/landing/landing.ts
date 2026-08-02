@@ -1,9 +1,12 @@
+import { DOCUMENT } from '@angular/common';
 import { ChangeDetectionStrategy, Component, inject } from '@angular/core';
+import { Meta, Title } from '@angular/platform-browser';
 import { RouterLink } from '@angular/router';
 
 import { AuthFacade } from '../../abstraction/auth.facade';
 import { TOOL_PAGES } from '../../core/tool-pages';
 import { AdSlot } from '../../shared/ad-slot';
+import { SiteFooter } from '../../shared/site-footer';
 
 /**
  * The landing page is a directory of working tools, not a signup wall (§21.1).
@@ -14,7 +17,7 @@ import { AdSlot } from '../../shared/ad-slot';
 @Component({
   selector: 'app-landing',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [RouterLink, AdSlot],
+  imports: [RouterLink, AdSlot, SiteFooter],
   template: `
     <div class="min-h-screen bg-gradient-to-b from-indigo-50 to-white">
       <header class="mx-auto flex max-w-5xl items-center justify-between px-6 py-4">
@@ -60,20 +63,47 @@ import { AdSlot } from '../../shared/ad-slot';
         </div>
       </main>
 
-      <footer class="border-t border-slate-200 bg-white/60 px-6 py-6 text-center text-xs text-slate-400">
-        <p>
-          <a routerLink="/about" class="underline" data-test="footer-about">About</a> ·
-          <a routerLink="/legal/privacy" class="underline" data-test="footer-privacy">Privacy</a> ·
-          <a routerLink="/legal/terms" class="underline" data-test="footer-terms">Terms</a> ·
-          <a routerLink="/legal/esign-disclosure" class="underline">E-sign disclosure</a> ·
-          <a routerLink="/verify" class="underline">Verify a signed PDF</a>
-        </p>
-        <p class="mt-2">Free, paid for by advertising. Files are deleted automatically.</p>
-      </footer>
+      <app-site-footer />
+      <p class="pb-6 text-center text-xs text-slate-400">
+        Free, paid for by advertising. Files are deleted automatically.
+      </p>
     </div>
   `,
 })
 export class Landing {
+  private title = inject(Title);
+  private meta = inject(Meta);
+  private doc = inject(DOCUMENT);
+
+  constructor() {
+    // Prerendered, so a crawler and a link preview see the real thing rather
+    // than the shell's defaults — this page is the acquisition channel an
+    // ad-funded product lives on (§9A).
+    const title = 'ZenPDF — every PDF tool, free and without an account';
+    const description =
+      'Merge, split, compress, sign, OCR and convert PDFs in your browser. '
+      + 'Free, no watermark, no account needed, and files are deleted '
+      + 'automatically.';
+    this.title.setTitle(title);
+    this.meta.updateTag({ name: 'description', content: description });
+    this.meta.updateTag({ property: 'og:title', content: title });
+    this.meta.updateTag({ property: 'og:description', content: description });
+    this.meta.updateTag({ property: 'og:type', content: 'website' });
+    this.meta.updateTag({ name: 'twitter:card', content: 'summary' });
+    const loc = this.doc.location;
+    if (loc) {
+      const canonical = `${loc.protocol}//${loc.host}/`;
+      this.meta.updateTag({ property: 'og:url', content: canonical });
+      let link = this.doc.querySelector<HTMLLinkElement>('link[rel="canonical"]');
+      if (!link) {
+        link = this.doc.createElement('link');
+        link.rel = 'canonical';
+        this.doc.head.appendChild(link);
+      }
+      link.href = canonical;
+    }
+  }
+
   protected auth = inject(AuthFacade);
   protected readonly tools = TOOL_PAGES;
 }

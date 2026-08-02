@@ -1,4 +1,5 @@
 import { expect, request as pwRequest, test } from '@playwright/test';
+import { readFileSync } from 'node:fs';
 import path from 'node:path';
 
 import {
@@ -88,11 +89,25 @@ test('phase 9: the legal pages are live, linked, and quote the real numbers', as
   await page.click('[data-test=footer-privacy]');
   await expect(page.locator('[data-test=legal-h1]')).toHaveText('Privacy policy');
 
-  // The retention table is rendered from /api/config/, which reads the same
-  // settings the sweepers use — a backend test pins the other end of that.
-  await expect(page.locator('[data-test=retention-trash]')).toContainText('30 days');
-  await expect(page.locator('[data-test=retention-guest]')).toContainText('24 hours');
-  await expect(page.locator('[data-test=retention-export]')).toContainText('24 hours');
+  // Three things have to agree, and this is where all three are reachable at
+  // once: the live API (which reads the settings the sweepers use), the
+  // constant the *prerendered* copy is built from, and what the page shows.
+  const config = await (await page.request.get('/api/config/')).json();
+  const source = readFileSync(
+    new URL('../../frontend/src/app/core/retention.ts', import.meta.url),
+    'utf8',
+  );
+  const stated = (key: string) => Number(new RegExp(`${key}: (\\d+)`).exec(source)![1]);
+  expect(stated('trash_days')).toBe(config.retention.trash_days);
+  expect(stated('guest_hours')).toBe(config.retention.guest_hours);
+  expect(stated('export_hours')).toBe(config.retention.export_hours);
+
+  await expect(page.locator('[data-test=retention-trash]'))
+    .toContainText(`${config.retention.trash_days} days`);
+  await expect(page.locator('[data-test=retention-guest]'))
+    .toContainText(`${config.retention.guest_hours} hours`);
+  await expect(page.locator('[data-test=retention-export]'))
+    .toContainText(`${config.retention.export_hours} hours`);
 
   await page.goto('/');
   await page.click('[data-test=footer-terms]');
@@ -170,13 +185,26 @@ test('phase 9: an unverified account is told why it cannot send yet', async ({
     'Confirm your email', { timeout: 60_000 });
 });
 
-test('phase 9: the usage panel shows real numbers', async ({ page }) => {
-  test.setTimeout(180_000);
+test('phase 9: the usage panel shows real numbers after a metered run', async ({
+  page,
+}) => {
+  test.setTimeout(300_000);
   await registerAndLogin(page, 'p9usage');
-  await uploadFiles(page, ['text.pdf']);
+  await uploadFiles(page, ['scanned.pdf']);
   await expect(page.locator('[data-test=doc-card]').first()).toBeVisible({
     timeout: 60_000,
   });
+
+  // A metered operation, so the counters below are reporting something that
+  // actually happened rather than a row of zeroes.
+  await page.locator('[data-test=doc-card] [data-test=open-doc]').first().click();
+  await page.click('[data-test=convert-toggle]');
+  await expect(page.locator('[data-test=ocr-lang-eng]')).toBeVisible({
+    timeout: 60_000,
+  });
+  await page.click('[data-test=ocr-run]');
+  await expect(page.locator('[data-test=toast-success]')).toContainText(
+    'Text recognised', { timeout: 180_000 });
 
   await page.goto('/app/settings');
   await expect(page.locator('[data-test=usage-table]')).toBeVisible();
@@ -184,6 +212,18 @@ test('phase 9: the usage panel shows real numbers', async ({ page }) => {
   await expect(page.locator('[data-test=usage-sign]')).toContainText('/ 30');
   await expect(page.locator('[data-test=usage-metered]')).toContainText('/ 40');
   await expect(page.locator('[data-test=usage-heading]')).toContainText('Storage');
+  // The OCR run is counted, and the pages it read are counted.
+  await expect(page.locator('[data-test=usage-metered]')).not.toContainText('0 /');
+  await expect(page.locator('[data-test=usage-ocr]')).not.toContainText('0 /');
+
+  // …and the history says *what* spent it, which is the question somebody asks
+  // when the number surprises them (§9B).
+  await expect(page.locator('[data-test=job-history]')).toBeVisible();
+  await expect(page.locator('[data-test=job-row]').first()).toContainText('ocr');
+  await page.click('[data-test=job-filter-failed]');
+  await expect(page.locator('[data-test=job-row]')).toHaveCount(0);
+  await page.click('[data-test=job-filter-succeeded]');
+  await expect(page.locator('[data-test=job-row]').first()).toBeVisible();
 });
 
 test('phase 9: a recipient can report a signing request they did not expect', async ({
@@ -231,8 +271,10 @@ test('phase 9: a recipient can report a signing request they did not expect', as
   await ceremony.click('[data-test=report-open]');
   await ceremony.fill('[data-test=report-reason]', 'I have never heard of them');
   await ceremony.click('[data-test=report-send]');
-  await expect(ceremony.locator('[data-test=ceremony-error]')).toContainText(
+  // A thank-you belongs in the notice banner, not the error one.
+  await expect(ceremony.locator('[data-test=ceremony-notice]')).toContainText(
     'recorded your report', { timeout: 60_000 });
+  await expect(ceremony.locator('[data-test=ceremony-error]')).toHaveCount(0);
   await guest.close();
 });
 

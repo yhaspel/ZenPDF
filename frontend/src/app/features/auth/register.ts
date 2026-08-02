@@ -48,7 +48,17 @@ const REASONS: Record<string, string> = {
         <label class="mb-1 block text-sm font-medium text-slate-600">Password</label>
         <input name="password" type="password" required [(ngModel)]="password"
                class="mb-6 w-full rounded-lg border border-slate-300 px-3 py-2" data-test="password" />
-        <button type="submit" [disabled]="loading()"
+        <label class="mb-6 flex items-start gap-2 text-sm text-slate-600">
+          <input name="terms" type="checkbox" required [(ngModel)]="acceptTerms"
+                 class="mt-0.5 h-4 w-4 rounded border-slate-300" data-test="accept-terms" />
+          <span>
+            I agree to the
+            <a routerLink="/legal/terms" target="_blank" class="text-indigo-600" data-test="terms-link">Terms</a>
+            and the
+            <a routerLink="/legal/privacy" target="_blank" class="text-indigo-600" data-test="privacy-link">Privacy Policy</a>.
+          </span>
+        </label>
+        <button type="submit" [disabled]="loading() || !acceptTerms"
                 class="w-full rounded-lg bg-indigo-600 py-2 font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
                 data-test="submit">
           {{ loading() ? 'Creating…' : 'Create account' }}
@@ -64,6 +74,10 @@ export class Register {
   protected displayName = '';
   protected email = '';
   protected password = '';
+  /** Unticked by default, and required: consent that was pre-ticked is not
+   *  consent, and "they must have agreed, they have an account" is not
+   *  something we would want to have to argue (§9A). */
+  protected acceptTerms = false;
   protected error = signal('');
   protected loading = signal(false);
 
@@ -78,10 +92,16 @@ export class Register {
   });
 
   submit(): void {
-    if (!this.email || !this.password) return;
+    if (!this.email || !this.password || !this.acceptTerms) return;
     this.loading.set(true);
     this.error.set('');
-    this.auth.register({ email: this.email, password: this.password, display_name: this.displayName }).subscribe({
+    this.auth
+      .register({
+        email: this.email,
+        password: this.password,
+        display_name: this.displayName,
+        accept_terms: true,
+      }).subscribe({
       next: () => {
         // auto-login after successful registration
         this.auth.login(this.email, this.password).subscribe({

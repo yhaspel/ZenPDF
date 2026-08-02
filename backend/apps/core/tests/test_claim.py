@@ -173,7 +173,8 @@ def test_register_with_a_guest_token_claims_inline(guest, fixture_bytes, anon):
     _guest_with_work(guest, fixture_bytes)
     resp = anon.post(
         "/api/users/register/",
-        {"email": "new@example.com", "password": "strongpass123", "display_name": "New"},
+        {"email": "new@example.com", "password": "strongpass123",
+         "display_name": "New", "accept_terms": True},
         format="json",
         HTTP_X_GUEST_TOKEN=guest.token,
     )
@@ -205,7 +206,7 @@ def test_login_with_a_guest_token_claims_inline(guest, fixture_bytes, anon, user
 def test_register_without_a_guest_token_still_works(anon):
     resp = anon.post(
         "/api/users/register/",
-        {"email": "plain@example.com", "password": "strongpass123"},
+        {"email": "plain@example.com", "password": "strongpass123", "accept_terms": True},
         format="json",
     )
     assert resp.status_code == 201
@@ -273,7 +274,12 @@ def test_explicit_claim_endpoint_over_quota_returns_429(guest, fixture_bytes, ap
 
 
 def test_no_email_is_sent_on_any_guest_path(guest, fixture_bytes, anon):
-    """No guest action may trigger outbound mail (§17e)."""
+    """No *guest* action may trigger outbound mail (§17e).
+
+    Registering is not a guest action: it creates an account, and that account
+    is mailed its own verification link (§9B). What must stay silent is
+    everything a visitor can do without asking for one.
+    """
     from django.core import mail
 
     doc = _upload(guest, fixture_bytes)
@@ -283,10 +289,15 @@ def test_no_email_is_sent_on_any_guest_path(guest, fixture_bytes, anon):
         format="json",
     )
     guest.get("/api/documents/")
+    assert mail.outbox == []
+
     anon.post(
         "/api/users/register/",
-        {"email": "quiet@example.com", "password": "strongpass123"},
+        {"email": "quiet@example.com", "password": "strongpass123",
+         "accept_terms": True},
         format="json",
         HTTP_X_GUEST_TOKEN=guest.token,
     )
-    assert mail.outbox == []
+    # Exactly one, to the person who just asked for the account — and nothing
+    # to anybody else.
+    assert [m.to for m in mail.outbox] == [["quiet@example.com"]]

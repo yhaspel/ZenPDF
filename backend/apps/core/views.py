@@ -1,6 +1,7 @@
 """Public config + health + guest-session endpoints (§6, §16, §21)."""
 from django.conf import settings
 from django.db import connections
+from django.http import HttpResponse
 from django.utils import timezone
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import extend_schema
@@ -41,6 +42,36 @@ def guest_state(principal) -> dict:
         ),
         "storage_bytes_used": principal.storage_bytes_used,
     }
+
+
+class AdsTxtView(APIView):
+    """`/ads.txt` — IAB Authorized Digital Sellers, rendered from config (§9A).
+
+    Served by the API rather than baked into the frontend image, because the
+    only thing in it is the publisher id, and that lives in the environment.
+    Until an AdSense account exists the file is deliberately empty of sellers:
+    a valid, considered answer beats a 404, and the day the id arrives one
+    variable changes with no rebuild.
+    """
+
+    permission_classes = [AllowAny]
+    authentication_classes: list = []
+
+    @extend_schema(responses=OpenApiTypes.STR, tags=["core"])
+    def get(self, request):
+        lines = [
+            "# ads.txt — Authorized Digital Sellers (IAB).",
+            "# Rendered from ADSENSE_CLIENT_ID; see docs/09-adsense-readiness.md.",
+        ]
+        client = (settings.ADSENSE_CLIENT_ID or "").strip()
+        if client and settings.ADS_PROVIDER == "adsense":
+            # `pub-…` is what AdSense issues; the certification id below is
+            # Google's own, fixed for every AdSense publisher.
+            publisher = client.removeprefix("ca-")
+            lines.append(f"google.com, {publisher}, DIRECT, f08c47fec0942fa0")
+        else:
+            lines.append("# No sellers are authorised yet.")
+        return HttpResponse("\n".join(lines) + "\n", content_type="text/plain")
 
 
 class ConfigView(APIView):

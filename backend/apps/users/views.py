@@ -1,7 +1,10 @@
+from django.conf import settings
+from django.http import HttpResponseRedirect
 from django.utils import timezone
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import extend_schema
 from rest_framework import generics, status
+from rest_framework.exceptions import Throttled
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -9,6 +12,7 @@ from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
+from apps.core import captcha
 from apps.core import limits as L
 from apps.core.authentication import require_principal
 from apps.core.claim import claim_if_token
@@ -19,7 +23,11 @@ from apps.core.principals import is_guest, label, owned_by
 from apps.core.throttling import AuthThrottle
 
 from .serializers import RegisterSerializer, UsageSerializer, UserSerializer
-from .verification import send_verification_email, user_from_verification_token
+from .verification import (
+    send_verification_email,
+    user_from_verification_token,
+    verification_send_allowed,
+)
 
 
 def _claim_inline(request, user, payload: dict) -> dict:
@@ -88,6 +96,9 @@ class RegisterView(generics.CreateAPIView):
 
     @extend_schema(tags=["users"])
     def post(self, request, *args, **kwargs):
+        # Behind `CAPTCHA_ENABLED`, off in dev and test (§9B). Registration is
+        # the door to an account that can send mail in our name.
+        captcha.enforce_standalone(request)
         response = super().post(request, *args, **kwargs)
         if response.status_code == status.HTTP_201_CREATED:
             from django.contrib.auth import get_user_model
@@ -95,6 +106,10 @@ class RegisterView(generics.CreateAPIView):
             user = get_user_model().objects.filter(id=response.data.get("id")).first()
             if user is not None:
                 _claim_inline(request, user, response.data)
+                # Mail the link here, or the verification gate is unreachable
+                # from a cold start: nothing else in the product asks for it,
+                # and the person who needs it has not seen a settings screen.
+                send_verification_email(user)
         return response
 
 
@@ -192,6 +207,14 @@ class SendVerificationView(APIView):
     def post(self, request):
         if request.user.email_verified:
             return Response({"verified": True, "sent": False})
+        if not verification_send_allowed(request.user):
+            # Registration does not prove the address belongs to whoever typed
+            # it, so an uncapped resend is a mailbomb aimed at a stranger —
+            # and this mail is transactional, so the suppression list cannot
+            # save them. The cooldown is the cap.
+            raise Throttled(
+                detail="We have just sent one. Check your inbox, or try again "
+                       "in a few minutes.")
         send_verification_email(request.user)
         return Response({"verified": False, "sent": True})
 
@@ -223,22 +246,52 @@ class VerifyEmailView(APIView):
 
 
 class UnsubscribeView(APIView):
-    """`POST /api/mail/unsubscribe/` `{token}` — the one-click list-unsubscribe.
+    """`/api/mail/unsubscribe/<token>/` — the RFC 8058 one-click endpoint.
 
-    No auth: the token in the mail *is* the authority, and a person who wants
-    out must not have to sign in to get out.
+    Three callers, one URL:
+
+    * **Gmail/Yahoo POST it** with `List-Unsubscribe=One-Click` and no
+      JavaScript in sight. This has to be the API — a link to a client-rendered
+      route would return the app shell and suppress nothing while telling the
+      person they were unsubscribed.
+    * **A person clicks it** in the footer. A GET does *not* suppress: an
+      unsubscribe link is printed in every message and forwarded with them, and
+      one that fires on load lets anyone downstream silently and permanently
+      cut somebody off. So a GET redirects to the page that asks.
+    * **That page POSTs** when they confirm, and can `DELETE` to undo.
+
+    No auth: the token in the mail is the authority, and somebody who wants out
+    must not have to sign in to get out.
     """
 
     permission_classes = [AllowAny]
     authentication_classes: list = []
+    throttle_classes = [AuthThrottle]
 
-    @extend_schema(request=OpenApiTypes.OBJECT, responses=OpenApiTypes.OBJECT,
-                   tags=["core"])
-    def post(self, request):
-        from apps.core.mail import email_from_unsubscribe_token, suppress
+    def _digest(self, token: str) -> str:
+        from apps.core.mail import hash_from_unsubscribe_token
 
-        email = email_from_unsubscribe_token(str(request.data.get("token") or ""))
-        if not email:
+        digest = hash_from_unsubscribe_token(token)
+        if not digest:
             raise ValidationFailed("That unsubscribe link is not valid.")
-        suppress(email, reason="unsubscribe")
-        return Response({"unsubscribed": True, "email": email})
+        return digest
+
+    @extend_schema(responses=OpenApiTypes.OBJECT, tags=["core"])
+    def get(self, request, token: str):
+        # Confirm-first, deliberately: see the class docstring.
+        return HttpResponseRedirect(
+            f"{settings.FRONTEND_BASE_URL}/unsubscribe/{token}")
+
+    @extend_schema(request=None, responses=OpenApiTypes.OBJECT, tags=["core"])
+    def post(self, request, token: str):
+        from apps.core.mail import suppress_hash
+
+        suppress_hash(self._digest(token), reason="unsubscribe")
+        return Response({"unsubscribed": True})
+
+    @extend_schema(request=None, responses=OpenApiTypes.OBJECT, tags=["core"])
+    def delete(self, request, token: str):
+        from apps.core.mail import unsuppress_hash
+
+        unsuppress_hash(self._digest(token))
+        return Response({"unsubscribed": False})

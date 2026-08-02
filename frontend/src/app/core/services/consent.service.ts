@@ -1,5 +1,6 @@
 import { Injectable, computed, effect, inject, signal } from '@angular/core';
 
+import { providerScriptLoaded, unloadProviderScript } from '../../shared/ad-slot';
 import { ConfigService } from './config.service';
 
 export type ConsentChoice = 'granted' | 'denied' | null;
@@ -31,10 +32,21 @@ export class ConsentService {
   private _choice = signal<ConsentChoice>(null);
   readonly choice = this._choice.asReadonly();
 
-  /** Ads are on, and this visitor has said yes. */
-  readonly canLoadAds = computed(
-    () => this.config.ads().enabled && this._choice() === 'granted',
-  );
+  /**
+   * Ads are on, and this visitor has either said yes or is somewhere no
+   * question is required.
+   *
+   * The second half matters: outside the consent regions nothing ever asks, so
+   * gating on an explicit `granted` would mean ads never load anywhere — a
+   * product that is free because of advertising, showing none. "Denied" is
+   * still honoured everywhere, whether or not it was solicited.
+   */
+  readonly canLoadAds = computed(() => {
+    if (!this.config.ads().enabled) return false;
+    const choice = this._choice();
+    if (choice === 'denied') return false;
+    return choice === 'granted' || !this.config.consentRequired();
+  });
 
   /** Ask, and only ask, when ads are on and nothing has been decided. */
   readonly mustAsk = computed(
@@ -55,22 +67,39 @@ export class ConsentService {
   }
 
   set(choice: Exclude<ConsentChoice, null>): void {
+    const withdrawn = choice === 'denied' && providerScriptLoaded();
     try {
       localStorage.setItem(KEY, choice);
     } catch {
       // A browser that refuses storage still gets the choice for this page.
     }
     this._choice.set(choice);
+    if (withdrawn) this.teardown();
   }
 
   /** For the settings screen: let somebody change their mind. */
   reset(): void {
+    const withdrawn = providerScriptLoaded();
     try {
       localStorage.removeItem(KEY);
     } catch {
       /* nothing to clear */
     }
     this._choice.set(null);
+    if (withdrawn) this.teardown();
+  }
+
+  /**
+   * Withdrawal has to actually withdraw.
+   *
+   * Hiding the slots and pushing a `denied` Consent Mode update leaves the
+   * Google tag loaded and running for the rest of the session — a consent you
+   * cannot take back is not consent. A third-party script cannot be
+   * un-executed, so the only complete answer is to drop it and reload.
+   */
+  private teardown(): void {
+    unloadProviderScript();
+    if (typeof location !== 'undefined') location.reload();
   }
 
   private read(): ConsentChoice {

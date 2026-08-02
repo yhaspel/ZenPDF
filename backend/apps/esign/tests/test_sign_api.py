@@ -869,16 +869,17 @@ def test_an_unverified_account_cannot_send_but_can_build(api, sign_request, user
 def test_a_request_cannot_go_to_more_people_than_the_cap(api, sign_request,
                                                          verified, settings):
     settings.MAX_RECIPIENTS_PER_REQUEST = 3
-    people = _recipients(api, sign_request["id"], [
-        {"email": f"s{i}@example.com", "role": "signer", "order": 1}
-        for i in range(4)
-    ])
-    _fields(api, sign_request["id"],
-            [_sign_field(person["id"]) for person in people])
-
-    resp = api.post(f"/api/sign-requests/{sign_request['id']}/send/", format="json")
+    # Refused at *draft* time. Letting somebody add eleven people, lay out a
+    # field for each and then refusing at Send is the shape this phase's own
+    # `enforce_sign_requests` comment argues against.
+    resp = api.patch(
+        f"/api/sign-requests/{sign_request['id']}/",
+        {"recipients": [{"email": f"s{i}@example.com", "role": "signer",
+                         "order": 1} for i in range(4)]},
+        format="json",
+    )
     assert resp.status_code == 400
-    assert "at most 3 people" in resp.json()["error"]["message"]
+    assert "1 and 3 recipients" in resp.json()["error"]["message"]
 
 
 def test_a_day_of_sending_to_strangers_is_capped(api, uploaded_doc, verified,
@@ -921,7 +922,9 @@ def test_three_reports_pause_a_request_and_tell_the_owner(api, anon, sign_reques
 
     first = anon.post(f"/api/public/sign/{tokens[0]}/report/",
                       {"reason": "I do not know this person"}, format="json")
-    assert first.json() == {"reported": True, "reports": 1, "paused": False}
+    # No running count in the answer: telling each reporter how close they are
+    # to pausing somebody's contract is an invitation to organise.
+    assert first.json() == {"reported": True, "paused": False}
     # The same person twice is still one report — one angry recipient must not
     # be able to stop a legitimate contract.
     anon.post(f"/api/public/sign/{tokens[0]}/report/", {}, format="json")

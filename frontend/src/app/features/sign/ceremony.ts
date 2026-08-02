@@ -272,11 +272,15 @@ export class Ceremony {
   /** "I did not ask for this" (§9B). Three distinct reporters pause it. */
   protected report(): void {
     this.busy.set(true);
+    this.reportError.set('');
     this.esign.report(this.token(), this.reportReason()).subscribe({
       next: (res) => {
         this.busy.set(false);
         this.reporting.set(false);
-        this.error.set(
+        // A thank-you is not an error. It used to be written into `error()`,
+        // which renders in the red banner — telling somebody who just did the
+        // right thing that something went wrong.
+        this.notice.set(
           res.paused
             ? 'Thank you — this request has been paused and the sender told.'
             : 'Thank you. We have recorded your report.',
@@ -284,10 +288,17 @@ export class Ceremony {
       },
       error: () => {
         this.busy.set(false);
-        this.error.set('That did not send. Try again in a moment.');
+        // Inside the dialog: the modal covers the page banner, so a failure
+        // written there is invisible and the person just clicks again.
+        this.reportError.set('That did not send. Try again in a moment.');
       },
     });
   }
+
+  /** A confirmation, shown in its own (green) banner — never in `error`. */
+  protected notice = signal('');
+  /** A failure *inside* the report dialog, where the person can see it. */
+  protected reportError = signal('');
 
   protected downloadUrl(what: 'final' | 'certificate'): string {
     return this.esign.recipientDownloadUrl(this.token(), what);

@@ -567,7 +567,21 @@ export interface SignFieldModel {
 }
 
 export type SignRequestStatus =
-  | 'draft' | 'sent' | 'completed' | 'declined' | 'expired' | 'canceled';
+  | 'draft' | 'sent' | 'completed' | 'declined' | 'expired' | 'canceled'
+  // Paused after enough recipients said they did not expect it (§9B). The
+  // owner sees it, so it needs a label rather than the raw value.
+  | 'canceled_by_abuse';
+
+/** What the owner reads. The API sends the machine value. */
+export const SIGN_STATUS_LABELS: Record<SignRequestStatus, string> = {
+  draft: 'draft',
+  sent: 'sent',
+  completed: 'completed',
+  declined: 'declined',
+  expired: 'expired',
+  canceled: 'canceled',
+  canceled_by_abuse: 'paused after reports',
+};
 
 export interface SignRequestModel {
   id: string;

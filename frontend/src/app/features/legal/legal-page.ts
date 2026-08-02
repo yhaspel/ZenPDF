@@ -3,6 +3,7 @@ import { Meta, Title } from '@angular/platform-browser';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 
 import { AppConfig } from '../../core/models/models';
+import { RETENTION } from '../../core/retention';
 import { ConfigService } from '../../core/services/config.service';
 
 type LegalKind = 'privacy' | 'terms' | 'about';
@@ -12,9 +13,12 @@ type LegalKind = 'privacy' | 'terms' | 'about';
  *
  * The retention numbers are **read from `/api/config/`**, not typed into the
  * copy. A privacy policy that says "30 days" while the sweeper says 45 is
- * worse than no policy: it is a written claim that the system contradicts. A
- * backend test asserts the same numbers come from the settings the beat tasks
- * use, so the three cannot drift apart.
+ * worse than no policy: it is a written claim that the system contradicts.
+ *
+ * These pages prerender, where no API call is possible, so the pre-hydration
+ * copy comes from `core/retention.ts` — and a backend test asserts *that* file
+ * and the settings the beat tasks use agree. Live config still wins once it
+ * loads.
  */
 @Component({
   selector: 'app-legal-page',
@@ -31,9 +35,12 @@ export class LegalPage {
   protected kind = signal<LegalKind>('privacy');
   protected config = signal<AppConfig | null>(null);
 
-  protected readonly retention = computed(() => this.config()?.retention ?? {
-    guest_hours: 24, trash_days: 30, export_hours: 24,
-  });
+  /** Live config when it has arrived; otherwise the build-time constant that
+   *  the prerendered HTML was rendered from — which a backend test pins to the
+   *  settings the sweepers use, so it is a checked claim and not a guess. */
+  protected readonly retention = computed(
+    () => this.config()?.retention ?? RETENTION,
+  );
 
   constructor() {
     const kind = (this.route.snapshot.data['kind'] ?? 'privacy') as LegalKind;

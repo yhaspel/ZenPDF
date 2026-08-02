@@ -15,6 +15,10 @@
     <p class="m-4 rounded border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700"
        data-test="ceremony-error">{{ message }}</p>
   }
+  @if (notice(); as message) {
+    <p class="m-4 rounded border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800"
+       data-test="ceremony-notice">{{ message }}</p>
+  }
 
   @switch (screen()) {
     @case ('loading') {
@@ -264,8 +268,10 @@
       signature with a platform seal — not a qualified electronic signature.
     </p>
     <p class="mt-1">
-      <a routerLink="/legal/privacy" class="underline">Privacy</a> ·
-      <a routerLink="/legal/terms" class="underline">Terms</a> ·
+      <a routerLink="/about" class="underline" data-test="footer-about">About</a> ·
+      <a routerLink="/legal/privacy" class="underline" data-test="footer-privacy">Privacy</a> ·
+      <a routerLink="/legal/terms" class="underline" data-test="footer-terms">Terms</a> ·
+      <a routerLink="/legal/esign-disclosure" class="underline" data-test="footer-esign">E-sign disclosure</a> ·
       <button class="underline" (click)="reporting.set(true)"
               data-test="report-open">Report this request</button>
     </p>
@@ -303,6 +309,10 @@
                   [ngModel]="reportReason()" (ngModelChange)="reportReason.set($event)"
                   data-test="report-reason"></textarea>
       </label>
+      @if (reportError(); as message) {
+        <p class="mt-2 rounded bg-rose-50 p-2 text-sm text-rose-700"
+           data-test="report-error">{{ message }}</p>
+      }
       <div class="mt-4 flex justify-end gap-2">
         <button class="rounded-lg px-4 py-2 text-sm text-slate-500"
                 (click)="reporting.set(false)">Cancel</button>

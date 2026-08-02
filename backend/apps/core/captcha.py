@@ -45,6 +45,29 @@ def verify_token(token: str, remote_ip: str = "") -> bool:
         return False
 
 
+def enforce_standalone(request) -> None:
+    """Challenge a request that has no principal and no operation (§9B).
+
+    Registration and the public signing ceremony: both are reachable by anyone
+    on the internet, both create or touch state that costs somebody else
+    something (an account that can send mail; a signature on a contract), and
+    neither has a guest session to remember a pass on. So the token is checked
+    on the request itself, every time.
+
+    Off when `CAPTCHA_ENABLED` is false — which is the dev and test default, so
+    the suites drive these routes without a Cloudflare round trip.
+    """
+    if not enabled():
+        return
+
+    from .authentication import client_ip
+
+    token = request.META.get(CAPTCHA_HEADER, "") or str(
+        request.data.get("captcha_token") or "")
+    if not verify_token(token, client_ip(request)):
+        raise CaptchaRequired()
+
+
 def enforce(request, principal, op_type: str) -> None:
     """Raise `captcha_required` if this guest still owes a challenge.
 

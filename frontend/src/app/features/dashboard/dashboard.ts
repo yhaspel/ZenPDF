@@ -12,6 +12,7 @@ import { DocumentModel, Job } from '../../core/models/models';
 import { DocumentsService } from '../../core/services/documents.service';
 import { JobsService } from '../../core/services/jobs.service';
 import { AdSlot } from '../../shared/ad-slot';
+import { SiteFooter } from '../../shared/site-footer';
 import { ConfirmService } from '../../shared/confirm.service';
 import { EmptyState } from '../../shared/empty-state';
 import { PdfThumbnail } from '../../shared/pdf-thumbnail';
@@ -32,7 +33,8 @@ function isPdf(file: File): boolean {
 @Component({
   selector: 'app-dashboard',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [AdSlot, FormsModule, UploadDropzone, PdfThumbnail, EmptyState, Spinner],
+  imports: [AdSlot, FormsModule, UploadDropzone, PdfThumbnail, EmptyState,
+            Spinner, SiteFooter],
   templateUrl: './dashboard.html',
 })
 export class Dashboard {

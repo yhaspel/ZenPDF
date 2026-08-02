@@ -1,4 +1,6 @@
 """DRF throttles (01-architecture.md §16, §17b)."""
+import hashlib
+
 from rest_framework.throttling import (
     AnonRateThrottle,
     SimpleRateThrottle,
@@ -83,6 +85,25 @@ class PublicSignThrottle(SimpleRateThrottle):
         return self.cache_format % {"scope": self.scope, "ident": self.get_ident(request)}
 
 
+class PublicSignTokenThrottle(SimpleRateThrottle):
+    """Per-*token* daily cap for the ceremony — §9B: 200/day.
+
+    The IP throttle above stops a flood from one machine; this one stops a
+    single leaked link being replayed all day from everywhere. 200 is far above
+    what signing a document honestly takes (open, read, place a few fields,
+    submit) and far below what scripted abuse of a public URL looks like.
+    """
+
+    scope = "public_sign_token"
+
+    def get_cache_key(self, request, view):
+        token = (view.kwargs or {}).get("token", "")
+        if not token:
+            return None
+        digest = hashlib.sha256(token.encode()).hexdigest()
+        return self.cache_format % {"scope": self.scope, "ident": digest}
+
+
 class UploadThrottle(SimpleRateThrottle):
     """Per-*account* upload rate (§9B: 20/hour).
 
@@ -94,6 +115,14 @@ class UploadThrottle(SimpleRateThrottle):
 
     scope = "upload"
 
+    def allow_request(self, request, view):
+        # DRF runs `get_throttles()` for *every* method, so without this the
+        # 20/hour budget would be spent by the dashboard listing documents —
+        # twenty reads is a few minutes of ordinary use.
+        if request.method not in ("POST", "PUT", "PATCH"):
+            return True
+        return super().allow_request(request, view)
+
     def get_cache_key(self, request, view):
         user = getattr(request, "user", None)
         if user is None or not user.is_authenticated:
@@ -102,10 +131,13 @@ class UploadThrottle(SimpleRateThrottle):
 
 
 class VerifyThrottle(SimpleRateThrottle):
-    """Per-IP rate for `/api/verify/` (§9B: 10/min).
+    """Per-IP burst rate for `/api/verify/` (§9B: 10/min).
 
     It has no principal by design — the person checking a document they were
-    sent is a stranger — so the address is all there is to key on.
+    sent is a stranger — so the address is all there is to key on. Pair it with
+    `VerifyHourlyThrottle`: this endpoint takes an arbitrary PDF from a stranger
+    and runs signature verification on it, which is the most expensive
+    anonymous work in the product, so a burst limit alone is not a ceiling.
     """
 
     scope = "verify"
@@ -114,3 +146,9 @@ class VerifyThrottle(SimpleRateThrottle):
         return self.cache_format % {
             "scope": self.scope, "ident": self.get_ident(request),
         }
+
+
+class VerifyHourlyThrottle(VerifyThrottle):
+    """The hourly ceiling behind the burst limit — 60/hour/IP."""
+
+    scope = "verify_hour"
