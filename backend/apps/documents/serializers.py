@@ -74,3 +74,10 @@ class OperationRequestSerializer(serializers.Serializer):
     type = serializers.CharField()
     params = serializers.DictField(required=False, default=dict)
     base_version_seq = serializers.IntegerField(required=False, allow_null=True)
+    # The session password for an encrypted document (phase-07). A sibling of
+    # `params`, not a member of it: it is a credential for the *document*, and
+    # putting it in `params` would mean adding it to all forty op schemas —
+    # each of which would then have to remember to ignore it.
+    document_password = serializers.CharField(
+        required=False, allow_blank=True, max_length=256, write_only=True,
+    )

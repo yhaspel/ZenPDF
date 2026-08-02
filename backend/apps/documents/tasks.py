@@ -40,6 +40,10 @@ from .models import Document, DocumentVersion
 
 logger = logging.getLogger(__name__)
 
+# The ops that manage encryption themselves: unlocking them centrally first
+# would mean decrypting a document in order to encrypt it.
+SELF_UNLOCKING = frozenset({"encrypt", "decrypt", "set_permissions"})
+
 THUMB_PAGES = 20
 THUMB_WIDTH = 240
 
@@ -425,6 +429,7 @@ def _apply_single(op, primary_bytes, params, source_bytes, *, job=None):
             owner_password=params["owner_password"],
             user_password=params.get("user_password", ""),
             permissions=params.get("permissions"),
+            password=params.get("document_password", ""),
         )
         return "version", data, "Protected", {"encrypted": True}
     if t == "decrypt":
@@ -438,6 +443,7 @@ def _apply_single(op, primary_bytes, params, source_bytes, *, job=None):
             permissions=params["permissions"],
             owner_password=params["owner_password"],
             user_password=params.get("user_password", ""),
+            password=params.get("document_password", ""),
         )
         return "version", data, "Permissions updated", {"encrypted": True}
     if t == "sanitize":
@@ -512,8 +518,9 @@ def run_operation(self, job_id: str):
             primary_bytes = _version_bytes(current)
             # Every engine module below assumes a readable PDF. Rather than
             # teach fifteen of them about passwords, the document is unlocked
-            # here, once — except for `decrypt`, whose whole job is the lock.
-            if op.type != "decrypt":
+            # here, once — except for the three ops whose whole subject *is*
+            # the lock, which take their own credentials.
+            if op.type not in SELF_UNLOCKING:
                 primary_bytes = SEC.open_with_password(
                     primary_bytes, job.params.get("document_password", "")
                 )

@@ -729,8 +729,11 @@ _PERMISSIONS = {
 }
 
 # Passwords travel in params and are redacted from every API response and
-# purged when the job finishes — see `Job.sanitize_params`. A proper secrets
-# channel is backlog; this is the documented tradeoff (phase-07).
+# dropped from the row when the job finishes — see `Job.SENSITIVE_PARAMS`. The
+# *session* password is not here: it is a sibling of `params` on the request
+# (`OperationRequestSerializer.document_password`), because it belongs to the
+# document rather than to any one operation. A proper secrets channel is
+# backlog; this is the documented tradeoff (phase-07).
 _PASSWORD = {"type": "string", "minLength": 1, "maxLength": 256}
 
 ENCRYPT = {
@@ -740,7 +743,6 @@ ENCRYPT = {
         "owner_password": _PASSWORD,
         "user_password": {"type": "string", "maxLength": 256},
         "permissions": _PERMISSIONS,
-        "document_password": {"type": "string", "maxLength": 256},
     },
     "additionalProperties": False,
 }
@@ -749,7 +751,6 @@ DECRYPT = {
     "type": "object",
     "properties": {
         "password": {"type": "string", "maxLength": 256},
-        "document_password": {"type": "string", "maxLength": 256},
     },
     "additionalProperties": False,
 }
@@ -761,7 +762,6 @@ SET_PERMISSIONS = {
         "owner_password": _PASSWORD,
         "user_password": {"type": "string", "maxLength": 256},
         "permissions": _PERMISSIONS,
-        "document_password": {"type": "string", "maxLength": 256},
     },
     "additionalProperties": False,
 }
@@ -813,7 +813,6 @@ REDACT = {
         # A redacted document whose *previous version* still holds the content
         # is not redacted. On by default in the UI (phase-07).
         "fork_clean_copy": {"type": "boolean"},
-        "document_password": {"type": "string", "maxLength": 256},
     },
     "additionalProperties": False,
 }
@@ -828,7 +827,6 @@ SANITIZE = {
         "hidden_layers_flatten": {"type": "boolean"},
         "links_external": {"type": "boolean"},
         "comments": {"type": "boolean"},
-        "document_password": {"type": "string", "maxLength": 256},
     },
     "additionalProperties": False,
 }

@@ -607,18 +607,21 @@ class DocumentOperationView(APIView):
         op_type = serializer.validated_data["type"]
         params = serializer.validated_data.get("params", {})
         base_seq = serializer.validated_data.get("base_version_seq")
+        document_password = serializer.validated_data.get("document_password", "")
 
         op = registry.OPERATIONS.get(op_type)
         if op is None or op.is_cross_document:
             raise ValidationFailed(
                 f"'{op_type}' is not a valid single-document operation."
             )
-        if document.is_encrypted and op_type != "decrypt" \
-                and not (params or {}).get("document_password"):
-            # Phase 1 refused every operation on an encrypted document, which
-            # was right when nothing could unlock one. Phase 7 can: `decrypt`
-            # is the way out, and any other op may carry the session password
-            # the UI holds in memory (§17, phase-07).
+        # Phase 1 refused every operation on an encrypted document, which was
+        # right when nothing could unlock one. Phase 7 can: the three ops whose
+        # subject *is* the lock carry their own credentials, and any other op
+        # may carry the session password the UI holds in memory (§17).
+        from apps.documents.tasks import SELF_UNLOCKING
+
+        if document.is_encrypted and op_type not in SELF_UNLOCKING \
+                and not document_password:
             raise DocumentEncrypted()
         try:
             registry.validate_params(op_type, params)
@@ -631,6 +634,13 @@ class DocumentOperationView(APIView):
             # refused rather than started and abandoned (§16, phase-06 risks).
             L.enforce_ocr_pages(principal, document.page_count)
         L.enforce_metered_op(principal, op_type)
+
+        if document_password:
+            # Carried on the job so the worker can unlock, redacted from every
+            # response and dropped from the row when the job finishes
+            # (`Job.SENSITIVE_PARAMS`). Validated *after* the op schema, so no
+            # schema has to allow it.
+            params = {**params, "document_password": document_password}
 
         job = Job.objects.create(
             **job_owner_kwargs(principal), document=document, type=op_type,

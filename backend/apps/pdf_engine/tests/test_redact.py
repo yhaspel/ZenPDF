@@ -22,6 +22,37 @@ def _text(data: bytes) -> str:
         doc.close()
 
 
+def raw_text_bytes(data: bytes) -> bytes:
+    """Everything the file's content streams would draw, decompressed.
+
+    A plain `b"secret" in pdf_bytes` grep is **vacuous** on anything PyMuPDF
+    writes: it emits text as hex strings (`<64616e61…>`) inside deflated
+    streams, so the literal never appears and the assertion passes whether or
+    not the content was removed. This decodes both spellings, which is what
+    "irrecoverable" has to be measured against.
+    """
+    import binascii
+    import re as _re
+
+    doc = fitz.open(stream=data, filetype="pdf")
+    try:
+        chunks = []
+        for page in doc:
+            contents = page.read_contents()
+            chunks.append(contents)
+            for hex_literal in _re.findall(rb"<([0-9A-Fa-f\s]+)>", contents):
+                cleaned = _re.sub(rb"\s", b"", hex_literal)
+                if len(cleaned) % 2:
+                    cleaned = cleaned[:-1]
+                try:
+                    chunks.append(binascii.unhexlify(cleaned))
+                except binascii.Error:
+                    continue
+        return b"".join(chunks)
+    finally:
+        doc.close()
+
+
 def _doc_with(*lines: str) -> bytes:
     doc = fitz.open()
     page = doc.new_page(width=595, height=842)
@@ -134,7 +165,7 @@ def test_finding_needs_something_to_look_for(fixture_bytes):
 def test_pattern_redaction_removes_the_content_irrecoverably(fixture_bytes):
     """Acceptance criterion, both halves: extraction *and* a raw-bytes grep."""
     original = fixture_bytes("pii.pdf")
-    assert b"dana.cohen" in original or "dana.cohen" in _text(original)
+    assert b"dana.cohen" in raw_text_bytes(original), "the fixture never had it"
 
     out, report = R.redact(original,
                            patterns=[{"kind": "preset", "value": "email"}])
@@ -146,8 +177,9 @@ def test_pattern_redaction_removes_the_content_irrecoverably(fixture_bytes):
     assert "r.levi@mail.example.co.uk" not in text
     # The bytes, not just the extraction: this is the whole difference from
     # whiteout, which leaves the string in the file for anyone to copy out.
-    assert b"dana.cohen" not in out
-    assert b"r.levi" not in out
+    raw = raw_text_bytes(out)
+    assert b"dana.cohen" not in raw
+    assert b"r.levi" not in raw
     # …and the rest of the page is untouched.
     assert "Client record" in text
     assert "Invoice 2026-000-1234" in text
@@ -173,7 +205,7 @@ def test_area_redaction_removes_the_glyphs_under_it():
     text = _text(out)
     assert "Secret sentence" not in text
     assert "Public sentence here" in text
-    assert b"Secret sentence" not in out
+    assert b"Secret sentence" not in raw_text_bytes(out)
 
 
 def test_redacting_over_an_image_destroys_the_pixels(fixture_bytes):
@@ -251,7 +283,7 @@ def test_the_label_is_drawn_over_the_box():
 
 def test_scope_limits_which_pages_are_touched():
     doc = fitz.open()
-    for i in range(3):
+    for _ in range(3):
         page = doc.new_page(width=595, height=842)
         page.insert_text((60, 100), "secret@example.com", fontsize=12)
     data = doc.tobytes()
