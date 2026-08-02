@@ -513,6 +513,7 @@ them.
 | 2026-08-02 | **`jobs_purge` deletes `exports/{job_id}/` before the row, and refunds the bytes.** | `exports_purge` finds stale artefacts by iterating Job rows, so a deleted row makes the blob unreachable for ever — the same trap `guest_purge` and account deletion have each already had to write down. And once the row is gone nothing records that the quota charge was made, so the refund has to happen here. On a storage failure the row is left for tomorrow rather than deleting the blob's only pointer. | No (implements §13/§15) |
 | 2026-08-02 | **The quota is enforced on both write paths, and `_save_export` is left open deliberately.** | Closing `_save_new_version` alone was the mistake an adversarial pass caught: `split` on a 2 000-page document lands in `_create_document_from_bytes` two thousand times from the *same* endpoint that had just started refusing `rotate_pages`, and per-page output duplicates shared resources, so a split→merge cycle grows an over-quota account every round. Both now check before the blob is written. `_save_export` is the one that stays charging-without-refusing: it is the escape hatch — how somebody over quota retrieves their work before deleting something — and it self-deletes in 24 h. Recorded because a claim that every door is shut is what stops the next reader checking. | No |
 | 2026-08-02 | **The history panel gets a "Show older versions" button.** | Paginating the versions endpoint without one fixed the *appearance* of a truncated history and removed access to the rest of it: revert is driven off that list, so v51 and older became unrevertible — falsifying the promise this change had just declined to prune history in order to keep. A window the user cannot open is a cap with extra steps. | No |
+| 2026-08-02 | **`enforce_storage` reads the row, not the instance — and `split` is measured as a batch.** | `bump_storage` writes with `F()` and never refreshes the object it was handed, and a worker resolves its principal once per job. So inside the split loop every iteration read the value the *first* one saw: measured at `2898, 2898, 2898` while the row read `2898, 3769, 4639`, and a single request took an account from under quota to nearly twice it. The check was in the right place and read a number that could not move — decorative on exactly the path it was added for. It now costs one `SELECT` on a path that is about to write a blob. The batch check is the other half: a per-item refusal on item *k* leaves items 1..k-1 as real documents with real blobs and a real charge, attached to a job that says it failed, so `split` is measured whole before any of it is written. | No |
 
 ## Blockers
 
@@ -813,6 +814,14 @@ prune history in order to keep. `jobs_purge` refunded on the presence of a
 storage key rather than on the delete actually freeing something, which
 double-credits any row whose blob `exports_purge` removed before dying between
 its two un-transacted steps. Both fixed.
+
+**What the third lens proved.** The correctness pass did not argue about the
+second door — it instrumented it. `enforce_storage` read
+`principal.storage_bytes_used` off the in-memory instance, which `bump_storage`
+never refreshes, so the loop check passed 1 999 times on iteration 1's reading.
+The fix reads the row; the batch is also measured whole, because a refusal that
+lands on item *k* leaves the first *k-1* documents behind. Both are covered by
+tests that fail without the fix — verified by reverting it.
 
 **What was left open on purpose.** `_save_export` still charges without
 refusing: an export is how somebody over quota gets their work out, and it

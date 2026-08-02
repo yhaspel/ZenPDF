@@ -109,6 +109,27 @@ def storage_used(principal) -> int:
     return principal.storage_bytes_used
 
 
+def storage_used_fresh(principal) -> int:
+    """`storage_used`, but from the database rather than the instance.
+
+    `bump_storage` writes with `F()` and never refreshes the object it was
+    handed, and a worker resolves its principal once per job — so inside a loop
+    every iteration reads the value the *first* one saw. That made the quota
+    check on `_create_document_from_bytes` decorative on exactly the path it was
+    added for: `split` on a 2 000-page document passed iteration 1 on a genuine
+    reading and iterations 2-2 000 on a stale one, and a single request took an
+    account from under quota to nearly twice it. Measured before this existed:
+    a three-page split saw `2898, 2898, 2898` while the row read
+    `2898, 3769, 4639`.
+
+    One extra `SELECT` per check, on a path that is about to write a blob.
+    """
+    if principal is None:
+        return 0
+    return type(principal).objects.filter(pk=principal.pk).values_list(
+        "storage_bytes_used", flat=True).first() or 0
+
+
 def bump_storage(principal, delta: int) -> None:
     """Add `delta` bytes to the principal's denormalized counter.
 
@@ -273,7 +294,7 @@ def enforce_storage(principal, incoming_bytes: int) -> None:
     from .exceptions import QuotaExceeded
 
     tier = for_principal(principal)
-    used = storage_used(principal)
+    used = storage_used_fresh(principal)
     if used + incoming_bytes <= tier.storage_bytes:
         return
     exc = QuotaExceeded(

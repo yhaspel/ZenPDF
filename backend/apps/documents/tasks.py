@@ -694,6 +694,14 @@ def run_operation(self, job_id: str):
                     **({"report": report} if report else {}),
                 })
             else:  # documents
+                # The whole batch, before any of it is written. Checking each
+                # item as it goes would refuse partway through a split and
+                # leave the documents already created behind — real rows, real
+                # blobs, real charge, attached to a job that says it failed.
+                # `split` is the one operation where a refusal is naturally
+                # partial, so this is where it has to be all-or-nothing.
+                L.enforce_storage(principal_of(job),
+                                  sum(len(i["data"]) for i in payload))
                 created = []
                 for item in payload:
                     new_doc = _create_document_from_bytes(
