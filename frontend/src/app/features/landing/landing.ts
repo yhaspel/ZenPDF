@@ -64,7 +64,7 @@ import { SiteFooter } from '../../shared/site-footer';
       </main>
 
       <app-site-footer />
-      <p class="pb-6 text-center text-xs text-slate-400">
+      <p class="pb-6 text-center text-xs text-slate-500">
         Free, paid for by advertising. Files are deleted automatically.
       </p>
     </div>

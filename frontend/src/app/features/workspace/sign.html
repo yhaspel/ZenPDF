@@ -21,7 +21,7 @@
 
       @if (esign.saved().length) {
         <div>
-          <p class="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+          <p class="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
             Saved
           </p>
           <div class="mt-1 flex flex-wrap gap-2">
@@ -52,13 +52,13 @@
               (click)="apply()" data-test="apply-signature">
         Apply signature
       </button>
-      <p class="text-[10px] text-slate-400">
+      <p class="text-[10px] text-slate-500">
         Signing flattens the signature into the page, so it cannot be moved
         afterwards. Earlier versions stay in the document's history.
       </p>
 
       <div class="mt-2 border-t border-slate-100 pt-3">
-        <p class="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+        <p class="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
           Somebody else needs to sign?
         </p>
         <button class="mt-1 w-full rounded border border-slate-300 px-2 py-1 text-[11px]"
@@ -66,7 +66,7 @@
           Send for signature
         </button>
         @if (!isAccount()) {
-          <p class="mt-1 text-[10px] text-slate-400">
+          <p class="mt-1 text-[10px] text-slate-500">
             Sending needs a free account — signing it yourself does not.
           </p>
         }
@@ -108,7 +108,9 @@
 @if (padOpen()) {
   <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
        data-test="signature-dialog">
-    <div class="w-full max-w-lg rounded-xl bg-white p-5 shadow-xl">
+    <div class="w-full max-w-lg rounded-xl bg-white p-5 shadow-xl"
+         zenModal role="dialog" aria-modal="true" aria-label="Your signature"
+         (zenModalEscape)="padOpen.set(false)">
       <h3 class="mb-3 text-lg font-semibold text-slate-800">Your signature</h3>
       <app-signature-pad (chosen)="onSignature($event)" />
       @if (isAccount()) {
@@ -118,7 +120,7 @@
           Keep this signature for next time
         </label>
       } @else {
-        <p class="mt-3 text-[11px] text-slate-400">
+        <p class="mt-3 text-[11px] text-slate-500">
           This signature is kept in this browser for this session only. A free
           account keeps it for next time.
         </p>

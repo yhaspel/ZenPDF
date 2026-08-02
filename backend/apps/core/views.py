@@ -311,10 +311,17 @@ class SourceUploadView(APIView):
 
 
 class HealthView(APIView):
-    """Liveness/readiness — checks db, redis, storage, gotenberg (used by up.sh)."""
+    """Readiness — db, redis, storage, gotenberg, workers (used by `up.sh`).
+
+    Public, because the platform probe has no credential — but the operational
+    detail below it is not: queue depths and per-lane heartbeats tell anybody
+    watching when the heavy lane saturates and which worker died.
+    """
 
     permission_classes = [AllowAny]
-    authentication_classes = []
+    # Authenticated *if* a credential is present, so a staff member gets the
+    # detail; unauthenticated callers still get a readiness answer.
+    throttle_classes: list = []
     throttle_classes = []
 
     def _db(self) -> bool:
@@ -344,15 +351,80 @@ class HealthView(APIView):
         except Exception:  # noqa: BLE001
             return False
 
+    def _trusted(self, request) -> bool:
+        """An operator, not a passer-by."""
+        from .authentication import client_ip
+
+        user = getattr(request, "user", None)
+        if user is not None and getattr(user, "is_staff", False):
+            return True
+        allowlist = set(settings.ADMIN_IP_ALLOWLIST)
+        return bool(allowlist) and client_ip(request) in allowlist \
+            and request.META.get("REMOTE_ADDR", "") in allowlist
+
     @extend_schema(responses=OpenApiTypes.OBJECT, tags=["core"])
     def get(self, request):
+        from .tasks import (
+            HEARTBEAT_STALE_SECONDS,
+            heartbeat_age_seconds,
+            heartbeat_ages,
+            queue_depths,
+        )
+
+        try:
+            age = heartbeat_age_seconds()
+        except Exception:  # noqa: BLE001
+            # The heartbeat lives in the cache, which is Redis. A readiness
+            # probe that *raises* when Redis is down tells the platform
+            # nothing — least of all that the database is fine and the site
+            # can keep serving documents.
+            age = None
         checks = {
             "db": self._db(),
             "redis": self._redis(),
             "storage": storage_healthy(),
             "gotenberg": self._gotenberg(),
+            # A green stack whose workers are dead looks identical to a healthy
+            # one from the outside: requests succeed, jobs queue, nothing runs.
+            "workers": age is not None and age < HEARTBEAT_STALE_SECONDS,
         }
         overall = "ok" if all(checks.values()) else "degraded"
-        # DB is the hard dependency for serving requests; 503 only if it is down.
+        # DB is the hard dependency for *serving*; 503 only if it is down. A
+        # dead worker is an alert, not a reason to take the site out of the
+        # load balancer — people can still read their documents.
         http_status = 200 if checks["db"] else 503
-        return Response({"status": overall, "checks": checks}, status=http_status)
+        body = {"status": overall, "checks": checks}
+        # Queue depths and per-lane heartbeats are **operational detail**, not
+        # a public readiness signal: they tell anybody watching exactly when
+        # the heavy lane saturates and which worker died. The platform probe
+        # needs `status` and `checks`; an operator gets the rest, from an
+        # allowlisted address or as staff.
+        if self._trusted(request):
+            try:
+                body["queues"] = queue_depths()
+                body["worker_heartbeat_age_seconds"] = (
+                    None if age is None else round(age, 1))
+                body["workers"] = {
+                    queue: (None if lane_age is None else round(lane_age, 1))
+                    for queue, lane_age in heartbeat_ages().items()
+                }
+            except Exception:  # noqa: BLE001 - the redis check already said so
+                pass
+        return Response(body, status=http_status)
+
+
+class LivenessView(APIView):
+    """`/api/health/live` — is this process able to answer at all?
+
+    Deliberately dependency-free: a liveness probe that checks the database
+    restarts the API every time Postgres hiccups, which turns one outage into
+    two. Readiness (`/api/health/`) is the one that looks outward.
+    """
+
+    permission_classes = [AllowAny]
+    authentication_classes: list = []
+    throttle_classes: list = []
+
+    @extend_schema(responses=OpenApiTypes.OBJECT, tags=["core"])
+    def get(self, request):
+        return Response({"status": "ok"})

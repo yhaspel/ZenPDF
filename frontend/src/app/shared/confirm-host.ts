@@ -2,15 +2,19 @@ import { ChangeDetectionStrategy, Component, effect, inject, signal } from '@ang
 import { FormsModule } from '@angular/forms';
 
 import { ConfirmService } from './confirm.service';
+import { ZenModal } from './modal.directive';
 
 @Component({
   selector: 'app-confirm-host',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [FormsModule],
+  imports: [FormsModule, ZenModal],
   template: `
     @if (confirm.current(); as req) {
       <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/40" data-test="confirm-host">
-        <div class="w-full max-w-sm rounded-xl bg-white p-6 shadow-xl">
+        <div class="w-full max-w-sm rounded-xl bg-white p-6 shadow-xl"
+             zenModal role="dialog" aria-modal="true"
+             [attr.aria-label]="req.message"
+             (zenModalEscape)="confirm.answer(false)">
           <p class="mb-6 whitespace-pre-line text-slate-700">{{ req.message }}</p>
           @if (req.requireText) {
             <label class="mb-6 block text-sm text-slate-500">
@@ -32,7 +36,7 @@ import { ConfirmService } from './confirm.service';
               Cancel
             </button>
             <button
-              class="rounded-lg bg-rose-600 px-4 py-2 text-white hover:bg-rose-700 disabled:opacity-40"
+              class="rounded-lg bg-rose-700 px-4 py-2 text-white hover:bg-rose-800 disabled:opacity-40"
               [disabled]="!!req.requireText && typed().trim() !== req.requireText"
               (click)="confirm.answer(true)"
               data-test="confirm-ok"

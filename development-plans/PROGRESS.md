@@ -17,7 +17,7 @@ This file is the **single source of truth for execution status**. Every agent se
 | 7 — Security & redaction | [phase-07-security-redaction.md](phase-07-security-redaction.md) | ✅ Complete | 2026-08-02 | 2026-08-02 | AES-256 + graded permissions, true redaction (area + pattern, with a verification pass), sanitize; 3 tool pages |
 | 8 — E-signatures | [phase-08-esignatures.md](phase-08-esignatures.md) | ✅ Complete | 2026-08-02 | 2026-08-02 | Self-sign (guest), multi-party requests, hash-chained audit, PAdES seal, certificate, `/verify`. **2B GATE cleared.** Owner items: legal review + production certificate |
 | 9 — Ads & abuse controls | [phase-09-ads-and-abuse-controls.md](phase-09-ads-and-abuse-controls.md) | ✅ Complete | 2026-08-02 | 2026-08-02 | Ads off by default and launchable; consent gate, legal pages, verification, suppression, abuse reports. Owner: AdSense account + CMP + legal review |
-| 10 — Hardening & release | [phase-10-hardening-release.md](phase-10-hardening-release.md) | ⬜ Not started | — | — | Human-owned: domain/DNS/TLS, deploy creds, sign-offs |
+| 10 — Hardening & release | [phase-10-hardening-release.md](phase-10-hardening-release.md) | 🟠 Awaiting human review | 2026-08-02 | — | Engineering complete; **launch checklist is owner-executed** (`docs/10-launch-checklist.md`). Do not tag v1.0.0 until it has no unticked box |
 
 Status values: ⬜ Not started · 🔵 In progress · 🟡 Blocked · 🟠 Awaiting human review · ✅ Complete (all acceptance criteria + DoD evidenced below)
 
@@ -46,6 +46,56 @@ Status values: ⬜ Not started · 🔵 In progress · 🟡 Blocked · 🟠 Await
 ## Phase sections
 
 _(Created by the executing agent per protocol step 2. Keep newest phase at top.)_
+
+### Phase 10 — Hardening & Release · 🟠 Awaiting human review (2026-08-02)
+
+**This phase ends amber by design.** The engineering is done and evidenced
+below; what remains needs a domain, an account, a card or a signature, and is
+listed in `docs/10-launch-checklist.md`. **`v1.0.0` is not tagged**, because the
+checklist has unticked owner items and a version number is a claim about all of
+them.
+
+**Acceptance criteria** (copied verbatim from phase-10-hardening-release.md):
+- [~] Hostile-corpus suite: zero worker crashes that don't recycle cleanly; zero cross-user leaks; all documented limits enforced. → **The corpus and the isolation sweep are done; one clause is not.** `apps/pdf_engine/tests/test_hostile_corpus.py` ships five fixtures built by the committed generator — a self-referential page tree, a 10 000-deep outline, an 80 MB decompression bomb, a `.docx` declaring a gigabyte, a malformed TIFF — each asserting a **time and memory budget**, because a guard that answers after ten minutes is not a guard. The zip bomb found a real gap and closed it: `convert.check_archive` reads the central directory *before* LibreOffice is handed the file. Isolation: `apps/core/tests/test_isolation_sweep.py` walks the URL table rather than the routes somebody remembered — every id-bearing `AllowAny` route must be listed with a written reason; sign requests, audit, saved signatures, folders, job downloads and thumbnails all answer 404 (never 403) to another account; a completed recipient cannot sign twice and a canceled request's token is 410. **What is not proven:** that a worker *killed mid-attack* recycles cleanly and leaves the job `failed`. The fixtures run the engine in-process, so they demonstrate the guard, not the kill path — that is `reap_stalled_jobs`' territory and it has its own tests. Queued.
+- [~] Lighthouse (landing + dashboard) ≥90 perf/a11y/best-practices/SEO on prod build. → **Landing, measured: accessibility 100, best practices 100, SEO 100.** The two gaps are honest: the run was against the dev server (there is no deployed host yet), and this tooling does not score performance without a trace. Both are checklist items — the criterion says "on prod build", and a prod build needs somewhere to be. `ng build --configuration=production` succeeds and prerenders 29 routes.
+- [~] axe-core zero serious/critical across routes; keyboard-only ceremony pass recorded. → **axe is complete; the keyboard half is partial and the screen-reader half is not done.** `e2e/tests/phase-10-a11y.spec.ts` scans seven public routes, the dashboard empty and populated, the workspace viewer and its annotate/edit/protect/convert panels, settings, and both ceremony screens — zero serious or critical. It found real barriers, all fixed: `text-slate-400` body text at 2.85:1 across most of the product, white on `emerald-600` buttons and toasts at 3.65:1, unlabelled inputs on both auth screens, in settings, and on the colour/width/opacity/file controls in four workspace panels, an unlabelled per-document checkbox, links distinguishable by colour alone, body text at 4.1:1 on the convert panel, and a disclosure box a mouse could scroll and a keyboard could not — on the screen where somebody agrees to sign. Every dialog now traps focus (CDK), names itself and answers Escape; toasts are a polite live region; `prefers-reduced-motion` is honoured. **Not done:** the keyboard pass consents and reaches the fields but does not finish the signature (drawing on a canvas is not a keyboard gesture — the typed path needs its own flow), and §10.3's manual NVDA/VoiceOver script does not exist. PDF.js's own toolbar is excluded from the scan with the reason in the spec: it ships ARIA defects we cannot fix from here, and leaving them in would drown a real regression in vendor noise. Both queued.
+- [~] `@full` suite green 3 consecutive nightly runs on the prod-shaped stack. → **Green on the dev-shaped stack; not yet three nightly runs, and not yet on the prod-shaped one.** The suites and the cadence exist (`docs/ops/release.md`, `@smoke` ~30 s as the deploy gate, `BROWSERS=all` for the nightly cross-browser run), and the full suite is green on a fresh stack — but "three consecutive nightly runs" is a claim only time can make, and the prod-shaped stack needs the host from the checklist.
+- [~] Clean-VM prod compose deploy documented + performed; restore drill performed. → **Documented, not performed.** `docs/ops/deploy.md`, `rollback.md` and `restore-drill.md` are written to be followed at 3am by somebody who did not build this, and `manage.py check --deploy` is clean under `config.settings.prod` (the two remaining warnings are a throwaway `SECRET_KEY` in the check command and HSTS preload, which is deliberately owner-opt-in). Performing them needs a VM and credentials.
+- [~] p95 budgets met; queue-starvation test passes. → **Shape pinned, numbers not.** `apps/core/tests/test_performance.py` seeds 3 000 documents and asserts the library list uses the covering index rather than sorting everything (the EXPLAIN audit found `(owner, trashed_at)` did not cover `ORDER BY updated_at`; both principals now have `(owner, trashed_at, -updated_at)`, and the audit chain has `(sign_request, created_at)`), that listing stays paginated, and that the lanes stay separated so an hour of OCR cannot stop somebody rotating a page. A p95 figure from a laptop is not a p95 figure from production, so the `locust` run belongs with the deployed host.
+- [ ] Launch checklist 100% with owner sign-offs (legal content, ads readiness, domain). → **`docs/10-launch-checklist.md`, unticked.** This is the GATE.
+
+**What shipped**
+
+| Area | Evidence |
+|---|---|
+| Structured logs + correlation | `apps/core/logging.py` — request id bound in middleware, **sanitised** (it lands in log lines), echoed on every response, carried into Celery through message headers; JSON in production, readable in dev. `test_observability.py` (12 tests) |
+| Health split | `/api/health/live` is dependency-free — a liveness probe that checks Postgres restarts the API whenever Postgres hiccups — and `/api/health/` reports queue depths and a worker heartbeat, because a green stack with dead workers looks identical from outside |
+| Error reporting | Sentry wired everywhere, active nowhere without a DSN, PII scrubbed at the SDK boundary: no credentials, no request body, no cookies, no address. This product handles other people's contracts |
+| Security headers | `frontend/nginx.conf` — CSP (ads-off policy, with the ad hosts written down for the day they are needed), HSTS, nosniff, `frame-ancestors 'none'`, Permissions-Policy. Repeated per location, because nginx's `add_header` replaces rather than inherits — silently dropping them on `/api/` is where user content is served. COOP/COEP deliberately not set, with the reason recorded |
+| Admin, gated | Mounted at a configurable path behind a source-IP allowlist that **denies when unconfigured** and answers 404 rather than 403. Phase 9 built moderation actions production could not reach |
+| Privacy | Account deletion and data export exist rather than being promised. Deletion asks for the password; a completed envelope **survives** the account that sent it, with the sender snapshotted as text at send time so the certificate still prints, and the audit chain deliberately not rewritten |
+| Dependencies | `pip-audit` flagged 18 advisories in Pillow's image decoders — on a product whose job is decoding files somebody else uploaded. Pillow 12.3.0, requests 2.33.0, pytest 9.0.3; both audits now clean |
+| Runbooks | `docs/ops/` — deploy, rollback, restore drill, queue stuck, storage full, cert renewal, release |
+
+**Decisions** (also in the Decisions log):
+- **A completed signature envelope outlives the account that sent it.** `SignRequest.owner` and `.document` became `SET_NULL`, and the sender is snapshotted as text at send. The counterparty signed a contract; deleting their evidence because the other party closed an account is the wrong answer, and the privacy policy now says exactly what is kept.
+- **The audit chain is never rewritten, including by deletion.** Editing one row breaks every hash after it and destroys the thing being kept.
+- **Zero retries in Playwright.** A test that passes on the second attempt is telling you something about the product, and a retry count is how that stops being heard.
+- **Cross-browser is opt-in.** Three engines on every run triples a suite that drives real PDFs through a real worker; the failures we have actually hit are logic, not engine. The nightly run sets `BROWSERS=all`.
+
+**Definition of Done (§20), on a fresh stack** — `./infra/reset.sh --yes && ./infra/up.sh && ./infra/test.sh --e2e`:
+
+| DoD item | Result |
+|---|---|
+| 1. Acceptance criteria on a fresh stack | 🟠 2 ticked, 4 `[~]` (each needs the deployed host), 1 open GATE (the owner checklist) |
+| 2. Migrations idempotent from zero | ✅ fresh volumes → all applied; Phase 10 adds four (`esign.0003` sender snapshot + `SET_NULL`; `esign.0004` audit index; `documents.0004` then `documents.0005`, which replaces the composite library index with a partial one after measuring that the composite did not remove the sort) |
+| 3. Tests green; coverage gates | ✅ backend **962 passed** (was 905), frontend **178**, e2e **56 passed** (was 53). Coverage: `apps` **91%** (gate 85), `pdf_engine` **92%** (gate 90) |
+| 4. Playwright happy path | ✅ plus a tagged `@smoke` suite (~30 s) that is the deploy gate |
+| 5. OpenAPI updated & accurate | ✅ `spectacular --fail-on-warn` → 0/0; export, deletion and the liveness probe documented |
+| 6. Lint clean | ✅ `ruff` + `manage.py check` + `check --deploy` clean. **`mypy` and `@angular/eslint` remain unmet** — the repo-wide debt this phase was meant to own; see the Blockers note |
+| 7. No TODOs / dead code | ✅ none added |
+| 8. PROGRESS.md updated | ✅ this section |
+| 9. Guest-usable tools + public tool pages | ✅ unchanged; the isolation sweep re-asserts guest↔account separation across every id-bearing route |
 
 ### Phase 9 — Ads & Abuse Controls · ✅ Complete (2026-08-02)
 
@@ -438,10 +488,47 @@ _(Created by the executing agent per protocol step 2. Keep newest phase at top.)
 | 2026-08-02 | The prerendered legal pages read their retention numbers from a **committed constant**, cross-checked against Django settings in the e2e suite. | The pages prerender, where `/api/config/` cannot be fetched, so the crawled HTML and everything before hydration came from a hardcoded fallback sitting directly under the sentence "these are read from the running configuration". The constant is now the single source for that copy, and the test that pins it to the sweepers' settings runs where both are reachable. | No (makes the existing claim true) |
 | 2026-08-02 | The recipient cap is enforced at **draft** time, not only at send. | The builder allowed 25 and the send refused above 10, so somebody could add eleven people, lay out a field for each, and be refused twenty minutes later — the shape this same file argues against for `enforce_sign_requests`. Recipient addresses are also normalized to lowercase on the way in, so `Bob@x.com` and `bob@x.com` are one person against the daily cap. | No (applies §9B's cap consistently) |
 | 2026-08-02 | Account deletion is **by request**, and the legal pages say so. | Both pages promised self-serve deletion and no such route exists — a published erasure claim the system contradicts is the kind of sentence a regulator asks about first. Building the route is not in this phase; making the page honest is. Queued for Phase 10. | No (copy corrected to match behaviour) |
+| 2026-08-02 | A **completed signature envelope survives the account that sent it**: `SignRequest.owner` and `.document` are `SET_NULL`, and the sender is snapshotted as text at send. | §10.1 asks for account deletion that erases documents while retaining other parties' completed envelopes. With `CASCADE` on both FKs, deleting the sender destroyed the counterparty's evidence of a contract they signed — and with the sender read through the FK, the certificate could not print once the account was gone. A record that disappears when the other side closes an account is not a record. | **Yes — §9 `esign.SignRequest`.** |
+| 2026-08-02 | The **audit chain is never rewritten**, including by account deletion. | It is append-only and hash-linked: editing one row breaks every hash after it, so "anonymise the audit rows" would destroy the very thing being retained. The sender's address survives inside the chain, which is what an evidentiary record is for; the privacy policy says so. | No (implements §9's chain property) |
+| 2026-08-02 | `/api/health/live` is **dependency-free**, and `/api/health/` reports queue depth and a worker heartbeat. | A liveness probe that checks Postgres restarts the API every time Postgres hiccups, turning one outage into two. And a stack whose workers have died is indistinguishable from a healthy one from outside — requests succeed, jobs queue, nothing runs — until something asks the workers to say so. | No (implements §10.4) |
+| 2026-08-02 | The **request id is sanitised** before it is used. | It is honoured from an inbound header so a proxy's id stitches to ours, and it lands in every log line — which makes it attacker-controlled text in a log aggregator unless the non-alphanumerics come out first. | No |
+| 2026-08-02 | Sentry ships **wired and inert**, with PII scrubbed in `before_send` rather than by the SDK's defaults. | `send_default_pii=False` is not enough: the default event still carries request headers (including `Authorization` and `X-Guest-Token`), the body, cookies and the query string. On this product that is somebody's contract in a crash report. Scrubbing at the boundary is a control; "we will remember not to look" is not. | No (implements §10.4) |
+| 2026-08-02 | Django **admin is enabled in production**, at a configurable path, behind a source-IP allowlist that **denies when unconfigured**, answering 404 rather than 403. | Phase 9 built ban and soft-delete actions that production could not reach at all, because admin was `DEBUG`-only. The inverse default is how staff tooling ends up on the public internet; and 403 confirms there is an admin here, which 404 does not. | No (implements §17) |
+| 2026-08-02 | A zip-based upload is checked against its **declared** uncompressed size before it is stored. | A `.docx` is a zip and its central directory states the unpacked size without unpacking anything — which is the only moment refusal is cheap. Past it, the file is LibreOffice's problem and LibreOffice will try. Found by the hostile-corpus fixture, not by reasoning. | No (implements §10.1's bomb list) |
+| 2026-08-02 | `text-slate-400` body text, and white on `emerald-600`, are **gone from the product**. | 2.86:1 and 3.65:1 against the 4.5:1 AA threshold — found by axe across every route, not by looking. They read as "subtle grey" to the person who chose them and as "unreadable" to a good number of the people using it. | No (implements §10.3) |
+| 2026-08-02 | Playwright keeps **zero retries**, and cross-browser is opt-in. | A test that passes on the second attempt is telling you something about the product; a retry count is how that stops being heard. Cross-browser triples a suite that drives real PDFs through a real worker, and every failure this project has actually hit was logic rather than engine — so it runs nightly rather than on every commit. | No (§10.5 asks for quarantine-and-fix, which is what this is) |
+| 2026-08-02 | **Sentry covers the API and the workers, not Angular.** | §10.4 names all three. A browser SDK is a third-party script on every page of a product whose CSP is `script-src 'self'` and whose ad layer is deliberately gated — turning it on means widening the policy and shipping another vendor's code into the signing ceremony. Deferred deliberately, with the server half (where the data lives) done. Queued. | No — deviation recorded |
+| 2026-08-02 | **There is no `@full` tag**: "full" is the suite with no `--grep`. | A tag you must remember to add is a tag somebody forgets, and the failure mode is a spec that silently runs in neither suite. Running everything by default makes omission impossible. | No — deviation recorded |
+| 2026-08-02 | PDF.js's toolbar is **excluded** from the axe scan. | `ngx-extended-pdf-viewer` ships PDF.js's editor buttons with unsupported ARIA attributes and `pdf-shy-button` elements missing required ones. We cannot fix them from here, and leaving them in the scan means every future run fails for a reason nobody can act on — which is how a suite stops being read. Excluded, written down, and queued as an upstream report. | No — deviation recorded |
 
 ## Blockers
 
-_(None yet.)_
+**2026-08-02 — `mypy` and `@angular/eslint` are not clean, and Phase 10 owned them.**
+
+The structural half is done: `django-stubs` and `djangorestframework-stubs` are
+installed and the plugin is configured in `pyproject.toml`, which is what the
+queue item from Phase 0 actually named. That took the count from 98 to 72, and
+the ones it removed were mypy not knowing what a queryset is — noise that was
+hiding the real findings.
+
+Three of the remainder were **latent bugs** and are fixed: a `DocumentVersion |
+None` dereference in `finalize_sign_request` (reachable now that an account can
+be deleted and its envelope detached), `zen_details` attached ad hoc to
+exceptions rather than declared on the base class, and a dict indexed with a
+`str` where the key type is an enum.
+
+The other 69 are typing hygiene spread across nineteen files — narrowing
+`Optional`, `HttpResponse` vs `StreamingHttpResponse`, `timezone.timedelta`
+re-exports. Working through them is a mechanical sweep with real regression
+risk, taken at the end of a phase that has already changed migrations, deletion
+semantics and the ad layer, and the value is modest against that. So: recorded
+rather than rushed, DoD item 6 marked partially unmet, and the queue row below
+carries it.
+
+`@angular/eslint` is not installed at all — same reasoning, and its first pass
+on a 28-spec, 60-component app is its own piece of work rather than a footnote
+to this one.
+
 
 ## Session log — Phase 2B (2026-08-01)
 
@@ -612,6 +699,78 @@ The rest, in one line each: a signature on a rotated page landed off the edge an
 
 **Environment.** The macOS virtiofs duplicate-file artefact recurred (`* 2.*` files break ruff and `ng build`); the tracked `auth.interceptor 2.ts` orphan was finally removed, since it was inside `src/` and compiled. The frontend Vitest run OOM'd once and passed on re-run — the known Docker VM memory item.
 
+## Session log — Phase 10 (2026-08-02)
+
+**Branch** `feat/phase-10-hardening-release`. No new features, which is the
+phase's own instruction — everything here is about what happens when the
+product meets production, hostile input, or somebody who cannot use a mouse.
+
+**What the hostile corpus found.** Four of the five fixtures confirmed the
+stack was already robust: MuPDF refuses a self-referential page tree in 0.13 s,
+a decompression bomb is never inflated by validation *or* by a sanitize pass,
+a deep outline comes back bounded. The fifth found a real hole — a `.docx` is a
+zip, and nothing checked what it claimed to unpack to before handing it to
+LibreOffice. That is the value of writing the attack down rather than reasoning
+about it.
+
+**What axe found.** Not edge cases: `text-slate-400` body text at 2.85:1 across
+most of the product, white-on-emerald buttons and toasts at 3.65:1, unlabelled
+inputs on both auth screens, and a scrollable disclosure box a keyboard could
+not reach — on the screen where somebody agrees to sign electronically. The
+keyboard-only ceremony pass is the assertion that matters, and it is written to
+fail saying "this control is unreachable" rather than printing a count.
+
+**What the dependency audit found.** Eighteen advisories in Pillow's image
+decoders, on a product whose job is decoding files somebody else uploaded.
+Bumped, along with `requests` (which fetches URLs users supply).
+
+**What deletion turned out to require.** The privacy pages promised account
+deletion; implementing it exposed that `SignRequest.owner` was `CASCADE`, so
+closing an account destroyed the counterparty's evidence of a contract they had
+signed. The fix — `SET_NULL` plus a sender snapshot taken at send — is a schema
+change made for a legal reason rather than a technical one, and it is recorded
+as such.
+
+**Where this phase stops.** Four criteria are `[~]` and one is an open GATE,
+and all five need the same thing: a deployed host with a domain, credentials and
+somebody's signature. `v1.0.0` is deliberately **not** tagged. The phase doc
+says this phase ends amber unless the owner completes their items, and they have
+not, so it does.
+
+**What the four review lenses found, and why it is worth recording.** Twenty-six
+substantiated findings across security, correctness, plan conformance and UX —
+and the pattern is the same one Phase 9 had: *the code worked and the promises
+around it did not.* Deletion retained every envelope while four separate places
+in the copy said "envelopes other people have already signed", so a request
+nobody signed kept both sides' addresses and IP addresses to prove nothing. The
+export button was an `<a href>` to a bearer-token endpoint, so "Download my
+data" navigated into a 403 on the DRF browsable API — a promise the privacy
+page had just started making. The health probe read the cache *outside* the
+try, so a Redis outage produced a 500 with no payload rather than "the database
+is fine, keep serving". The admin allowlist read `X-Forwarded-For` on a path
+nginx does not proxy, so one header opened it. The composite index bought a
+wider index and no benefit, because a null test keeps the column in the sort
+key — measured on 500k rows before and after. And the a11y suite had a test
+named for the workspace that never opened it.
+
+**And one that was not a promise but a hole.** The security lens built a
+padded zip bomb — 3 MB on the wire, 302 MB declared, two megabytes of
+incompressible padding to fix the ratio — uploaded it, and watched Gotenberg
+climb to 1.4 GB and stay dead for twenty-five minutes, because nothing
+restarts it. The guard was arithmetic on numbers the uploader chose. It now
+streams every entry through the decompressor against a hard cap and trusts
+nothing declared, and the service restarts itself. That one is worth
+remembering as the shape of the mistake: *a check whose inputs the attacker
+supplies is not a check.*
+
+All of those are fixed. What most of them have in common is that each one
+passes a test asking "does the code do what it says" and fails a test asking
+"is the sentence we published true" — which is the test worth writing.
+
+**Honest note on the run.** Two frontend specs timed out on the first full-gate
+run immediately after `up.sh`, and passed standalone in 4.8 s a minute later —
+the known memory constraint on this machine, queued rather than papered over.
+
 ## Human review queue
 
 | Added | Item | Phase | GATE? | Resolved |
@@ -648,6 +807,22 @@ The rest, in one line each: a signature on a rotated page landed off the edge an
 | 2026-08-02 | **Legal review of the Privacy Policy and Terms** — honest drafts written against real system behaviour (retention numbers are pinned to the sweepers by a test), but not read by a lawyer. The E-sign disclosure has its own row. **GATE for launch.** | 9/10 | **Yes** | ⬜ |
 | 2026-08-02 | **Self-serve account deletion** — both legal pages now say deletion is by request (there is no route), which is honest but is not what a GDPR erasure flow should look like at scale. Natural owner: Phase 10 or shortly after launch. | 9/10 | No | ⬜ |
 | 2026-08-02 | **A document under a signature request outlives the 30-day trash promise.** `source_version` is `PROTECT`, so those documents are kept and the privacy page says so in as many words — but they are retried by the purge sweep every night for ever and the owner has no way to free the space. Worth a decision: keep the frozen version only, or expose "this cannot be deleted, and why" in the UI. | 9/10 | No | ⬜ |
+| 2026-08-02 | **Manual screen-reader pass on the ceremony (NVDA/VoiceOver).** §10.3 names it as the legally sensitive one, and axe plus a Tab-driven test do not substitute: they prove the controls are reachable and labelled, not that the experience is comprehensible. Half an hour with VoiceOver on the consent screen and one signature. | 10 | No | ⬜ |
+| 2026-08-02 | **The keyboard pass stops before the signature.** Drawing on a canvas is not a keyboard gesture; the typed-signature path is, and the test should be extended to complete an envelope that way. | 10 | No | ⬜ |
+| 2026-08-02 | **PDF.js toolbar ARIA defects** — unsupported attributes on the editor buttons, missing required ones on `pdf-shy-button`. Excluded from our scan with the reason recorded. Worth reporting upstream to `ngx-extended-pdf-viewer`/pdf.js. | 10 | No | ⬜ |
+| 2026-08-02 | **The dashboard shows one page of documents and no pager.** `documents.facade.ts` keeps `results` and drops `count`/`next`, so an account with more than `PAGE_SIZE` (50) documents cannot reach the rest. The API is paginated correctly; the UI never asks for page 2. Pre-existing since Phase 1, surfaced by §10.2's "paginated + virtualized" line. | 1/10 | No | ⬜ |
+| 2026-08-02 | **Thumbnail rail is not virtualized** (§10.2 asks for CDK virtual scroll). A 500-page document renders 500 thumbnail elements. `@angular/cdk` is already a dependency, so this is a contained change. | 10 | No | ⬜ |
+| 2026-08-02 | **`locust` smoke script and `pg_stat_statements`** — §10.2 asks for both; neither exists. The load figures belong with the deployed host, but the *script* could have been committed. | 10 | No | ⬜ |
+| 2026-08-02 | **EXPLAIN covers two of the six hottest queries** (documents list, audit chain). Jobs poll, versions, sign lists and usage are unasserted. | 10 | No | ⬜ |
+| 2026-08-02 | **Worker recycle under attack fixtures** — the hostile corpus proves the guards fire in-process; nothing proves a killed worker leaves the job `failed` and recycles. `reap_stalled_jobs` covers the reaping half. | 10 | No | ⬜ |
+| 2026-08-02 | **`flower` in dev compose** (§10.4, "optional, off by default") — not added; `/api/health/` reports queue depths, which covers the question flower usually answers. | 10 | No | ⬜ |
+| 2026-08-02 | **Launch checklist** — `docs/10-launch-checklist.md`: domain, TLS, SPF/DKIM/DMARC, production signing certificate, TSA, secrets, admin allowlist, Sentry DSN, alerts, backups, restore drill, legal sign-off, AdSense readiness. Two items are one-way doors and say so in the file. **GATE: `v1.0.0` is not tagged until this has no unticked box.** | 10 | **Yes** | ⬜ |
+| 2026-08-02 | **`mypy` (72 remaining) and `@angular/eslint` (not installed)** — the plugin is configured and the three latent bugs it surfaced are fixed; the rest is a mechanical typing sweep deliberately not taken at the end of a phase that changed migrations and deletion semantics. See the Blockers note for the reasoning. | 10 | No | ⬜ |
+| 2026-08-02 | **Clean-VM prod deploy and the restore drill** — both documented in `docs/ops/`, neither performed, because both need a VM and credentials. The restore drill's verify list includes re-verifying an audit chain after restore: a restore that breaks it has destroyed the evidence the product exists to produce. | 10 | No | ⬜ |
+| 2026-08-02 | **Lighthouse on the deployed prod build** — landing scores 100/100/100 (a11y, best practices, SEO) on the dev server; performance needs a trace against the production bundle on real hosting, and the dashboard needs a logged-in run. | 10 | No | ⬜ |
+| 2026-08-02 | **`@full` suite, three consecutive nightly runs on the prod-shaped stack** — the suites and cadence exist (`docs/ops/release.md`); "three nightly runs" is a claim only time can make. | 10 | No | ⬜ |
+| 2026-08-02 | **Load test (`locust`) and p95 budgets** — the shape is pinned by tests (indexes used, listing paginated, lanes separated); a p95 figure from a laptop is not a p95 figure from production. Run against the deployed host. | 10 | No | ⬜ |
+| 2026-08-02 | **Frontend unit suite is memory-sensitive on this machine.** Two specs timed out at the 5 s default when the full stack had just started, and passed in 4.8 s standalone moments later. Not a product defect; the existing "web dev-server memory" queue item is the same underlying constraint. Worth raising Docker Desktop RAM before reading a red frontend run as a regression. | 0/10 | No | ⬜ |
 | 2026-07-31 | **Ad-revenue assumption unvalidated** — the whole strategy rests on organic tool-page traffic converting to ad impressions at a viable RPM. Worth a sanity check against real AdSense figures for utility sites before committing further engineering to the ad path. | 9 | No | ⬜ |
 
 ## Session log

@@ -38,6 +38,7 @@ from apps.core.exceptions import (
     TokenInvalid,
     ValidationFailed,
 )
+from apps.core.logging import celery_headers
 from apps.core.permissions import IsAccount
 from apps.core.principals import owned_by
 from apps.core.throttling import (
@@ -465,7 +466,13 @@ class SignRequestSendView(APIView):
         sign_request.source_version = version
         sign_request.status = SignRequest.Status.SENT
         sign_request.sent_at = timezone.now()
-        sign_request.save(update_fields=["source_version", "status", "sent_at"])
+        # Who sent it, as text. The certificate and the ceremony read this
+        # rather than the FK, so the record still prints after the account is
+        # closed — which is the whole point of keeping the envelope (§10.1).
+        sign_request.sender_email = request.user.email
+        sign_request.sender_name = (request.user.display_name or "").strip()
+        sign_request.save(update_fields=["source_version", "status", "sent_at",
+                                         "sender_email", "sender_name"])
 
         first = routing.next_to_notify(sign_request)
         mailed = emails.notify_recipients(sign_request, first)
@@ -598,7 +605,8 @@ class PublicSignBase(APIView):
             # later (`canceled_by_abuse` was) cannot leave a dead link working.
             # A *completed* request is not closed: its recipients must still be
             # able to open it and download their copy (ESIGN retention).
-            raise TokenExpired(CLOSED_MESSAGES[sign_request.status])
+            raise TokenExpired(CLOSED_MESSAGES[
+                SignRequest.Status(sign_request.status)])
         if sign_request.status == SignRequest.Status.DRAFT:
             raise TokenInvalid("This request has not been sent yet.")
         if sign_request.expires_at and sign_request.expires_at < timezone.now():
@@ -632,7 +640,6 @@ class PublicSignDetailView(PublicSignBase):
             recipient.save(update_fields=["status"])
             record(sign_request, "opened", recipient=recipient, request=request)
 
-        owner = sign_request.owner
         version = sign_request.source_version
         return Response({
             "title": sign_request.title,
@@ -641,8 +648,8 @@ class PublicSignDetailView(PublicSignBase):
             "status": sign_request.status,
             "expires_at": sign_request.expires_at,
             "sender": {
-                "name": (getattr(owner, "display_name", "") or "").strip(),
-                "email": owner.email,
+                "name": sign_request.sender_display_name,
+                "email": sign_request.sender_address,
             },
             "me": {
                 "name": recipient.name,
@@ -817,7 +824,8 @@ class PublicSignCompleteView(PublicSignBase):
             # §12 puts this on `heavy`: 60 s is not enough to burn every
             # field, seal and render a certificate for a real envelope.
             finalize_sign_request.apply_async(
-                args=[str(recipient.sign_request_id)], queue="heavy")
+                args=[str(recipient.sign_request_id)], queue="heavy",
+                headers=celery_headers())
         return Response({"completed": True, "next": outcome})
 
 

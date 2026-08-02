@@ -15,7 +15,7 @@ import { RouterLink } from '@angular/router';
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [RouterLink],
   template: `
-    <footer class="border-t border-slate-200 px-6 py-5 text-center text-xs text-slate-400"
+    <footer class="border-t border-slate-200 px-6 py-5 text-center text-xs text-slate-500"
             data-test="site-footer">
       <p>
         <a routerLink="/about" class="underline" data-test="footer-about">About</a> ·

@@ -4,7 +4,7 @@
       <span class="text-lg">🧘‍♀️</span>
       <span class="font-semibold text-slate-800">ZenPDF</span>
       @if (meta(); as m) {
-        <span class="ml-auto text-[11px] text-slate-400" data-test="envelope-code">
+        <span class="ml-auto text-[11px] text-slate-500" data-test="envelope-code">
           {{ m.envelope_code }}
         </span>
       }
@@ -40,12 +40,15 @@
             }
           </div>
 
-          <div class="max-h-72 overflow-y-auto rounded border border-slate-200 bg-white p-3">
+          <!-- Focusable and labelled: a scrollable box that only a mouse can
+               reach hides the text somebody is being asked to agree to (§10.3). -->
+          <div class="max-h-72 overflow-y-auto rounded border border-slate-200 bg-white p-3"
+               tabindex="0" role="region" aria-label="Electronic signature disclosure">
             <pre class="whitespace-pre-wrap font-sans text-[12px] leading-5 text-slate-600"
                  data-test="disclosure">{{ disclosure() }}</pre>
           </div>
 
-          <p class="-mt-2 text-[11px] text-slate-400">
+          <p class="-mt-2 text-[11px] text-slate-500">
             This is version {{ m.disclosure_version }} of our disclosure. It also
             lives at
             <a href="/legal/esign-disclosure" target="_blank" rel="noopener"
@@ -96,7 +99,7 @@
                      data-test="ceremony-field">
                   <p class="text-[11px] font-medium text-slate-500">
                     {{ label(field) }}
-                    <button class="text-slate-300 underline"
+                    <button class="text-indigo-700 underline"
                             (click)="goToField(field)"
                             [attr.data-test]="'goto-' + field.id">· page {{ field.page + 1 }}</button>
                     @if (field.required) { <span class="text-rose-500">*</span> }
@@ -185,7 +188,7 @@
               </div>
             </div>
 
-            <button class="rounded-lg bg-emerald-600 px-4 py-3 font-medium text-white disabled:opacity-40"
+            <button class="rounded-lg bg-emerald-700 px-4 py-3 font-medium text-white disabled:opacity-40"
                     [disabled]="!canFinish() || busy()" (click)="finish()"
                     data-test="finish">
               {{ m.me.role === 'approver' ? 'Approve' : 'Finish signing' }}
@@ -262,7 +265,7 @@
     }
   }
 
-  <footer class="mt-auto border-t border-slate-200 px-4 py-3 text-[11px] text-slate-400">
+  <footer class="mt-auto border-t border-slate-200 px-4 py-3 text-[11px] text-slate-500">
     <p>
       Signed electronically through ZenPDF. This is a simple electronic
       signature with a platform seal — not a qualified electronic signature.
@@ -281,7 +284,9 @@
 @if (padFor(); as field) {
   <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
        data-test="ceremony-pad">
-    <div class="w-full max-w-lg rounded-xl bg-white p-5 shadow-xl">
+    <div class="w-full max-w-lg rounded-xl bg-white p-5 shadow-xl"
+         zenModal role="dialog" aria-modal="true" aria-label="Draw your signature"
+         (zenModalEscape)="padFor.set(null)">
       <h3 class="mb-3 text-lg font-semibold text-slate-800">
         {{ field.type === 'initials' ? 'Your initials' : 'Your signature' }}
       </h3>
@@ -297,7 +302,9 @@
 @if (reporting()) {
   <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
        data-test="report-dialog">
-    <div class="w-full max-w-sm rounded-xl bg-white p-5 shadow-xl">
+    <div class="w-full max-w-sm rounded-xl bg-white p-5 shadow-xl"
+         zenModal role="dialog" aria-modal="true" aria-label="Report this request"
+         (zenModalEscape)="reporting.set(false)">
       <h3 class="text-lg font-semibold text-slate-800">Report this request</h3>
       <p class="mt-1 text-sm text-slate-500">
         Tell us if you did not expect this document. Enough reports pause it,
@@ -316,7 +323,7 @@
       <div class="mt-4 flex justify-end gap-2">
         <button class="rounded-lg px-4 py-2 text-sm text-slate-500"
                 (click)="reporting.set(false)">Cancel</button>
-        <button class="rounded-lg bg-rose-600 px-4 py-2 text-sm font-medium text-white"
+        <button class="rounded-lg bg-rose-700 px-4 py-2 text-sm font-medium text-white"
                 [disabled]="busy()" (click)="report()" data-test="report-send">
           Report
         </button>
@@ -328,7 +335,9 @@
 @if (declining()) {
   <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
        data-test="decline-dialog">
-    <div class="w-full max-w-sm rounded-xl bg-white p-5 shadow-xl">
+    <div class="w-full max-w-sm rounded-xl bg-white p-5 shadow-xl"
+         zenModal role="dialog" aria-modal="true" aria-label="Decline to sign"
+         (zenModalEscape)="declining.set(false)">
       <h3 class="text-lg font-semibold text-slate-800">Decline to sign</h3>
       <p class="mt-1 text-sm text-slate-500">
         This stops the whole request. Everyone who has already signed is told,
@@ -343,7 +352,7 @@
       <div class="mt-4 flex justify-end gap-2">
         <button class="rounded-lg px-4 py-2 text-sm text-slate-500"
                 (click)="declining.set(false)">Cancel</button>
-        <button class="rounded-lg bg-rose-600 px-4 py-2 text-sm font-medium text-white"
+        <button class="rounded-lg bg-rose-700 px-4 py-2 text-sm font-medium text-white"
                 [disabled]="busy()" (click)="decline()" data-test="decline-confirm">
           Decline
         </button>

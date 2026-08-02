@@ -10,7 +10,7 @@ import { DocumentsService } from '../core/services/documents.service';
     @if (url(); as u) {
       <img [src]="u" [alt]="'page ' + (page() + 1)" class="h-full w-full object-contain" />
     } @else {
-      <div class="flex h-full w-full items-center justify-center bg-slate-100 text-slate-300">
+      <div class="flex h-full w-full items-center justify-center bg-slate-100 text-slate-500">
         <span class="text-xs">…</span>
       </div>
     }

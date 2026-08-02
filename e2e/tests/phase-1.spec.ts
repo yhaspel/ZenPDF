@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test';
 
 import { registerAndLogin, uploadFiles } from './helpers';
 
-test('phase 1: upload, view, search, rename, trash, restore', async ({ page }) => {
+test('@smoke phase 1: upload, view, search, rename, trash, restore', async ({ page }) => {
   await registerAndLogin(page, 'p1');
 
   // Upload two PDFs

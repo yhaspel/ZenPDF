@@ -1,1 +1,17 @@
 @import "tailwindcss";
+
+/* Somebody who has asked their operating system to reduce motion has usually
+   asked because motion makes them ill, not because they dislike it (§10.3).
+   Transitions become instant rather than merely shorter — a 10 ms slide is
+   still a slide. Nothing in this product conveys meaning through animation, so
+   nothing is lost. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

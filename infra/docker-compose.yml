@@ -42,6 +42,12 @@ services:
 
   gotenberg:
     image: gotenberg/gotenberg:8
+    # A hostile document can still exhaust LibreOffice's memory inside its own
+    # container even with the upload guard in front (§10.1) — so it comes back
+    # by itself rather than staying dead until somebody notices conversions
+    # have stopped.
+    restart: unless-stopped
+    mem_limit: 2g
     command:
       - gotenberg
       # JavaScript stays off: we render documents and web pages, not

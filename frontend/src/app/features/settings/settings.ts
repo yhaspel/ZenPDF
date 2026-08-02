@@ -1,6 +1,17 @@
 import { DatePipe } from '@angular/common';
-import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
+import { HttpClient } from '@angular/common/http';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  ElementRef,
+  inject,
+  signal,
+  viewChild,
+} from '@angular/core';
 import { FormsModule } from '@angular/forms';
+import { Router } from '@angular/router';
+
+import { environment } from '../../../environments/environment';
 
 import { AuthFacade } from '../../abstraction/auth.facade';
 import { DocumentsFacade } from '../../abstraction/documents.facade';
@@ -9,6 +20,7 @@ import { ConfigService } from '../../core/services/config.service';
 import { JobsService } from '../../core/services/jobs.service';
 import { ConsentService } from '../../core/services/consent.service';
 import { VerificationService } from '../../core/services/verification.service';
+import { saveBlob } from '../../shared/save-blob';
 import { ToastService } from '../../shared/toast.service';
 
 @Component({
@@ -20,12 +32,12 @@ import { ToastService } from '../../shared/toast.service';
       <h1 class="mb-6 text-2xl font-bold text-slate-800">Settings</h1>
       <div class="rounded-xl bg-white p-6 shadow-sm">
         <h2 class="mb-4 font-semibold text-slate-700">Profile</h2>
-        <label class="mb-1 block text-sm text-slate-500">Email</label>
-        <input [value]="auth.user()?.email" disabled
+        <label for="settings-email" class="mb-1 block text-sm text-slate-500">Email</label>
+        <input id="settings-email" [value]="auth.user()?.email" disabled
                class="mb-4 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-slate-500" />
-        <label class="mb-1 block text-sm text-slate-500">Display name</label>
+        <label for="settings-name" class="mb-1 block text-sm text-slate-500">Display name</label>
         <div class="flex gap-2">
-          <input [(ngModel)]="displayName" class="flex-1 rounded-lg border border-slate-300 px-3 py-2" data-test="display-name" />
+          <input id="settings-name" name="display-name" [(ngModel)]="displayName" class="flex-1 rounded-lg border border-slate-300 px-3 py-2" data-test="display-name" />
           <button (click)="save()" class="rounded-lg bg-indigo-600 px-4 py-2 text-white hover:bg-indigo-700" data-test="save-profile">
             Save
           </button>
@@ -117,8 +129,8 @@ import { ToastService } from '../../shared/toast.service';
               @for (job of jobs(); track job.id) {
                 <tr class="border-b border-slate-100" data-test="job-row">
                   <td class="py-1">{{ job.type }}</td>
-                  <td class="py-1 text-slate-400">{{ job.status }}</td>
-                  <td class="py-1 text-right text-slate-400">
+                  <td class="py-1 text-slate-500">{{ job.status }}</td>
+                  <td class="py-1 text-right text-slate-500">
                     {{ job.created_at | date: 'd MMM, HH:mm' }}
                   </td>
                 </tr>
@@ -126,7 +138,7 @@ import { ToastService } from '../../shared/toast.service';
             </tbody>
           </table>
         } @else {
-          <p class="mt-2 text-sm text-slate-400" data-test="job-history-empty">
+          <p class="mt-2 text-sm text-slate-500" data-test="job-history-empty">
             Nothing yet.
           </p>
         }
@@ -156,6 +168,67 @@ import { ToastService } from '../../shared/toast.service';
           </div>
         </div>
       }
+
+      <!-- The two things the privacy policy promises, reachable rather than
+           promised (§10.1). Deletion is the only irreversible action in the
+           product, so it asks for the password and says what survives. -->
+      <div class="mt-6 rounded-xl bg-white p-6 shadow-sm" data-test="privacy-settings">
+        <h2 class="mb-2 font-semibold text-slate-700">Your data</h2>
+        <p class="text-sm text-slate-500">
+          Take a copy of everything we hold, or close the account for good.
+        </p>
+        <div class="mt-3 flex flex-wrap gap-2">
+          <button class="rounded-lg border border-slate-300 px-3 py-1 text-sm disabled:opacity-50"
+                  [disabled]="exporting()" (click)="exportData()"
+                  data-test="export-data">
+            {{ exporting() ? 'Preparing…' : 'Download my data' }}
+          </button>
+          <button class="rounded-lg border border-rose-300 px-3 py-1 text-sm text-rose-700"
+                  (click)="openDelete()" data-test="delete-account">
+            Delete my account
+          </button>
+        </div>
+
+        @if (deleting()) {
+          <div class="mt-4 rounded-lg border border-rose-200 bg-rose-50 p-4"
+               role="group" aria-label="Confirm account deletion"
+               data-test="delete-confirm">
+            <p class="text-sm text-rose-900">
+              This deletes your documents and cannot be undone. Signature
+              envelopes other people have already signed are kept as their
+              record of the agreement — the privacy policy explains why.
+            </p>
+            <label for="delete-password"
+                   class="mt-3 block text-sm font-medium text-slate-700">
+              Your password, to confirm
+            </label>
+            <input id="delete-password" type="password" name="confirm-password"
+                   #deletePasswordInput
+                   [(ngModel)]="deletePassword" placeholder="Your password"
+                   [attr.aria-invalid]="deleteError() ? 'true' : null"
+                   aria-describedby="delete-error"
+                   class="mt-1 w-full max-w-xs rounded-lg border border-slate-300 px-3 py-2"
+                   data-test="delete-password" />
+            <!-- Assertive, and always present: a message that only appears
+                 when it is needed is a message a screen reader never
+                 announces, and this one is the difference between "wrong
+                 password" and "nothing happened". -->
+            <p id="delete-error" role="alert"
+               class="mt-2 text-sm text-rose-700" data-test="delete-error">
+              {{ deleteError() }}
+            </p>
+            <div class="mt-3 flex gap-2">
+              <button class="rounded-lg bg-rose-700 px-3 py-1 text-sm text-white disabled:opacity-50"
+                      [disabled]="!deletePassword || busyDeleting()"
+                      (click)="confirmDelete()" data-test="delete-confirm-yes">
+                Delete everything
+              </button>
+              <button class="rounded-lg px-3 py-1 text-sm text-slate-700"
+                      (click)="deleting.set(false)">Cancel</button>
+            </div>
+          </div>
+        }
+      </div>
     </div>
   `,
 })
@@ -165,6 +238,8 @@ export class Settings {
   protected consent = inject(ConsentService);
   private config = inject(ConfigService);
   private toast = inject(ToastService);
+  private http = inject(HttpClient);
+  private router = inject(Router);
   protected displayName = '';
 
   protected readonly adsEnabled = () => this.config.ads().enabled;
@@ -185,6 +260,83 @@ export class Settings {
     this.displayName = this.auth.user()?.display_name ?? '';
     this.docs.refreshUsage();
     this.loadJobs();
+  }
+
+  protected deleting = signal(false);
+  protected busyDeleting = signal(false);
+  protected deleteError = signal('');
+  protected deletePassword = '';
+
+  protected exporting = signal(false);
+
+  /**
+   * Fetched, not linked.
+   *
+   * The obvious `<a href>` sends no `Authorization` header — the JWT lives in
+   * memory and travels on the interceptor — so the browser would navigate
+   * straight into a 401 and the person would conclude their data is gone.
+   */
+  protected exportData(): void {
+    this.exporting.set(true);
+    this.http
+      .get(`${environment.apiUrl}/users/me/export/`, { responseType: 'blob' })
+      .subscribe({
+        next: (blob) => {
+          this.exporting.set(false);
+          saveBlob(blob, `zenpdf-export-${new Date().toISOString().slice(0, 10)}.zip`);
+        },
+        error: () => {
+          this.exporting.set(false);
+          this.toast.error('Could not prepare that just now.');
+        },
+      });
+  }
+
+  private deletePasswordInput =
+    viewChild<ElementRef<HTMLInputElement>>('deletePasswordInput');
+
+  /** Opening the panel puts the cursor where the work is. Without this, a
+   *  keyboard user tabs from the button through everything below it. */
+  protected openDelete(): void {
+    this.deleting.set(true);
+    setTimeout(() => this.deletePasswordInput()?.nativeElement.focus());
+  }
+
+  protected confirmDelete(): void {
+    this.busyDeleting.set(true);
+    this.deleteError.set('');
+    this.http
+      .request('delete', `${environment.apiUrl}/users/me/delete/`, {
+        body: { password: this.deletePassword },
+      })
+      .subscribe({
+        next: (result) => {
+          this.busyDeleting.set(false);
+          this.auth.logout();
+          // The API returns exactly the numbers that make a confirmation
+          // honest. Ending the only irreversible action in the product on a
+          // silent redirect looks like a glitch, not a deletion.
+          const summary = result as {
+            documents: number;
+            sign_requests_retained: number;
+          };
+          const kept = summary.sign_requests_retained
+            ? ` ${summary.sign_requests_retained} signed envelope(s) were kept as`
+              + ' the other parties’ record.'
+            : '';
+          this.toast.success(
+            `Account deleted. ${summary.documents} document(s) removed.${kept}`,
+            12_000,
+          );
+          this.router.navigateByUrl('/');
+        },
+        error: (err) => {
+          this.busyDeleting.set(false);
+          this.deleteError.set(
+            err?.error?.error?.message || 'That did not work. Try again.',
+          );
+        },
+      });
   }
 
   protected setJobFilter(value: string): void {

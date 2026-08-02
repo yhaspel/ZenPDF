@@ -16,7 +16,7 @@
              (change)="onFile($event)" data-test="verify-input" />
     </label>
     @if (filename()) {
-      <p class="mt-2 text-xs text-slate-400">{{ filename() }}</p>
+      <p class="mt-2 text-xs text-slate-500">{{ filename() }}</p>
     }
   </div>
 
@@ -61,26 +61,26 @@
       @for (sig of report.signatures; track sig.field) {
         <dl class="mt-3 grid grid-cols-[9rem_1fr] gap-x-3 gap-y-1 text-xs"
             data-test="signature-detail">
-          <dt class="text-slate-400">Sealed by</dt>
+          <dt class="text-slate-500">Sealed by</dt>
           <dd class="text-slate-700">{{ sig.signer || 'unknown' }}</dd>
-          <dt class="text-slate-400">Signed at</dt>
+          <dt class="text-slate-500">Signed at</dt>
           <dd class="text-slate-700">{{ sig.signing_time || 'not stated' }}</dd>
-          <dt class="text-slate-400">Covers</dt>
+          <dt class="text-slate-500">Covers</dt>
           <dd class="text-slate-700">
             {{ sig.whole_document ? 'the whole document' : 'part of the document only' }}
           </dd>
-          <dt class="text-slate-400">Timestamp</dt>
+          <dt class="text-slate-500">Timestamp</dt>
           <dd class="text-slate-700">
             {{ sig.timestamp ? 'from an independent authority' : 'none' }}
           </dd>
-          <dt class="text-slate-400">Certificate</dt>
+          <dt class="text-slate-500">Certificate</dt>
           <dd class="text-slate-700" data-test="trust-line">
             {{ sig.trusted
                ? 'issued by a trusted authority'
                : 'not from a trusted authority — the seal is valid, but nothing outside this file vouches for who made it' }}
           </dd>
           @if (sig.reason) {
-            <dt class="text-slate-400">Reason</dt>
+            <dt class="text-slate-500">Reason</dt>
             <dd class="text-slate-700">{{ sig.reason }}</dd>
           }
         </dl>
@@ -88,7 +88,7 @@
 
       @if (report.envelope_match.found_code) {
         <div class="mt-4 border-t border-slate-200 pt-3" data-test="envelope-match">
-          <p class="text-xs font-semibold uppercase tracking-wide text-slate-400">
+          <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">
             Envelope {{ report.envelope_match.found_code }}
           </p>
           @if (report.envelope_match.known) {
@@ -107,7 +107,7 @@
                   <li>{{ person.name || person.email }} — {{ person.role }}</li>
                 }
               </ul>
-              <p class="mt-1 text-[11px] text-slate-400">
+              <p class="mt-1 text-[11px] text-slate-500">
                 Addresses are partly hidden: this file may be in anybody's hands.
               </p>
             }
@@ -121,7 +121,7 @@
       }
     </section>
 
-    <p class="mt-4 text-[11px] text-slate-400">
+    <p class="mt-4 text-[11px] text-slate-500">
       What this checks: that the file matches its cryptographic seal, and
       whether that seal is ours. It is a simple electronic signature with a
       platform seal — it does not prove the identity of the signers beyond what

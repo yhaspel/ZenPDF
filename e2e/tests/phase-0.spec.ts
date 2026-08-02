@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test';
 
 import { uniqueEmail } from './helpers';
 
-test('phase 0: register, login, session guard', async ({ page }) => {
+test('@smoke phase 0: register, login, session guard', async ({ page }) => {
   const email = uniqueEmail('p0');
 
   // Register → lands on dashboard

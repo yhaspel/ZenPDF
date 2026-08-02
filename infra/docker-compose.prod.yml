@@ -32,6 +32,12 @@ services:
 
   gotenberg:
     image: gotenberg/gotenberg:8
+    # A hostile document can still exhaust LibreOffice's memory inside its own
+    # container even with the upload guard in front (§10.1) — so it comes back
+    # by itself rather than staying dead until somebody notices conversions
+    # have stopped.
+    restart: unless-stopped
+    mem_limit: 2g
     # Production ran this with no flags at all, which was harmless while nothing
     # asked Chromium to fetch a URL. Phase 6 does, so the same two hardening
     # flags the dev stack uses belong here — more so, since this container sits

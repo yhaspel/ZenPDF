@@ -59,13 +59,21 @@
               deleted after {{ retention().export_hours }} hours
             </td>
           </tr>
+          <tr class="border-b border-slate-100">
+            <td class="py-1">Signed envelopes (the sealed PDF, the certificate
+              and the audit trail)</td>
+            <td data-test="retention-envelopes">
+              kept indefinitely, including after you delete your account —
+              they are the other signers' record of the agreement
+            </td>
+          </tr>
           <tr>
-            <td class="py-1">Completed signature envelopes</td>
-            <td>kept while the sending account exists</td>
+            <td class="py-1">Signature requests nobody signed</td>
+            <td>deleted with your account</td>
           </tr>
         </tbody>
       </table>
-      <p class="mt-2 text-xs text-slate-400">
+      <p class="mt-2 text-xs text-slate-500">
         A test asserts these are the same numbers the sweepers that delete
         things actually use — if one changed and this page did not, the build
         fails.
@@ -93,10 +101,13 @@
 
       <h2 class="mt-6 text-lg font-semibold text-slate-800">Getting in touch</h2>
       <p class="mt-2 text-sm text-slate-600">
-        To ask what we hold about you, to have it deleted, or to report misuse:
-        write to the address in the footer of any email we send. Ask us to close
-        your account and we delete it, and your documents with it — signed
-        envelopes included, unless the law requires us to keep a record.
+        <strong>Settings → Your data</strong> has both: download everything we
+        hold as a zip, or delete your account. Deleting removes your documents
+        and their files. It does <em>not</em> remove signature envelopes other
+        people have already signed — that record is their evidence of an
+        agreement, so it is kept and detached from your account. To ask
+        anything else, or to report misuse, write to the address in the footer
+        of any email we send.
       </p>
     }
 
@@ -154,10 +165,11 @@
 
       <h2 class="mt-6 text-lg font-semibold text-slate-800">Ending</h2>
       <p class="mt-2 text-sm text-slate-600">
-        You can have your account closed whenever you like — ask at the address
-        in the footer of any email we send, and we delete it and your documents
-        with it. We can suspend an account that breaks these terms, and will say
-        why unless the law prevents us.
+        You can delete your account whenever you like, from Settings, and your
+        documents go with it — except signature envelopes other people signed,
+        which are kept as their record of the agreement. We can suspend an
+        account that breaks these terms, and will say why unless the law
+        prevents us.
       </p>
     }
 
@@ -199,7 +211,7 @@
     }
   }
 
-  <p class="mt-8 text-xs text-slate-400">
+  <p class="mt-8 text-xs text-slate-500">
     <a routerLink="/" class="underline">Home</a> ·
     <a routerLink="/legal/privacy" class="underline">Privacy</a> ·
     <a routerLink="/legal/terms" class="underline">Terms</a> ·

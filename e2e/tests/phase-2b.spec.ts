@@ -13,7 +13,7 @@ import { FIXTURES, uniqueEmail } from './helpers';
  */
 test.use({ storageState: { cookies: [], origins: [] } });
 
-test('phase 2b: guest merges, works, registers and keeps the files', async ({ page }) => {
+test('@smoke phase 2b: guest merges, works, registers and keeps the files', async ({ page }) => {
   // --- 1. A cold visitor lands on the tool page. No login prompt anywhere. ---
   await page.goto('/merge-pdf');
   await expect(page.locator('[data-test=tool-h1]')).toHaveText('Merge PDF files');

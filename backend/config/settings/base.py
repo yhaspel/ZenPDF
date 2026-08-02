@@ -47,6 +47,13 @@ INSTALLED_APPS = [
 ]
 
 MIDDLEWARE = [
+    # First, so every line logged anywhere downstream carries the ids — and so
+    # the header comes back even on a response some other middleware short-
+    # circuits (§10.4).
+    "apps.core.logging.RequestCorrelationMiddleware",
+    # Refuses the admin from anywhere not on the allowlist, before the login
+    # form is ever rendered (§17).
+    "apps.core.middleware.AdminIPAllowlistMiddleware",
     "corsheaders.middleware.CorsMiddleware",
     # Echoes a lazily-minted X-Guest-Token on the response that created it (§21.2).
     "apps.core.middleware.GuestTokenMiddleware",
@@ -201,7 +208,9 @@ CORS_ALLOW_HEADERS = (
     "origin", "user-agent", "x-csrftoken", "x-requested-with",
     "x-guest-token", "x-captcha-token",
 )
-CORS_EXPOSE_HEADERS = ["X-Guest-Token"]
+# `X-Request-ID` is exposed so a cross-origin SPA can read the id it is asked
+# to quote in a bug report; without this the browser hides it (§10.4).
+CORS_EXPOSE_HEADERS = ["X-Guest-Token", "X-Request-ID"]
 
 # --- Celery (§12) -----------------------------------------------------------
 REDIS_URL = config("REDIS_URL", default="redis://redis:6379/0")
@@ -232,6 +241,27 @@ CELERY_TASK_SOFT_TIME_LIMIT = config("CELERY_TASK_SOFT_TIME_LIMIT", default=600,
 # Beat: hard time limits kill the worker process without touching the Job row,
 # so a periodic sweep is what actually frees the user's concurrency slots (§11).
 CELERY_BEAT_SCHEDULE = {
+    # One per lane, every minute, each routed to the queue it reports on: a
+    # single heartbeat only proves that *one* worker is alive, so a dead
+    # `heavy` worker would leave health green while OCR piled up (§10.4).
+    "worker-heartbeat-default": {
+        "task": "apps.core.tasks.worker_heartbeat",
+        "schedule": 60.0,
+        "args": ("default",),
+        "options": {"queue": "default"},
+    },
+    "worker-heartbeat-heavy": {
+        "task": "apps.core.tasks.worker_heartbeat",
+        "schedule": 60.0,
+        "args": ("heavy",),
+        "options": {"queue": "heavy"},
+    },
+    "worker-heartbeat-render": {
+        "task": "apps.core.tasks.worker_heartbeat",
+        "schedule": 60.0,
+        "args": ("render",),
+        "options": {"queue": "render"},
+    },
     "reap-stalled-jobs": {
         "task": "apps.jobs.tasks.reap_stalled_jobs",
         "schedule": 300.0,
@@ -457,18 +487,49 @@ SEED_ADMIN_EMAIL = config("SEED_ADMIN_EMAIL", default="admin@zenpdf.local")
 SEED_ADMIN_PASSWORD = config("SEED_ADMIN_PASSWORD", default="admin12345")
 
 # --- Logging (structured console) -------------------------------------------
+# --- Admin (§17, phase-10) --------------------------------------------------
+# The moderation tools Phase 9 built (ban, soft-delete, review a reported
+# request) are only useful if the admin exists in production — but an admin on
+# a public URL is a credential-stuffing target and a phishing surface. So it is
+# enabled explicitly, mounted at a configurable path, and gated on a source-IP
+# allowlist. An empty allowlist means **deny**, not "allow everyone": the
+# failure mode of forgetting to configure it must be a locked door.
+ADMIN_ENABLED = config("ADMIN_ENABLED", default=DEBUG, cast=bool)
+ADMIN_URL_PATH = config("ADMIN_URL_PATH", default="admin/")
+ADMIN_IP_ALLOWLIST = config("ADMIN_IP_ALLOWLIST", default="", cast=Csv())
+
+# --- Error reporting (§10.4) ------------------------------------------------
+# Off unless a DSN is configured, which is what makes it safe to ship the
+# wiring in every environment. PII is scrubbed at the SDK boundary rather than
+# trusted to reviewers: this product handles other people's contracts.
+SENTRY_DSN = config("SENTRY_DSN", default="")
+SENTRY_ENVIRONMENT = config("SENTRY_ENVIRONMENT", default="development")
+SENTRY_RELEASE = config("SENTRY_RELEASE", default="")
+SENTRY_TRACES_SAMPLE_RATE = config("SENTRY_TRACES_SAMPLE_RATE", default=0.0,
+                                   cast=float)
+
+# One line of JSON per event, with request/principal/job ids attached by
+# `apps.core.logging` (§10.4). `LOG_FORMAT=text` gives the readable formatter
+# back for local work — the dev stack sets it, because a wall of JSON in
+# `logs.sh` helps nobody.
 LOGGING = {
     "version": 1,
     "disable_existing_loggers": False,
+    "filters": {
+        "correlation": {"()": "apps.core.logging.CorrelationFilter"},
+    },
     "formatters": {
         "structured": {
-            "format": "%(asctime)s %(levelname)s %(name)s %(message)s",
+            "format": "%(asctime)s %(levelname)s %(name)s "
+                      "[%(request_id)s %(principal)s %(job_id)s] %(message)s",
         },
+        "json": {"()": "apps.core.logging.JsonFormatter"},
     },
     "handlers": {
         "console": {
             "class": "logging.StreamHandler",
-            "formatter": "structured",
+            "filters": ["correlation"],
+            "formatter": config("LOG_FORMAT", default="json"),
         },
     },
     "root": {"handlers": ["console"], "level": config("LOG_LEVEL", default="INFO")},

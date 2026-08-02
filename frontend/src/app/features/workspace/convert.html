@@ -2,7 +2,7 @@
   <aside class="flex w-72 shrink-0 flex-col gap-4 overflow-y-auto border-r border-slate-200 bg-white p-3 text-sm">
     <!-- OCR -->
     <section class="flex flex-col gap-2" data-test="ocr-panel">
-      <h3 class="text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+      <h3 class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
         Make a scan searchable
       </h3>
       @if (isScanned()) {
@@ -14,7 +14,7 @@
         </p>
       }
 
-      <label class="text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+      <label class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
         Languages
       </label>
       <div class="grid grid-cols-2 gap-1">
@@ -49,7 +49,7 @@
           Redo OCR on pages that already have text
         </label>
       </div>
-      <p class="text-[10px] text-slate-400">
+      <p class="text-[10px] text-slate-500">
         Cleaning and straightening help a photographed page and can blur a clean one.
         Redoing OCR replaces a document’s real text with a reading of a picture of it,
         so it is off unless you ask.
@@ -63,7 +63,7 @@
 
     <!-- Export -->
     <section class="flex flex-col gap-2 border-t border-slate-200 pt-3" data-test="export-panel">
-      <h3 class="text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+      <h3 class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
         Convert to another format
       </h3>
       <div class="grid grid-cols-2 gap-1">
@@ -79,7 +79,7 @@
       </div>
       @for (item of formats; track item.format) {
         @if (pendingFormat() === item.format) {
-          <p class="text-[10px] text-slate-400" data-test="export-note">{{ item.note }}</p>
+          <p class="text-[10px] text-slate-500" data-test="export-note">{{ item.note }}</p>
         }
       }
 
@@ -102,11 +102,11 @@
       </div>
 
       @if (convert.lastExport()) {
-        <button class="rounded bg-emerald-600 px-3 py-1.5 font-medium text-white"
+        <button class="rounded bg-emerald-700 px-3 py-1.5 font-medium text-white"
                 (click)="downloadExport()" data-test="export-download">
           Download {{ convert.exportName() }}
         </button>
-        <p class="text-[10px] text-slate-400">
+        <p class="text-[10px] text-slate-500">
           Exports are kept for 24 hours, then deleted.
         </p>
       }
@@ -114,8 +114,8 @@
 
     <!-- Repair -->
     <section class="flex flex-col gap-2 border-t border-slate-200 pt-3" data-test="repair-panel">
-      <h3 class="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Repair</h3>
-      <p class="text-[10px] text-slate-400">
+      <h3 class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Repair</h3>
+      <p class="text-[10px] text-slate-500">
         Rebuilds the file’s internal structure. Worth trying if a document opens
         with errors elsewhere, or was recovered on upload.
       </p>
@@ -127,7 +127,9 @@
   </aside>
 
   <main class="flex min-h-0 flex-1 items-center justify-center bg-slate-100 p-8">
-    <div class="max-w-md text-center text-sm text-slate-500">
+    <!-- slate-600 rather than -500: this sits on `bg-slate-100`, where -500 is
+         4.1:1 and misses AA. The same grey passes on white elsewhere. -->
+    <div class="max-w-md text-center text-sm text-slate-600">
       <p class="text-4xl">🔁</p>
       <p class="mt-3">
         Pick what you want on the left. OCR and repair produce a new version of this

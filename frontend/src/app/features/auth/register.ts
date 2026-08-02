@@ -39,23 +39,23 @@ const REASONS: Record<string, string> = {
         @if (error()) {
           <p class="mb-4 rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-600" data-test="register-error">{{ error() }}</p>
         }
-        <label class="mb-1 block text-sm font-medium text-slate-600">Name</label>
-        <input name="name" type="text" [(ngModel)]="displayName"
+        <label for="register-name" class="mb-1 block text-sm font-medium text-slate-600">Name</label>
+        <input id="register-name" name="name" type="text" [(ngModel)]="displayName"
                class="mb-4 w-full rounded-lg border border-slate-300 px-3 py-2" data-test="name" />
-        <label class="mb-1 block text-sm font-medium text-slate-600">Email</label>
-        <input name="email" type="email" required [(ngModel)]="email"
+        <label for="register-email" class="mb-1 block text-sm font-medium text-slate-600">Email</label>
+        <input id="register-email" name="email" type="email" required [(ngModel)]="email"
                class="mb-4 w-full rounded-lg border border-slate-300 px-3 py-2" data-test="email" />
-        <label class="mb-1 block text-sm font-medium text-slate-600">Password</label>
-        <input name="password" type="password" required [(ngModel)]="password"
+        <label for="register-password" class="mb-1 block text-sm font-medium text-slate-600">Password</label>
+        <input id="register-password" name="password" type="password" required [(ngModel)]="password"
                class="mb-6 w-full rounded-lg border border-slate-300 px-3 py-2" data-test="password" />
         <label class="mb-6 flex items-start gap-2 text-sm text-slate-600">
           <input name="terms" type="checkbox" required [(ngModel)]="acceptTerms"
                  class="mt-0.5 h-4 w-4 rounded border-slate-300" data-test="accept-terms" />
           <span>
             I agree to the
-            <a routerLink="/legal/terms" target="_blank" class="text-indigo-600" data-test="terms-link">Terms</a>
+            <a routerLink="/legal/terms" target="_blank" class="text-indigo-600 underline" data-test="terms-link">Terms</a>
             and the
-            <a routerLink="/legal/privacy" target="_blank" class="text-indigo-600" data-test="privacy-link">Privacy Policy</a>.
+            <a routerLink="/legal/privacy" target="_blank" class="text-indigo-600 underline" data-test="privacy-link">Privacy Policy</a>.
           </span>
         </label>
         <button type="submit" [disabled]="loading() || !acceptTerms"
@@ -64,7 +64,7 @@ const REASONS: Record<string, string> = {
           {{ loading() ? 'Creating…' : 'Create account' }}
         </button>
         <p class="mt-4 text-center text-sm text-slate-500">
-          Already have an account? <a routerLink="/auth/login" class="text-indigo-600" data-test="to-login">Log in</a>
+          Already have an account? <a routerLink="/auth/login" class="text-indigo-600 underline" data-test="to-login">Log in</a>
         </p>
       </form>
     </div>

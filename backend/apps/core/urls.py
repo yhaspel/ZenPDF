@@ -9,6 +9,7 @@ from .views import (
     GuestSessionView,
     HealthView,
     ImageUploadView,
+    LivenessView,
     SourceUploadView,
 )
 
@@ -17,6 +18,8 @@ urlpatterns = [
     # Proxied to the site root by nginx — a crawler will only accept it there.
     path("ads.txt", AdsTxtView.as_view(), name="ads-txt"),
     path("health/", HealthView.as_view(), name="health"),
+    # Liveness is separate from readiness on purpose (§10.4).
+    path("health/live", LivenessView.as_view(), name="health-live"),
     # Anonymous access (§21.2, §21.5)
     path("guest/session/", GuestSessionView.as_view(), name="guest-session"),
     path("guest/claim/", GuestClaimView.as_view(), name="guest-claim"),

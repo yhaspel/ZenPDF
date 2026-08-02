@@ -25,8 +25,7 @@ def sign_url(recipient) -> str:
 
 
 def _sender_name(sign_request) -> str:
-    sender = sign_request.owner
-    return (getattr(sender, "display_name", "") or "").strip() or sender.email
+    return sign_request.sender_display_name or sign_request.sender_address
 
 
 def _send(subject: str, body: str, to: list[str]) -> int:
@@ -137,7 +136,7 @@ def notify_declined(sign_request, decliner) -> None:
     already = [r.email for r in sign_request.recipients.all()
                if r.status == r.Status.COMPLETED]
     _send(f"Declined: {sign_request.title}", body,
-          list({sign_request.owner.email, *already}))
+          list({sign_request.sender_address, *already}))
 
 
 def notify_completed(sign_request, *, final_url: str, certificate_url: str) -> None:
@@ -164,7 +163,8 @@ def notify_completed(sign_request, *, final_url: str, certificate_url: str) -> N
     owner_body = "\n".join(lines + [
         f"  {settings.FRONTEND_BASE_URL}/app/sign/{sign_request.id}",
     ])
-    _send(f"Completed: {sign_request.title}", owner_body, [sign_request.owner.email])
+    _send(f"Completed: {sign_request.title}", owner_body,
+          [sign_request.sender_address])
 
 
 def notify_paused_for_abuse(sign_request, reports: int) -> None:
@@ -181,7 +181,7 @@ def notify_paused_for_abuse(sign_request, reports: int) -> None:
         "",
         f"Envelope {sign_request.envelope_code}.",
     ])
-    mail.send(f"Paused: {sign_request.title}", body, [sign_request.owner.email],
+    mail.send(f"Paused: {sign_request.title}", body, [sign_request.sender_address],
               transactional=True)
 
 
@@ -193,4 +193,4 @@ def notify_expired(sign_request, pending) -> None:
         "Nobody can sign it now. Send it again if it is still needed.",
     ])
     _send(f"Expired: {sign_request.title}", body,
-          list({sign_request.owner.email, *[r.email for r in pending]}))
+          list({sign_request.sender_address, *[r.email for r in pending]}))

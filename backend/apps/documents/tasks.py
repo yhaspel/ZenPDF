@@ -15,6 +15,7 @@ from django.conf import settings
 from django.utils import timezone
 
 from apps.core import limits as L
+from apps.core.logging import celery_headers
 from apps.core.principals import (
     created_by_user,
     is_guest,
@@ -141,7 +142,9 @@ def _create_document_from_bytes(*, principal, folder, title, data, created_by, j
         label=label, created_by=created_by, job=job, seq=1,
     )
     L.bump_storage(principal, size)
-    generate_thumbnails_task.delay(str(doc.id), 1, min(pages, THUMB_PAGES), THUMB_WIDTH)
+    generate_thumbnails_task.apply_async(
+        args=[str(doc.id), 1, min(pages, THUMB_PAGES), THUMB_WIDTH],
+        headers=celery_headers())
     return doc
 
 
@@ -155,7 +158,9 @@ def _save_new_version(*, document, data, label, created_by, job):
         label=label, created_by=created_by, job=job, seq=seq,
     )
     L.bump_storage(document.principal, size)
-    generate_thumbnails_task.delay(str(document.id), seq, min(pages, THUMB_PAGES), THUMB_WIDTH)
+    generate_thumbnails_task.apply_async(
+        args=[str(document.id), seq, min(pages, THUMB_PAGES), THUMB_WIDTH],
+        headers=celery_headers())
     return version
 
 
