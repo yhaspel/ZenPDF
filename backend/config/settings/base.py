@@ -231,6 +231,16 @@ CELERY_BEAT_SCHEDULE = {
         "task": "apps.core.tasks.exports_purge",
         "schedule": 3600.0,
     },
+    # Signing nudges and expiries (§15, phase-08). Hourly is often enough for a
+    # cadence measured in days, and rare enough that a stuck run is visible.
+    "sign-reminders": {
+        "task": "apps.esign.tasks.sign_reminders",
+        "schedule": 3600.0,
+    },
+    "sign-expirations": {
+        "task": "apps.esign.tasks.sign_expirations",
+        "schedule": 3600.0,
+    },
 }
 EXPORT_TTL_HOURS = config("EXPORT_TTL_HOURS", default=24, cast=int)
 JOB_STALL_TIMEOUT = config("JOB_STALL_TIMEOUT", default=1800, cast=int)
@@ -287,6 +297,10 @@ GOTENBERG_DENY_LIST = config(
 SIGNING_CERT_PATH = config("SIGNING_CERT_PATH", default="/certs/zenpdf-dev.p12")
 SIGNING_CERT_PASSWORD = config("SIGNING_CERT_PASSWORD", default="devpass")
 TSA_URL = config("TSA_URL", default="")
+# The /verify upload cap. Deliberately smaller than a document upload: this
+# endpoint is public and unauthenticated, and nothing about checking a seal
+# needs a 100 MB file.
+VERIFY_MAX_UPLOAD_BYTES = config("VERIFY_MAX_UPLOAD_BYTES", default=30 * 1024 * 1024, cast=int)
 
 # --- Quotas & limits (§16) --------------------------------------------------
 MAX_UPLOAD_MB = config("MAX_UPLOAD_MB", default=100, cast=int)
