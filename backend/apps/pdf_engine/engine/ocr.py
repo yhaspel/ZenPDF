@@ -34,12 +34,23 @@ def available_languages() -> list[str]:
     Asked of the binary rather than assumed from the list above: the image can
     be built with `OCR_EXTRA_LANGS`, and a picker offering a language that
     fails at run time is worse than one that is short.
+
+    The import is the fiddly part. `from ocrmypdf import get_ocr_engine` — what
+    this used to do — has never existed, and the `except Exception` below
+    swallowed the `ImportError` silently, so this returned the hard-coded
+    constant from the day it was written. `OCR_EXTRA_LANGS` therefore built
+    images whose own extra packs were then rejected by `_check_languages`.
     """
     try:
-        from ocrmypdf import get_ocr_engine
+        from ocrmypdf.builtin_plugins.tesseract_ocr import TesseractOcrEngine
 
-        installed = set(get_ocr_engine().languages())
+        installed = set(TesseractOcrEngine.languages(None))
     except Exception:  # noqa: BLE001 — no tesseract is a deployment problem, not a request one
+        return list(SUPPORTED_LANGUAGES)
+    if not installed:
+        # tesseract answered and had nothing — a broken `TESSDATA_PREFIX`. Same
+        # failure as not answering at all, so the same fallback: without this,
+        # `_check_languages` would reject `eng` and OCR would stop entirely.
         return list(SUPPORTED_LANGUAGES)
     ordered = [lang for lang in SUPPORTED_LANGUAGES if lang in installed]
     return ordered + sorted(installed - set(SUPPORTED_LANGUAGES) - {"osd"})

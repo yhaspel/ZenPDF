@@ -24,9 +24,46 @@ def _text(data: bytes) -> str:
 
 def test_the_worker_image_ships_the_five_language_packs():
     """phase-06: eng+heb+deu+fra+spa. Hebrew is an acceptance criterion, not a
-    nice-to-have — asked of tesseract rather than assumed from a constant."""
-    installed = set(O.available_languages())
+    nice-to-have — asked of **tesseract** rather than of our own constant.
+
+    That distinction is the whole test. The previous version called
+    `available_languages()`, which had silently been returning the constant
+    since it was written, so it asserted the constant against itself.
+    """
+    from ocrmypdf.builtin_plugins.tesseract_ocr import TesseractOcrEngine
+
+    installed = set(TesseractOcrEngine.languages(None))
     assert {"eng", "heb", "deu", "fra", "spa"} <= installed
+
+
+def test_the_language_list_comes_from_tesseract_not_from_the_constant(monkeypatch):
+    """A pack added with `OCR_EXTRA_LANGS` has to reach the answer.
+
+    It never did: the build arg installed the pack and `_check_languages` then
+    rejected it as "not installed", because the list it checked against was
+    hard-coded.
+    """
+    from ocrmypdf.builtin_plugins.tesseract_ocr import TesseractOcrEngine
+
+    monkeypatch.setattr(TesseractOcrEngine, "languages",
+                        classmethod(lambda cls, *a: {"eng", "heb", "ara", "osd"}))
+    languages = O.available_languages()
+    assert "ara" in languages, languages
+    # …and the five we ship stay in their declared order, with `osd` — which is
+    # orientation detection, not a language — left out.
+    assert languages[:2] == ["eng", "heb"]
+    assert "osd" not in languages
+
+
+def test_an_empty_tesseract_falls_back_rather_than_refusing_everything(monkeypatch):
+    """A broken `TESSDATA_PREFIX` used to be invisible. Now it is visible —
+    which means it must not turn into "no language is installed, including
+    English", or OCR stops entirely for a deployment problem."""
+    from ocrmypdf.builtin_plugins.tesseract_ocr import TesseractOcrEngine
+
+    monkeypatch.setattr(TesseractOcrEngine, "languages",
+                        classmethod(lambda cls, *a: set()))
+    assert O.available_languages() == list(O.SUPPORTED_LANGUAGES)
 
 
 def test_a_scan_becomes_selectable_text(fixture_bytes):
