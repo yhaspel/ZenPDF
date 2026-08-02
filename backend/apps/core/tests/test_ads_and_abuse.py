@@ -9,8 +9,8 @@ from datetime import timedelta
 
 import pytest
 from django.conf import settings
-from django.core.files.uploadedfile import SimpleUploadedFile
 from django.core import mail
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.utils import timezone
 
 pytestmark = pytest.mark.django_db
