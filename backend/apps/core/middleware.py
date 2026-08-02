@@ -20,3 +20,34 @@ class GuestTokenMiddleware:
         if raw:
             response[GUEST_TOKEN_HEADER] = raw
         return response
+
+
+class AdminIPAllowlistMiddleware:
+    """Source-IP gate in front of Django admin (§17).
+
+    Two rules, both deliberate:
+
+    * **An empty allowlist denies.** Forgetting to configure the gate must lock
+      the door, not open it — the opposite default is how staff tooling ends up
+      on the public internet.
+    * **404, not 403.** "Wrong address" ends the conversation; "forbidden"
+      confirms there is an admin here and invites somebody to find a way in.
+
+    In DEBUG the gate is off, because the whole dev stack is one address and a
+    developer locking themselves out of their own admin is pure friction.
+    """
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        from django.conf import settings
+        from django.http import Http404
+
+        path = settings.ADMIN_URL_PATH.strip("/")
+        if path and request.path.lstrip("/").startswith(path) and not settings.DEBUG:
+            from .authentication import client_ip
+
+            if client_ip(request) not in set(settings.ADMIN_IP_ALLOWLIST):
+                raise Http404
+        return self.get_response(request)

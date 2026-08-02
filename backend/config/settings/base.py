@@ -51,6 +51,9 @@ MIDDLEWARE = [
     # the header comes back even on a response some other middleware short-
     # circuits (§10.4).
     "apps.core.logging.RequestCorrelationMiddleware",
+    # Refuses the admin from anywhere not on the allowlist, before the login
+    # form is ever rendered (§17).
+    "apps.core.middleware.AdminIPAllowlistMiddleware",
     "corsheaders.middleware.CorsMiddleware",
     # Echoes a lazily-minted X-Guest-Token on the response that created it (§21.2).
     "apps.core.middleware.GuestTokenMiddleware",
@@ -467,6 +470,17 @@ SEED_ADMIN_EMAIL = config("SEED_ADMIN_EMAIL", default="admin@zenpdf.local")
 SEED_ADMIN_PASSWORD = config("SEED_ADMIN_PASSWORD", default="admin12345")
 
 # --- Logging (structured console) -------------------------------------------
+# --- Admin (§17, phase-10) --------------------------------------------------
+# The moderation tools Phase 9 built (ban, soft-delete, review a reported
+# request) are only useful if the admin exists in production — but an admin on
+# a public URL is a credential-stuffing target and a phishing surface. So it is
+# enabled explicitly, mounted at a configurable path, and gated on a source-IP
+# allowlist. An empty allowlist means **deny**, not "allow everyone": the
+# failure mode of forgetting to configure it must be a locked door.
+ADMIN_ENABLED = config("ADMIN_ENABLED", default=DEBUG, cast=bool)
+ADMIN_URL_PATH = config("ADMIN_URL_PATH", default="admin/")
+ADMIN_IP_ALLOWLIST = config("ADMIN_IP_ALLOWLIST", default="", cast=Csv())
+
 # --- Error reporting (§10.4) ------------------------------------------------
 # Off unless a DSN is configured, which is what makes it safe to ship the
 # wiring in every environment. PII is scrubbed at the SDK boundary rather than

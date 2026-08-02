@@ -32,5 +32,10 @@ if settings.DEBUG:
             SpectacularSwaggerView.as_view(url_name="schema"),
             name="swagger-ui",
         ),
-        path("admin/", admin.site.urls),
     ]
+
+# Admin is mounted wherever `ADMIN_URL_PATH` says, and reachable only from the
+# addresses on `ADMIN_IP_ALLOWLIST` (§17, enforced in middleware). Phase 9's
+# moderation actions live here, so production needs it — behind a gate.
+if settings.ADMIN_ENABLED:
+    urlpatterns += [path(settings.ADMIN_URL_PATH, admin.site.urls)]
