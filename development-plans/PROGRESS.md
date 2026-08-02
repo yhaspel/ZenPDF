@@ -14,7 +14,7 @@ This file is the **single source of truth for execution status**. Every agent se
 | 4 — Content editing | [phase-04-content-editing.md](phase-04-content-editing.md) | ✅ Complete | 2026-08-01 | 2026-08-02 | 17 ops; scanned gate awaits P6 to enable its CTA |
 | 5 — Forms | [phase-05-forms.md](phase-05-forms.md) | ✅ Complete | 2026-08-02 | 2026-08-02 | Fill + form builder; four PyMuPDF limits worked around at the PDF level |
 | 6 — OCR, conversion & compare | [phase-06-ocr-conversion-compare.md](phase-06-ocr-conversion-compare.md) | ✅ Complete | 2026-08-02 | 2026-08-02 | OCR (5 languages incl. Hebrew), 6 exports, 4 imports, compare, repair; 8 tool pages |
-| 7 — Security & redaction | [phase-07-security-redaction.md](phase-07-security-redaction.md) | ⬜ Not started | — | — | |
+| 7 — Security & redaction | [phase-07-security-redaction.md](phase-07-security-redaction.md) | 🔵 In progress | 2026-08-02 | — | |
 | 8 — E-signatures | [phase-08-esignatures.md](phase-08-esignatures.md) | ⬜ Not started | — | — | Human gate: legal text + prod cert |
 | 9 — Ads & abuse controls | [phase-09-ads-and-abuse-controls.md](phase-09-ads-and-abuse-controls.md) | ⬜ Not started | — | — | Human-owned: AdSense/CMP accounts, legal pages |
 | 10 — Hardening & release | [phase-10-hardening-release.md](phase-10-hardening-release.md) | ⬜ Not started | — | — | Human-owned: domain/DNS/TLS, deploy creds, sign-offs |
@@ -46,6 +46,16 @@ Status values: ⬜ Not started · 🔵 In progress · 🟡 Blocked · 🟠 Await
 ## Phase sections
 
 _(Created by the executing agent per protocol step 2. Keep newest phase at top.)_
+
+### Phase 7 — Security & Redaction · 🔵 In progress (started 2026-08-02)
+
+**Acceptance criteria** (copied verbatim from phase-07-security-redaction.md):
+- [ ] **Guest parity + tool pages (§20 DoD item 9, §21.6):** every tool in this phase works end-to-end with no account, and ships its public SSR page — `/protect-pdf` `/unlock-pdf` `/redact-pdf` — with unique title/meta/H1 and an entry in the generated `sitemap.xml`.
+- [ ] Password-protect + unlock round-trip through UI; permissions visibly enforced in external viewers (spot-check print-restricted output).
+- [ ] Pattern redaction on the PII fixture removes content irrecoverably (extraction + raw-bytes grep in test), clean-copy default prevents history leakage.
+- [ ] Redaction of a region overlapping an image blacks out image content, not just overlay.
+- [ ] Sanitize report accurate against a booby-trapped fixture (JS + attachment + metadata).
+- [ ] Session-password ops work without re-prompting per action.
 
 ### Phase 6 — OCR, Conversion & Compare · ✅ Complete (2026-08-02)
 
