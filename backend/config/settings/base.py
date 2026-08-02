@@ -142,6 +142,18 @@ REST_FRAMEWORK = {
         "guest": config("THROTTLE_GUEST", default="40/min"),
         "auth": config("THROTTLE_AUTH", default="10/min"),
         "public_sign": config("THROTTLE_PUBLIC_SIGN", default="20/min"),
+        # …and per signing token, so one leaked link cannot be replayed all day
+        # from a hundred addresses (§9B).
+        "public_sign_token": config("THROTTLE_PUBLIC_SIGN_TOKEN",
+                                    default="200/day"),
+        # §9B's finalized matrix. `upload` is per *account* (a guest is already
+        # covered by the guest throttles); `verify` is per IP because it has no
+        # principal at all.
+        "upload": config("THROTTLE_UPLOAD", default="20/hour"),
+        "verify": config("THROTTLE_VERIFY", default="10/min"),
+        # …and the ceiling behind that burst. Verification decodes an untrusted
+        # PDF for an anonymous caller, so 10/min must not mean 600/hour.
+        "verify_hour": config("THROTTLE_VERIFY_HOUR", default="60/hour"),
         # Image assets (stamps, watermarks, signatures) are small and rare per
         # session, but each one decodes an untrusted file — so the endpoint gets
         # its own scope rather than sharing the general write budget.
@@ -244,6 +256,11 @@ CELERY_BEAT_SCHEDULE = {
     "sign-expirations": {
         "task": "apps.esign.tasks.sign_expirations",
         "schedule": 3600.0,
+    },
+    # The 30-day trash promise the privacy policy makes (§15, §9A).
+    "trash-purge": {
+        "task": "apps.core.tasks.trash_purge",
+        "schedule": 86400.0,
     },
 }
 EXPORT_TTL_HOURS = config("EXPORT_TTL_HOURS", default=24, cast=int)
@@ -392,8 +409,48 @@ FILE_UPLOAD_MAX_MEMORY_SIZE = 5 * 1024 * 1024
 DATA_UPLOAD_MAX_NUMBER_FIELDS = 1000
 
 # --- Ads (phase 9) ----------------------------------------------------------
+# --- Ads (§9A) --------------------------------------------------------------
+# Off by default, and that is the shipped state: the product launches
+# ad-*ready*, not ad-dependent. Nothing about the ad path is on the critical
+# path of any tool.
 ADS_ENABLED = config("ADS_ENABLED", default=False, cast=bool)
+ADS_PROVIDER = config("ADS_PROVIDER", default="adsense")
 ADSENSE_CLIENT_ID = config("ADSENSE_CLIENT_ID", default="")
+# Logical slot name → the provider's unit id. The component asks for a *name*
+# ("dashboard-rail"), so swapping provider or retiring a placement is config.
+ADS_SLOTS = {
+    "dashboard-rail": config("ADS_SLOT_DASHBOARD_RAIL", default=""),
+    # The narrow-screen counterpart of the rail — one card inside the library
+    # list, never both (§9A).
+    "dashboard-inline": config("ADS_SLOT_DASHBOARD_INLINE", default=""),
+    "tool-result": config("ADS_SLOT_TOOL_RESULT", default=""),
+    "landing": config("ADS_SLOT_LANDING", default=""),
+}
+# Where a consent banner is legally required. The client reads the browser's
+# IANA timezone (not its locale — `en-US` is the most common language tag on
+# machines in Berlin) and we compare here, so the rule is one list rather than
+# a regex in a component.
+CONSENT_REQUIRED_REGIONS = config(
+    "CONSENT_REQUIRED_REGIONS",
+    default="AT,BE,BG,HR,CY,CZ,DK,EE,FI,FR,DE,GR,HU,IE,IT,LV,LT,LU,MT,NL,PL,"
+            "PT,RO,SK,SI,ES,SE,IS,LI,NO,GB,CH",
+    cast=Csv(),
+)
+
+# --- Retention, stated once (§9A "data-retention statement") ----------------
+# The numbers the privacy policy quotes come from *here*, and a test asserts
+# the policy and the beat schedule agree. A retention promise nobody checks is
+# the kind of sentence that quietly stops being true.
+TRASH_RETENTION_DAYS = config("TRASH_RETENTION_DAYS", default=30, cast=int)
+
+# --- Abuse (§9B) ------------------------------------------------------------
+MAX_RECIPIENTS_PER_REQUEST = config("MAX_RECIPIENTS_PER_REQUEST", default=10, cast=int)
+MAX_DISTINCT_RECIPIENTS_PER_DAY = config("MAX_DISTINCT_RECIPIENTS_PER_DAY",
+                                         default=50, cast=int)
+ABUSE_REPORTS_TO_PAUSE = config("ABUSE_REPORTS_TO_PAUSE", default=3, cast=int)
+ABUSE_CONTACT_EMAIL = config("ABUSE_CONTACT_EMAIL", default="abuse@zenpdf.local")
+EMAIL_VERIFICATION_TTL_HOURS = config("EMAIL_VERIFICATION_TTL_HOURS",
+                                      default=48, cast=int)
 
 # --- Seed -------------------------------------------------------------------
 SEED_ADMIN_EMAIL = config("SEED_ADMIN_EMAIL", default="admin@zenpdf.local")

@@ -170,7 +170,15 @@ class UsageCounter(models.Model):
 
 
 class EmailSuppression(models.Model):
-    """Outbound-mail suppression list, honored by all mail (phase 9)."""
+    """Outbound-mail suppression list, honored by all mail (phase 9).
+
+    Keyed on a keyed hash of the address rather than the address, because the
+    unsubscribe link has to carry the key and a URL carrying somebody's email
+    ends up in browser history, proxy logs and `Referer` headers — the same
+    reason `users/verification.py` signs a user id. `email` is kept only when
+    we already knew it (a staff suppression, a bounce), for the admin screen;
+    a one-click unsubscribe leaves it blank because the token does not say.
+    """
 
     REASONS = (
         ("complaint", "complaint"),
@@ -179,9 +187,10 @@ class EmailSuppression(models.Model):
         ("manual", "manual"),
     )
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    email = models.EmailField(unique=True)
+    email_hash = models.CharField(max_length=64, unique=True)
+    email = models.EmailField(blank=True, default="")
     reason = models.CharField(max_length=20, choices=REASONS)
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self) -> str:
-        return f"{self.email} ({self.reason})"
+        return f"{self.email or self.email_hash[:12]} ({self.reason})"

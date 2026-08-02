@@ -67,6 +67,8 @@ test('phase 2b: guest merges, works, registers and keeps the files', async ({ pa
   await page.fill('[data-test=name]', 'Guest Turned User');
   await page.fill('[data-test=email]', email);
   await page.fill('[data-test=password]', 'strongpass123');
+  // Required at signup, and unticked by default (§9A).
+  await page.check('[data-test=accept-terms]');
   await page.click('[data-test=submit]');
 
   await expect(page).toHaveURL(/\/app\/dashboard/, { timeout: 30_000 });

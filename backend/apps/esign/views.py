@@ -28,17 +28,24 @@ from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 
+from apps.core import captcha
 from apps.core import limits as L
 from apps.core.assets import ImageRejected, asset_key, store_image
 from apps.core.exceptions import (
     ConsentRequired,
+    EmailNotVerified,
     TokenExpired,
     TokenInvalid,
     ValidationFailed,
 )
 from apps.core.permissions import IsAccount
 from apps.core.principals import owned_by
-from apps.core.throttling import PublicSignThrottle
+from apps.core.throttling import (
+    PublicSignThrottle,
+    PublicSignTokenThrottle,
+    VerifyHourlyThrottle,
+    VerifyThrottle,
+)
 from apps.documents.models import Document
 from apps.pdf_engine.engine import seal as SEAL
 from apps.pdf_engine.engine import signatures as SG
@@ -66,7 +73,6 @@ from .serializers import (
 )
 from .tasks import finalize_sign_request
 
-MAX_RECIPIENTS = 25
 MAX_FIELDS = 200
 
 
@@ -350,6 +356,29 @@ class SignRequestDetailView(APIView):
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
+def _check_recipient_limits(user, recipients) -> None:
+    """Two caps, both about mail volume rather than product shape (§9B)."""
+    if len(recipients) > settings.MAX_RECIPIENTS_PER_REQUEST:
+        raise ValidationFailed(
+            f"A request can go to at most "
+            f"{settings.MAX_RECIPIENTS_PER_REQUEST} people."
+        )
+    since = timezone.now() - timezone.timedelta(days=1)
+    already = {
+        email.lower() for email in
+        Recipient.objects.filter(sign_request__owner=user,
+                                 sign_request__sent_at__gte=since)
+        .values_list("email", flat=True)
+    }
+    distinct = already | {r.email.lower() for r in recipients}
+    if len(distinct) > settings.MAX_DISTINCT_RECIPIENTS_PER_DAY:
+        raise ValidationFailed(
+            f"That would email more than "
+            f"{settings.MAX_DISTINCT_RECIPIENTS_PER_DAY} different people in a "
+            "day. If you need to send to more, get in touch."
+        )
+
+
 def _bounded(value, low: int, high: int, name: str) -> int:
     """An int in range, or a 400 — `int("soon")` was a 500."""
     try:
@@ -359,8 +388,13 @@ def _bounded(value, low: int, high: int, name: str) -> int:
 
 
 def _replace_recipients(sign_request, payload) -> None:
-    if not isinstance(payload, list) or len(payload) > MAX_RECIPIENTS:
-        raise ValidationFailed(f"Between 1 and {MAX_RECIPIENTS} recipients.")
+    # The *send* cap, applied at draft time: a builder that lets somebody lay
+    # out fields for twenty minutes and then refuses is a worse experience than
+    # one that says so at the start (§9B, and the same reasoning as
+    # `enforce_sign_requests` above).
+    cap = settings.MAX_RECIPIENTS_PER_REQUEST
+    if not isinstance(payload, list) or len(payload) > cap:
+        raise ValidationFailed(f"Between 1 and {cap} recipients.")
     rows = []
     for item in payload:
         serializer = RecipientWriteSerializer(data=item)
@@ -417,6 +451,12 @@ class SignRequestSendView(APIView):
         if version is None:
             raise ValidationFailed("That document has no content to send.")
 
+        # §9B: confirmed address before we will send mail in your name. It
+        # gates *this* and nothing else — never uploading, because a guest
+        # uploads freely and an account must not be worse off than a stranger.
+        if not request.user.email_verified:
+            raise EmailNotVerified()
+        _check_recipient_limits(request.user, recipients)
         L.enforce_sign_requests(request.user)
 
         # Frozen here, deliberately: everything after this point reads
@@ -428,9 +468,14 @@ class SignRequestSendView(APIView):
         sign_request.save(update_fields=["source_version", "status", "sent_at"])
 
         first = routing.next_to_notify(sign_request)
-        emails.notify_recipients(sign_request, first)
+        mailed = emails.notify_recipients(sign_request, first)
+        # The audit event says who was *reached*. A suppressed address is not a
+        # notified recipient, and a certificate that claims otherwise is worse
+        # than one that admits the gap.
         record(sign_request, "sent", request=request,
-               to=[r.email for r in first], version=version.seq)
+               to=[r.email for r in mailed],
+               not_delivered=[r.email for r in first if r not in mailed],
+               version=version.seq)
         L.record_sign_request(request.user)
         return Response(SignRequestSerializer(sign_request).data)
 
@@ -468,7 +513,8 @@ class SignRequestRemindView(APIView):
             if recipient.last_notified_at and \
                     (now - recipient.last_notified_at).total_seconds() < 86400:
                 continue
-            emails.notify_reminder(sign_request, recipient)
+            if not emails.notify_reminder(sign_request, recipient):
+                continue
             record(sign_request, "reminder_sent", recipient=recipient,
                    request=request, manual=True)
             sent.append(recipient.email)
@@ -517,10 +563,25 @@ def _stream_artifact(sign_request, what: str, *, request=None, recipient=None):
 # --------------------------------------------------------------------------- #
 # The public ceremony — no auth, the token is the capability
 # --------------------------------------------------------------------------- #
+#: What a recipient is told when the envelope is closed. Written out rather
+#: than derived from the status label, because "This request was Canceled By
+#: Abuse." is not a sentence anybody should read.
+CLOSED_MESSAGES = {
+    SignRequest.Status.EXPIRED: "This signing request has expired.",
+    SignRequest.Status.CANCELED: "The sender canceled this signing request.",
+    SignRequest.Status.CANCELED_BY_ABUSE:
+        "This signing request was paused after it was reported. "
+        "If you were expecting it, please contact the sender.",
+    SignRequest.Status.DECLINED: "This document was declined.",
+}
+
+
 class PublicSignBase(APIView):
     permission_classes = [AllowAny]
     authentication_classes: list = []
-    throttle_classes = [PublicSignThrottle]
+    # Per IP *and* per token: the first stops one machine flooding, the second
+    # stops one leaked link being replayed all day from everywhere (§9B).
+    throttle_classes = [PublicSignThrottle, PublicSignTokenThrottle]
 
     def recipient(self, token: str) -> Recipient:
         recipient = (Recipient.objects
@@ -532,10 +593,12 @@ class PublicSignBase(APIView):
             # token" is the honest answer to a bad one.
             raise TokenInvalid("This signing link is not valid.")
         sign_request = recipient.sign_request
-        if sign_request.status in {SignRequest.Status.EXPIRED,
-                                   SignRequest.Status.CANCELED,
-                                   SignRequest.Status.DECLINED}:
-            raise TokenExpired(f"This request was {sign_request.status}.")
+        if sign_request.is_closed:
+            # Derived from the model rather than listed here, so a status added
+            # later (`canceled_by_abuse` was) cannot leave a dead link working.
+            # A *completed* request is not closed: its recipients must still be
+            # able to open it and download their copy (ESIGN retention).
+            raise TokenExpired(CLOSED_MESSAGES[sign_request.status])
         if sign_request.status == SignRequest.Status.DRAFT:
             raise TokenInvalid("This request has not been sent yet.")
         if sign_request.expires_at and sign_request.expires_at < timezone.now():
@@ -726,9 +789,18 @@ class PublicSignFieldView(PublicSignBase):
 
 
 class PublicSignCompleteView(PublicSignBase):
+    """Behind `CAPTCHA_ENABLED`, the one public-sign route that is challenged.
+
+    Placing the challenge on *complete* rather than on opening the link is
+    deliberate: a person who was legitimately sent a document should not meet a
+    puzzle before they can read it, and this is the request that turns a link
+    into a signature (§9B).
+    """
+
     @extend_schema(request=None, responses=OpenApiTypes.OBJECT,
                    tags=["esign-public"])
     def post(self, request, token):
+        captcha.enforce_standalone(request)
         recipient = self.acting(token)
         missing = [f.label or f.type for f in recipient.fields.all()
                    if f.required and not f.is_filled]
@@ -761,6 +833,52 @@ class PublicSignDeclineView(PublicSignBase):
         return Response({"declined": True})
 
 
+class PublicSignReportView(PublicSignBase):
+    """`POST …/report/` — "I did not ask for this" (§9B).
+
+    Reachable with the recipient's own token, because the person who can tell
+    us is the person who was mailed. Three distinct reporters pauses the
+    request and tells the owner: one angry recipient must not be able to stop a
+    legitimate contract, and three is a signal worth acting on.
+    """
+
+    @extend_schema(request=OpenApiTypes.OBJECT, responses=OpenApiTypes.OBJECT,
+                   tags=["esign-public"])
+    def post(self, request, token):
+        # Through the base guard, not around it: a draft has been sent to
+        # nobody, so a report against one is either a mistake or an attack, and
+        # `canceled_by_abuse` is a status the owner cannot undo.
+        recipient = self.recipient(token)
+        sign_request = recipient.sign_request
+
+        from .models import AbuseReport, client_ip
+
+        AbuseReport.objects.get_or_create(
+            sign_request=sign_request, recipient=recipient,
+            defaults={
+                "reason": str(request.data.get("reason") or "")[:2000],
+                "ip": client_ip(request),
+                "user_agent": (request.META.get("HTTP_USER_AGENT") or "")[:500],
+            },
+        )
+        reports = sign_request.abuse_reports.values("recipient_id").distinct().count()
+        paused = False
+        if (reports >= settings.ABUSE_REPORTS_TO_PAUSE
+                and not sign_request.is_terminal):
+            sign_request.status = SignRequest.Status.CANCELED_BY_ABUSE
+            sign_request.save(update_fields=["status"])
+            # No `request=`: `record` would store the *reporter's* IP and user
+            # agent on an event the sender can read, which hands the person
+            # they reported their address. The report row keeps it for staff.
+            record(sign_request, "canceled",
+                   reason="abuse_reports", reports=reports)
+            emails.notify_paused_for_abuse(sign_request, reports)
+            paused = True
+        # The running count stays server-side: telling each reporter how close
+        # they are to pausing somebody's contract is an invitation to organise.
+        return Response({"reported": True, "paused": paused})
+
+
 class PublicSignDownloadView(PublicSignBase):
     """A recipient's own copy of the finished document (ESIGN retention)."""
 
@@ -783,7 +901,11 @@ class PublicSignDownloadView(PublicSignBase):
 class VerifyView(APIView):
     permission_classes = [AllowAny]
     authentication_classes: list = []
-    throttle_scope = "image_upload"
+    # §9B: 10/min/IP burst behind a 60/hour ceiling. Listed *in addition to*
+    # the defaults, because assigning `throttle_classes` replaces them — and
+    # this endpoint decodes an untrusted PDF for an anonymous stranger.
+    def get_throttles(self):
+        return [*super().get_throttles(), VerifyThrottle(), VerifyHourlyThrottle()]
 
     @extend_schema(request=OpenApiTypes.OBJECT, responses=OpenApiTypes.OBJECT,
                    tags=["esign-public"])
@@ -827,16 +949,6 @@ class VerifyView(APIView):
                     ]
         report["envelope_match"] = envelope
         return Response(report)
-
-    def get_throttles(self):
-        """The scoped rate **in addition to** the defaults.
-
-        `throttle_scope` on its own does nothing: the project's
-        `DEFAULT_THROTTLE_CLASSES` contains no `ScopedRateThrottle`, so the
-        declared 60/hour was inert and this endpoint ran on the 30/min anon
-        bucket instead (same fix, and the same reason, as `core/views.py`).
-        """
-        return [*super().get_throttles(), ScopedRateThrottle()]
 
 
 

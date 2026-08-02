@@ -1,6 +1,6 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { ActivatedRoute } from '@angular/router';
+import { ActivatedRoute, RouterLink } from '@angular/router';
 
 import { CeremonyMeta, SignFieldModel } from '../../core/models/models';
 import { EsignService } from '../../core/services/esign.service';
@@ -19,7 +19,7 @@ type Screen = 'loading' | 'consent' | 'sign' | 'wait' | 'done' | 'closed' | 'err
 @Component({
   selector: 'app-ceremony',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [FormsModule, SignaturePad],
+  imports: [FormsModule, RouterLink, SignaturePad],
   templateUrl: './ceremony.html',
 })
 export class Ceremony {
@@ -37,6 +37,8 @@ export class Ceremony {
   protected declining = signal(false);
   protected declineReason = signal('');
   protected finalizing = signal(false);
+  protected reporting = signal(false);
+  protected reportReason = signal('');
   protected values = signal<Record<string, string>>({});
   protected filled = signal<Record<string, boolean>>({});
 
@@ -266,6 +268,37 @@ export class Ceremony {
       });
     }, 1500);
   }
+
+  /** "I did not ask for this" (§9B). Three distinct reporters pause it. */
+  protected report(): void {
+    this.busy.set(true);
+    this.reportError.set('');
+    this.esign.report(this.token(), this.reportReason()).subscribe({
+      next: (res) => {
+        this.busy.set(false);
+        this.reporting.set(false);
+        // A thank-you is not an error. It used to be written into `error()`,
+        // which renders in the red banner — telling somebody who just did the
+        // right thing that something went wrong.
+        this.notice.set(
+          res.paused
+            ? 'Thank you — this request has been paused and the sender told.'
+            : 'Thank you. We have recorded your report.',
+        );
+      },
+      error: () => {
+        this.busy.set(false);
+        // Inside the dialog: the modal covers the page banner, so a failure
+        // written there is invisible and the person just clicks again.
+        this.reportError.set('That did not send. Try again in a moment.');
+      },
+    });
+  }
+
+  /** A confirmation, shown in its own (green) banner — never in `error`. */
+  protected notice = signal('');
+  /** A failure *inside* the report dialog, where the person can see it. */
+  protected reportError = signal('');
 
   protected downloadUrl(what: 'final' | 'certificate'): string {
     return this.esign.recipientDownloadUrl(this.token(), what);

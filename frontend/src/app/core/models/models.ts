@@ -127,7 +127,16 @@ export interface AppConfig {
   };
   guest_ttl_hours: number;
   turnstile_site_key: string;
-  ads: { client_id: string };
+  /** `{enabled: false}` and nothing else when ads are off — no client id, no
+   *  slot ids — so a build with the flag off cannot load anything (§9A). */
+  ads: {
+    enabled: boolean;
+    provider?: string;
+    client_id?: string;
+    slots?: Record<string, string>;
+  };
+  consent_required: boolean;
+  retention: { guest_hours: number; trash_days: number; export_hours: number };
 }
 
 export interface Usage {
@@ -558,7 +567,21 @@ export interface SignFieldModel {
 }
 
 export type SignRequestStatus =
-  | 'draft' | 'sent' | 'completed' | 'declined' | 'expired' | 'canceled';
+  | 'draft' | 'sent' | 'completed' | 'declined' | 'expired' | 'canceled'
+  // Paused after enough recipients said they did not expect it (§9B). The
+  // owner sees it, so it needs a label rather than the raw value.
+  | 'canceled_by_abuse';
+
+/** What the owner reads. The API sends the machine value. */
+export const SIGN_STATUS_LABELS: Record<SignRequestStatus, string> = {
+  draft: 'draft',
+  sent: 'sent',
+  completed: 'completed',
+  declined: 'declined',
+  expired: 'expired',
+  canceled: 'canceled',
+  canceled_by_abuse: 'paused after reports',
+};
 
 export interface SignRequestModel {
   id: string;

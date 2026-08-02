@@ -12,9 +12,21 @@ export function extractSlugs(toolPagesSource) {
   return [...toolPagesSource.matchAll(/^\s*slug:\s*'([a-z0-9-]+)',$/gm)].map((m) => m[1]);
 }
 
+/**
+ * The static content pages, listed here rather than parsed: they are not in the
+ * tool route table, and an ad network's review crawls for exactly these (§9A).
+ */
+export const CONTENT_PAGES = [
+  'about',
+  'legal/privacy',
+  'legal/terms',
+  'legal/esign-disclosure',
+  'verify',
+];
+
 export function buildSitemap(slugs, siteUrl = DEFAULT_SITE_URL) {
   const base = siteUrl.replace(/\/$/, '');
-  const urls = ['', ...slugs]
+  const urls = ['', ...slugs, ...CONTENT_PAGES]
     .map((slug) => {
       const loc = slug ? `${base}/${slug}` : `${base}/`;
       const priority = slug ? '0.8' : '1.0';

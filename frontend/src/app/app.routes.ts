@@ -80,6 +80,36 @@ export const routes: Routes = [
     loadComponent: () => import('./features/sign/ceremony').then((m) => m.Ceremony),
   },
   {
+    path: 'legal/privacy',
+    data: { kind: 'privacy' },
+    loadComponent: () =>
+      import('./features/legal/legal-page').then((m) => m.LegalPage),
+  },
+  {
+    path: 'legal/terms',
+    data: { kind: 'terms' },
+    loadComponent: () =>
+      import('./features/legal/legal-page').then((m) => m.LegalPage),
+  },
+  {
+    path: 'about',
+    data: { kind: 'about' },
+    loadComponent: () =>
+      import('./features/legal/legal-page').then((m) => m.LegalPage),
+  },
+  {
+    // Somebody who clicked "unsubscribe" in a mail footer. No auth: the token
+    // in the message is the authority (§9B).
+    path: 'unsubscribe/:token',
+    loadComponent: () =>
+      import('./features/legal/unsubscribe-page').then((m) => m.UnsubscribePage),
+  },
+  {
+    path: 'verify-email/:token',
+    loadComponent: () =>
+      import('./features/legal/verify-email-page').then((m) => m.VerifyEmailPage),
+  },
+  {
     // The consent text at a stable address, so a signer can read what they
     // agreed to without a live signing link (§7).
     path: 'legal/esign-disclosure',

@@ -176,6 +176,16 @@ class DocumentListCreateView(generics.ListCreateAPIView):
     ordering_fields = ["updated_at", "title", "size_bytes", "created_at"]
     ordering = ["-updated_at"]
 
+    def get_throttles(self):
+        """The per-account upload rate **in addition to** the defaults (§9B).
+
+        Replacing `throttle_classes` would drop the guest throttles on a
+        guest-reachable write, which is the mistake `core/views.py` documents.
+        """
+        from apps.core.throttling import UploadThrottle
+
+        return [*super().get_throttles(), UploadThrottle()]
+
     def get_queryset(self):
         qs = owned_by(
             Document.objects.select_related("current_version"), _principal(self.request)

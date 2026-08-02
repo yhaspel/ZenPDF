@@ -27,7 +27,7 @@ describe('AuthService', () => {
   });
 
   it('registers a user', () => {
-    service.register({ email: 'a@b.com', password: 'pw' }).subscribe();
+    service.register({ email: 'a@b.com', password: 'pw', accept_terms: true }).subscribe();
     const req = httpMock.expectOne('/api/users/register/');
     expect(req.request.method).toBe('POST');
     req.flush({ id: '1', email: 'a@b.com' });

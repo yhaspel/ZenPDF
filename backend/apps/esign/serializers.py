@@ -86,6 +86,12 @@ class SignRequestCreateSerializer(serializers.Serializer):
 
 class RecipientWriteSerializer(serializers.Serializer):
     email = serializers.EmailField()
+
+    def validate_email(self, value: str) -> str:
+        # Normalized on the way in, so `Bob@x.com` and `bob@x.com` are one
+        # person everywhere downstream — the daily recipient cap counts
+        # distinct addresses, and case is not a distinction.
+        return value.strip().lower()
     name = serializers.CharField(max_length=200, required=False, allow_blank=True)
     role = serializers.ChoiceField(choices=Recipient.Role.choices,
                                    default=Recipient.Role.SIGNER)

@@ -1,7 +1,12 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
-import { buildRobots, buildSitemap, extractSlugs } from '../../../tools/seo.mjs';
+import {
+  CONTENT_PAGES,
+  buildRobots,
+  buildSitemap,
+  extractSlugs,
+} from '../../../tools/seo.mjs';
 import { TOOL_SLUGS } from './tool-pages';
 
 /** Repo root, resolved from this spec rather than from the generator module. */
@@ -31,7 +36,19 @@ describe('generated SEO artifacts', () => {
     for (const slug of TOOL_SLUGS) {
       expect(sitemap).toContain(`/${slug}<`);
     }
-    expect((sitemap.match(/<url>/g) ?? []).length).toBe(TOOL_SLUGS.length + 1);
+    expect((sitemap.match(/<url>/g) ?? []).length).toBe(
+      TOOL_SLUGS.length + CONTENT_PAGES.length + 1,
+    );
+  });
+
+  it('the sitemap lists the content pages an ad review crawls for', () => {
+    // "Substantive public content for crawl" is a named item on the AdSense
+    // readiness checklist — a policy page that is live but unlisted is one the
+    // reviewer may never see (§9A).
+    const sitemap = read('public/sitemap.xml');
+    for (const page of ['about', 'legal/privacy', 'legal/terms']) {
+      expect(sitemap).toContain(`/${page}<`);
+    }
   });
 
   it('robots.txt disallows /app/, /s/ and /api/ and points at the sitemap', () => {

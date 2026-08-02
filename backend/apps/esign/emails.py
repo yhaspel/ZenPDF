@@ -13,8 +13,9 @@ from __future__ import annotations
 import logging
 
 from django.conf import settings
-from django.core.mail import send_mail
 from django.utils import timezone
+
+from apps.core import mail
 
 logger = logging.getLogger(__name__)
 
@@ -28,19 +29,31 @@ def _sender_name(sign_request) -> str:
     return (getattr(sender, "display_name", "") or "").strip() or sender.email
 
 
-def _send(subject: str, body: str, to: list[str]) -> None:
+def _send(subject: str, body: str, to: list[str]) -> int:
+    """Through `core.mail`: suppression list, `List-Unsubscribe`, abuse contact.
+
+    A signing invitation is exactly the shape of a phishing mail, so the
+    recipient needs somewhere to complain that is not their spam button — and
+    somebody who has opted out must never be mailed again by any part of the
+    product (§9B).
+
+    Returns **how many messages actually went**, and callers must honour it: an
+    e-signature audit trail that records an invitation the suppression list
+    swallowed is the wrong kind of wrong.
+    """
     if not to:
-        return
-    try:
-        send_mail(subject, body, settings.DEFAULT_FROM_EMAIL, to,
-                  fail_silently=False)
-    except Exception:  # noqa: BLE001 - a bounced invite must not fail the job
-        logger.exception("esign: could not send %r to %s", subject, to)
+        return 0
+    return mail.send(subject, body, to)
 
 
-def notify_recipients(sign_request, recipients) -> None:
-    """"Please sign" — the one email that has to be trusted by a stranger."""
+def notify_recipients(sign_request, recipients) -> list:
+    """"Please sign" — the one email that has to be trusted by a stranger.
+
+    Returns the recipients that were **actually** mailed, so the audit trail
+    records what happened rather than what was attempted.
+    """
     sender = _sender_name(sign_request)
+    notified: list = []
     for recipient in recipients:
         greeting = f"Hello {recipient.name}," if recipient.name else "Hello,"
         action = {
@@ -70,15 +83,22 @@ def notify_recipients(sign_request, recipients) -> None:
             "If you were not expecting this, you can ignore this email — "
             "nothing happens until you open the link and agree.",
         ]
-        _send(f"{sender} would like you to {action}: {sign_request.title}",
-              "\n".join(lines), [recipient.email])
+        if not _send(f"{sender} would like you to {action}: {sign_request.title}",
+                     "\n".join(lines), [recipient.email]):
+            # Suppressed or undeliverable. Leaving `last_notified_at` unset is
+            # what lets the sender see "not notified" instead of waiting on a
+            # signature nobody was ever asked for.
+            notified.append((recipient, False))
+            continue
         recipient.last_notified_at = timezone.now()
         recipient.status = recipient.Status.NOTIFIED \
             if recipient.status == recipient.Status.PENDING else recipient.status
         recipient.save(update_fields=["last_notified_at", "status"])
+        notified.append((recipient, True))
+    return [r for r, ok in notified if ok]
 
 
-def notify_reminder(sign_request, recipient) -> None:
+def notify_reminder(sign_request, recipient) -> bool:
     sender = _sender_name(sign_request)
     body = "\n".join([
         f"Hello {recipient.name}," if recipient.name else "Hello,",
@@ -89,9 +109,12 @@ def notify_reminder(sign_request, recipient) -> None:
         "",
         f"Envelope {sign_request.envelope_code}.",
     ])
-    _send(f"Reminder: {sign_request.title}", body, [recipient.email])
+    if not _send(f"Reminder: {sign_request.title}", body, [recipient.email]):
+        # Do not burn the once-a-day nudge on a message that never went.
+        return False
     recipient.last_notified_at = timezone.now()
     recipient.save(update_fields=["last_notified_at"])
+    return True
 
 
 def notify_declined(sign_request, decliner) -> None:
@@ -142,6 +165,24 @@ def notify_completed(sign_request, *, final_url: str, certificate_url: str) -> N
         f"  {settings.FRONTEND_BASE_URL}/app/sign/{sign_request.id}",
     ])
     _send(f"Completed: {sign_request.title}", owner_body, [sign_request.owner.email])
+
+
+def notify_paused_for_abuse(sign_request, reports: int) -> None:
+    """The owner is told, in plain words, by people rather than by a robot."""
+    body = "\n".join([
+        f'"{sign_request.title}" has been paused.',
+        "",
+        f"{reports} of the people you sent it to told us they did not expect "
+        "it. Nobody else will be asked to sign, and the links no longer work.",
+        "",
+        "If that is a surprise, check the addresses you entered — a typo sends "
+        "somebody's contract to a stranger. If you believe this is a mistake, "
+        f"reply to {settings.ABUSE_CONTACT_EMAIL}.",
+        "",
+        f"Envelope {sign_request.envelope_code}.",
+    ])
+    mail.send(f"Paused: {sign_request.title}", body, [sign_request.owner.email],
+              transactional=True)
 
 
 def notify_expired(sign_request, pending) -> None:

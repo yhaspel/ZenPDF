@@ -35,7 +35,8 @@ describe('authInterceptor — guest credential', () => {
   afterEach(() => {
     // Capturing a minted token re-reads /api/config/ so the UI knows the new
     // principal's limits; drain it before verifying.
-    httpMock.match('/api/config/').forEach((r) => r.flush({}));
+    httpMock.match((r) => r.url.includes('/api/config/'))
+      .forEach((r) => r.flush({}));
     httpMock.verify();
     localStorage.clear();
   });

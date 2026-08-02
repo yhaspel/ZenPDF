@@ -18,6 +18,8 @@ import { DocumentModel, Job } from '../../core/models/models';
 import { DocumentsService } from '../../core/services/documents.service';
 import { ToolPageDef } from '../../core/tool-pages';
 import { saveBlob } from '../../shared/save-blob';
+import { AdSlot } from '../../shared/ad-slot';
+import { SiteFooter } from '../../shared/site-footer';
 import { UploadDropzone } from '../../shared/upload-dropzone';
 
 type Phase = 'idle' | 'uploading' | 'running' | 'done' | 'error';
@@ -36,7 +38,7 @@ const IMPORT_KINDS = new Set(['word-to-pdf', 'jpg-to-pdf', 'html-to-pdf']);
 @Component({
   selector: 'app-tool-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [UploadDropzone, RouterLink],
+  imports: [AdSlot, UploadDropzone, RouterLink, SiteFooter],
   templateUrl: './tool-page.html',
 })
 export class ToolPage {

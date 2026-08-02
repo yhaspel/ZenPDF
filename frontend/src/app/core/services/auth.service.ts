@@ -9,6 +9,9 @@ export interface RegisterPayload {
   email: string;
   password: string;
   display_name?: string;
+  /** The signup checkbox. Required by the API — an account cannot exist
+   *  without a recorded acceptance (§9A). */
+  accept_terms: boolean;
 }
 
 @Injectable({ providedIn: 'root' })
