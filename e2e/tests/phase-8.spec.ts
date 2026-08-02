@@ -88,7 +88,7 @@ async function drawSignature(page: PWPage) {
 // --------------------------------------------------------------------------- //
 // 8A — self-sign, with no account (the Phase-2B gate)
 // --------------------------------------------------------------------------- //
-test('phase 8: a guest signs a PDF from /sign-pdf with no login anywhere', async ({
+test('@smoke phase 8: a guest signs a PDF from /sign-pdf with no login anywhere', async ({
   page,
 }) => {
   test.setTimeout(180_000);

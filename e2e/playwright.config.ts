@@ -6,12 +6,15 @@ import { defineConfig, devices } from '@playwright/test';
  * Two suites, selected by tag rather than by file, so a spec moves between
  * them by editing its title:
  *
- *   npx playwright test --grep @smoke   # ~2 min: the paths that must never break
- *   npx playwright test                 # everything, which is what CI runs
+ *   npx playwright test --grep @smoke   # ~40 s: the paths that must never break
+ *   npx playwright test                 # everything ("@full"), which is what CI runs
  *
- * `@smoke` is the deploy gate: register, upload, run an operation, self-sign,
- * complete a ceremony, and the public pages' accessibility floor. If those
- * pass, the product works; if one fails, nothing else matters.
+ * `@smoke` is the deploy gate: register, upload, run an operation, self-sign
+ * as a guest, complete a two-signer ceremony, and the public pages'
+ * accessibility floor. If those pass, the product works; if one fails, nothing
+ * else matters. There is no `@full` *tag* — "full" is the whole suite, i.e.
+ * this file with no `--grep`, which is what makes it impossible to forget to
+ * tag a new spec into it.
  *
  * **Cross-browser is opt-in** (`BROWSERS=all`) rather than the default. Three
  * engines on every run triples a suite that already drives real PDFs through a

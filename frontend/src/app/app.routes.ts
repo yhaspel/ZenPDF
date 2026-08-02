@@ -120,5 +120,10 @@ export const routes: Routes = [
     path: 'verify',
     loadComponent: () => import('./features/sign/verify').then((m) => m.Verify),
   },
-  { path: '**', redirectTo: '' },
+  {
+    // A real 404 rather than a silent redirect: the person learns the address
+    // was wrong, and a crawler is not told every dead link is the home page.
+    path: '**',
+    loadComponent: () => import('./features/legal/not-found').then((m) => m.NotFound),
+  },
 ];
