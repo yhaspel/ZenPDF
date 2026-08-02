@@ -303,3 +303,68 @@ def test_a_guest_is_metered_not_blocked(guest, guest_doc, settings):
     for _ in range(2):
         job = _op(guest, guest_doc["id"], "convert_to", {"format": "txt"})
         assert job["status"] == "succeeded", job
+
+
+def test_several_images_become_one_document(api):
+    """`/jpg-to-pdf` promises "add them all and each becomes a page". One job
+    per file gave N separate one-page documents, showed whichever finished
+    first, and left the rest orphaned — all of them metered."""
+    refs = [_upload_source(api, f"page{i}.png", _png(), "image/png")["ref"]
+            for i in range(3)]
+    job = _cross(api, "convert_from", {"upload_refs": refs})
+    assert job["status"] == "succeeded", job
+
+    ids = job["result"]["documents"]
+    assert len(ids) == 1, "one document, not three"
+    assert api.get(f"/api/documents/{ids[0]}/").json()["page_count"] == 3
+
+
+def test_a_conversion_source_is_not_left_behind(api):
+    from django.contrib.auth import get_user_model
+
+    from apps.core.assets import principal_prefix
+    from apps.pdf_engine.storage import get_storage
+
+    ref = _upload_source(api, "photo.png", _png(), "image/png")["ref"]
+    job = _cross(api, "convert_from", {"upload_ref": ref, "filename": "photo.png"})
+    assert job["status"] == "succeeded", job
+
+    user = get_user_model().objects.get(email="alice@example.com")
+    assert not [k for k in get_storage().list_prefix(principal_prefix(user)) if ref in k]
+
+
+def test_a_file_pretending_to_be_a_pdf_is_refused(api):
+    """`filetype="pdf"` is a hint: MuPDF opens a PNG as a one-page document, so
+    without an explicit check a file named `photo.pdf` was stored verbatim and
+    served as application/pdf — a "document" no reader can open."""
+    ref = _upload_source(api, "photo.pdf", _png(), "application/pdf")["ref"]
+    job = _cross(api, "convert_from", {"upload_ref": ref, "filename": "photo.pdf"})
+    assert job["status"] == "failed"
+    assert "PDF" in job["error_message"]
+
+
+def test_a_conversion_cannot_exceed_the_tier_page_cap(api, settings):
+    """Ingest enforces `max_pages`; this is the other door into the library, and
+    a 2 000-frame TIFF is a small upload and a 2 000-page document."""
+    import copy
+    import io as _io
+
+    import fitz
+    from PIL import Image
+
+    tiers = copy.deepcopy(settings.TIERS)
+    tiers["free"]["max_pages"] = 2
+    settings.TIERS = tiers
+
+    frames = []
+    for _ in range(4):
+        pix = fitz.Pixmap(fitz.csRGB, fitz.IRect(0, 0, 40, 30))
+        pix.set_rect(pix.irect, (10, 200, 10))
+        frames.append(Image.open(_io.BytesIO(pix.tobytes("png"))).convert("RGB"))
+    buf = _io.BytesIO()
+    frames[0].save(buf, format="TIFF", save_all=True, append_images=frames[1:])
+
+    ref = _upload_source(api, "scan.tiff", buf.getvalue(), "image/tiff")["ref"]
+    job = _cross(api, "convert_from", {"upload_ref": ref, "filename": "scan.tiff"})
+    assert job["status"] == "failed"
+    assert "limit is 2" in job["error_message"]

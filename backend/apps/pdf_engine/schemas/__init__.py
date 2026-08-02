@@ -677,6 +677,14 @@ CONVERT_FROM = {
     "properties": {
         # Exactly one source: an uploaded file (by ref) or a web address.
         "upload_ref": {"type": "string", "minLength": 1, "maxLength": 200},
+        # Several images → one PDF, a page each. `/jpg-to-pdf` promises this in
+        # so many words; one job per file gave N separate documents instead.
+        "upload_refs": {
+            "type": "array",
+            "items": {"type": "string", "minLength": 1, "maxLength": 200},
+            "minItems": 1,
+            "maxItems": 100,
+        },
         "filename": {"type": "string", "minLength": 1, "maxLength": 255},
         "url": {"type": "string", "minLength": 1, "maxLength": 2000},
         "fit": {"enum": ["a4", "original"]},

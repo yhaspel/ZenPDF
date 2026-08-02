@@ -106,11 +106,26 @@ export class Dashboard {
         this.toast.success('Uploaded');
       });
     }
-    for (const file of others) {
+    // Images dropped together become one document, a page each; anything else
+    // is converted on its own, because a Word file and a spreadsheet have
+    // nothing to combine.
+    const images = others.filter((f) => f.type.startsWith('image/'));
+    const rest = others.filter((f) => !f.type.startsWith('image/'));
+    if (images.length > 1) {
+      const label = `${images.length} images`;
+      this.importing.update((names) => [...names, label]);
+      this.convert.importImages(images).subscribe({
+        next: (job) => this.onImported(job, label),
+        error: (err) => this.failImport(label, err?.error?.error?.message),
+      });
+    } else {
+      rest.push(...images);
+    }
+    for (const file of rest) {
       this.importing.update((names) => [...names, file.name]);
       this.convert.importFile(file).subscribe({
         next: (job) => this.onImported(job, file.name),
-        error: () => this.failImport(file.name),
+        error: (err) => this.failImport(file.name, err?.error?.error?.message),
       });
     }
   }

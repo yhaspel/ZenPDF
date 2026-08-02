@@ -1,5 +1,5 @@
 import { Injectable, computed, inject, signal } from '@angular/core';
-import { Observable, map, switchMap } from 'rxjs';
+import { Observable, finalize, forkJoin, map, switchMap } from 'rxjs';
 
 import { ExportFormat, Job, OcrOptions, SourceAsset } from '../core/models/models';
 import { DocumentsService } from '../core/services/documents.service';
@@ -105,6 +105,32 @@ export class ConvertFacade {
     );
   }
 
+  /**
+   * Several images → **one** PDF, a page each, in the order given.
+   *
+   * The `/jpg-to-pdf` page promises exactly this ("add them all and each
+   * becomes a page"). Running one conversion per file instead produced N
+   * separate one-page documents, showed whichever finished first, and left the
+   * rest orphaned — all of them metered.
+   */
+  importImages(files: File[]): Observable<Job> {
+    this._busy.set(true);
+    const uploads = files.map((file) => this.docsSvc.uploadSource(file));
+    return this.finish(
+      forkJoin(uploads).pipe(
+        switchMap((assets: SourceAsset[]) => this.jobs.dispatch(
+          this.docsSvc.crossOperation({
+            type: 'convert_from',
+            params: {
+              upload_refs: assets.map((a) => a.ref),
+              filename: assets[0]?.filename,
+            },
+          }),
+        )),
+      ),
+    );
+  }
+
   importUrl(url: string): Observable<Job> {
     this._busy.set(true);
     return this.finish(this.jobs.dispatch(
@@ -116,10 +142,22 @@ export class ConvertFacade {
     return this.docsSvc.downloadExport(job.id);
   }
 
+  /**
+   * Clear `busy` however the stream ends.
+   *
+   * `map` only runs on the value channel, so an HTTP error left the flag stuck
+   * on — and every one of these operations is metered (§16), so the *expected*
+   * path to a stuck panel was a guest's sixth export returning 429. The facade
+   * is `providedIn: 'root'`, so the stuck flag then survived navigation and the
+   * only way out was a page reload.
+   */
   private finish(job$: Observable<Job>): Observable<Job> {
-    return job$.pipe(map((job) => {
-      if (job.status !== 'queued' && job.status !== 'running') this._busy.set(false);
-      return job;
-    }));
+    return job$.pipe(
+      map((job) => {
+        if (job.status !== 'queued' && job.status !== 'running') this._busy.set(false);
+        return job;
+      }),
+      finalize(() => this._busy.set(false)),
+    );
   }
 }

@@ -108,9 +108,11 @@ def test_the_offset_aligns_pages_that_moved(fixture_bytes):
     misaligned = C.compare(data, shifted)
     aligned = C.compare(data, shifted, offset=1)
     assert aligned["summary"]["text_changes"] < misaligned["summary"]["text_changes"]
-    # With the offset, page 0 of A is compared against page 1 of B.
-    assert aligned["pages"][0]["a_page"] == 0
-    assert aligned["pages"][0]["b_page"] == 1
+    # With the offset, page 0 of A is compared against page 1 of B — and B's
+    # new page 0 is reported on its own, because "a page was added" is a change.
+    pair = next(p for p in aligned["pages"] if p["a_page"] == 0)
+    assert pair["b_page"] == 1
+    assert any(p["a_page"] is None and p["b_page"] == 0 for p in aligned["pages"])
 
 
 def test_a_silly_offset_is_a_validation_error(fixture_bytes):
@@ -126,3 +128,95 @@ def test_a_document_beyond_the_page_ceiling_is_refused(fixture_bytes, monkeypatc
     data = fixture_bytes("compare-a.pdf")  # 2 pages
     with pytest.raises(InvalidParams, match="up to"):
         C.compare(data, data)
+
+
+def test_a_cover_page_added_to_b_is_still_compared():
+    """The offset's own use case. `b_index = index + offset`, so the loop has to
+    *start* at -offset; starting at 0 threw away the first `offset` pages of B —
+    the cover page the offset exists to align — and then reported "identical"."""
+    def doc_with(*lines: str) -> bytes:
+        doc = fitz.open()
+        for line in lines:
+            page = doc.new_page(width=595, height=842)
+            page.insert_text((72, 100), line, fontsize=14)
+        try:
+            return doc.tobytes()
+        finally:
+            doc.close()
+
+    a = doc_with("body")
+    b = doc_with("COVER", "body")
+
+    report = C.compare(a, b, offset=1, visual=False)
+    covered = [p["b_page"] for p in report["pages"] if p["b_page"] is not None]
+    assert 0 in covered, f"B page 0 was never compared: {covered}"
+    assert report["summary"]["identical"] is False
+    inserted = [c for page in report["pages"] for c in page["text_changes"]]
+    assert any("COVER" in c["b_text"] for c in inserted)
+
+
+def test_a_text_change_on_a_rotated_page_is_reported_where_it_is_seen(fixture_bytes):
+    """§8: `get_text("words")` answers in *unrotated* space while `page.rect` is
+    the displayed box. Dividing one by the other put the highlight most of a
+    page-width from the word — and made the two panes disagree, since the visual
+    pass renders in display space and was right."""
+    def rotated(text: str) -> bytes:
+        doc = fitz.open()
+        page = doc.new_page(width=595, height=842)
+        page.insert_text((72, 100), text, fontsize=14)
+        doc[0].set_rotation(90)
+        try:
+            return doc.tobytes()
+        finally:
+            doc.close()
+
+    report = C.compare(rotated("Total is twelve pounds"),
+                       rotated("Total is thirty pounds"), visual=False)
+    change = next(c for c in report["pages"][0]["text_changes"]
+                  if c["kind"] == "replace")
+    # On a page rotated 90°, text written near the top-left of the unrotated
+    # page is displayed near the *right* edge.
+    assert change["a_rect"]["x"] > 0.5, change["a_rect"]
+    assert 0 <= change["a_rect"]["y"] <= 1
+
+
+def test_pages_of_different_sizes_are_compared_whole():
+    """Rendering at a fixed zoom and comparing the overlapping corner missed
+    everything outside it — half a page, if one side is wider — and mis-scaled
+    the regions it did find."""
+    def page_with_box(width: float, box) -> bytes:
+        doc = fitz.open()
+        page = doc.new_page(width=width, height=842)
+        if box:
+            page.draw_rect(fitz.Rect(*box), color=None, fill=(0, 0, 0))
+        try:
+            return doc.tobytes()
+        finally:
+            doc.close()
+
+    # The box is only in A, and it sits beyond B's right-hand edge.
+    a = page_with_box(1190, (700, 300, 1100, 700))
+    b = page_with_box(595, None)
+    report = C.compare(a, b)
+    assert report["pages"][0]["visual_regions"], "the box outside the overlap was missed"
+    assert report["summary"]["identical"] is False
+
+
+def test_a_small_stamp_does_not_produce_a_report_that_contradicts_itself():
+    """A page with a change listed must not be summarised as identical."""
+    def with_stamp(stamped: bool) -> bytes:
+        doc = fitz.open()
+        page = doc.new_page(width=595, height=842)
+        page.insert_text((72, 100), "Invoice", fontsize=14)
+        if stamped:
+            page.draw_rect(fitz.Rect(300, 300, 360, 360), color=None, fill=(0, 0, 0))
+        try:
+            return doc.tobytes()
+        finally:
+            doc.close()
+
+    report = C.compare(with_stamp(False), with_stamp(True))
+    page = report["pages"][0]
+    assert page["visual_regions"], "the stamp was not found at all"
+    assert report["summary"]["identical"] is False, "the summary contradicts the list"
+    assert report["summary"]["changed_pages"] == 1

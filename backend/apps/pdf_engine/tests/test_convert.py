@@ -295,6 +295,14 @@ def test_url_conversion_refuses_the_private_space(url):
     "http://api:8000/api/health/",          # our own API, by service name
     "http://169.254.169.254/latest/meta-data/",
     "file:///etc/passwd",
+    # The spellings layer 1 normalises away and layer 2 originally did not.
+    # Before this was fixed the container's own log showed Chromium dialling
+    # redis and db through the trailing-dot form.
+    "http://redis.:6379/",
+    "http://db.:5432/",
+    "http://169.254.169.254./",
+    "http://0177.0.0.1/",
+    "http://2130706433/",
 ])
 def test_gotenberg_itself_refuses_the_private_space(url):
     """Layer 2, proven against the running container rather than against a

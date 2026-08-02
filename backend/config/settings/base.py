@@ -225,7 +225,14 @@ CELERY_BEAT_SCHEDULE = {
         "task": "apps.core.tasks.guest_purge",
         "schedule": 3600.0,
     },
+    # Export artefacts (`exports/{job_id}/…`) past their TTL — the UI tells the
+    # user they are kept for 24 hours, and this is what makes that true (§15).
+    "exports-purge": {
+        "task": "apps.core.tasks.exports_purge",
+        "schedule": 3600.0,
+    },
 }
+EXPORT_TTL_HOURS = config("EXPORT_TTL_HOURS", default=24, cast=int)
 JOB_STALL_TIMEOUT = config("JOB_STALL_TIMEOUT", default=1800, cast=int)
 
 # --- Cache (§16) ------------------------------------------------------------
@@ -273,7 +280,9 @@ GOTENBERG_URL = config("GOTENBERG_URL", default="http://gotenberg:3000")
 # identical so the guard holds even if the env var goes missing.
 GOTENBERG_DENY_LIST = config(
     "GOTENBERG_DENY_LIST",
-    default=r"^file:(?!//\/tmp/).*|^.*://(localhost|127\.\d+\.\d+\.\d+|0\.0\.0\.0|\[?::1\]?|\[?fd[0-9a-f]{2}:.*|169\.254\.\d+\.\d+|10\.\d+\.\d+\.\d+|172\.(1[6-9]|2\d|3[01])\.\d+\.\d+|192\.168\.\d+\.\d+|100\.100\.200\.200|metadata\.google\.internal|metadata\.goog|api|web|db|redis|storage|mailpit|gotenberg|beat|worker-default|worker-heavy|worker-render)([:/].*)?$",
+    # No commas: gotenberg's flag parser splits this value on them, which
+    # silently truncates the pattern mid-expression.
+    default=r"^file:(?!//\/tmp/).*|^[a-z]+://(?:[^/@]*@)?(localhost|127\.\d+(\.\d+)?(\.\d+)?|0\.0\.0\.0|0x[0-9a-f]+|0\d+(\.\d+)?(\.\d+)?(\.\d+)?|\d\d\d\d\d\d\d\d\d?\d?|\[?::1\]?|\[?::ffff:.*|\[?0:0:0:0:0:(0|ffff):.*|\[?fd[0-9a-f][0-9a-f]:.*|\[?fe80:.*|169\.254\.\d+\.\d+|10\.\d+\.\d+\.\d+|172\.(1[6-9]|2\d|3[01])\.\d+\.\d+|192\.168\.\d+\.\d+|100\.100\.200\.200|metadata\.google\.internal|metadata\.goog|.*\.internal|api|web|db|redis|storage|mailpit|gotenberg|beat|worker-default|worker-heavy|worker-render)\.?([:/].*)?$",
 )
 SIGNING_CERT_PATH = config("SIGNING_CERT_PATH", default="/certs/zenpdf-dev.p12")
 SIGNING_CERT_PASSWORD = config("SIGNING_CERT_PASSWORD", default="devpass")

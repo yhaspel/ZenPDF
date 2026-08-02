@@ -6,6 +6,7 @@ import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { NgxExtendedPdfViewerModule } from 'ngx-extended-pdf-viewer';
 
 import { AnnotationsFacade } from '../../abstraction/annotations.facade';
+import { CompareFacade } from '../../abstraction/compare.facade';
 import { GuestFacade } from '../../abstraction/guest.facade';
 import { JobsFacade } from '../../abstraction/jobs.facade';
 import { PagesFacade } from '../../abstraction/pages.facade';
@@ -45,6 +46,7 @@ export class Workspace {
   private tokens = inject(TokenService);
   protected guests = inject(GuestFacade);
   protected annotations = inject(AnnotationsFacade);
+  private compares = inject(CompareFacade);
   private guestTokens = inject(GuestTokenService);
   private route = inject(ActivatedRoute);
   private router = inject(Router);
@@ -58,6 +60,8 @@ export class Workspace {
   protected annotateTool = signal<AnnotateTool>('select');
   /** Set when Annotate was entered *from* the Organize toolbar's Crop button. */
   private cropReturnsToOrganize = false;
+  /** Set when the Phase-4 scanned gate handed over to Convert. */
+  private fromScannedGate = signal(false);
   protected page = signal(1);
   protected order = signal<number[]>([]);
   protected busy = signal(false);
@@ -126,6 +130,11 @@ export class Workspace {
           || mode === 'convert' || mode === 'compare') {
         this.mode.set(mode);
       }
+      // `/compare-pdf` uploads both documents and sends the second one here.
+      // Without this the guest who just picked two files has to pick one of
+      // them again from a dropdown — the page would stop being the tool.
+      const other = params.get('other');
+      if (mode === 'compare' && other) this.compares.setOther(other);
     });
     // reset organize order whenever the version changes
     effect(() => {
@@ -397,7 +406,14 @@ export class Workspace {
    * hands straight to the OCR panel rather than explaining where to find it.
    */
   onOcrRequested(): void {
+    this.fromScannedGate.set(true);
     this.mode.set('convert');
+  }
+
+  /** True when Convert was opened *from* the scanned-page gate, so the OCR
+   *  panel can lead with why the editor sent them here. */
+  cameFromScannedGate(): boolean {
+    return this.fromScannedGate();
   }
 
   /** Convert/OCR/repair produced a new version. */

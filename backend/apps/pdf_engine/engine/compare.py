@@ -21,7 +21,7 @@ import difflib
 import fitz
 
 from ..exceptions import InvalidParams
-from ..geometry import page_rect_to_norm_clamped
+from ..geometry import apply_matrix_rect, page_rect_to_norm_clamped
 
 # Render DPI for the visual pass. 150 is the phase's number: enough to see a
 # changed word, cheap enough to do on every page of a long document.
@@ -30,13 +30,33 @@ VISUAL_DPI = 150
 # subpixel drift produce a scatter of single differing pixels on pages that are
 # in fact identical.
 MIN_REGION_AREA = 0.0002
-# Below this share of differing pixels a page is called visually identical.
-NOISE_FLOOR = 0.02
+# Below this share of differing cells nothing is reported at all: anti-aliasing
+# and sub-pixel drift produce a scatter on pages that are in fact identical.
+#
+# A page that *does* report regions is a page that differs. Having a second,
+# higher threshold decide whether the summary called the document "identical"
+# meant a stamp or a small logo change — anything between the two numbers —
+# produced a report whose change list contradicted its own summary line.
+MIN_VISUAL_SHARE = 0.0005
+NOISE_FLOOR = MIN_VISUAL_SHARE
 MAX_PAGES = 500
 
 
-def _norm_rect(rect, page) -> dict:
-    nr = page_rect_to_norm_clamped(rect.x0, rect.y0, rect.x1, rect.y1,
+def _norm_rect(rect, page, *, rotate: bool = False) -> dict:
+    """A rect on `page` as §8 normalized visual space.
+
+    `rotate` is not optional decoration: `get_text("words")` answers in the
+    page's **unrotated** space (§8's per-API table) while `page.rect` is the
+    *displayed* box, so on a /Rotate 90 page dividing one by the other put a
+    highlight most of a page-width away from the word it belonged to — and the
+    two panes then disagreed with each other, because the visual pass renders
+    in display space and was right.
+    """
+    x0, y0, x1, y1 = rect.x0, rect.y0, rect.x1, rect.y1
+    if rotate:
+        x0, y0, x1, y1 = apply_matrix_rect(x0, y0, x1, y1,
+                                           tuple(page.rotation_matrix))
+    nr = page_rect_to_norm_clamped(x0, y0, x1, y1,
                                    page.rect.width, page.rect.height)
     return {"x": round(nr.x, 6), "y": round(nr.y, 6),
             "w": round(nr.w, 6), "h": round(nr.h, 6)}
@@ -72,8 +92,8 @@ def _text_changes(page_a, page_b) -> list[dict]:
             "kind": tag,                       # insert | delete | replace
             "a_text": " ".join(tokens_a[i1:i2]),
             "b_text": " ".join(tokens_b[j1:j2]),
-            "a_rect": _norm_rect(box_a, page_a) if box_a else None,
-            "b_rect": _norm_rect(box_b, page_b) if box_b else None,
+            "a_rect": _norm_rect(box_a, page_a, rotate=True) if box_a else None,
+            "b_rect": _norm_rect(box_b, page_b, rotate=True) if box_b else None,
         })
     return changes
 
@@ -109,12 +129,33 @@ def _cluster(mask: list[list[bool]], width: int, height: int) -> list[tuple]:
 
 
 def _visual_regions(page_a, page_b) -> tuple[list[dict], float]:
-    """Rectangles where the two renders differ, plus the differing share."""
-    zoom = VISUAL_DPI / 72.0
-    matrix = fitz.Matrix(zoom, zoom)
-    pix_a = page_a.get_pixmap(matrix=matrix, colorspace=fitz.csGRAY)
-    pix_b = page_b.get_pixmap(matrix=matrix, colorspace=fitz.csGRAY)
+    """Rectangles where the two renders differ, plus the differing share.
 
+    Both pages are rendered to the *same* pixel grid rather than at the same
+    zoom. Rendering at a fixed zoom and then comparing the overlapping corner
+    was wrong twice over when the pages were different sizes: the regions were
+    mis-scaled (the overlap was stretched across page A's full width), and
+    anything outside the overlap — half a page, if one side is A3 — was never
+    compared at all and did not even move `visual_share`, so the page came back
+    "visually identical".
+    """
+    from .convert import check_renderable
+
+    # Both sides, before either pixmap is allocated: the page box comes from the
+    # document, not from us (§17).
+    check_renderable(page_a, VISUAL_DPI / 72.0)
+    check_renderable(page_b, VISUAL_DPI / 72.0)
+
+    width = max(2, int(page_a.rect.width * VISUAL_DPI / 72.0))
+    height = max(2, int(page_a.rect.height * VISUAL_DPI / 72.0))
+    pix_a = page_a.get_pixmap(
+        matrix=fitz.Matrix(width / page_a.rect.width, height / page_a.rect.height),
+        colorspace=fitz.csGRAY,
+    )
+    pix_b = page_b.get_pixmap(
+        matrix=fitz.Matrix(width / page_b.rect.width, height / page_b.rect.height),
+        colorspace=fitz.csGRAY,
+    )
     width = min(pix_a.width, pix_b.width)
     height = min(pix_a.height, pix_b.height)
     if width < 2 or height < 2:
@@ -145,7 +186,7 @@ def _visual_regions(page_a, page_b) -> tuple[list[dict], float]:
                 differing += 1
 
     share = differing / float(rows * cols)
-    if share < 0.0005:
+    if share < MIN_VISUAL_SHARE:
         return [], share
 
     regions = []
@@ -182,7 +223,12 @@ def compare(a: bytes, b: bytes, *, offset: int = 0,
         # Every page of both documents is reported, even where one side has no
         # counterpart: "page 7 was added" is exactly the kind of change a reader
         # is looking for, and dropping it would make the summary lie.
-        first = min(0, offset)
+        #
+        # `b_index = index + offset`, so covering B page 0 means *starting* at
+        # -offset. `min(0, offset)` started at 0 for a positive offset and threw
+        # away the first `offset` pages of B — which is precisely the cover page
+        # the offset exists to align, and the summary then said "identical".
+        first = min(0, -offset)
         last = max(doc_a.page_count, doc_b.page_count - offset)
         for index in range(first, last):
             a_index = index
@@ -213,7 +259,7 @@ def compare(a: bytes, b: bytes, *, offset: int = 0,
                     "b_rect": None,
                 }]
             total_changes += len(entry["text_changes"])
-            if entry["text_changes"] or entry["visual_share"] >= NOISE_FLOOR:
+            if entry["text_changes"] or entry["visual_regions"]:
                 changed_pages += 1
             pages.append(entry)
 

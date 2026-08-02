@@ -110,6 +110,40 @@ describe('ConvertFacade', () => {
     finishJob();
   });
 
+  it('clears busy when the request itself errors — the metered-cap path', () => {
+    // Every one of these operations is metered (§16), so a guest's sixth
+    // export in an hour is a 429. `map` only runs on the value channel, so the
+    // flag stayed on and — the facade being a root singleton — stayed on
+    // across navigation too: the panel was dead until a page reload.
+    facade.exportAs('doc-1', 1, 'docx').subscribe({ error: () => undefined });
+    http.expectOne((r) => r.url.endsWith('/documents/doc-1/operations/'))
+      .flush({ error: { code: 'quota_exceeded' } }, { status: 429, statusText: 'Too Many' });
+    expect(facade.busy()).toBe(false);
+  });
+
+  it('clears busy when the source upload errors', () => {
+    facade.importFile(new File(['x'], 'letter.docx')).subscribe({ error: () => undefined });
+    http.expectOne((r) => r.url.endsWith('/uploads/source/'))
+      .flush({ error: { code: 'file_too_large' } }, { status: 413, statusText: 'Too Large' });
+    expect(facade.busy()).toBe(false);
+  });
+
+  it('sends several images as ONE conversion', () => {
+    // `/jpg-to-pdf` promises "add them all and each becomes a page". One job
+    // per file gave N separate documents and orphaned all but one.
+    facade.importImages([new File(['a'], 'a.png'), new File(['b'], 'b.png')]).subscribe();
+
+    const uploads = http.match((r) => r.url.endsWith('/uploads/source/'));
+    expect(uploads.length).toBe(2);
+    uploads[0].flush({ ref: 'r1', filename: 'a.png', size_bytes: 1, kind: 'image' });
+    uploads[1].flush({ ref: 'r2', filename: 'b.png', size_bytes: 1, kind: 'image' });
+
+    const op = http.expectOne((r) => r.url.endsWith('/operations/'));
+    expect(op.request.body.params.upload_refs).toEqual(['r1', 'r2']);
+    op.flush({ id: 'j', status: 'succeeded' });
+    finishJob();
+  });
+
   it('clears busy when a job fails, not only when it succeeds', () => {
     facade.exportAs('doc-1', 1, 'docx').subscribe();
     http.expectOne((r) => r.url.endsWith('/documents/doc-1/operations/'))

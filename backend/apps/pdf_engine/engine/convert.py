@@ -39,6 +39,13 @@ HTML_EXTENSIONS = {"html", "htm"}
 
 EXPORT_FORMATS = ("docx", "images", "txt", "md", "html", "pdfa")
 
+# The largest page we will rasterise, in points. The PDF format allows 200 in
+# (14 400 pt) and a hostile file can claim it: at 300 dpi that is 60 000 px per
+# side, i.e. a multi-gigabyte pixmap allocated inside a worker. The image
+# upload path refuses on header dimensions for exactly this reason (§17).
+MAX_RENDER_POINTS = 14_400
+MAX_RENDER_PIXELS = 80_000_000  # ~80 MP, comfortably above A0 at 300 dpi
+
 A4 = fitz.paper_rect("a4")
 
 
@@ -62,6 +69,27 @@ def kind_of(filename: str) -> str:
     )
 
 
+def check_renderable(page, zoom: float) -> None:
+    """Refuse a page that would allocate an unreasonable pixmap.
+
+    Rendering is the one place a hostile *document* (rather than a hostile
+    request) can spend arbitrary memory: the page box is attacker-controlled and
+    the pixmap is allocated before anything can measure it.
+    """
+    rect = page.rect
+    if rect.width > MAX_RENDER_POINTS or rect.height > MAX_RENDER_POINTS:
+        raise InvalidParams(
+            f"Page {page.number + 1} is too large to render "
+            f"({int(rect.width)}×{int(rect.height)} pt)."
+        )
+    pixels = (rect.width * zoom) * (rect.height * zoom)
+    if pixels > MAX_RENDER_PIXELS:
+        raise InvalidParams(
+            f"Page {page.number + 1} is too large to render at this resolution. "
+            "Try a lower DPI."
+        )
+
+
 def _probe(data: bytes, what: str) -> bytes:
     """Every conversion result is opened before it is handed back.
 
@@ -74,6 +102,13 @@ def _probe(data: bytes, what: str) -> bytes:
     try:
         doc = fitz.open(stream=data, filetype="pdf")
         try:
+            # `filetype` is a *hint*: MuPDF sniffs the content and will happily
+            # open a PNG or an HTML file as a one-page document. Without this,
+            # a file named `photo.pdf` was stored verbatim under `docs/…v1.pdf`
+            # and served as application/pdf — a "document" no reader can open.
+            if not doc.is_pdf:
+                raise EngineError(f"{what} did not produce a PDF.",
+                                  code="conversion_failed")
             if doc.page_count < 1:
                 raise EngineError(f"{what} produced a PDF with no pages.",
                                   code="conversion_failed")
@@ -221,10 +256,14 @@ def convert_from(*, data: bytes | None = None, filename: str = "",
 
 
 def _title_from_url(url: str) -> str:
+    """The host, and only the host.
+
+    `netloc` includes any `user:password@` prefix, which would then be the
+    document's title — visible in the library, in listings and in logs.
+    """
     from urllib.parse import urlsplit
 
-    parts = urlsplit(url)
-    return (parts.netloc or "Web page")[:200]
+    return (urlsplit(url).hostname or "Web page")[:200]
 
 
 # --------------------------------------------------------------------------- #
@@ -272,6 +311,7 @@ def pdf_to_images(data: bytes, *, fmt: str = "png", dpi: int = 150) -> tuple[byt
     try:
         with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as archive:
             for index in range(doc.page_count):
+                check_renderable(doc[index], zoom)
                 pix = doc[index].get_pixmap(matrix=fitz.Matrix(zoom, zoom))
                 archive.writestr(f"page-{index + 1:04d}.{extension}",
                                  pix.tobytes(extension))

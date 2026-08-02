@@ -115,18 +115,45 @@ def test_gotenberg_denies_what_layer_one_denies():
         "http://169.254.169.254/latest/meta-data/",
         "http://localhost:8000/",
         "http://127.0.0.1/",
+        "http://127.1/",
         "http://10.0.0.5/",
         "http://172.20.1.1/",
         "http://192.168.0.1/",
         "http://api:8000/api/documents/",
         "http://storage:8333/",
         "http://metadata.google.internal/",
+        "http://anything.internal/",
         "file:///etc/passwd",
+        # The forms a browser accepts and a naive pattern misses. Every one of
+        # these was reachable when this test was first written: the container's
+        # own log showed Chromium dialling redis and db through the trailing-dot
+        # spelling, which layer 1 strips and layer 2 did not.
+        "http://redis.:6379/",
+        "http://db.:5432/",
+        "http://127.0.0.1./",
+        "http://169.254.169.254./",
+        "http://2130706433/",            # decimal
+        "http://0177.0.0.1/",            # octal
+        "http://0x7f000001/",            # hex
+        "http://[::ffff:127.0.0.1]/",    # IPv4-mapped IPv6
+        "http://[0:0:0:0:0:ffff:127.0.0.1]/",
+        "http://[fe80::1]/",
+        "http://user@api:8000/",         # userinfo before the host
     ]:
         assert pattern.match(url), f"gotenberg would still fetch {url}"
 
     # …and it must not deny the ordinary web, or the tool does nothing at all.
-    for url in ["https://example.com/report", "http://news.example.co.uk/a/b"]:
+    # …and it must not deny the ordinary web. A service name is a whole host,
+    # not a prefix: `apiexample.com` and `dbz.com` are somebody's real site.
+    for url in [
+        "https://example.com/report",
+        "http://news.example.co.uk/a/b",
+        "https://apiexample.com/",
+        "https://dbz.com/",
+        "https://web.dev/",
+        "https://storage.googleapis.com/x",
+        "https://8.8.8.8/",
+    ]:
         assert not pattern.match(url), f"gotenberg would refuse {url}"
 
 

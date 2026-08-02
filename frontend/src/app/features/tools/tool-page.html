@@ -23,7 +23,12 @@
 
     <section class="mt-8 rounded-2xl bg-white p-6 shadow-sm" data-test="tool-widget">
       @if (phase() !== 'done') {
-        <app-upload-dropzone [accept]="acceptFor(tool().kind)" (filesPicked)="onFilesPicked($event)" />
+        <app-upload-dropzone
+          [accept]="acceptFor(tool().kind)"
+          [prompt]="promptFor(tool().kind)"
+          [hint]="hintFor(tool().kind)"
+          (filesPicked)="onFilesPicked($event)"
+        />
 
         @if (picked().length) {
           <ul class="mt-4 divide-y divide-slate-100" data-test="picked-list">

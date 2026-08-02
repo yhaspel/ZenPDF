@@ -92,7 +92,7 @@
       <app-convert
         [docId]="doc.id"
         [currentSeq]="viewer.currentSeq()"
-        [isScanned]="false"
+        [isScanned]="cameFromScannedGate()"
         (saved)="onConvertSaved()"
         (conflict)="onAnnotationConflict()"
       />

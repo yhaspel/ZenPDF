@@ -32,6 +32,14 @@ services:
 
   gotenberg:
     image: gotenberg/gotenberg:8
+    # Production ran this with no flags at all, which was harmless while nothing
+    # asked Chromium to fetch a URL. Phase 6 does, so the same two hardening
+    # flags the dev stack uses belong here — more so, since this container sits
+    # inside the production network (§17).
+    command:
+      - gotenberg
+      - --chromium-disable-javascript=true
+      - --chromium-deny-list=${GOTENBERG_DENY_LIST:-^file:(?!//\/tmp/).*|^[a-z]+://(?:[^/@]*@)?(localhost|127\.\d+(\.\d+)?(\.\d+)?|0\.0\.0\.0|0x[0-9a-f]+|0\d+(\.\d+)?(\.\d+)?(\.\d+)?|\d\d\d\d\d\d\d\d\d?\d?|\[?::1\]?|\[?::ffff:.*|\[?0:0:0:0:0:(0|ffff):.*|\[?fd[0-9a-f][0-9a-f]:.*|\[?fe80:.*|169\.254\.\d+\.\d+|10\.\d+\.\d+\.\d+|172\.(1[6-9]|2\d|3[01])\.\d+\.\d+|192\.168\.\d+\.\d+|100\.100\.200\.200|metadata\.google\.internal|metadata\.goog|.*\.internal|api|web|db|redis|storage|mailpit|gotenberg|beat|worker-default|worker-heavy|worker-render)\.?([:/].*)?$$}
 
   api:
     build:

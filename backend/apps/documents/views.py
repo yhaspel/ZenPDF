@@ -620,6 +620,11 @@ class DocumentOperationView(APIView):
         except EngineError as exc:
             raise ValidationFailed(exc.message) from exc
         _guard_operation(request, op_type, principal)
+        if op_type == "ocr":
+            # Before the hourly window is charged: OCR is the most expensive
+            # thing we do, and a document past the monthly page quota should be
+            # refused rather than started and abandoned (§16, phase-06 risks).
+            L.enforce_ocr_pages(principal, document.page_count)
         L.enforce_metered_op(principal, op_type)
 
         job = Job.objects.create(
@@ -665,7 +670,7 @@ class CrossDocumentOperationView(APIView):
                     check_url(url)
                 except EngineError as exc:
                     raise ValidationFailed(exc.message) from exc
-            elif not params.get("upload_ref"):
+            elif not (params.get("upload_ref") or params.get("upload_refs")):
                 raise ValidationFailed("Provide a file to convert or a web address.")
 
         # Ownership + encryption check on every source document. Minting only

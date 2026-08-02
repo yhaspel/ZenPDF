@@ -100,6 +100,16 @@ describe('CompareFacade', () => {
     expect(facade.selected()!.summary).toBe('Added: “An extra line”');
   });
 
+  it('clears running when the request errors', () => {
+    // Compare is metered too, so a 429 here left the Compare button disabled
+    // for the rest of the session.
+    facade.setOther('doc-b');
+    facade.run('doc-a', 1)!.subscribe({ error: () => undefined });
+    http.expectOne((r) => r.url.endsWith('/documents/doc-a/operations/'))
+      .flush({ error: { code: 'quota_exceeded' } }, { status: 429, statusText: 'Too Many' });
+    expect(facade.running()).toBe(false);
+  });
+
   it('drops the report when the other document changes', () => {
     run();
     expect(facade.report()).not.toBeNull();

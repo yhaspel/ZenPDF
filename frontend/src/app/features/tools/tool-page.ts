@@ -181,23 +181,24 @@ export class ToolPage {
    */
   private importAll(): void {
     const files = this.picked();
-    const jobs: Job[] = [];
-    let remaining = files.length;
     this.phase.set('running');
-    for (const file of files) {
-      this.convert.importFile(file).subscribe({
-        next: (job) => {
-          if (job.status === 'succeeded') {
-            jobs.push(job);
-            if (--remaining === 0) this.onSuccess(jobs[0]);
-          } else if (job.status === 'failed') {
-            this.phase.set('error');
-            this.error.set(job.error_message || 'That file could not be converted.');
-          }
-        },
-        error: (err) => this.fail(err),
-      });
-    }
+    // Several images are ONE document, a page each — which is what
+    // `/jpg-to-pdf` promises. One conversion per file gave N one-page
+    // documents, showed whichever finished first, and orphaned the rest.
+    const job$ = files.length > 1
+      ? this.convert.importImages(files)
+      : this.convert.importFile(files[0]);
+    job$.subscribe({
+      next: (job) => {
+        if (job.status === 'succeeded') {
+          this.onSuccess(job);
+        } else if (job.status === 'failed') {
+          this.phase.set('error');
+          this.error.set(job.error_message || 'That file could not be converted.');
+        }
+      },
+      error: (err) => this.fail(err),
+    });
   }
 
   private dispatch(docs: DocumentModel[]): void {
@@ -352,6 +353,20 @@ export class ToolPage {
     if (kind === 'jpg-to-pdf') return 'image/*,.png,.jpg,.jpeg,.tif,.tiff,.bmp,.gif,.webp';
     if (kind === 'html-to-pdf') return '.html,.htm,text/html';
     return 'application/pdf,.pdf';
+  }
+
+  promptFor(kind: string): string {
+    if (kind === 'word-to-pdf') return 'Drop a document here or click to browse';
+    if (kind === 'jpg-to-pdf') return 'Drop images here or click to browse';
+    if (kind === 'html-to-pdf') return 'Drop an HTML file here or click to browse';
+    return 'Drop PDFs here or click to browse';
+  }
+
+  hintFor(kind: string): string {
+    if (kind === 'word-to-pdf') return 'Word, Excel, PowerPoint, OpenDocument, RTF or text';
+    if (kind === 'jpg-to-pdf') return 'JPG, PNG, TIFF, BMP, GIF or WebP — several become one PDF';
+    if (kind === 'html-to-pdf') return 'An .html or .htm file';
+    return 'Only PDF files are accepted';
   }
 
   /** The converted file's name, for the download button. */

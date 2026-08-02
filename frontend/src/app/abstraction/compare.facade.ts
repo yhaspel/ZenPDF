@@ -1,5 +1,5 @@
 import { Injectable, computed, inject, signal } from '@angular/core';
-import { Observable, map } from 'rxjs';
+import { Observable, finalize, map } from 'rxjs';
 
 import { CompareReport, Job, Rect } from '../core/models/models';
 import { DocumentsService } from '../core/services/documents.service';
@@ -127,7 +127,7 @@ export class CompareFacade {
       }
       if (job.status !== 'queued' && job.status !== 'running') this._running.set(false);
       return job;
-    }));
+    }), finalize(() => this._running.set(false)));
   }
 }
 

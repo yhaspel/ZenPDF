@@ -255,6 +255,41 @@ def load_source(principal, ref: str) -> tuple[bytes, str]:
     raise ImageRejected(f"upload '{ref}' was not found; upload it again")
 
 
+def discard_source(principal, ref: str) -> int:
+    """Delete a parked conversion source and refund its storage.
+
+    Called once the conversion has run, successfully or not. Without it the
+    file is charged to the principal for ever with no way to free it: a guest's
+    prefix is at least swept when the session expires, but an account's is
+    never swept at all, and since phase-06 every non-PDF the dashboard accepts
+    lands here.
+    """
+    from apps.pdf_engine.storage import get_storage
+
+    from . import limits as L
+
+    if not REF_RE.match(str(ref or "")):
+        return 0
+    storage = get_storage()
+    prefix = principal_prefix(principal)
+    removed = 0
+    for key in storage.list_prefix(prefix):
+        stem = key[len(prefix):].rpartition(".")[0]
+        if stem != str(ref):
+            continue
+        try:
+            size = storage.head(key).get("size", 0)
+        except Exception:  # noqa: BLE001
+            size = 0
+        try:
+            storage.delete(key)
+        except Exception:  # noqa: BLE001
+            continue
+        L.bump_storage(principal, -int(size))
+        removed += 1
+    return removed
+
+
 def move_assets(from_kind: str, from_id, to_principal) -> int:
     """Re-key one principal's assets onto another. Used by claim-on-signup.
 

@@ -103,12 +103,29 @@ def _create_document_from_bytes(*, principal, folder, title, data, created_by, j
                                 label="Original"):
     from .services import guest_expiry
 
+    sha, pages, size = _measure(data)
+    # The tier page cap, enforced on *every* route into the library. Ingest
+    # checks it (`services.ingest_pdf`); this is the other door, and it was
+    # open: a 2 000-frame TIFF is a 288 KB upload and a 2 000-page document,
+    # which sails past a guest's 300-page limit and then multiplies the cost of
+    # every operation run on it afterwards (§16, §17).
+    limits = L.for_principal(principal)
+    if pages > limits.max_pages:
+        raise EngineError(
+            f"That would produce a {pages}-page document; the limit is "
+            f"{limits.max_pages}."
+            + (" Create a free account to work with larger documents."
+               if is_guest(principal) else ""),
+            code="validation_error",
+            details={"pages": pages, "max_pages": limits.max_pages,
+                     "tier": limits.tier},
+        )
+
     doc = Document.objects.create(
         **owner_kwargs(principal),
         expires_at=guest_expiry() if is_guest(principal) else None,
         folder=folder, title=title[:255], status=Document.Status.PROCESSING,
     )
-    sha, pages, size = _measure(data)
     key = f"docs/{doc.id}/v1.pdf"
     get_storage().put_bytes(key, data)
     doc.record_version(
@@ -368,6 +385,10 @@ def _apply_single(op, primary_bytes, params, source_bytes, *, job=None):
             clean=params.get("clean", False),
             force=params.get("force", False),
         )
+        # Counted where the work happened, so the monthly figure reflects pages
+        # actually processed rather than pages requested (phase-06 Backend).
+        if job is not None:
+            L.record_ocr_pages(principal_of(job), report["pages"])
         langs = "+".join(report["languages"])
         return "version", data, f"OCR ({langs})", report
     if t == "repair":
@@ -527,23 +548,46 @@ def run_cross_document_operation(self, job_id: str):
             # Anything → PDF → a *new* document. No primary document in the
             # URL, which is what makes this a cross-document op: the input is
             # an uploaded file or a web address, not something in the library.
-            from apps.core.assets import load_source
+            from apps.core.assets import discard_source, load_source
 
             url = (job.params.get("url") or "").strip()
             if url:
                 data, title = CV.convert_from(url=url)
             else:
-                ref = job.params.get("upload_ref")
-                if not ref:
+                refs = job.params.get("upload_refs") or []
+                single = job.params.get("upload_ref")
+                if single:
+                    refs = [single]
+                if not refs:
                     job.mark_failed("validation_error",
                                     "Provide a file to convert or a web address.")
                     return
-                blob, filename = load_source(principal_of(job), str(ref))
-                data, title = CV.convert_from(
-                    data=blob,
-                    filename=job.params.get("filename") or filename,
-                    fit=job.params.get("fit", "a4"),
-                )
+                principal = principal_of(job)
+                sources = [load_source(principal, str(r)) for r in refs]
+                try:
+                    if len(sources) > 1:
+                        # Several images become ONE document, a page each, in
+                        # the order they were given — which is what the tool
+                        # page promises and what a user dropping a stack of
+                        # scans expects.
+                        data, title = CV.convert_from(
+                            images=[blob for blob, _ in sources],
+                            fit=job.params.get("fit", "a4"),
+                        )
+                    else:
+                        blob, filename = sources[0]
+                        data, title = CV.convert_from(
+                            data=blob,
+                            filename=job.params.get("filename") or filename,
+                            fit=job.params.get("fit", "a4"),
+                        )
+                finally:
+                    # The parked sources have done their job either way. Left
+                    # behind they are charged to the principal's storage for
+                    # ever with no UI to free them — and for an account,
+                    # nothing else ever sweeps that prefix.
+                    for ref in refs:
+                        discard_source(principal, str(ref))
             folder = None
         else:
             job.mark_failed("validation_error", f"Unsupported cross-doc op '{job.type}'.")

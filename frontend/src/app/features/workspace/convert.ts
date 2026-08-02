@@ -2,6 +2,7 @@ import {
   ChangeDetectionStrategy,
   Component,
   computed,
+  effect,
   inject,
   input,
   output,
@@ -64,6 +65,20 @@ export class Convert {
   protected pendingFormat = signal<ExportFormat | null>(null);
 
   protected readonly busy = computed(() => this.convert.busy());
+
+  constructor() {
+    // The facade is a root singleton, so without this the panel kept offering
+    // "Download report.txt" after the user moved to another document — and
+    // after a failed second export, the *previous* one stayed on offer.
+    let lastDoc = '';
+    effect(() => {
+      const id = this.docId();
+      if (id === lastDoc) return;
+      lastDoc = id;
+      this.convert.reset();
+      this.pendingFormat.set(null);
+    });
+  }
 
   protected toggleLanguage(code: string): void {
     this.chosenLanguages.update((chosen) =>
