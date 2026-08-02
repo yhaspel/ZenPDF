@@ -244,13 +244,17 @@ def redaction_previews_purge(hours: int = 1) -> int:
 # Worker heartbeat (§10.4)
 # --------------------------------------------------------------------------- #
 HEARTBEAT_KEY = "zen:worker:heartbeat"
+#: One key per lane. A single heartbeat only ever proves that *one* worker is
+#: alive — the one whose queue it happened to be routed to — so a dead
+#: `heavy` worker would leave health green while OCR piled up untouched.
+HEARTBEAT_QUEUES = ("default", "heavy", "render")
 #: How stale a heartbeat may be before `/api/health/` calls the workers down.
 #: Three missed beats — one late run under load is not an incident.
 HEARTBEAT_STALE_SECONDS = 300
 
 
 @shared_task(name="apps.core.tasks.worker_heartbeat")
-def worker_heartbeat() -> dict:
+def worker_heartbeat(queue: str = "default") -> dict:
     """Beat schedules it, a *worker* runs it, and health reads what it wrote.
 
     That is the whole point: a liveness check that asks Redis whether Redis is
@@ -264,18 +268,31 @@ def worker_heartbeat() -> dict:
     from django.core.cache import cache
 
     stamp = time.time()
-    cache.set(HEARTBEAT_KEY, stamp, HEARTBEAT_STALE_SECONDS * 4)
-    return {"at": stamp}
+    cache.set(f"{HEARTBEAT_KEY}:{queue}", stamp, HEARTBEAT_STALE_SECONDS * 4)
+    return {"at": stamp, "queue": queue}
 
 
-def heartbeat_age_seconds() -> float | None:
-    """Seconds since a worker last checked in, or None if it never has."""
+def heartbeat_ages() -> dict:
+    """Seconds since each lane last checked in; `None` where it never has."""
     import time
 
     from django.core.cache import cache
 
-    stamp = cache.get(HEARTBEAT_KEY)
-    return None if stamp is None else max(0.0, time.time() - float(stamp))
+    now = time.time()
+    ages: dict[str, float | None] = {}
+    for queue in HEARTBEAT_QUEUES:
+        stamp = cache.get(f"{HEARTBEAT_KEY}:{queue}")
+        ages[queue] = None if stamp is None else max(0.0, now - float(stamp))
+    return ages
+
+
+def heartbeat_age_seconds() -> float | None:
+    """The oldest lane, which is the one that matters: a stack is only as
+    healthy as the worker that has stopped answering."""
+    ages = heartbeat_ages().values()
+    if any(age is None for age in ages):
+        return None
+    return max(ages)  # type: ignore[type-var]
 
 
 def queue_depths() -> dict:

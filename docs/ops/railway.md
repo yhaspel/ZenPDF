@@ -20,7 +20,7 @@ stack maps to eight services plus two managed add-ons.
 
 ## Variables
 
-Everything in `infra/.env.example`, translated to Railway variables, plus:
+Everything in `infra/.env.prod.example`, translated to Railway variables, plus:
 
 ```
 DJANGO_SETTINGS_MODULE=config.settings.prod

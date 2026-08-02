@@ -10,7 +10,7 @@ Uploads fail; the logs carry storage errors from `apps.pdf_engine.storage`;
 The three sweepers exist for exactly this and can be run by hand:
 
 ```bash
-docker compose exec api python manage.py shell -c "
+docker compose -f infra/docker-compose.yml exec api python manage.py shell -c "
 from apps.core.tasks import guest_purge, exports_purge, trash_purge
 print(guest_purge(), exports_purge(), trash_purge())"
 ```
@@ -22,7 +22,7 @@ them early is not a policy change.
 ## Then, find out who
 
 ```bash
-docker compose exec api python manage.py oversized_accounts --over 80
+docker compose -f infra/docker-compose.yml exec api python manage.py oversized_accounts --over 80
 ```
 
 Reports accounts over a share of their quota. It changes nothing; the decision

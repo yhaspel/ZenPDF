@@ -24,16 +24,16 @@ rebuilt on the same cadence rather than only when a Python pin changes.
 
 ```bash
 # 1. Python advisories
-docker compose run --rm api sh -c "pip install --quiet pip-audit && python -m pip_audit"
+docker compose -f infra/docker-compose.yml run --rm api sh -c "pip install --quiet pip-audit && python -m pip_audit"
 
 # 2. JavaScript advisories
-docker compose run --rm --no-deps web npm audit --omit=dev
+docker compose -f infra/docker-compose.yml run --rm --no-deps web npm audit --omit=dev
 
 # 3. Rebuild on the current base images (picks up Ghostscript, Tesseract, etc.)
-docker compose build --pull api web
+docker compose -f infra/docker-compose.yml build --pull api web
 
 # 4. Prove the parsers still behave
-docker compose run --rm -e DJANGO_SETTINGS_MODULE=config.settings.test api pytest -q
+docker compose -f infra/docker-compose.yml run --rm -e DJANGO_SETTINGS_MODULE=config.settings.test api pytest -q
 cd e2e && npx playwright test --grep @smoke
 ```
 

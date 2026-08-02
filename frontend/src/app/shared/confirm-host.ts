@@ -36,7 +36,7 @@ import { ZenModal } from './modal.directive';
               Cancel
             </button>
             <button
-              class="rounded-lg bg-rose-700 px-4 py-2 text-white hover:bg-rose-700 disabled:opacity-40"
+              class="rounded-lg bg-rose-700 px-4 py-2 text-white hover:bg-rose-800 disabled:opacity-40"
               [disabled]="!!req.requireText && typed().trim() !== req.requireText"
               (click)="confirm.answer(true)"
               data-test="confirm-ok"

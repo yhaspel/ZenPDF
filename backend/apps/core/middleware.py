@@ -48,6 +48,14 @@ class AdminIPAllowlistMiddleware:
         if path and request.path.lstrip("/").startswith(path) and not settings.DEBUG:
             from .authentication import client_ip
 
-            if client_ip(request) not in set(settings.ADMIN_IP_ALLOWLIST):
+            allowed = set(settings.ADMIN_IP_ALLOWLIST)
+            # **Both** the socket peer and the proxy-derived client must be
+            # allowed. `X-Forwarded-For` is client-supplied unless something
+            # trustworthy overwrote it, and nginx proxies only `/api/` — so
+            # admin is reached on gunicorn directly and a single header would
+            # otherwise be the whole gate. Behind a proxy, list the proxy's
+            # address as well as the operator's.
+            peer = request.META.get("REMOTE_ADDR", "")
+            if peer not in allowed or client_ip(request) not in allowed:
                 raise Http404
         return self.get_response(request)

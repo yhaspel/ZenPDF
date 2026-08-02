@@ -76,12 +76,21 @@ class Document(models.Model):
         ordering = ["-updated_at"]
         indexes = [
             # The library list is `owned_by(...)` + "hide trashed" + newest
-            # first, and without `updated_at` in the index that last part is a
-            # sort of every row the first two matched (§10.2 EXPLAIN audit).
-            models.Index(fields=["owner", "trashed_at", "-updated_at"],
-                         name="doc_owner_trash_updated"),
-            models.Index(fields=["guest_session", "trashed_at", "-updated_at"],
-                         name="doc_guest_trash_updated"),
+            # first. **Partial**, not composite: `trashed_at IS NULL` is a null
+            # test rather than an equality, so Postgres keeps `trashed_at` in
+            # the sort key of a composite index and the ORDER BY still costs a
+            # sort. Measured on 500k rows: composite → Sort + bitmap heap scan,
+            # 4750 buffers; partial → no sort, 25 buffers (§10.2).
+            models.Index(fields=["owner", "-updated_at"],
+                         condition=models.Q(trashed_at__isnull=True),
+                         name="doc_owner_live_updated"),
+            models.Index(fields=["guest_session", "-updated_at"],
+                         condition=models.Q(trashed_at__isnull=True),
+                         name="doc_guest_live_updated"),
+            # The trash view is the same query with the condition inverted.
+            models.Index(fields=["owner", "-trashed_at"],
+                         condition=models.Q(trashed_at__isnull=False),
+                         name="doc_owner_trashed"),
             models.Index(fields=["owner", "starred"]),
         ]
         constraints = [

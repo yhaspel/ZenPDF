@@ -121,7 +121,7 @@
             @if (u.status === 'uploading') {
               <span class="text-slate-500">{{ u.progress }}%</span>
             } @else if (u.status === 'done') {
-              <span class="text-emerald-600">✓</span>
+              <span class="text-emerald-700">✓</span>
             } @else if (u.status === 'repairable') {
               <button (click)="retryRepair(u)" class="text-indigo-600 underline" data-test="repair-btn">Repair & retry</button>
             } @else {

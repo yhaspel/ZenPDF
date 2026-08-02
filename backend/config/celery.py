@@ -16,6 +16,14 @@ app.config_from_object("django.conf:settings", namespace="CELERY")
 app.autodiscover_tasks()
 
 
+#: Tasks whose first positional argument is a `Job` id.
+JOB_ID_FIRST_ARG = {
+    "apps.documents.tasks.run_operation",
+    "apps.documents.tasks.run_cross_document_operation",
+    "apps.documents.tasks.revert_version",
+}
+
+
 @task_prerun.connect
 def _bind_correlation(task_id=None, task=None, args=None, kwargs=None, **_):
     """Carry the ids into the worker (§10.4).
@@ -28,11 +36,16 @@ def _bind_correlation(task_id=None, task=None, args=None, kwargs=None, **_):
     from apps.core import logging as zen_logging
 
     headers = getattr(getattr(task, "request", None), "headers", None) or {}
+    # Only the operation tasks take a job id as their first argument. Binding
+    # it blindly labelled a thumbnail render with a *document* id, which is a
+    # worse kind of wrong than an empty field: it looks like an answer.
+    name = getattr(task, "name", "")
+    job_id = str(args[0]) if args and name in JOB_ID_FIRST_ARG else ""
     zen_logging.bind(
         request_id=str(headers.get("zen_request_id") or "")
         or zen_logging.new_request_id(),
         principal=str(headers.get("zen_principal") or ""),
-        job_id=str((args or [""])[0]) if args else "",
+        job_id=job_id,
     )
 
 

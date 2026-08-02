@@ -10,6 +10,7 @@ import json
 import zipfile
 
 import pytest
+from django.core.files.uploadedfile import SimpleUploadedFile
 
 pytestmark = pytest.mark.django_db
 
@@ -91,15 +92,20 @@ def test_deleting_an_account_needs_the_password(api, user):
     assert get_user_model().objects.filter(pk=user.pk).exists()
 
 
-def test_deleting_an_account_erases_documents_and_blobs(api, user, uploaded_doc):
+def test_deleting_an_account_erases_documents_and_blobs(
+        api, user, uploaded_doc, django_capture_on_commit_callbacks):
     from django.contrib.auth import get_user_model
 
     from apps.documents.models import Document
     from apps.pdf_engine.storage import get_storage
 
     version_key = Document.objects.get(id=uploaded_doc["id"]).current_version.storage_key
-    resp = api.delete("/api/users/me/delete/", {"password": "pass12345"},
-                      format="json")
+    # Blobs are deleted **after** the transaction commits — storage is not
+    # transactional, and deleting first means a later failure rolls the rows
+    # back and leaves an intact account whose files are gone.
+    with django_capture_on_commit_callbacks(execute=True):
+        resp = api.delete("/api/users/me/delete/", {"password": "pass12345"},
+                          format="json")
     assert resp.status_code == 200, resp.content
     assert resp.json()["deleted"] is True
     assert not get_user_model().objects.filter(pk=user.pk).exists()
@@ -117,7 +123,10 @@ def test_a_signed_envelope_outlives_the_account_that_sent_it(api, user,
     from apps.esign.models import SignRequest
 
     request_id, recipient = _sent_request(api, uploaded_doc, user)
-    SignRequest.objects.filter(id=request_id).update(status="completed")
+    # A completed envelope has a sealed artifact — that is what makes it
+    # evidence, and what the retention rule keys on.
+    SignRequest.objects.filter(id=request_id).update(
+        status="completed", final_key=f"sign/{request_id}/final.pdf")
 
     api.delete("/api/users/me/delete/", {"password": "pass12345"}, format="json")
 
@@ -130,15 +139,19 @@ def test_a_signed_envelope_outlives_the_account_that_sent_it(api, user,
     assert envelope.recipients.filter(email="signer@example.com").exists()
 
 
-def test_an_open_request_is_canceled_rather_than_left_mailing_strangers(
+def test_a_sent_but_unsigned_request_is_canceled_and_then_deleted(
         api, user, uploaded_doc):
+    """Cancelled so it stops mailing strangers, and then removed: nobody
+    signed it, so keeping it would retain the sender's address, the
+    recipients' addresses and both sides' IPs to prove nothing."""
     from apps.esign.models import SignRequest
 
     request_id, _ = _sent_request(api, uploaded_doc, user)
     resp = api.delete("/api/users/me/delete/", {"password": "pass12345"},
                       format="json")
     assert resp.json()["sign_requests_canceled"] == 1
-    assert SignRequest.objects.get(id=request_id).status == "canceled"
+    assert resp.json()["sign_requests_retained"] == 0
+    assert not SignRequest.objects.filter(id=request_id).exists()
 
 
 def test_the_audit_chain_is_not_rewritten_by_deletion(api, user, uploaded_doc):
@@ -147,7 +160,8 @@ def test_the_audit_chain_is_not_rewritten_by_deletion(api, user, uploaded_doc):
     from apps.esign.models import SignRequest, verify_chain
 
     request_id, _ = _sent_request(api, uploaded_doc, user)
-    SignRequest.objects.filter(id=request_id).update(status="completed")
+    SignRequest.objects.filter(id=request_id).update(
+        status="completed", final_key=f"sign/{request_id}/final.pdf")
     api.delete("/api/users/me/delete/", {"password": "pass12345"}, format="json")
 
     report = verify_chain(SignRequest.objects.get(id=request_id))
@@ -160,7 +174,8 @@ def test_a_certificate_still_prints_after_the_sender_is_gone(api, user,
     from apps.esign.models import SignRequest
 
     request_id, _ = _sent_request(api, uploaded_doc, user)
-    SignRequest.objects.filter(id=request_id).update(status="completed")
+    SignRequest.objects.filter(id=request_id).update(
+        status="completed", final_key=f"sign/{request_id}/final.pdf")
     api.delete("/api/users/me/delete/", {"password": "pass12345"}, format="json")
 
     pdf = certificate.build(SignRequest.objects.get(id=request_id))
@@ -176,3 +191,64 @@ def test_deletion_refuses_rather_than_half_finishing_a_huge_account(api, user,
                       format="json")
     assert resp.status_code == 400
     assert "by hand" in resp.json()["error"]["message"]
+
+
+def test_a_never_sent_draft_goes_with_the_account(api, user, uploaded_doc):
+    """A draft reached nobody, so there is nothing in it to be evidence of —
+    only a title and the addresses somebody typed."""
+    from apps.esign.models import SignRequest
+
+    draft = api.post("/api/sign-requests/", {"document": uploaded_doc["id"]},
+                     format="json").json()
+    api.patch(f"/api/sign-requests/{draft['id']}/",
+              {"recipients": [{"email": "counterparty@example.com",
+                               "role": "signer", "order": 1}]}, format="json")
+
+    resp = api.delete("/api/users/me/delete/", {"password": "pass12345"},
+                      format="json")
+    assert resp.status_code == 200
+    assert not SignRequest.objects.filter(id=draft["id"]).exists()
+    assert resp.json()["sign_requests_retained"] == 0
+
+
+def test_deletion_takes_the_uploads_and_exports_with_it(
+        api, user, uploaded_doc, django_capture_on_commit_callbacks):
+    """`uploads/u/…` and `exports/{job}/…` are separate namespaces, and once
+    the Job rows cascade away nothing can find the exports again."""
+    import base64
+
+    from apps.pdf_engine.storage import get_storage
+
+    png = base64.b64decode(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmM"
+        "IQAAAABJRU5ErkJggg==")
+    asset = api.post("/api/uploads/image/",
+                     {"file": SimpleUploadedFile("stamp.png", png,
+                                                 content_type="image/png")},
+                     format="multipart")
+    assert asset.status_code in (200, 201), asset.content
+    key = f"uploads/u/{user.pk}/{asset.json()['ref']}.png"
+    assert get_storage().get_bytes(key)
+
+    with django_capture_on_commit_callbacks(execute=True):
+        api.delete("/api/users/me/delete/", {"password": "pass12345"},
+                   format="json")
+
+    with pytest.raises(Exception, match=r".*"):  # noqa: B017 - backend-specific
+        get_storage().get_bytes(key)
+
+
+def test_an_unsigned_envelope_does_not_outlive_the_account(api, user,
+                                                           uploaded_doc):
+    """The one the copy is careful about: sent, opened, consented — and never
+    finished. There is no signature in it, so there is nothing to be evidence
+    of, and retaining it would keep both sides' addresses and IP addresses."""
+    from apps.esign.models import AuditEvent, SignRequest
+
+    request_id, recipient = _sent_request(api, uploaded_doc, user)
+    assert AuditEvent.objects.filter(sign_request_id=request_id).exists()
+
+    api.delete("/api/users/me/delete/", {"password": "pass12345"},
+               format="json")
+    assert not SignRequest.objects.filter(id=request_id).exists()
+    assert not AuditEvent.objects.filter(sign_request_id=request_id).exists()

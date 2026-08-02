@@ -37,7 +37,7 @@ docker compose -f infra/docker-compose.prod.yml restart worker-default worker-he
 If a *single* document reliably kills a worker, find it and quarantine it:
 
 ```bash
-docker compose exec api python manage.py shell -c "
+docker compose -f infra/docker-compose.yml exec api python manage.py shell -c "
 from apps.jobs.models import Job
 print(Job.objects.filter(status='running').values_list('id','type','document_id')[:20])"
 ```

@@ -10,8 +10,6 @@ of them are visible on the 20-row library a feature test builds.
 """
 from __future__ import annotations
 
-import time
-
 import pytest
 from django.db import connection
 
@@ -39,10 +37,18 @@ def _plan(queryset) -> str:
     return queryset.explain()
 
 
-def test_the_library_list_uses_an_index_rather_than_sorting_everything(user):
+@pytest.mark.skipif(connection.vendor != "postgresql",
+                    reason="query plans are backend-specific; the suite's "
+                           "SQLite would make this assertion vacuous")
+def test_the_library_list_needs_no_sort(user):
     """`owned_by` + hide-trashed + newest-first is the single most-run query in
-    the product; without `updated_at` in the index it sorts every row the
-    filter matched, on every page load."""
+    the product, and it must not sort.
+
+    A **partial** index, not a composite one: `trashed_at IS NULL` is a null
+    test rather than an equality, so Postgres keeps `trashed_at` in a composite
+    index's sort key and `ORDER BY updated_at DESC` still costs a Sort. That
+    was the first attempt, and it bought a wider index for nothing.
+    """
     from apps.core.principals import owned_by
     from apps.documents.models import Document
 
@@ -51,25 +57,30 @@ def test_the_library_list_uses_an_index_rather_than_sorting_everything(user):
         owned_by(Document.objects.filter(trashed_at__isnull=True), user)
         .order_by("-updated_at")[:24]
     )
-    # The wording differs by backend (Postgres "Index Scan using …", SQLite
-    # "SEARCH … USING INDEX …"), so assert on the index this query exists for.
-    assert "doc_owner_trash_updated" in plan, plan
+    assert "doc_owner_live_updated" in plan, plan
+    assert "Sort" not in plan, plan
     assert "Seq Scan" not in plan, plan
 
 
-def test_listing_a_large_library_stays_paginated_and_quick(api, user):
+def test_listing_a_large_library_stays_paginated(api, user,
+                                                 django_assert_max_num_queries):
+    """Paginated, and a *constant* number of queries.
+
+    No wall-clock assertion: a second on a loaded CI machine is not a second in
+    production, and the failure it produces is noise rather than a finding.
+    What does generalise is the query count — an N+1 here is 3 000 round trips
+    however fast the box is.
+    """
     _seed_documents(user)
-    started = time.monotonic()
-    resp = api.get("/api/documents/")
-    elapsed = time.monotonic() - started
+    with django_assert_max_num_queries(12):
+        resp = api.get("/api/documents/")
 
     assert resp.status_code == 200
     body = resp.json()
-    # Paginated: an unbounded list is how a 10 000-document account becomes a
-    # 40 MB response and a browser that stops responding.
+    # An unbounded list is how a 10 000-document account becomes a 40 MB
+    # response and a browser that stops responding.
     assert len(body["results"]) <= 100
     assert body["count"] == SEED
-    assert elapsed < 2.0, f"{elapsed:.2f}s for one page of {SEED}"
 
 
 def test_the_audit_chain_reads_by_index(api, uploaded_doc, user):

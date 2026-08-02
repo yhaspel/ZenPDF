@@ -205,7 +205,7 @@ import { ToastService } from '../../shared/toast.service';
                       (click)="confirmDelete()" data-test="delete-confirm-yes">
                 Delete everything
               </button>
-              <button class="rounded-lg px-3 py-1 text-sm text-slate-500"
+              <button class="rounded-lg px-3 py-1 text-sm text-slate-700"
                       (click)="deleting.set(false)">Cancel</button>
             </div>
           </div>
@@ -282,9 +282,24 @@ export class Settings {
         body: { password: this.deletePassword },
       })
       .subscribe({
-        next: () => {
+        next: (result) => {
           this.busyDeleting.set(false);
           this.auth.logout();
+          // The API returns exactly the numbers that make a confirmation
+          // honest. Ending the only irreversible action in the product on a
+          // silent redirect looks like a glitch, not a deletion.
+          const summary = result as {
+            documents: number;
+            sign_requests_retained: number;
+          };
+          const kept = summary.sign_requests_retained
+            ? ` ${summary.sign_requests_retained} signed envelope(s) were kept as`
+              + ' the other parties’ record.'
+            : '';
+          this.toast.success(
+            `Account deleted. ${summary.documents} document(s) removed.${kept}`,
+            12_000,
+          );
           this.router.navigateByUrl('/');
         },
         error: (err) => {

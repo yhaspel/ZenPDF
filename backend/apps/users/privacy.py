@@ -10,12 +10,12 @@ needs polling is a download most people abandon.
 **Deletion** is the harder one, and the shape here is deliberate:
 
 * Documents, versions, blobs, jobs, saved signatures and uploaded assets go.
-* **A completed signature envelope does not.** It is the other parties'
-  evidence of an agreement — the counterparty who signed a contract has a legal
-  interest in the record surviving the sender closing their account. So the
-  envelope stays and the *account's* identifying data is removed from it; the
-  privacy policy says this in as many words, and this is where that sentence
-  becomes true.
+* **A signed envelope does not.** It is the other parties' evidence of an
+  agreement — the counterparty who signed a contract has a legal interest in
+  the record surviving the sender closing their account. "Signed" means there
+  is a sealed artifact (`final_key`): a request that was sent and never
+  finished proves nothing, so keeping it would retain both sides' addresses
+  and IPs for no purpose, and it is deleted with everything else.
 * An **open** request is canceled first: leaving one live would keep mailing
   strangers in the name of an account that no longer exists.
 """
@@ -142,7 +142,6 @@ def delete_account(user) -> dict:
     from apps.core.principals import owned_by
     from apps.documents.models import Document
     from apps.esign.models import SignRequest
-    from apps.pdf_engine.storage import get_storage
 
     documents = owned_by(Document.objects.all(), user)
     if documents.count() > MAX_INLINE_DELETE_DOCUMENTS:
@@ -152,40 +151,47 @@ def delete_account(user) -> dict:
             "rather that than half-delete an account."
         )
 
-    # An open request left running would keep mailing strangers in the name of
+    # A draft has reached nobody, so there is nothing in it to be evidence of —
+    # only a title and the addresses somebody typed. It goes with the account,
+    # and it goes *first*, before the cancel pass below would give it a status
+    # that makes it look like something that was sent.
+    _delete_unsent_drafts(user)
+
+    # A *sent* request left running would keep mailing strangers in the name of
     # an account that no longer exists.
     canceled = 0
     for request in owned_by(SignRequest.objects.all(), user).filter(
-            status__in=SignRequest.OPEN_STATUSES):
+            status=SignRequest.Status.SENT):
         request.status = SignRequest.Status.CANCELED
         request.save(update_fields=["status"])
         canceled += 1
 
-    storage = get_storage()
-    blobs = 0
-    for document in documents:
-        for version in document.versions.all():
-            try:
-                storage.delete(version.storage_key)
-                blobs += 1
-            except Exception:  # noqa: BLE001 - a missing blob must not block
-                logger.exception("delete_account: blob %s", version.storage_key)
+    # Collect the keys now; delete them **after** the transaction commits.
+    # Storage is not transactional: deleting first means any later failure
+    # rolls the rows back and leaves an intact account whose files are gone —
+    # which is worse than either outcome on its own.
+    keys = [version.storage_key
+            for document in documents
+            for version in document.versions.all()]
+    keys += [signature.storage_key for signature in user.signatures.all()]
+    # `exports/{job}/` and `uploads/u/{user}/…` are separate namespaces (§13)
+    # that the guest sweep handles explicitly and this path used to leave
+    # behind — and once the Job rows cascade away, `exports_purge` can never
+    # find them again.
+    export_prefixes = [f"exports/{job_id}/" for job_id in
+                       user.jobs.values_list("id", flat=True)]
+    user_id = str(user.pk)
 
-    for signature in user.signatures.all():
-        try:
-            storage.delete(signature.storage_key)
-            blobs += 1
-        except Exception:  # noqa: BLE001
-            pass
-
+    # What is kept is what somebody **signed** — an envelope with a sealed
+    # artifact. A request that was sent and never finished has no signature in
+    # it, so retaining it would keep the sender's address, the recipients'
+    # addresses and both sides' IP addresses to prove nothing at all.
+    evidence = owned_by(SignRequest.objects.all(), user).exclude(final_key="")
     removed = {
         "documents": documents.count(),
-        "blobs": blobs,
+        "blobs": len(keys),
         "sign_requests_canceled": canceled,
-        # Envelopes kept as evidence for the people who signed them.
-        "sign_requests_retained": owned_by(
-            SignRequest.objects.all(), user
-        ).exclude(status__in=SignRequest.OPEN_STATUSES).count(),
+        "sign_requests_retained": evidence.count(),
     }
 
     # Detach first. `source_version` is `PROTECT` — it exists so a live
@@ -193,15 +199,55 @@ def delete_account(user) -> dict:
     # envelope carries is the sealed PDF in storage, not the document row, and
     # leaving the reference in place would block the deletion entirely.
     _detach_envelopes(user)
+    # Everything that is not evidence goes with the account.
+    owned_by(SignRequest.objects.all(), user).filter(final_key="").delete()
     for document in documents:
         document.delete()
 
     user.delete()
+    transaction.on_commit(lambda: _purge_storage(keys, export_prefixes, user_id))
     return removed
 
 
+def _purge_storage(keys: list[str], export_prefixes: list[str],
+                   user_id: str) -> None:
+    """After the rows are gone, and only then."""
+    from apps.core.assets import purge_principal_assets
+    from apps.pdf_engine.storage import get_storage
+
+    storage = get_storage()
+    for key in keys:
+        try:
+            storage.delete(key)
+        except Exception:  # noqa: BLE001 - a missing blob must not stop the rest
+            logger.exception("delete_account: blob %s", key)
+    for prefix in export_prefixes:
+        try:
+            storage.delete_prefix(prefix)
+        except Exception:  # noqa: BLE001
+            logger.warning("delete_account: could not delete %s", prefix)
+    try:
+        purge_principal_assets("u", user_id)
+    except Exception:  # noqa: BLE001
+        logger.exception("delete_account: assets for %s", user_id)
+
+
+def _delete_unsent_drafts(user) -> None:
+    """A draft has been sent to nobody, so there is no evidence in it.
+
+    Retaining one would keep a title and every recipient address the person
+    typed, with no owner, no document and no sender — a row that serves nobody
+    and reads as an envelope in the export's own manifest.
+    """
+    from apps.core.principals import owned_by
+    from apps.esign.models import SignRequest
+
+    owned_by(SignRequest.objects.all(), user).filter(
+        status=SignRequest.Status.DRAFT).delete()
+
+
 def _detach_envelopes(user) -> None:
-    """Keep the record, cut it loose from the account.
+    """Keep the *signed* record, cut it loose from the account.
 
     The envelope survives — it is the counterparty's evidence — carrying the
     sealed PDF, the certificate and the audit chain. What goes is the link to

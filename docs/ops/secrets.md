@@ -29,7 +29,7 @@ Access tokens are short-lived; refresh tokens are blacklisted on logout
 truncate the outstanding-token table:
 
 ```bash
-docker compose exec api python manage.py shell -c "
+docker compose -f infra/docker-compose.yml exec api python manage.py shell -c "
 from rest_framework_simplejwt.token_blacklist.models import OutstandingToken, BlacklistedToken
 BlacklistedToken.objects.bulk_create(
     [BlacklistedToken(token=t) for t in OutstandingToken.objects.all()],

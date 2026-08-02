@@ -14,6 +14,9 @@ actually broken".
 | [storage-full.md](storage-full.md) | uploads fail, storage errors in the logs |
 | [cert-renewal.md](cert-renewal.md) | TLS or the signing certificate is expiring |
 | [release.md](release.md) | what the suites are and when they run |
+| [railway.md](railway.md) | the owner's deploy target: service map, variables, gotchas |
+| [secrets.md](secrets.md) | where secrets live, and why `SECRET_KEY` is a one-way door |
+| [dependencies.md](dependencies.md) | the monthly engine-library patch pass |
 
 ## The three commands worth knowing before you need them
 
@@ -25,7 +28,7 @@ curl -s https://<host>/api/health/ | jq
 curl -s https://<host>/api/health/ | jq .queues
 
 # One request, end to end, across every container
-docker compose logs --since 1h | grep <request-id>
+docker compose -f infra/docker-compose.yml logs --since 1h | grep <request-id>
 ```
 
 Every response carries `X-Request-ID`, and every log line carries the same id

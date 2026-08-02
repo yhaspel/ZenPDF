@@ -21,7 +21,7 @@ off — and there is no undo for that.
 
 ## Oversized accounts — the report
 
-    docker compose exec api python manage.py oversized_accounts --over 80
+    docker compose -f infra/docker-compose.yml exec api python manage.py oversized_accounts --over 80
 
 Lists accounts using more than the given percentage of their tier quota,
 largest first, with what they use, what they are allowed, and when they last

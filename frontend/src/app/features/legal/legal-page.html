@@ -59,9 +59,17 @@
               deleted after {{ retention().export_hours }} hours
             </td>
           </tr>
+          <tr class="border-b border-slate-100">
+            <td class="py-1">Signed envelopes (the sealed PDF, the certificate
+              and the audit trail)</td>
+            <td data-test="retention-envelopes">
+              kept indefinitely, including after you delete your account —
+              they are the other signers' record of the agreement
+            </td>
+          </tr>
           <tr>
-            <td class="py-1">Completed signature envelopes</td>
-            <td>kept while the sending account exists</td>
+            <td class="py-1">Signature requests nobody signed</td>
+            <td>deleted with your account</td>
           </tr>
         </tbody>
       </table>

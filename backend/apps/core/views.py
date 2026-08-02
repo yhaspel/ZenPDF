@@ -349,10 +349,18 @@ class HealthView(APIView):
         from .tasks import (
             HEARTBEAT_STALE_SECONDS,
             heartbeat_age_seconds,
+            heartbeat_ages,
             queue_depths,
         )
 
-        age = heartbeat_age_seconds()
+        try:
+            age = heartbeat_age_seconds()
+        except Exception:  # noqa: BLE001
+            # The heartbeat lives in the cache, which is Redis. A readiness
+            # probe that *raises* when Redis is down tells the platform
+            # nothing — least of all that the database is fine and the site
+            # can keep serving documents.
+            age = None
         checks = {
             "db": self._db(),
             "redis": self._redis(),
@@ -372,6 +380,12 @@ class HealthView(APIView):
             body["queues"] = queue_depths()
             body["worker_heartbeat_age_seconds"] = (
                 None if age is None else round(age, 1))
+            # Per lane, so "which worker died" is answered by the probe rather
+            # than by reading three sets of container logs.
+            body["workers"] = {
+                queue: (None if lane_age is None else round(lane_age, 1))
+                for queue, lane_age in heartbeat_ages().items()
+            }
         except Exception:  # noqa: BLE001 - the redis check above already said so
             pass
         return Response(body, status=http_status)

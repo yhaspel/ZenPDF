@@ -38,6 +38,7 @@ from apps.core.exceptions import (
     TokenInvalid,
     ValidationFailed,
 )
+from apps.core.logging import celery_headers
 from apps.core.permissions import IsAccount
 from apps.core.principals import owned_by
 from apps.core.throttling import (
@@ -823,7 +824,8 @@ class PublicSignCompleteView(PublicSignBase):
             # §12 puts this on `heavy`: 60 s is not enough to burn every
             # field, seal and render a certificate for a real envelope.
             finalize_sign_request.apply_async(
-                args=[str(recipient.sign_request_id)], queue="heavy")
+                args=[str(recipient.sign_request_id)], queue="heavy",
+                headers=celery_headers())
         return Response({"completed": True, "next": outcome})
 
 

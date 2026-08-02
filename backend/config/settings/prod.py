@@ -12,6 +12,13 @@ if not SECRET_KEY:  # noqa: F405
 
 STORAGE_BACKEND = "s3"
 
+# Django checks the Origin header against this for any unsafe method behind
+# HTTPS — which, since phase 10, includes the admin login this deployment can
+# now reach. Without it the form rejects every submission with a CSRF error
+# that reads like a bug.
+CSRF_TRUSTED_ORIGINS = config(  # noqa: F405
+    "CSRF_TRUSTED_ORIGINS", default="", cast=Csv())  # noqa: F405
+
 # Security headers (nginx adds CSP in phase 10).
 SECURE_CONTENT_TYPE_NOSNIFF = True
 SECURE_REFERRER_POLICY = "same-origin"

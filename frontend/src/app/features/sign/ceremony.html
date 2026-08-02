@@ -99,7 +99,7 @@
                      data-test="ceremony-field">
                   <p class="text-[11px] font-medium text-slate-500">
                     {{ label(field) }}
-                    <button class="text-slate-500 underline"
+                    <button class="text-indigo-700 underline"
                             (click)="goToField(field)"
                             [attr.data-test]="'goto-' + field.id">· page {{ field.page + 1 }}</button>
                     @if (field.required) { <span class="text-rose-500">*</span> }

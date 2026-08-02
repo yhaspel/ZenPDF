@@ -24,9 +24,18 @@ files nobody can find.
 ## Restore, into a scratch stack
 
 ```bash
-createdb zenpdf_restore
-pg_restore -d zenpdf_restore --clean --if-exists zenpdf-<date>.dump
-DATABASE_URL=postgres://…/zenpdf_restore docker compose up -d api
+# All of it inside the containers — nothing here assumes psql on the host.
+docker compose -f infra/docker-compose.prod.yml exec -T db \
+  createdb -U "$POSTGRES_USER" zenpdf_restore
+docker compose -f infra/docker-compose.prod.yml exec -T db \
+  pg_restore -U "$POSTGRES_USER" -d zenpdf_restore --clean --if-exists \
+  < zenpdf-<date>.dump
+
+# Point a throwaway API at the restored database. Substitute the real
+# credentials — this line is the one people paste without reading.
+docker compose -f infra/docker-compose.prod.yml run --rm \
+  -e DATABASE_URL="postgres://$POSTGRES_USER:$POSTGRES_PASSWORD@db:5432/zenpdf_restore" \
+  api python manage.py migrate --check
 ```
 
 ## Verify — the part that makes it a drill rather than a copy

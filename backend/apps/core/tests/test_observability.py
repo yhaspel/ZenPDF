@@ -82,6 +82,9 @@ def test_the_ids_reach_the_worker(monkeypatch):
         pass
 
     class FakeTask:
+        # Named, because the job id is only bound for tasks whose first
+        # argument actually is one.
+        name = "apps.documents.tasks.run_operation"
         request = FakeRequest()
 
     FakeTask.request.headers = headers
@@ -114,17 +117,30 @@ def test_health_reports_dead_workers(anon):
     requests succeed, jobs queue, nothing runs."""
     from django.core.cache import cache
 
-    from apps.core.tasks import HEARTBEAT_KEY, worker_heartbeat
+    from apps.core.tasks import (
+        HEARTBEAT_KEY,
+        HEARTBEAT_QUEUES,
+        worker_heartbeat,
+    )
 
-    cache.delete(HEARTBEAT_KEY)
+    for queue in HEARTBEAT_QUEUES:
+        cache.delete(f"{HEARTBEAT_KEY}:{queue}")
     body = anon.get("/api/health/").json()
     assert body["checks"]["workers"] is False
     assert body["status"] == "degraded"
 
-    worker_heartbeat()
+    # One lane alive is not "the workers are fine": a dead `heavy` worker
+    # leaves OCR piling up while everything else looks normal.
+    worker_heartbeat("default")
+    assert anon.get("/api/health/").json()["checks"]["workers"] is False
+
+    for queue in HEARTBEAT_QUEUES:
+        worker_heartbeat(queue)
     body = anon.get("/api/health/").json()
     assert body["checks"]["workers"] is True
     assert body["worker_heartbeat_age_seconds"] < 5
+    # …and the probe says *which* lane, so nobody reads three sets of logs.
+    assert set(body["workers"]) == set(HEARTBEAT_QUEUES)
 
 
 def test_a_stale_heartbeat_counts_as_dead(anon):
@@ -132,9 +148,15 @@ def test_a_stale_heartbeat_counts_as_dead(anon):
 
     from django.core.cache import cache
 
-    from apps.core.tasks import HEARTBEAT_KEY, HEARTBEAT_STALE_SECONDS
+    from apps.core.tasks import (
+        HEARTBEAT_KEY,
+        HEARTBEAT_QUEUES,
+        HEARTBEAT_STALE_SECONDS,
+    )
 
-    cache.set(HEARTBEAT_KEY, time.time() - HEARTBEAT_STALE_SECONDS - 1, 3600)
+    stale = time.time() - HEARTBEAT_STALE_SECONDS - 1
+    for queue in HEARTBEAT_QUEUES:
+        cache.set(f"{HEARTBEAT_KEY}:{queue}", stale, 3600)
     assert anon.get("/api/health/").json()["checks"]["workers"] is False
 
 
@@ -193,11 +215,76 @@ def test_a_crash_report_carries_no_credential_no_body_and_no_address():
     assert scrubbed["tags"]["principal"] == "user:42"
 
 
-def test_the_beat_schedule_keeps_the_heartbeat_running():
-    schedule = settings.CELERY_BEAT_SCHEDULE["worker-heartbeat"]
-    assert schedule["task"] == "apps.core.tasks.worker_heartbeat"
-    # Three missed beats before health calls it: one late run under load is
-    # not an incident.
-    from apps.core.tasks import HEARTBEAT_STALE_SECONDS
+def test_the_beat_schedule_keeps_every_lane_reporting():
+    """One entry per lane, each routed to the queue it reports on — otherwise
+    the heartbeat only ever proves that one worker is alive."""
+    from apps.core.tasks import HEARTBEAT_QUEUES, HEARTBEAT_STALE_SECONDS
 
-    assert HEARTBEAT_STALE_SECONDS >= schedule["schedule"] * 3
+    for queue in HEARTBEAT_QUEUES:
+        schedule = settings.CELERY_BEAT_SCHEDULE[f"worker-heartbeat-{queue}"]
+        assert schedule["task"] == "apps.core.tasks.worker_heartbeat"
+        assert schedule["options"]["queue"] == queue
+        assert schedule["args"] == (queue,)
+        # Three missed beats before health calls it: one late run under load
+        # is not an incident.
+        assert HEARTBEAT_STALE_SECONDS >= schedule["schedule"] * 3
+
+
+def test_health_degrades_rather_than_raising_when_the_cache_is_down(anon,
+                                                                   monkeypatch):
+    """A readiness probe that 500s when Redis is down tells the platform
+    nothing — least of all that the database is fine and documents can still
+    be read."""
+    from django.core.cache import cache
+
+    def unreachable(*_args, **_kwargs):
+        raise ConnectionError("redis is down")
+
+    monkeypatch.setattr(cache, "get", unreachable)
+    resp = anon.get("/api/health/")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["status"] == "degraded"
+    assert body["checks"]["db"] is True
+    assert body["checks"]["workers"] is False
+
+
+def test_the_admin_gate_cannot_be_opened_with_a_header(client, settings):
+    """`X-Forwarded-For` is client-supplied unless something trustworthy
+    overwrote it — and nginx proxies only `/api/`, so admin is reached on
+    gunicorn directly. One header must not be the whole gate."""
+    settings.DEBUG = False
+    settings.ADMIN_ENABLED = True
+    settings.ADMIN_IP_ALLOWLIST = ["10.9.9.9"]
+
+    assert client.get("/admin/").status_code == 404
+    spoofed = client.get("/admin/", HTTP_X_FORWARDED_FOR="10.9.9.9")
+    assert spoofed.status_code == 404, "a header opened the admin"
+
+    # The real thing: the socket peer *and* the derived client both allowed.
+    allowed = client.get("/admin/", REMOTE_ADDR="10.9.9.9")
+    assert allowed.status_code != 404
+
+
+def test_a_render_task_is_not_labelled_with_a_job_id_it_does_not_have():
+    """Binding the first argument blindly labelled a thumbnail render with a
+    *document* id — which looks like an answer and is not."""
+    from apps.core import logging as zen_logging
+    from config.celery import _bind_correlation, _clear_correlation
+
+    _clear_correlation()
+
+    class FakeTask:
+        name = "apps.documents.tasks.generate_thumbnails_task"
+        request = type("R", (), {"headers": {}})()
+
+    _bind_correlation(task=FakeTask(), args=["11111111-2222-3333-4444-555555555555"])
+    assert zen_logging.job_id_var.get() == ""
+
+    class OperationTask:
+        name = "apps.documents.tasks.run_operation"
+        request = type("R", (), {"headers": {}})()
+
+    _bind_correlation(task=OperationTask(), args=["job-1"])
+    assert zen_logging.job_id_var.get() == "job-1"
+    _clear_correlation()

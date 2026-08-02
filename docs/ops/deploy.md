@@ -6,7 +6,7 @@
 - [ ] Migrations reviewed: any that rewrite a table on a large database are
       applied out-of-band first (this product has none today; `esign.0003` is
       the largest and it is a column add plus a backfill).
-- [ ] `.env.prod` matches `infra/.env.example` — **new variables are the most
+- [ ] `.env.prod` matches `infra/.env.prod.example` — **new variables are the most
       common cause of a broken deploy**, and Django fails loudly for missing
       `SECRET_KEY` only.
 

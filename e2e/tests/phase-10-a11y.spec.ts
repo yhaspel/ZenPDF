@@ -116,6 +116,13 @@ test('phase 10: the signed-in app has no serious accessibility failures',
   await page.goto('/app/settings');
   await expect(page.locator('[data-test=usage-table]')).toBeVisible();
   await scan(page, 'settings');
+
+  // Panels that only exist once something is clicked are exactly where a
+  // contrast or label failure hides — scanning the default state alone is how
+  // a panel ships with 4.3:1 text and a green suite.
+  await page.click('[data-test=delete-account]');
+  await expect(page.locator('[data-test=delete-confirm]')).toBeVisible();
+  await scan(page, 'settings (delete confirmation)');
 });
 
 test('phase 10: a signer can complete the ceremony with the keyboard alone',

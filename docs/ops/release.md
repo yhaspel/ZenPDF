@@ -2,8 +2,8 @@
 
 | Suite | Command | Runs | Takes |
 |---|---|---|---|
-| Backend | `docker compose run --rm -e DJANGO_SETTINGS_MODULE=config.settings.test api pytest -q` | every commit | ~2 min |
-| Frontend unit | `docker compose run --rm --no-deps web npx ng test --watch=false` | every commit | ~30 s |
+| Backend | `docker compose -f infra/docker-compose.yml run --rm -e DJANGO_SETTINGS_MODULE=config.settings.test api pytest -q` | every commit | ~2 min |
+| Frontend unit | `docker compose -f infra/docker-compose.yml run --rm --no-deps web npx ng test --watch=false` | every commit | ~30 s |
 | `@smoke` | `cd e2e && npx playwright test --grep @smoke` | every deploy, against the deployed host | ~40 s |
 | Full e2e ("@full") | `./infra/test.sh --e2e` | every commit to `main` | ~4 min |
 | Cross-browser | `cd e2e && BROWSERS=all npx playwright test` | nightly | ~15 min |

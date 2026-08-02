@@ -208,7 +208,9 @@ CORS_ALLOW_HEADERS = (
     "origin", "user-agent", "x-csrftoken", "x-requested-with",
     "x-guest-token", "x-captcha-token",
 )
-CORS_EXPOSE_HEADERS = ["X-Guest-Token"]
+# `X-Request-ID` is exposed so a cross-origin SPA can read the id it is asked
+# to quote in a bug report; without this the browser hides it (§10.4).
+CORS_EXPOSE_HEADERS = ["X-Guest-Token", "X-Request-ID"]
 
 # --- Celery (§12) -----------------------------------------------------------
 REDIS_URL = config("REDIS_URL", default="redis://redis:6379/0")
@@ -239,11 +241,26 @@ CELERY_TASK_SOFT_TIME_LIMIT = config("CELERY_TASK_SOFT_TIME_LIMIT", default=600,
 # Beat: hard time limits kill the worker process without touching the Job row,
 # so a periodic sweep is what actually frees the user's concurrency slots (§11).
 CELERY_BEAT_SCHEDULE = {
-    # A worker writes this every minute and `/api/health/` reads it, so a
-    # stack whose workers have died reports degraded instead of green (§10.4).
-    "worker-heartbeat": {
+    # One per lane, every minute, each routed to the queue it reports on: a
+    # single heartbeat only proves that *one* worker is alive, so a dead
+    # `heavy` worker would leave health green while OCR piled up (§10.4).
+    "worker-heartbeat-default": {
         "task": "apps.core.tasks.worker_heartbeat",
         "schedule": 60.0,
+        "args": ("default",),
+        "options": {"queue": "default"},
+    },
+    "worker-heartbeat-heavy": {
+        "task": "apps.core.tasks.worker_heartbeat",
+        "schedule": 60.0,
+        "args": ("heavy",),
+        "options": {"queue": "heavy"},
+    },
+    "worker-heartbeat-render": {
+        "task": "apps.core.tasks.worker_heartbeat",
+        "schedule": 60.0,
+        "args": ("render",),
+        "options": {"queue": "render"},
     },
     "reap-stalled-jobs": {
         "task": "apps.jobs.tasks.reap_stalled_jobs",
