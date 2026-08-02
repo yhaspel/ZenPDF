@@ -200,6 +200,20 @@
           </div>
         }
       </div>
+      <div class="flex flex-col items-center gap-2 pt-2">
+        @if (docs.hasMore()) {
+          <button type="button" (click)="docs.loadMore()" [disabled]="docs.loadingMore()"
+                  class="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                  data-test="load-more">
+            {{ docs.loadingMore() ? 'Loading…' : 'Load more' }}
+          </button>
+        }
+        <!-- Polite, because appending is silent: a screen reader otherwise gets
+             no confirmation that the list grew. -->
+        <p class="text-xs text-slate-500" aria-live="polite" data-test="doc-count">
+          Showing {{ docs.documents().length }} of {{ docs.total() }}
+        </p>
+      </div>
     }
   </section>
 

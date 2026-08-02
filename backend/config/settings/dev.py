@@ -27,6 +27,11 @@ REST_FRAMEWORK["DEFAULT_THROTTLE_RATES"]["auth"] = config(  # noqa: F405
 # Same reasoning for the signing ceremony: 20/min is right for one stranger
 # signing one document, and wrong for an e2e run that plays every signer from
 # one address (phase-08).
+# …and the upload budget: §9B's 20/hour is one person's day, and one e2e that
+# has to build a library big enough to page through spends it in two seconds.
+# Prod keeps §16.
+REST_FRAMEWORK["DEFAULT_THROTTLE_RATES"]["upload"] = config(  # noqa: F405
+    "THROTTLE_UPLOAD", default="600/hour")
 REST_FRAMEWORK["DEFAULT_THROTTLE_RATES"]["public_sign"] = config(  # noqa: F405
     "THROTTLE_PUBLIC_SIGN", default="200/min",
 )

@@ -27,6 +27,8 @@ export interface DocListParams {
   starred?: boolean;
   trashed?: boolean;
   ordering?: string;
+  limit?: number;
+  offset?: number;
 }
 
 @Injectable({ providedIn: 'root' })
@@ -42,6 +44,8 @@ export class DocumentsService {
     if (params.starred) hp = hp.set('starred', 'true');
     if (params.trashed) hp = hp.set('trashed', 'true');
     if (params.ordering) hp = hp.set('ordering', params.ordering);
+    if (params.limit) hp = hp.set('limit', String(params.limit));
+    if (params.offset) hp = hp.set('offset', String(params.offset));
     return this.http.get<Paginated<DocumentModel>>(`${this.base}/documents/`, { params: hp });
   }
 

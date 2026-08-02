@@ -184,7 +184,7 @@
                         [class.ring-2]="pages.isSelected(p)" [class.ring-indigo-500]="pages.isSelected(p)"
                         (click)="onThumbClick(p, $event)" data-test="rail-thumb">
                   <div class="aspect-[3/4]">
-                    <app-pdf-thumbnail [docId]="doc.id" [page]="p" [width]="160" [version]="viewer.currentSeq() ?? undefined" />
+                    <app-pdf-thumbnail [docId]="doc.id" [page]="p" [width]="240" [version]="viewer.currentSeq() ?? undefined" />
                   </div>
                   <span class="block py-0.5 text-center text-[10px] text-slate-500">{{ p + 1 }}</span>
                 </button>
@@ -256,7 +256,7 @@
                      (keydown.enter)="onThumbClick(p, $event)" (keydown.space)="onThumbClick(p, $event)"
                      data-test="organize-page">
                   <div class="aspect-[3/4] overflow-hidden">
-                    <app-pdf-thumbnail [docId]="doc.id" [page]="p" [width]="200" [version]="viewer.currentSeq() ?? undefined" />
+                    <app-pdf-thumbnail [docId]="doc.id" [page]="p" [width]="240" [version]="viewer.currentSeq() ?? undefined" />
                   </div>
                   <span class="block py-0.5 text-center text-xs text-slate-500">{{ p + 1 }}</span>
                 </div>
