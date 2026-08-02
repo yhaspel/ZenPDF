@@ -709,3 +709,126 @@ REPAIR = {
     "properties": {},
     "additionalProperties": False,
 }
+
+
+# --------------------------------------------------------------------------- #
+# Phase 7 — security & redaction
+# --------------------------------------------------------------------------- #
+_PERMISSIONS = {
+    "type": "object",
+    "properties": {
+        "print": {"enum": ["none", "lowres", "full"]},
+        "copy": {"type": "boolean"},
+        "modify": {"enum": ["none", "form_fill", "annotate", "full"]},
+        # Accepted so a client can round-trip the read model, but the engine
+        # always allows it: a PDF a screen reader cannot read excludes its user
+        # for no security gain (§17, phase-07).
+        "accessibility": {"type": "boolean"},
+    },
+    "additionalProperties": False,
+}
+
+# Passwords travel in params and are redacted from every API response and
+# purged when the job finishes — see `Job.sanitize_params`. A proper secrets
+# channel is backlog; this is the documented tradeoff (phase-07).
+_PASSWORD = {"type": "string", "minLength": 1, "maxLength": 256}
+
+ENCRYPT = {
+    "type": "object",
+    "required": ["owner_password"],
+    "properties": {
+        "owner_password": _PASSWORD,
+        "user_password": {"type": "string", "maxLength": 256},
+        "permissions": _PERMISSIONS,
+        "document_password": {"type": "string", "maxLength": 256},
+    },
+    "additionalProperties": False,
+}
+
+DECRYPT = {
+    "type": "object",
+    "properties": {
+        "password": {"type": "string", "maxLength": 256},
+        "document_password": {"type": "string", "maxLength": 256},
+    },
+    "additionalProperties": False,
+}
+
+SET_PERMISSIONS = {
+    "type": "object",
+    "required": ["owner_password", "permissions"],
+    "properties": {
+        "owner_password": _PASSWORD,
+        "user_password": {"type": "string", "maxLength": 256},
+        "permissions": _PERMISSIONS,
+        "document_password": {"type": "string", "maxLength": 256},
+    },
+    "additionalProperties": False,
+}
+
+REDACT = {
+    "type": "object",
+    "properties": {
+        "areas": {
+            "type": "array",
+            "maxItems": 500,
+            "items": {
+                "type": "object",
+                "required": ["page", "rect"],
+                "properties": {"page": {"type": "integer", "minimum": 0},
+                               "rect": _NORM_RECT},
+                "additionalProperties": False,
+            },
+        },
+        "patterns": {
+            "type": "array",
+            "maxItems": 20,
+            "items": {
+                "type": "object",
+                "required": ["kind", "value"],
+                "properties": {
+                    "kind": {"enum": ["preset", "regex"]},
+                    "value": {"type": "string", "minLength": 1, "maxLength": 500},
+                },
+                "additionalProperties": False,
+            },
+        },
+        "search_text": {"type": "string", "minLength": 1, "maxLength": 500},
+        "match_case": {"type": "boolean"},
+        "scope": {"type": "array", "items": {"type": "integer", "minimum": 0},
+                  "maxItems": 5000},
+        "fill": {
+            "type": "object",
+            "properties": {
+                "color": {"type": "string", "maxLength": 32},
+                "label": {"type": "string", "maxLength": 64},
+            },
+            "additionalProperties": False,
+        },
+        # Which dry-run matches to apply, by id — the review list's unticked
+        # rows are how a user says "not that one" (same shape as find_replace).
+        "only": {"type": "array", "items": {"type": "string", "maxLength": 64},
+                 "maxItems": 5000},
+        "dry_run": {"type": "boolean"},
+        # A redacted document whose *previous version* still holds the content
+        # is not redacted. On by default in the UI (phase-07).
+        "fork_clean_copy": {"type": "boolean"},
+        "document_password": {"type": "string", "maxLength": 256},
+    },
+    "additionalProperties": False,
+}
+
+SANITIZE = {
+    "type": "object",
+    "properties": {
+        "metadata": {"type": "boolean"},
+        "xmp": {"type": "boolean"},
+        "javascript": {"type": "boolean"},
+        "embedded_files": {"type": "boolean"},
+        "hidden_layers_flatten": {"type": "boolean"},
+        "links_external": {"type": "boolean"},
+        "comments": {"type": "boolean"},
+        "document_password": {"type": "string", "maxLength": 256},
+    },
+    "additionalProperties": False,
+}

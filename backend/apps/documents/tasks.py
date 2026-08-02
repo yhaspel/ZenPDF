@@ -30,7 +30,9 @@ from apps.pdf_engine.engine import convert as CV
 from apps.pdf_engine.engine import forms as F
 from apps.pdf_engine.engine import ocr as O
 from apps.pdf_engine.engine import pages as P
+from apps.pdf_engine.engine import redact as RD
 from apps.pdf_engine.engine import render as R
+from apps.pdf_engine.engine import security as SEC
 from apps.pdf_engine.exceptions import EngineError
 from apps.pdf_engine.storage import get_storage
 
@@ -167,6 +169,11 @@ def _save_export(job: Job, payload: dict) -> dict:
         "size_bytes": len(payload["data"]),
         "storage_key": key,
     }
+
+
+def _clean_copy_title(job) -> str:
+    base = getattr(getattr(job, "document", None), "title", "") or "Document"
+    return f"{base} (redacted)"[:255]
 
 
 def _author_of(job: Job) -> str:
@@ -410,6 +417,63 @@ def _apply_single(op, primary_bytes, params, source_bytes, *, job=None):
         )
         return "export", {"data": blob, "filename": filename,
                           "content_type": content_type}, f"Exported {params['format']}", report
+
+    # --- Phase 7: security & redaction ---------------------------------- #
+    if t == "encrypt":
+        data = SEC.encrypt(
+            primary_bytes,
+            owner_password=params["owner_password"],
+            user_password=params.get("user_password", ""),
+            permissions=params.get("permissions"),
+        )
+        return "version", data, "Protected", {"encrypted": True}
+    if t == "decrypt":
+        data = SEC.decrypt(primary_bytes,
+                           password=params.get("password")
+                           or params.get("document_password", ""))
+        return "version", data, "Unlocked", {"encrypted": False}
+    if t == "set_permissions":
+        data = SEC.set_permissions(
+            primary_bytes,
+            permissions=params["permissions"],
+            owner_password=params["owner_password"],
+            user_password=params.get("user_password", ""),
+        )
+        return "version", data, "Permissions updated", {"encrypted": True}
+    if t == "sanitize":
+        data, report = SEC.sanitize(primary_bytes, **{
+            k: v for k, v in params.items() if k in SEC.SANITIZE_ITEMS
+        })
+        return "version", data, f"Sanitized ({report['total']} item(s))", report
+    if t == "redact":
+        if params.get("dry_run"):
+            # Inspection only, like find & replace: a search must not put
+            # "Redacted 0 items" in the history.
+            report = RD.find_matches(
+                primary_bytes,
+                patterns=params.get("patterns"),
+                search_text=params.get("search_text", ""),
+                match_case=params.get("match_case", True),
+                scope=params.get("scope"),
+            )
+            return "report", report, "Reviewed", report
+        data, report = RD.redact(
+            primary_bytes,
+            areas=params.get("areas"),
+            patterns=params.get("patterns"),
+            search_text=params.get("search_text", ""),
+            match_case=params.get("match_case", True),
+            scope=params.get("scope"),
+            fill=params.get("fill"),
+            only=params.get("only"),
+        )
+        if params.get("fork_clean_copy"):
+            # A redacted document whose *earlier version* still contains the
+            # content is not redacted. The clean copy has no history at all,
+            # which is the only way to say that truthfully (phase-07).
+            title = _clean_copy_title(job)
+            return "documents", [{"title": title, "data": data}], "Redacted", report
+        return "version", data, "Redacted", report
     raise EngineError(f"Unsupported single-document op '{t}'")
 
 
@@ -446,6 +510,13 @@ def run_operation(self, job_id: str):
                 return
 
             primary_bytes = _version_bytes(current)
+            # Every engine module below assumes a readable PDF. Rather than
+            # teach fifteen of them about passwords, the document is unlocked
+            # here, once — except for `decrypt`, whose whole job is the lock.
+            if op.type != "decrypt":
+                primary_bytes = SEC.open_with_password(
+                    primary_bytes, job.params.get("document_password", "")
+                )
             source_bytes = []
             for key in op.source_id_params:
                 src_id = job.params.get(key)
@@ -486,6 +557,12 @@ def run_operation(self, job_id: str):
             if kind == "version":
                 version = _save_new_version(document=document, data=payload, label=label,
                                             created_by=created_by_user(job), job=job)
+                # `encrypt` and `decrypt` change what the *document* is, not
+                # just what this version contains — the viewer prompts for a
+                # password off this flag.
+                if report and "encrypted" in report:
+                    document.is_encrypted = bool(report["encrypted"])
+                    document.save(update_fields=["is_encrypted"])
                 job.mark_succeeded({
                     "document_id": str(document.id),
                     "version_id": str(version.id),

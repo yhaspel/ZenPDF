@@ -613,7 +613,12 @@ class DocumentOperationView(APIView):
             raise ValidationFailed(
                 f"'{op_type}' is not a valid single-document operation."
             )
-        if document.is_encrypted:
+        if document.is_encrypted and op_type != "decrypt" \
+                and not (params or {}).get("document_password"):
+            # Phase 1 refused every operation on an encrypted document, which
+            # was right when nothing could unlock one. Phase 7 can: `decrypt`
+            # is the way out, and any other op may carry the session password
+            # the UI holds in memory (§17, phase-07).
             raise DocumentEncrypted()
         try:
             registry.validate_params(op_type, params)

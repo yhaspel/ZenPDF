@@ -90,6 +90,13 @@ OPERATIONS: dict[str, Op] = {
     "compare": Op("compare", "heavy", S.COMPARE, "report",
                   source_id_params=("other_document_id",)),
     "repair": Op("repair", "heavy", S.REPAIR, "version"),
+    # Phase 7 — security & redaction (§10). Encryption and sanitize are cheap;
+    # redaction re-renders every page it touches, so it goes on `heavy`.
+    "encrypt": Op("encrypt", "default", S.ENCRYPT, "version"),
+    "decrypt": Op("decrypt", "default", S.DECRYPT, "version"),
+    "set_permissions": Op("set_permissions", "default", S.SET_PERMISSIONS, "version"),
+    "redact": Op("redact", "heavy", S.REDACT, "version_or_report"),
+    "sanitize": Op("sanitize", "default", S.SANITIZE, "version"),
 }
 
 

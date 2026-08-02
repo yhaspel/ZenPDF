@@ -188,6 +188,73 @@ def make_compare_pair():
         doc.close()
 
 
+def make_pii():
+    """A page of the things pattern redaction is meant to catch — and of the
+    near-misses it must leave alone (phase-07)."""
+    doc = fitz.open()
+    page = doc.new_page(width=595, height=842)
+    page.insert_text((60, 80), "Client record", fontsize=20)
+    lines = [
+        "Email: dana.cohen@example.com",
+        "Second email: r.levi@mail.example.co.uk",
+        "Social security number: 123-45-6789",
+        "Telephone: +44 20 7946 0958",
+        "Card on file: 4111 1111 1111 1111",
+        "IBAN: GB33BUKB20201555555555",
+        "",
+        "Not secrets, and must survive:",
+        "Invoice 2026-000-1234 dated 2026-08-02",
+        "Reference 999-99-9999-XYZ",
+        "Order number 1234 5678 9012 3456 7",
+    ]
+    for i, line in enumerate(lines):
+        page.insert_text((60, 130 + i * 26), line, fontsize=12)
+    doc.save(os.path.join(OUT, "pii.pdf"))
+    doc.close()
+
+
+def make_redact_image():
+    """A page whose picture must be destroyed, not covered (phase-07)."""
+    doc = fitz.open()
+    page = doc.new_page(width=400, height=300)
+    photo = fitz.Pixmap(fitz.csRGB, fitz.IRect(0, 0, 200, 150))
+    photo.set_rect(photo.irect, (220, 40, 40))
+    page.insert_image(fitz.Rect(60, 60, 340, 260), pixmap=photo)
+    page.insert_text((60, 40), "Photo below", fontsize=14)
+    doc.save(os.path.join(OUT, "redact-image.pdf"))
+    doc.close()
+
+
+def make_booby_trapped():
+    """Everything `sanitize` is supposed to find: document JavaScript, an
+    OpenAction, an embedded file, metadata, XMP and an outbound link."""
+    doc = fitz.open()
+    page = doc.new_page(width=595, height=842)
+    page.insert_text((60, 100), "Looks like an ordinary invoice", fontsize=16)
+    page.insert_link({"kind": fitz.LINK_URI, "from": fitz.Rect(60, 120, 300, 140),
+                      "uri": "https://tracker.example.com/beacon"})
+    doc.set_metadata({"title": "Quarterly", "author": "Dana Cohen",
+                      "subject": "internal", "keywords": "confidential"})
+    doc.embfile_add("payload.txt", b"attached secret", filename="payload.txt")
+    raw = doc.tobytes()
+    doc.close()
+
+    pdf = pikepdf.open(io.BytesIO(raw))
+    js = pdf.make_indirect(pikepdf.Dictionary(
+        S=pikepdf.Name.JavaScript, JS=pikepdf.String("app.alert('hello');"),
+    ))
+    pdf.Root.OpenAction = js
+    names = pdf.Root.get("/Names") or pdf.make_indirect(pikepdf.Dictionary())
+    names["/JavaScript"] = pdf.make_indirect(pikepdf.Dictionary(
+        Names=pikepdf.Array([pikepdf.String("boot"), js]),
+    ))
+    pdf.Root.Names = names
+    with pdf.open_metadata() as meta:
+        meta["dc:title"] = "Quarterly"
+    pdf.save(os.path.join(OUT, "booby-trapped.pdf"))
+    pdf.close()
+
+
 def make_rotated():
     doc = fitz.open()
     for i in range(2):
@@ -303,6 +370,9 @@ if __name__ == "__main__":
     make_scanned_hebrew()
     make_compare_pair()
     make_sample_image()
+    make_pii()
+    make_redact_image()
+    make_booby_trapped()
     make_rotated()
     make_large()
     make_encrypted()
