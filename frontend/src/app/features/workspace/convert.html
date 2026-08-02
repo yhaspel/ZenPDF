@@ -14,10 +14,10 @@
         </p>
       }
 
-      <label class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+      <p id="ocr-languages-label" class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
         Languages
-      </label>
-      <div class="grid grid-cols-2 gap-1">
+      </p>
+      <div role="group" aria-labelledby="ocr-languages-label" class="grid grid-cols-2 gap-1">
         @for (lang of languages; track lang.code) {
           <button class="rounded border border-slate-200 px-2 py-1 text-left text-[11px]"
                   [class.bg-indigo-600]="isChosen(lang.code)"

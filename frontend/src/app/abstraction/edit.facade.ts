@@ -116,11 +116,11 @@ export class EditFacade {
     });
     this.docsSvc.pageImages(docId, page, version).subscribe({
       next: (res) => this._images.update((map) => new Map(map).set(page, res.images)),
-      error: () => {},
+      error: () => { /* an unreadable page leaves the cache empty, not broken */ },
     });
     this.docsSvc.pageLinks(docId, page, version).subscribe({
       next: (res) => this._links.update((map) => new Map(map).set(page, res.links)),
-      error: () => {},
+      error: () => { /* an unreadable page leaves the cache empty, not broken */ },
     });
   }
 

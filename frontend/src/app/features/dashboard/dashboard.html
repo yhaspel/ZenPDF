@@ -184,8 +184,11 @@
                 {{ doc.starred ? '⭐' : '☆' }}
               </button>
               @if (editingId() === doc.id) {
-                <input [ngModel]="editingTitle()" (ngModelChange)="editingTitle.set($event)" name="rn" (keyup.enter)="commitRename()" (blur)="commitRename()"
-                       class="flex-1 rounded border border-indigo-300 px-1 text-sm" data-test="rename-input" autofocus />
+                <!-- eslint-disable-next-line @angular-eslint/template/no-autofocus --
+                     the field only exists once the person clicked Rename, so focus
+                     follows their action rather than hijacking page load. -->
+                <input autofocus [ngModel]="editingTitle()" (ngModelChange)="editingTitle.set($event)" name="rn" (keyup.enter)="commitRename()" (blur)="commitRename()"
+                       class="flex-1 rounded border border-indigo-300 px-1 text-sm" data-test="rename-input" />
               } @else {
                 <p class="flex-1 truncate text-sm font-medium text-slate-700" data-test="doc-title" [title]="doc.title">{{ doc.title }}</p>
               }

@@ -76,7 +76,7 @@ export class GuestFacade {
         this._limits.set(config.limits);
         this._guest.set(config.guest?.id ? config.guest : null);
       },
-      error: () => {},
+      error: () => { /* config is optional; the app runs on defaults */ },
     });
   }
 

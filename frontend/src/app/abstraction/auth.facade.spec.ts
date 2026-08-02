@@ -34,7 +34,7 @@ describe('AuthFacade', () => {
         AuthFacade,
         { provide: AuthService, useValue: fakeAuth },
         { provide: TokenService, useValue: fakeTokens },
-        { provide: Router, useValue: { navigate: () => {} } },
+        { provide: Router, useValue: { navigate: () => { /* routing is not under test */ } } },
       ],
     });
   });

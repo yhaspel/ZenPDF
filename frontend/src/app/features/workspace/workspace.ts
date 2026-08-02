@@ -198,12 +198,15 @@ export class Workspace {
   }
 
   // --- selection / thumbnails ---
-  onThumbClick(page: number, event: MouseEvent): void {
+  onThumbClick(page: number, event: Event): void {
+    // Enter/Space arrive as a plain Event from Angular's key pseudo-bindings;
+    // both a mouse and a keyboard event carry the modifier flags we read.
+    const mods = event as MouseEvent | KeyboardEvent;
     if (this.mode() === 'organize') {
-      if (event.shiftKey) {
+      if (mods.shiftKey) {
         this.pages.selectRange(page);
       } else {
-        this.pages.toggle(page, event.ctrlKey || event.metaKey);
+        this.pages.toggle(page, mods.ctrlKey || mods.metaKey);
       }
     } else {
       this.page.set(page + 1); // ngx viewer is 1-based

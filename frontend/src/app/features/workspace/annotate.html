@@ -83,18 +83,18 @@
 
     @if (tool() === 'free_text') {
       <div>
-        <label class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+        <label for="annot-font-size" class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
           Font size — {{ fontSize() }}pt
         </label>
-        <input type="range" min="6" max="48" [ngModel]="fontSize()" (ngModelChange)="fontSize.set(+$event)"
+        <input id="annot-font-size" type="range" min="6" max="48" [ngModel]="fontSize()" (ngModelChange)="fontSize.set(+$event)"
                class="w-full" data-test="annot-font-size" />
       </div>
     }
 
     @if (tool() === 'stamp') {
       <div>
-        <label class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Stamp</label>
-        <select [ngModel]="stampName()" (ngModelChange)="stampName.set($event)"
+        <label for="annot-stamp-name" class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Stamp</label>
+        <select id="annot-stamp-name" [ngModel]="stampName()" (ngModelChange)="stampName.set($event)"
                 class="mt-1 w-full rounded border border-slate-200 px-2 py-1" data-test="stamp-name">
           @for (name of stamps; track name) { <option [value]="name">{{ name }}</option> }
         </select>
@@ -102,9 +102,8 @@
     }
 
     <div>
-      <label class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Custom stamp</label>
-      <input type="file" accept="image/png,image/jpeg" (change)="onStampFile($event)"
-             aria-label="Choose a stamp image"
+      <label for="annot-stamp-upload" class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Custom stamp</label>
+      <input id="annot-stamp-upload" type="file" accept="image/png,image/jpeg" (change)="onStampFile($event)"
              class="mt-1 w-full text-[11px]" data-test="stamp-upload" />
       @if (stampRef()) {
         <p class="text-[11px] text-emerald-700">Image ready — drag a box to place it.</p>

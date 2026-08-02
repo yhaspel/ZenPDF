@@ -3,6 +3,10 @@
 {
   "compileOnSave": false,
   "compilerOptions": {
+    // What `ng new` would have given us, and missing since phase 0. Both
+    // projects already compile clean under it — verified before enabling —
+    // so this is closing an unguarded gap rather than starting a migration.
+    "strict": true,
     "noImplicitOverride": true,
     "noPropertyAccessFromIndexSignature": true,
     "noImplicitReturns": true,
