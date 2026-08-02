@@ -41,3 +41,7 @@ REST_FRAMEWORK["DEFAULT_THROTTLE_RATES"].update({  # noqa: F405
     "guest": config("THROTTLE_GUEST", default="600/min"),  # noqa: F405
     "user": config("THROTTLE_USER", default="600/min"),  # noqa: F405
 })
+
+# A wall of JSON in `logs.sh` helps nobody; the correlation ids are still on
+# every line, in brackets (§10.4).
+LOGGING["handlers"]["console"]["formatter"] = "structured"  # noqa: F405

@@ -346,13 +346,49 @@ class HealthView(APIView):
 
     @extend_schema(responses=OpenApiTypes.OBJECT, tags=["core"])
     def get(self, request):
+        from .tasks import (
+            HEARTBEAT_STALE_SECONDS,
+            heartbeat_age_seconds,
+            queue_depths,
+        )
+
+        age = heartbeat_age_seconds()
         checks = {
             "db": self._db(),
             "redis": self._redis(),
             "storage": storage_healthy(),
             "gotenberg": self._gotenberg(),
+            # A green stack whose workers are dead looks identical to a healthy
+            # one from the outside: requests succeed, jobs queue, nothing runs.
+            "workers": age is not None and age < HEARTBEAT_STALE_SECONDS,
         }
         overall = "ok" if all(checks.values()) else "degraded"
-        # DB is the hard dependency for serving requests; 503 only if it is down.
+        # DB is the hard dependency for *serving*; 503 only if it is down. A
+        # dead worker is an alert, not a reason to take the site out of the
+        # load balancer — people can still read their documents.
         http_status = 200 if checks["db"] else 503
-        return Response({"status": overall, "checks": checks}, status=http_status)
+        body = {"status": overall, "checks": checks}
+        try:
+            body["queues"] = queue_depths()
+            body["worker_heartbeat_age_seconds"] = (
+                None if age is None else round(age, 1))
+        except Exception:  # noqa: BLE001 - the redis check above already said so
+            pass
+        return Response(body, status=http_status)
+
+
+class LivenessView(APIView):
+    """`/api/health/live` — is this process able to answer at all?
+
+    Deliberately dependency-free: a liveness probe that checks the database
+    restarts the API every time Postgres hiccups, which turns one outage into
+    two. Readiness (`/api/health/`) is the one that looks outward.
+    """
+
+    permission_classes = [AllowAny]
+    authentication_classes: list = []
+    throttle_classes: list = []
+
+    @extend_schema(responses=OpenApiTypes.OBJECT, tags=["core"])
+    def get(self, request):
+        return Response({"status": "ok"})

@@ -47,6 +47,10 @@ INSTALLED_APPS = [
 ]
 
 MIDDLEWARE = [
+    # First, so every line logged anywhere downstream carries the ids — and so
+    # the header comes back even on a response some other middleware short-
+    # circuits (§10.4).
+    "apps.core.logging.RequestCorrelationMiddleware",
     "corsheaders.middleware.CorsMiddleware",
     # Echoes a lazily-minted X-Guest-Token on the response that created it (§21.2).
     "apps.core.middleware.GuestTokenMiddleware",
@@ -232,6 +236,12 @@ CELERY_TASK_SOFT_TIME_LIMIT = config("CELERY_TASK_SOFT_TIME_LIMIT", default=600,
 # Beat: hard time limits kill the worker process without touching the Job row,
 # so a periodic sweep is what actually frees the user's concurrency slots (§11).
 CELERY_BEAT_SCHEDULE = {
+    # A worker writes this every minute and `/api/health/` reads it, so a
+    # stack whose workers have died reports degraded instead of green (§10.4).
+    "worker-heartbeat": {
+        "task": "apps.core.tasks.worker_heartbeat",
+        "schedule": 60.0,
+    },
     "reap-stalled-jobs": {
         "task": "apps.jobs.tasks.reap_stalled_jobs",
         "schedule": 300.0,
@@ -457,18 +467,38 @@ SEED_ADMIN_EMAIL = config("SEED_ADMIN_EMAIL", default="admin@zenpdf.local")
 SEED_ADMIN_PASSWORD = config("SEED_ADMIN_PASSWORD", default="admin12345")
 
 # --- Logging (structured console) -------------------------------------------
+# --- Error reporting (§10.4) ------------------------------------------------
+# Off unless a DSN is configured, which is what makes it safe to ship the
+# wiring in every environment. PII is scrubbed at the SDK boundary rather than
+# trusted to reviewers: this product handles other people's contracts.
+SENTRY_DSN = config("SENTRY_DSN", default="")
+SENTRY_ENVIRONMENT = config("SENTRY_ENVIRONMENT", default="development")
+SENTRY_RELEASE = config("SENTRY_RELEASE", default="")
+SENTRY_TRACES_SAMPLE_RATE = config("SENTRY_TRACES_SAMPLE_RATE", default=0.0,
+                                   cast=float)
+
+# One line of JSON per event, with request/principal/job ids attached by
+# `apps.core.logging` (§10.4). `LOG_FORMAT=text` gives the readable formatter
+# back for local work — the dev stack sets it, because a wall of JSON in
+# `logs.sh` helps nobody.
 LOGGING = {
     "version": 1,
     "disable_existing_loggers": False,
+    "filters": {
+        "correlation": {"()": "apps.core.logging.CorrelationFilter"},
+    },
     "formatters": {
         "structured": {
-            "format": "%(asctime)s %(levelname)s %(name)s %(message)s",
+            "format": "%(asctime)s %(levelname)s %(name)s "
+                      "[%(request_id)s %(principal)s %(job_id)s] %(message)s",
         },
+        "json": {"()": "apps.core.logging.JsonFormatter"},
     },
     "handlers": {
         "console": {
             "class": "logging.StreamHandler",
-            "formatter": "structured",
+            "filters": ["correlation"],
+            "formatter": config("LOG_FORMAT", default="json"),
         },
     },
     "root": {"handlers": ["console"], "level": config("LOG_LEVEL", default="INFO")},

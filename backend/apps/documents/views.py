@@ -21,6 +21,7 @@ from apps.core.exceptions import (
     QuotaExceeded,
     ValidationFailed,
 )
+from apps.core.logging import celery_headers
 from apps.core.permissions import IsAccount
 from apps.core.principals import (
     assert_owned,
@@ -421,7 +422,8 @@ class RevertVersionView(APIView):
         )
         from .tasks import revert_version
 
-        result = revert_version.apply_async(args=[str(job.id)], queue="default")
+        result = revert_version.apply_async(args=[str(job.id)], queue="default",
+                                            headers=celery_headers())
         job.celery_task_id = getattr(result, "id", "") or ""
         job.save(update_fields=["celery_task_id"])
         return Response(JobSerializer(job).data, status=status.HTTP_202_ACCEPTED)
@@ -680,7 +682,8 @@ class DocumentOperationView(APIView):
         )
         from .tasks import run_operation
 
-        result = run_operation.apply_async(args=[str(job.id)], queue=op.queue)
+        result = run_operation.apply_async(args=[str(job.id)], queue=op.queue,
+                                           headers=celery_headers())
         job.celery_task_id = getattr(result, "id", "") or ""
         job.save(update_fields=["celery_task_id"])
         return Response(JobSerializer(job).data, status=status.HTTP_202_ACCEPTED)
@@ -740,7 +743,8 @@ class CrossDocumentOperationView(APIView):
         job = Job.objects.create(**job_owner_kwargs(principal), type=op_type, params=params)
         from .tasks import run_cross_document_operation
 
-        result = run_cross_document_operation.apply_async(args=[str(job.id)], queue=op.queue)
+        result = run_cross_document_operation.apply_async(
+            args=[str(job.id)], queue=op.queue, headers=celery_headers())
         job.celery_task_id = getattr(result, "id", "") or ""
         job.save(update_fields=["celery_task_id"])
         return Response(JobSerializer(job).data, status=status.HTTP_202_ACCEPTED)

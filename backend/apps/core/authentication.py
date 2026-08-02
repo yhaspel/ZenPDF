@@ -11,6 +11,7 @@ from django.conf import settings
 from rest_framework.authentication import BaseAuthentication
 from rest_framework_simplejwt.authentication import JWTAuthentication
 
+from . import logging as zen_logging
 from .exceptions import GuestExpired
 from .models import GuestSession, hash_ip
 
@@ -48,6 +49,9 @@ class PrincipalAuthentication(BaseAuthentication):
             user, validated = jwt_result
             request.principal = user
             request.guest_session = None
+            # Every log line for the rest of this request says who it was —
+            # `user:<uuid>`, never the address (§10.4).
+            zen_logging.bind(principal=f"user:{user.pk}")
             return user, validated
 
         token = raw_guest_token(request)
@@ -69,6 +73,7 @@ class PrincipalAuthentication(BaseAuthentication):
         session.touch()
         request.principal = session
         request.guest_session = session
+        zen_logging.bind(principal=f"guest:{session.pk}")
         return None  # no Django user — DRF leaves request.user as AnonymousUser
 
     def authenticate_header(self, request):

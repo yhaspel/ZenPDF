@@ -36,3 +36,5 @@ PASSWORD_HASHERS = ["django.contrib.auth.hashers.MD5PasswordHasher"]
 
 # Redis lock is a no-op in eager tests (single process, no real broker needed).
 DOC_LOCK_TIMEOUT = 5
+
+LOGGING["handlers"]["console"]["formatter"] = "structured"  # noqa: F405

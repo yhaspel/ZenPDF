@@ -8,3 +8,8 @@ class CoreConfig(AppConfig):
     def ready(self):
         # Registers the OpenAPI security schemes for PrincipalAuthentication.
         from . import schema  # noqa: F401
+        from .observability import init_sentry
+
+        # No DSN, no SDK, no network calls — which is what makes it safe to
+        # have this line in every environment (§10.4).
+        init_sentry()
