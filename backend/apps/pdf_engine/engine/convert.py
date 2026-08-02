@@ -69,38 +69,48 @@ def kind_of(filename: str) -> str:
     )
 
 
-# A modern office file is a zip, and a zip states how big it claims to be in
-# its central directory — *before* anything unpacks it. That is the moment to
-# refuse: past it, the file is LibreOffice's problem and LibreOffice will try.
-# Both a ceiling and a ratio, because 200 MB of genuine spreadsheet is possible
-# and 1000:1 compression of it is not (phase-10 §10.1).
+# A modern office file is a zip, and LibreOffice will unpack whatever it is
+# given. The first version of this guard read the central directory and did
+# arithmetic on it — which is attacker-controlled metadata, and a ratio whose
+# denominator is the upload size: two megabytes of incompressible padding took
+# a 300 MB payload under both thresholds, and one such upload pinned Gotenberg
+# at 1.4 GB until an operator restarted it.
+#
+# So this decompresses, with a budget. Streaming, entry by entry, stopping at
+# the first byte over the cap — the cost of the check is bounded by the cap
+# rather than by what the file claims (§10.1).
 MAX_ARCHIVE_UNCOMPRESSED_BYTES = 512 * 1024 * 1024
-MAX_ARCHIVE_RATIO = 200
+#: Read in chunks so a single huge entry cannot be materialised to measure it.
+_ARCHIVE_CHUNK = 1024 * 1024
 
 
 def check_archive(data: bytes, filename: str) -> None:
-    """Refuse a zip-based upload whose declared contents are a bomb."""
-    if not data[:2] == b"PK":
+    """Refuse a zip-based upload that unpacks to more than we will convert."""
+    if not zipfile.is_zipfile(io.BytesIO(data)):
         return  # .doc, .rtf, .txt, .csv — not a container
     try:
         with zipfile.ZipFile(io.BytesIO(data)) as archive:
-            entries = archive.infolist()
-    except zipfile.BadZipFile as exc:
+            budget = MAX_ARCHIVE_UNCOMPRESSED_BYTES
+            for entry in archive.infolist():
+                if entry.is_dir():
+                    continue
+                # Never trust `entry.file_size`: it is metadata the uploader
+                # wrote. The only honest measure is what comes out.
+                with archive.open(entry) as stream:
+                    while chunk := stream.read(min(_ARCHIVE_CHUNK, budget + 1)):
+                        budget -= len(chunk)
+                        if budget < 0:
+                            raise UnsupportedFileError(
+                                f"'{filename}' unpacks to more than "
+                                f"{MAX_ARCHIVE_UNCOMPRESSED_BYTES // (1024 * 1024)}"
+                                " MB, which is more than we will convert."
+                            )
+    except UnsupportedFileError:
+        raise
+    except (zipfile.BadZipFile, OSError, EOFError) as exc:
         raise UnsupportedFileError(
             f"'{filename}' is damaged and could not be opened."
         ) from exc
-
-    declared = sum(entry.file_size for entry in entries)
-    if declared > MAX_ARCHIVE_UNCOMPRESSED_BYTES:
-        raise UnsupportedFileError(
-            f"'{filename}' unpacks to {declared // (1024 * 1024)} MB, which is "
-            "more than we will convert."
-        )
-    if len(data) and declared / max(len(data), 1) > MAX_ARCHIVE_RATIO:
-        raise UnsupportedFileError(
-            f"'{filename}' is compressed far beyond what a document normally "
-            "is, so we have not opened it."
-        )
 
 
 def check_renderable(page, zoom: float) -> None:

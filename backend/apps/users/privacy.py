@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import tempfile
 import zipfile
 
@@ -85,7 +86,7 @@ def export_zip(user) -> tuple[str, str]:
             }
             version = document.current_version
             if version is not None:
-                name = _unique(f"documents/{document.title}", used, ".pdf")
+                name = _unique("documents", document.title, used, ".pdf")
                 try:
                     archive.writestr(name, storage.get_bytes(version.storage_key))
                     entry["file"] = name
@@ -103,7 +104,7 @@ def export_zip(user) -> tuple[str, str]:
                 "recipients": [r.email for r in request.recipients.all()],
             })
             if request.final_key:
-                name = _unique(f"signed/{request.title}", used, ".pdf")
+                name = _unique("signed", request.title, used, ".pdf")
                 try:
                     archive.writestr(name, storage.get_bytes(request.final_key))
                 except Exception:  # noqa: BLE001
@@ -131,13 +132,21 @@ not remove.
 """
 
 
-def _unique(stem: str, used: set[str], suffix: str) -> str:
-    """Two documents called "Invoice" must not become one file in the zip."""
-    safe = "".join(c for c in stem if c.isalnum() or c in " ._-/").strip() or "document"
-    name = f"{safe}{suffix}"
+def _unique(folder: str, title: str, used: set[str], suffix: str) -> str:
+    """Two documents called "Invoice" must not become one file in the zip.
+
+    And a document called `../../etc/cron.d/zen` must not become a path at all:
+    titles are free text, CPython's `extractall` sanitises but plenty of other
+    extractors do not, and this is the artefact a subject-access request
+    produces. So the *name* is stripped to a basename and filtered, and the
+    folder is ours.
+    """
+    base = os.path.basename(title.replace("\\", "/")).strip()
+    safe = "".join(c for c in base if c.isalnum() or c in " ._-").strip(" .")
+    name = f"{folder}/{safe or 'document'}{suffix}"
     index = 2
     while name in used:
-        name = f"{safe} ({index}){suffix}"
+        name = f"{folder}/{safe or 'document'} ({index}){suffix}"
         index += 1
     used.add(name)
     return name
@@ -184,12 +193,22 @@ def delete_account(user) -> dict:
             for document in documents
             for version in document.versions.all()]
     keys += [signature.storage_key for signature in user.signatures.all()]
+    # Prefixes, because a page rendering is not referenced by any row: once the
+    # `Document` is gone nothing can find `thumbs/{doc}/` again, which is
+    # exactly the reasoning `core/tasks.py::_purge_document_blobs` writes down
+    # for the guest path. Same for the ceremony's rendered pages under
+    # `sign/{request}/` for the envelopes that are not evidence.
+    prefixes = [f"thumbs/{document.id}/" for document in documents]
+    prefixes += [f"docs/{document.id}/" for document in documents]
     # `exports/{job}/` and `uploads/u/{user}/…` are separate namespaces (§13)
     # that the guest sweep handles explicitly and this path used to leave
     # behind — and once the Job rows cascade away, `exports_purge` can never
     # find them again.
-    export_prefixes = [f"exports/{job_id}/" for job_id in
-                       user.jobs.values_list("id", flat=True)]
+    prefixes += [f"exports/{job_id}/" for job_id in
+                 user.jobs.values_list("id", flat=True)]
+    prefixes += [f"sign/{request_id}/" for request_id in
+                 owned_by(SignRequest.objects.all(), user).filter(
+                     final_key="").values_list("id", flat=True)]
     user_id = str(user.pk)
 
     # What is kept is what somebody **signed** — an envelope with a sealed
@@ -215,12 +234,11 @@ def delete_account(user) -> dict:
         document.delete()
 
     user.delete()
-    transaction.on_commit(lambda: _purge_storage(keys, export_prefixes, user_id))
+    transaction.on_commit(lambda: _purge_storage(keys, prefixes, user_id))
     return removed
 
 
-def _purge_storage(keys: list[str], export_prefixes: list[str],
-                   user_id: str) -> None:
+def _purge_storage(keys: list[str], prefixes: list[str], user_id: str) -> None:
     """After the rows are gone, and only then."""
     from apps.core.assets import purge_principal_assets
     from apps.pdf_engine.storage import get_storage
@@ -231,7 +249,7 @@ def _purge_storage(keys: list[str], export_prefixes: list[str],
             storage.delete(key)
         except Exception:  # noqa: BLE001 - a missing blob must not stop the rest
             logger.exception("delete_account: blob %s", key)
-    for prefix in export_prefixes:
+    for prefix in prefixes:
         try:
             storage.delete_prefix(prefix)
         except Exception:  # noqa: BLE001

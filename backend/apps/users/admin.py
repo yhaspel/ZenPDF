@@ -21,6 +21,27 @@ class ZenUserAdmin(UserAdmin):
         from apps.esign.admin import _ban_users
 
         _ban_users(self, request, queryset)
+
+    def delete_model(self, request, obj):
+        """Delete through the same path the account holder uses.
+
+        A plain `user.delete()` raises `ProtectedError` for anybody who ever
+        sent an envelope — `SignRequest.source_version` is `PROTECT`, and
+        `PROTECT` fires even when the protecting row is part of the same
+        cascade. Before phase 10 that was a latent bug because admin was
+        `DEBUG`-only; now that production can reach this screen it would be a
+        500 on the moderation page. `delete_account` detaches first, keeps the
+        signed envelopes, and cleans up storage after the transaction commits.
+        """
+        from .privacy import delete_account
+
+        delete_account(obj)
+
+    def delete_queryset(self, request, queryset):
+        from .privacy import delete_account
+
+        for user in queryset:
+            delete_account(user)
     fieldsets = (
         (None, {"fields": ("email", "password")}),
         ("Profile", {"fields": ("display_name", "email_verified", "accepted_tos_at")}),

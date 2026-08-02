@@ -138,9 +138,10 @@ def test_health_reports_dead_workers(anon):
         worker_heartbeat(queue)
     body = anon.get("/api/health/").json()
     assert body["checks"]["workers"] is True
-    assert body["worker_heartbeat_age_seconds"] < 5
-    # …and the probe says *which* lane, so nobody reads three sets of logs.
-    assert set(body["workers"]) == set(HEARTBEAT_QUEUES)
+    # The *detail* is not public: queue depths and per-lane ages tell anybody
+    # watching when the heavy lane saturates and which worker died.
+    assert "queues" not in body
+    assert "worker_heartbeat_age_seconds" not in body
 
 
 def test_a_stale_heartbeat_counts_as_dead(anon):
@@ -213,6 +214,46 @@ def test_a_crash_report_carries_no_credential_no_body_and_no_address():
     # …and it is still traceable to the logs and the job.
     assert scrubbed["tags"]["request_id"] == "rid-3"
     assert scrubbed["tags"]["principal"] == "user:42"
+
+
+def test_a_crash_report_carries_no_signing_token_and_no_address_anywhere():
+    """The four places the first version of the scrubber did not look.
+
+    A signing token is a bearer capability *in the URL path*, so a 500 in a
+    ceremony view would have shipped a working signing link to a third-party
+    service — and a Django IntegrityError puts the address in the exception
+    message itself.
+    """
+    from apps.core.observability import _before_send
+
+    event = {
+        "request": {
+            "url": "https://zenpdf.example/api/public/sign/"
+                   "SECRET-SIGNING-TOKEN-abc123def456ghi789jkl/complete/",
+            "headers": {"Referer": "https://zenpdf.example/s/TOKENabc123"},
+            "env": {"REMOTE_ADDR": "203.0.113.7"},
+        },
+        "exception": {"values": [{
+            "type": "IntegrityError",
+            "value": "Key (email)=(victim@example.com) already exists",
+        }]},
+        "breadcrumbs": [{"message": "SELECT title FROM documents_document"}],
+        "extra": {"document_title": "Divorce settlement - Jane Doe.pdf"},
+        "logentry": {"message": "failed for alice@example.com",
+                     "params": ["alice@example.com"]},
+    }
+    scrubbed = _before_send(event, None)
+
+    assert "SECRET-SIGNING-TOKEN" not in scrubbed["request"]["url"]
+    assert "/api/public/sign/" in scrubbed["request"]["url"], "shape is kept"
+    assert "TOKENabc123" not in str(scrubbed["request"]["headers"])
+    assert "env" not in scrubbed["request"]
+    assert "victim@example.com" not in scrubbed["exception"]["values"][0]["value"]
+    assert "IntegrityError" == scrubbed["exception"]["values"][0]["type"]
+    assert "breadcrumbs" not in scrubbed
+    assert "extra" not in scrubbed
+    assert "alice@example.com" not in scrubbed["logentry"]["message"]
+    assert "params" not in scrubbed["logentry"]
 
 
 def test_the_beat_schedule_keeps_every_lane_reporting():
@@ -288,3 +329,21 @@ def test_a_render_task_is_not_labelled_with_a_job_id_it_does_not_have():
     _bind_correlation(task=OperationTask(), args=["job-1"])
     assert zen_logging.job_id_var.get() == "job-1"
     _clear_correlation()
+
+
+def test_the_operational_detail_is_for_operators(api, user, anon):
+    """A staff member (or an allowlisted address) gets the queue depths; the
+    public readiness probe gets `status` and `checks` and nothing else."""
+    from apps.core.tasks import HEARTBEAT_QUEUES, worker_heartbeat
+
+    for queue in HEARTBEAT_QUEUES:
+        worker_heartbeat(queue)
+
+    assert "queues" not in anon.get("/api/health/").json()
+
+    user.is_staff = True
+    user.save(update_fields=["is_staff"])
+    body = api.get("/api/health/").json()
+    assert set(body["queues"]) == set(HEARTBEAT_QUEUES)
+    assert set(body["workers"]) == set(HEARTBEAT_QUEUES)
+    assert body["worker_heartbeat_age_seconds"] < 5

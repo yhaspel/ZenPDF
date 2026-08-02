@@ -311,10 +311,17 @@ class SourceUploadView(APIView):
 
 
 class HealthView(APIView):
-    """Liveness/readiness — checks db, redis, storage, gotenberg (used by up.sh)."""
+    """Readiness — db, redis, storage, gotenberg, workers (used by `up.sh`).
+
+    Public, because the platform probe has no credential — but the operational
+    detail below it is not: queue depths and per-lane heartbeats tell anybody
+    watching when the heavy lane saturates and which worker died.
+    """
 
     permission_classes = [AllowAny]
-    authentication_classes = []
+    # Authenticated *if* a credential is present, so a staff member gets the
+    # detail; unauthenticated callers still get a readiness answer.
+    throttle_classes: list = []
     throttle_classes = []
 
     def _db(self) -> bool:
@@ -343,6 +350,17 @@ class HealthView(APIView):
             return resp.ok
         except Exception:  # noqa: BLE001
             return False
+
+    def _trusted(self, request) -> bool:
+        """An operator, not a passer-by."""
+        from .authentication import client_ip
+
+        user = getattr(request, "user", None)
+        if user is not None and getattr(user, "is_staff", False):
+            return True
+        allowlist = set(settings.ADMIN_IP_ALLOWLIST)
+        return bool(allowlist) and client_ip(request) in allowlist \
+            and request.META.get("REMOTE_ADDR", "") in allowlist
 
     @extend_schema(responses=OpenApiTypes.OBJECT, tags=["core"])
     def get(self, request):
@@ -376,18 +394,22 @@ class HealthView(APIView):
         # load balancer — people can still read their documents.
         http_status = 200 if checks["db"] else 503
         body = {"status": overall, "checks": checks}
-        try:
-            body["queues"] = queue_depths()
-            body["worker_heartbeat_age_seconds"] = (
-                None if age is None else round(age, 1))
-            # Per lane, so "which worker died" is answered by the probe rather
-            # than by reading three sets of container logs.
-            body["workers"] = {
-                queue: (None if lane_age is None else round(lane_age, 1))
-                for queue, lane_age in heartbeat_ages().items()
-            }
-        except Exception:  # noqa: BLE001 - the redis check above already said so
-            pass
+        # Queue depths and per-lane heartbeats are **operational detail**, not
+        # a public readiness signal: they tell anybody watching exactly when
+        # the heavy lane saturates and which worker died. The platform probe
+        # needs `status` and `checks`; an operator gets the rest, from an
+        # allowlisted address or as staff.
+        if self._trusted(request):
+            try:
+                body["queues"] = queue_depths()
+                body["worker_heartbeat_age_seconds"] = (
+                    None if age is None else round(age, 1))
+                body["workers"] = {
+                    queue: (None if lane_age is None else round(lane_age, 1))
+                    for queue, lane_age in heartbeat_ages().items()
+                }
+            except Exception:  # noqa: BLE001 - the redis check already said so
+                pass
         return Response(body, status=http_status)
 
 

@@ -121,8 +121,70 @@ def test_a_zip_bomb_is_refused_before_libreoffice_sees_it():
     data = (PDFS / "zip-bomb.docx").read_bytes()
     with _Budget(), pytest.raises(UnsupportedFileError) as exc:
         check_archive(data, "zip-bomb.docx")
-    assert "compressed far beyond" in str(exc.value) or "more than we will" in str(
-        exc.value)
+    assert "more than we will convert" in str(exc.value)
+
+
+def test_a_padded_zip_bomb_is_refused_too():
+    """The evasion the first version of this guard fell to.
+
+    It compared the *declared* uncompressed size against the upload size, and
+    both numbers are the uploader's to choose: two megabytes of incompressible
+    padding drags the ratio under the threshold while the payload stays
+    enormous. One such upload pinned Gotenberg at 1.4 GB until somebody
+    restarted it by hand.
+    """
+    import io
+    import os
+    import zipfile
+
+    from apps.pdf_engine.engine.convert import check_archive
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as archive:
+        archive.writestr("[Content_Types].xml", "<Types/>")
+        with archive.open("word/document.xml", "w") as entry:
+            entry.write(b"<w:p>text</w:p>" * (40 * 1024 * 1024 // 15))
+        # Stored, not deflated: this is the padding that fixes the ratio.
+        archive.writestr(zipfile.ZipInfo("word/media/pad.bin"),
+                         os.urandom(2 * 1024 * 1024),
+                         compress_type=zipfile.ZIP_STORED)
+    data = buf.getvalue()
+
+    from apps.pdf_engine.engine import convert
+
+    # A 40 MB payload is well under the real cap, so the cap is lowered rather
+    # than the fixture being made cruel — the point is the *mechanism*.
+    original = convert.MAX_ARCHIVE_UNCOMPRESSED_BYTES
+    convert.MAX_ARCHIVE_UNCOMPRESSED_BYTES = 8 * 1024 * 1024
+    try:
+        with _Budget(), pytest.raises(UnsupportedFileError):
+            check_archive(data, "padded.docx")
+    finally:
+        convert.MAX_ARCHIVE_UNCOMPRESSED_BYTES = original
+
+
+def test_a_zip_with_a_junk_prefix_is_still_inspected():
+    """`zipfile` finds the directory by scanning backwards, so a file that does
+    not start with `PK` still unpacks — and the first version of this guard
+    returned early on exactly that check."""
+    import io
+    import zipfile
+
+    from apps.pdf_engine.engine import convert
+    from apps.pdf_engine.engine.convert import check_archive
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr("word/document.xml", b"0" * (16 * 1024 * 1024))
+    data = b"JUNKJUNK" + buf.getvalue()
+
+    original = convert.MAX_ARCHIVE_UNCOMPRESSED_BYTES
+    convert.MAX_ARCHIVE_UNCOMPRESSED_BYTES = 4 * 1024 * 1024
+    try:
+        with _Budget(), pytest.raises(UnsupportedFileError):
+            check_archive(data, "prefixed.docx")
+    finally:
+        convert.MAX_ARCHIVE_UNCOMPRESSED_BYTES = original
 
 
 def test_an_ordinary_office_file_is_not_mistaken_for_a_bomb():

@@ -12,6 +12,12 @@
 
 ## Deploy
 
+**Order matters for the workers.** Restart them *before* beat: the heartbeat
+task and its cache keys are versioned with the code, so a new beat talking to
+old workers makes `/api/health/` report `workers: false` until they catch up.
+It is an alerting false positive, not an outage — the site keeps serving —
+but it is the kind that gets a pager ignored.
+
 ```bash
 docker compose -f infra/docker-compose.prod.yml pull
 docker compose -f infra/docker-compose.prod.yml run --rm api python manage.py migrate

@@ -256,3 +256,51 @@ def test_an_unsigned_envelope_does_not_outlive_the_account(api, user,
                format="json")
     assert not SignRequest.objects.filter(id=request_id).exists()
     assert not AuditEvent.objects.filter(sign_request_id=request_id).exists()
+
+
+def test_the_export_cannot_contain_a_path(api, user, fixture_bytes):
+    """Titles are free text. `../../etc/cron.d/zen` must not become a path in
+    the zip a subject-access request produces — CPython's extractall
+    sanitises, and plenty of other extractors do not."""
+    from django.core.files.uploadedfile import SimpleUploadedFile
+
+    for title in ("../../../../tmp/pwned", "/etc/cron.d/zen"):
+        api.post("/api/documents/",
+                 {"file": SimpleUploadedFile("x.pdf", fixture_bytes("text.pdf"),
+                                             content_type="application/pdf"),
+                  "title": title},
+                 format="multipart")
+
+    resp = api.get("/api/users/me/export/")
+    content = b"".join(resp.streaming_content)
+    with zipfile.ZipFile(io.BytesIO(content)) as archive:
+        names = archive.namelist()
+
+    for name in names:
+        assert ".." not in name, name
+        assert not name.startswith("/"), name
+        assert name.count("/") <= 1, name
+
+
+def test_deleting_a_user_from_admin_does_not_500(api, user, uploaded_doc,
+                                                 django_capture_on_commit_callbacks):
+    """`SignRequest.source_version` is PROTECT and fires even inside the same
+    cascade, so a plain `user.delete()` raises for anybody who ever sent an
+    envelope. Admin goes through the same path the account holder does."""
+    from django.contrib.admin.sites import AdminSite
+    from django.contrib.auth import get_user_model
+
+    from apps.esign.models import SignRequest
+    from apps.users.admin import ZenUserAdmin
+
+    request_id, _ = _sent_request(api, uploaded_doc, user)
+    SignRequest.objects.filter(id=request_id).update(
+        status="completed", final_key=f"sign/{request_id}/final.pdf")
+
+    model_admin = ZenUserAdmin(get_user_model(), AdminSite())
+    with django_capture_on_commit_callbacks(execute=True):
+        model_admin.delete_model(None, user)
+
+    assert not get_user_model().objects.filter(pk=user.pk).exists()
+    # …and the counterparty's evidence is still there.
+    assert SignRequest.objects.filter(id=request_id).exists()
