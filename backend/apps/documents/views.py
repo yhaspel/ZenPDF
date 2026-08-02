@@ -401,8 +401,16 @@ class ThumbnailView(APIView):
 # Versions / outline / search
 # --------------------------------------------------------------------------- #
 class VersionListView(generics.ListAPIView):
+    """The history panel's rows, newest first — **paginated**.
+
+    It used to answer with every version in one bare array, and the workspace
+    fetches it on every document open and again after every operation. At 5 000
+    versions that is 1.4 MB, uncompressed, eleven times a session, for a panel
+    that is not even the default tab. The client shows a scrolling list and
+    never needed the whole history at once.
+    """
+
     serializer_class = DocumentVersionSerializer
-    pagination_class = None
 
     def get_queryset(self):
         # Schema generation introspects the queryset with no URL kwargs bound.

@@ -75,7 +75,7 @@ def test_fill_form_creates_a_labeled_version(api, form_doc):
     job = _op(api, form_doc["id"], "fill_form",
               {"values": {"full_name": "Ada Lovelace", "agree": True}})
     assert job["status"] == "succeeded", job
-    versions = api.get(f"/api/documents/{form_doc['id']}/versions/").json()
+    versions = api.get(f"/api/documents/{form_doc['id']}/versions/").json()["results"]
     assert versions[0]["label"] == "Form filled"
 
     values = {f["name"]: f["value"] for f in _form(api, form_doc["id"])["fields"]}
@@ -88,7 +88,7 @@ def test_fill_with_flatten_removes_the_widgets(api, form_doc):
     assert job["status"] == "succeeded", job
     assert api.get(
         f"/api/documents/{form_doc['id']}/versions/"
-    ).json()[0]["label"] == "Form filled and flattened"
+    ).json()["results"][0]["label"] == "Form filled and flattened"
     assert _form(api, form_doc["id"])["has_form"] is False
 
 
@@ -169,14 +169,14 @@ def test_build_six_field_types_on_a_blank_document(api, fixture_bytes):
 
 def test_the_whole_builder_session_is_one_job(api, fixture_bytes):
     doc = _upload(api, "blank.pdf", fixture_bytes("text.pdf"))
-    before = len(api.get(f"/api/documents/{doc['id']}/versions/").json())
+    before = len(api.get(f"/api/documents/{doc['id']}/versions/").json()["results"])
     _op(api, doc["id"], "edit_form_fields_batch", {"ops": [
         {"action": "add", "field": {"name": f"f{i}", "type": "text", "page": 0,
                                     "rect": {"x": 0.1, "y": 0.05 * (i + 1),
                                              "w": 0.4, "h": 0.03}}}
         for i in range(5)
     ]})
-    after = api.get(f"/api/documents/{doc['id']}/versions/").json()
+    after = api.get(f"/api/documents/{doc['id']}/versions/").json()["results"]
     assert len(after) == before + 1, "five fields must be one version, not five"
     assert after[0]["label"] == "Form edited (5 field(s))"
 

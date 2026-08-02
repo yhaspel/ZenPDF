@@ -15,4 +15,5 @@ export const RETENTION = {
   guest_hours: 24,
   trash_days: 30,
   export_hours: 24,
+  job_days: 365,
 } as const;

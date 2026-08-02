@@ -60,7 +60,7 @@ def test_protecting_a_document_marks_it_encrypted(api, uploaded_doc):
 
     detail = api.get(f"/api/documents/{uploaded_doc['id']}/").json()
     assert detail["is_encrypted"] is True
-    versions = api.get(f"/api/documents/{uploaded_doc['id']}/versions/").json()
+    versions = api.get(f"/api/documents/{uploaded_doc['id']}/versions/").json()["results"]
     assert versions[0]["label"] == "Protected"
 
 
@@ -74,7 +74,7 @@ def test_unlocking_puts_it_back(api, uploaded_doc):
     assert detail["is_encrypted"] is False
     assert api.get(
         f"/api/documents/{uploaded_doc['id']}/versions/"
-    ).json()[0]["label"] == "Unlocked"
+    ).json()["results"][0]["label"] == "Unlocked"
 
 
 def test_a_document_that_arrives_encrypted_unlocks_and_gets_its_pages_back(api, fixture_bytes):
@@ -185,7 +185,7 @@ def test_editing_an_unlocked_document_says_the_password_came_off(api, uploaded_d
     assert api.get(f"/api/jobs/{resp.json()['id']}/").json()["status"] == "succeeded"
 
     assert api.get(f"/api/documents/{uploaded_doc['id']}/").json()["is_encrypted"] is False
-    label = api.get(f"/api/documents/{uploaded_doc['id']}/versions/").json()[0]["label"]
+    label = api.get(f"/api/documents/{uploaded_doc['id']}/versions/").json()["results"][0]["label"]
     assert "password removed" in label, label
 
     from apps.pdf_engine.engine import security as S
@@ -312,7 +312,7 @@ def test_a_failed_job_forgets_the_password_too(api, uploaded_doc):
 # Redaction
 # --------------------------------------------------------------------------- #
 def test_the_dry_run_returns_a_review_list_and_mints_no_version(api, pii_doc):
-    before = api.get(f"/api/documents/{pii_doc['id']}/versions/").json()
+    before = api.get(f"/api/documents/{pii_doc['id']}/versions/").json()["results"]
     job = _op(api, pii_doc["id"], "redact",
               {"patterns": [{"kind": "preset", "value": "email"}], "dry_run": True})
     assert job["status"] == "succeeded", job
@@ -320,7 +320,7 @@ def test_the_dry_run_returns_a_review_list_and_mints_no_version(api, pii_doc):
     assert report["count"] == 3
     assert all("rect" in m and "text" in m for m in report["matches"])
 
-    after = api.get(f"/api/documents/{pii_doc['id']}/versions/").json()
+    after = api.get(f"/api/documents/{pii_doc['id']}/versions/").json()["results"]
     assert len(after) == len(before), "a search must not mint a version"
 
 
@@ -330,7 +330,7 @@ def test_redacting_in_place_creates_a_redacted_version(api, pii_doc):
     assert job["status"] == "succeeded", job
     assert api.get(
         f"/api/documents/{pii_doc['id']}/versions/"
-    ).json()[0]["label"] == "Redacted"
+    ).json()["results"][0]["label"] == "Redacted"
     assert b"dana.cohen" not in _drawn(api, pii_doc["id"])
 
 
@@ -344,7 +344,7 @@ def test_the_clean_copy_has_no_history_to_leak(api, pii_doc):
     assert job["status"] == "succeeded", job
 
     new_id = job["result"]["documents"][0]
-    versions = api.get(f"/api/documents/{new_id}/versions/").json()
+    versions = api.get(f"/api/documents/{new_id}/versions/").json()["results"]
     assert len(versions) == 1, "the clean copy carries history"
     assert versions[0]["label"] == "Original"
     assert b"dana.cohen" not in _drawn(api, new_id)
@@ -379,7 +379,7 @@ def test_a_copy_taken_from_an_unlocked_document_says_it_is_not_protected(
     assert job["status"] == "succeeded", job
 
     new_id = job["result"]["documents"][0]
-    versions = api.get(f"/api/documents/{new_id}/versions/").json()
+    versions = api.get(f"/api/documents/{new_id}/versions/").json()["results"]
     assert "password removed" in versions[0]["label"], versions[0]
 
 
@@ -429,7 +429,7 @@ def test_sanitize_reports_what_it_removed(api, fixture_bytes):
     assert report["javascript"] >= 2
     assert report["embedded_files"] >= 1
     assert report["total"] >= 3
-    label = api.get(f"/api/documents/{doc['id']}/versions/").json()[0]["label"]
+    label = api.get(f"/api/documents/{doc['id']}/versions/").json()["results"][0]["label"]
     assert label.startswith("Sanitized")
 
     content = _content(api, doc["id"])

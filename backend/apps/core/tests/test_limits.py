@@ -76,7 +76,6 @@ def test_tier_values_match_the_architecture_table(settings):
     assert guest.max_pages == 300
     assert guest.max_concurrent_jobs == 1
     assert guest.metered_ops_per_hour == 5
-    assert guest.version_retention == 10
     assert guest.library is False
     assert (free.max_pages, free.max_concurrent_jobs, free.metered_ops_per_hour) == (2000, 3, 40)
     assert (pro.max_pages, pro.max_concurrent_jobs, pro.metered_ops_per_hour) == (5000, 6, 200)

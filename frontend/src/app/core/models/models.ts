@@ -102,7 +102,6 @@ export interface TierLimits {
   ocr_pages_per_day: number;
   ocr_pages_per_month: number;
   sign_requests_per_month: number;
-  version_retention: number;
   library: boolean;
   ads: boolean;
 }
@@ -136,7 +135,15 @@ export interface AppConfig {
     slots?: Record<string, string>;
   };
   consent_required: boolean;
-  retention: { guest_hours: number; trash_days: number; export_hours: number };
+  retention: {
+    guest_hours: number;
+    trash_days: number;
+    export_hours: number;
+    /** How long our record of an operation is kept — published because the
+     *  user can see that list in Settings, so its disappearance is
+     *  observable. */
+    job_days: number;
+  };
 }
 
 export interface Usage {

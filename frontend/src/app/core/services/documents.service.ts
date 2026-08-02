@@ -80,8 +80,11 @@ export class DocumentsService {
     });
   }
 
-  versions(id: string): Observable<DocumentVersion[]> {
-    return this.http.get<DocumentVersion[]>(`${this.base}/documents/${id}/versions/`);
+  versions(id: string, limit = 50, offset = 0): Observable<Paginated<DocumentVersion>> {
+    let hp = new HttpParams().set('limit', String(limit));
+    if (offset) hp = hp.set('offset', String(offset));
+    return this.http.get<Paginated<DocumentVersion>>(
+      `${this.base}/documents/${id}/versions/`, { params: hp });
   }
 
   revert(id: string, seq: number): Observable<Job> {

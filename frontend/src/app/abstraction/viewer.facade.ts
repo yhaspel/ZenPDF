@@ -10,10 +10,13 @@ export class ViewerFacade {
 
   private _doc = signal<DocumentModel | null>(null);
   private _versions = signal<DocumentVersion[]>([]);
+  private _versionCount = signal(0);
   private _outline = signal<OutlineItem[]>([]);
 
   readonly doc = this._doc.asReadonly();
   readonly versions = this._versions.asReadonly();
+  /** How many exist, so the panel can say when it is showing a window. */
+  readonly versionCount = this._versionCount.asReadonly();
   readonly outline = this._outline.asReadonly();
   readonly pageCount = computed(() => this._doc()?.page_count ?? 0);
   readonly currentSeq = computed(() => this._doc()?.current_version?.seq ?? null);
@@ -25,7 +28,15 @@ export class ViewerFacade {
   }
 
   loadVersions(id: string): void {
-    this.docsSvc.versions(id).subscribe({ next: (v) => this._versions.set(v) });
+    // One page. The panel is a scrolling list of the most recent work, and a
+    // document with a long history used to send all of it — 1.4 MB at 5 000
+    // versions — on every open and after every operation.
+    this.docsSvc.versions(id).subscribe({
+      next: (page) => {
+        this._versions.set(page.results);
+        this._versionCount.set(page.count);
+      },
+    });
   }
 
   loadOutline(id: string): void {

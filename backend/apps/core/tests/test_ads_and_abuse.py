@@ -68,6 +68,7 @@ def test_the_retention_numbers_come_from_the_settings_the_sweepers_use(
     assert retention["trash_days"] == settings.TRASH_RETENTION_DAYS
     assert retention["guest_hours"] == settings.GUEST_TTL_HOURS
     assert retention["export_hours"] == settings.EXPORT_TTL_HOURS
+    assert retention["job_days"] == settings.JOB_RETENTION_DAYS
 
     # …and every one of those numbers has a task that enforces it, on the beat
     # schedule. A promise with no sweeper behind it is just a sentence.
@@ -75,6 +76,16 @@ def test_the_retention_numbers_come_from_the_settings_the_sweepers_use(
     assert schedule["trash-purge"]["task"] == "apps.core.tasks.trash_purge"
     assert schedule["exports-purge"]["task"] == "apps.core.tasks.exports_purge"
     assert schedule["guest-purge"]["task"] == "apps.core.tasks.guest_purge"
+    assert schedule["jobs-purge"]["task"] == "apps.core.tasks.jobs_purge"
+    assert (schedule["job-params-purge"]["task"]
+            == "apps.core.tasks.job_params_purge")
+
+
+def test_a_job_row_outlives_its_export_and_not_the_other_way_round(settings):
+    """Ordering, pinned: `exports_purge` finds artefacts by iterating Job rows,
+    so if the row went first the blob would be unreachable for ever — the trap
+    `guest_purge` and account deletion have each already had to write down."""
+    assert settings.JOB_RETENTION_DAYS * 24 > settings.EXPORT_TTL_HOURS
 
 
 def test_trash_purge_removes_what_the_policy_says_it_removes(api, uploaded_doc,

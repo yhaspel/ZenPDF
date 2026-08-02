@@ -73,6 +73,13 @@
           </tr>
         </tbody>
       </table>
+      <p class="mt-2 text-sm text-slate-600" data-test="retention-jobs">
+        We also keep a record of the operations you ran — which tool, when, and
+        whether it worked — for {{ retention().job_days }} days, and then delete
+        it. You can see that list yourself under Settings. The <em>inputs</em> to
+        those operations, such as the words you searched for in a redaction, are
+        deleted after 30 days.
+      </p>
       <p class="mt-2 text-xs text-slate-500">
         A test asserts these are the same numbers the sweepers that delete
         things actually use — if one changed and this page did not, the build

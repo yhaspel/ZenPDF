@@ -49,7 +49,7 @@ def test_ocr_makes_the_text_readable_and_labels_the_version(api, scan):
     assert job["status"] == "succeeded", job
     assert job["result"]["report"]["has_text"] is True
 
-    versions = api.get(f"/api/documents/{scan['id']}/versions/").json()
+    versions = api.get(f"/api/documents/{scan['id']}/versions/").json()["results"]
     assert versions[0]["label"] == "OCR (eng)"
 
     # The Phase-4 editor was refusing this document; now it must not.
@@ -102,9 +102,9 @@ def test_every_cheap_export_downloads(api, uploaded_doc, target, expected):
 def test_an_export_does_not_mint_a_version(api, uploaded_doc):
     """A Word file is not a state this document could advance to — it is an
     artefact beside it (§15)."""
-    before = api.get(f"/api/documents/{uploaded_doc['id']}/versions/").json()
+    before = api.get(f"/api/documents/{uploaded_doc['id']}/versions/").json()["results"]
     _op(api, uploaded_doc["id"], "convert_to", {"format": "txt"})
-    after = api.get(f"/api/documents/{uploaded_doc['id']}/versions/").json()
+    after = api.get(f"/api/documents/{uploaded_doc['id']}/versions/").json()["results"]
     assert len(after) == len(before)
 
 
@@ -228,7 +228,7 @@ def test_convert_from_needs_something_to_convert(api):
 def test_compare_reports_the_difference_and_mints_no_version(api, fixture_bytes):
     a = _upload(api, "a.pdf", fixture_bytes("compare-a.pdf"))
     b = _upload(api, "b.pdf", fixture_bytes("compare-b.pdf"))
-    before = api.get(f"/api/documents/{a['id']}/versions/").json()
+    before = api.get(f"/api/documents/{a['id']}/versions/").json()["results"]
 
     job = _op(api, a["id"], "compare", {"other_document_id": b["id"]})
     assert job["status"] == "succeeded", job
@@ -237,7 +237,7 @@ def test_compare_reports_the_difference_and_mints_no_version(api, fixture_bytes)
     assert report["summary"]["text_changes"] > 0
     assert any(p["visual_regions"] for p in report["pages"])
 
-    after = api.get(f"/api/documents/{a['id']}/versions/").json()
+    after = api.get(f"/api/documents/{a['id']}/versions/").json()["results"]
     assert len(after) == len(before), "compare inspects; it must not mint a version"
 
 
@@ -279,7 +279,7 @@ def test_repair_produces_a_clean_version(api, fixture_bytes):
     doc = _upload_damaged(api, fixture_bytes)
     job = _op(api, doc["id"], "repair", {})
     assert job["status"] == "succeeded", job
-    assert api.get(f"/api/documents/{doc['id']}/versions/").json()[0]["label"] == "Repaired"
+    assert api.get(f"/api/documents/{doc['id']}/versions/").json()["results"][0]["label"] == "Repaired"
 
 
 def test_a_guest_repairs_a_document(guest, fixture_bytes):

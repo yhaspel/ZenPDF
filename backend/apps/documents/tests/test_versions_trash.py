@@ -17,7 +17,7 @@ def test_version_history_and_revert(api, uploaded_doc):
     assert job["status"] == "succeeded"
     assert job["result"]["seq"] == 2
 
-    versions = api.get(f"/api/documents/{doc_id}/versions/").json()
+    versions = api.get(f"/api/documents/{doc_id}/versions/").json()["results"]
     labels = [v["label"] for v in versions]
     assert "Original" in labels
     assert "Rotated 1 page(s)" in labels

@@ -157,7 +157,7 @@ def test_a_guest_signs_a_document_with_no_account(guest, guest_doc):
     job = guest.get(f"/api/jobs/{resp.json()['id']}/").json()
     assert job["status"] == "succeeded", job
 
-    versions = guest.get(f"/api/documents/{guest_doc['id']}/versions/").json()
+    versions = guest.get(f"/api/documents/{guest_doc['id']}/versions/").json()["results"]
     assert versions[0]["label"] == "Signed (self)"
 
     signed = fitz.open(stream=_text_of(guest, guest_doc["id"]), filetype="pdf")

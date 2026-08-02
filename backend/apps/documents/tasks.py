@@ -16,6 +16,7 @@ from django.conf import settings
 from django.utils import timezone
 
 from apps.core import limits as L
+from apps.core.exceptions import ZenAPIException
 from apps.core.logging import celery_headers
 from apps.core.principals import (
     created_by_user,
@@ -162,6 +163,11 @@ def _create_document_from_bytes(*, principal, folder, title, data, created_by, j
 
 def _save_new_version(*, document, data, label, created_by, job):
     sha, pages, size = _measure(data)
+    # Before the blob is written, not after: a version that lands and then
+    # fails a check has already cost the bytes. `QuotaExceeded` is a
+    # `ZenAPIException`, so the worker's handler turns it into the §6 error
+    # shape the client already knows how to render.
+    L.enforce_storage(document.principal, size)
     seq = document.next_version_seq()
     key = f"docs/{document.id}/v{seq}.pdf"
     get_storage().put_bytes(key, data)
@@ -708,6 +714,13 @@ def run_operation(self, job_id: str):
             # request is what gets refused (phase-07).
             L.record_password_failure(document.id)
         job.mark_failed(exc.code, exc.message, exc.details)
+    except ZenAPIException as exc:
+        # A domain refusal raised *inside* the worker — today that is the
+        # storage quota on the version write. Without this branch it falls to
+        # the generic handler below and reaches the user as
+        # `engine_error: Operation failed: …`, which is neither the code the
+        # client switches on nor a sentence anybody can act on.
+        job.mark_failed(exc.default_code, str(exc.detail), exc.zen_details or {})
     except Document.DoesNotExist:
         job.mark_failed("not_found", "A referenced document was not found.")
     except SoftTimeLimitExceeded:
@@ -820,6 +833,13 @@ def run_cross_document_operation(self, job_id: str):
         job.mark_succeeded({"documents": [str(new_doc.id)]})
     except EngineError as exc:
         job.mark_failed(exc.code, exc.message)
+    except ZenAPIException as exc:
+        # A domain refusal raised *inside* the worker — today that is the
+        # storage quota on the version write. Without this branch it falls to
+        # the generic handler below and reaches the user as
+        # `engine_error: Operation failed: …`, which is neither the code the
+        # client switches on nor a sentence anybody can act on.
+        job.mark_failed(exc.default_code, str(exc.detail), exc.zen_details or {})
     except Document.DoesNotExist:
         job.mark_failed("not_found", "A referenced document was not found.")
     except SoftTimeLimitExceeded:
@@ -884,6 +904,13 @@ def revert_version(self, job_id: str):
                 "version_id": str(version.id),
                 "seq": version.seq,
             })
+    except ZenAPIException as exc:
+        # A domain refusal raised *inside* the worker — today that is the
+        # storage quota on the version write. Without this branch it falls to
+        # the generic handler below and reaches the user as
+        # `engine_error: Operation failed: …`, which is neither the code the
+        # client switches on nor a sentence anybody can act on.
+        job.mark_failed(exc.default_code, str(exc.detail), exc.zen_details or {})
     except DocumentVersion.DoesNotExist:
         job.mark_failed("not_found", f"Version {target_seq} not found.")
     except SoftTimeLimitExceeded:

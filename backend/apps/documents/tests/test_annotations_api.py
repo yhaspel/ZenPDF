@@ -62,7 +62,7 @@ def test_annotate_batch_creates_a_labeled_version_and_shows_up(api, uploaded_doc
     assert job["result"]["report"]["added"] == 1
 
     # Versions list newest-first (`DocumentVersion.Meta.ordering = ["-seq"]`).
-    versions = api.get(f"/api/documents/{uploaded_doc['id']}/versions/").json()
+    versions = api.get(f"/api/documents/{uploaded_doc['id']}/versions/").json()["results"]
     assert versions[0]["seq"] == 2
     assert versions[0]["label"] == "Annotated (1 change(s))"
 
@@ -124,7 +124,7 @@ def test_a_guest_annotates_and_flattens_end_to_end(guest, guest_doc):
     flat = _op(guest, doc_id, "flatten", {"what": "annotations"}, base_seq=2)
     assert flat["status"] == "succeeded", flat
     assert guest.get(f"/api/documents/{doc_id}/annotations/").json()["annotations"] == []
-    versions = guest.get(f"/api/documents/{doc_id}/versions/").json()
+    versions = guest.get(f"/api/documents/{doc_id}/versions/").json()["results"]
     assert versions[0]["seq"] == 3
     assert versions[0]["label"] == "Flattened annotations"
 

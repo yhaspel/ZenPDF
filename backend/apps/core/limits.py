@@ -42,7 +42,6 @@ class Limits:
     ocr_pages_per_day: int
     ocr_pages_per_month: int
     sign_requests_per_month: int
-    version_retention: int
     library: bool
     ads: bool
 
@@ -59,7 +58,6 @@ class Limits:
             "ocr_pages_per_day": self.ocr_pages_per_day,
             "ocr_pages_per_month": self.ocr_pages_per_month,
             "sign_requests_per_month": self.sign_requests_per_month,
-            "version_retention": self.version_retention,
             "library": self.library,
             "ads": self.ads,
         }
@@ -92,7 +90,6 @@ def for_tier(tier: str) -> Limits:
         ocr_pages_per_day=row["ocr_pages_per_day"],
         ocr_pages_per_month=row["ocr_pages_per_month"],
         sign_requests_per_month=row["sign_requests_per_month"],
-        version_retention=row["version_retention"],
         library=row["library"],
         ads=row["ads"],
     )
@@ -245,6 +242,44 @@ def record_ocr_pages(principal, pages: int) -> None:
         # 26 h, so a window opened at 23:59 still expires cleanly.
         cache.set(key, pages, timeout=93600)
     bump_monthly(principal, ocr_pages=pages)
+
+
+def enforce_storage(principal, incoming_bytes: int) -> None:
+    """Charge `incoming_bytes` against the storage quota, or raise (§16).
+
+    The version write path had **no check at all**: `_save_new_version` bumped
+    the counter and never read it, so a principal already past their quota kept
+    minting versions indefinitely — reproduced at a gigabyte over a two-gigabyte
+    quota. Upload, image assets and claim all check; this is the fourth door and
+    it was the open one.
+
+    This is also what `version_retention` was reaching for and could not hold: a
+    per-*document* cap does not bound a per-*principal* cost, because fifty
+    versions each of unlimited documents is still unlimited. The quota does
+    bound it, is already published, is already on the usage panel, and — unlike
+    a pruned history — the user can clear it by deleting something.
+    """
+    if principal is None or incoming_bytes <= 0:
+        return
+    from .exceptions import QuotaExceeded
+
+    tier = for_principal(principal)
+    used = storage_used(principal)
+    if used + incoming_bytes <= tier.storage_bytes:
+        return
+    exc = QuotaExceeded(
+        f"That would take you past your {tier.storage_bytes // (1024 * 1024)} MB "
+        "of storage. Empty your trash or delete a document to free some up."
+        + (" Creating a free account gives you 2 GB."
+           if tier.tier == "guest" else "")
+    )
+    exc.zen_details = {
+        "quota_bytes": tier.storage_bytes,
+        "used_bytes": used,
+        "requested_bytes": incoming_bytes,
+        "tier": tier.tier,
+    }
+    raise exc
 
 
 def enforce_ocr_pages(principal, pages: int) -> None:

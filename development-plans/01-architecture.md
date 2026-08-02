@@ -259,11 +259,11 @@ Bucket `zenpdf`, all private. Keys: `docs/{document_id}/v{seq}.pdf` · `thumbs/{
 
 ## 14. Versioning & undo
 
-Every mutation ⇒ new immutable version; `Document.current_version` advances. History panel lists versions (label, op, time, size). **Undo = revert**: `POST /api/documents/{id}/versions/{seq}/revert/` copies that version's blob as a new head version labeled "Reverted to v{seq}". Retention: keep newest `VERSION_RETENTION` (default 50) + always v1 (Original) + any version referenced by a SignRequest; beat GC prunes blobs beyond retention.
+Every mutation ⇒ new immutable version; `Document.current_version` advances. History panel lists versions (label, op, time, size). **Undo = revert**: `POST /api/documents/{id}/versions/{seq}/revert/` copies that version's blob as a new head version labeled "Reverted to v{seq}". *(Amended 2026-08-02: the retention cap is **removed**, not implemented. Five prerendered tool pages promise "the version history keeps every step and you can revert to any of them", and `/redact-pdf` leans on it for a security claim — "those earlier versions still contain exactly what you have just removed". A per-**document** cap also does not bound the per-**principal** cost it was invented for: fifty versions each of unlimited documents is still unlimited. What bounds it is the storage quota, which was published and enforced on upload, image assets and claim — and **not** on the version write, where a principal a gigabyte over a two-gigabyte quota kept minting versions. `core.limits.enforce_storage` is that check.)*
 
 ## 15. Email & beat schedule
 
-Django email → SMTP env (Mailpit in dev). HTML+text templates: sign invite, reminder, declined, completed (+links), email-verification. Beat: `sign_reminders` hourly *(amended 2026-08-02, P8: the cadence a user chooses is measured in days, so the task only has to notice that a day has passed — hourly does that with no clock-time assumption about anybody's timezone, and a stuck run is visible sooner)* (pending recipients, every `reminder_every_days`, stop at expiry) · `sign_expirations` hourly · `trash_purge` daily (trashed >30 d) · `exports_purge` daily (>24 h) · **`guest_purge` hourly** (expired GuestSessions → hard-delete their documents, versions, thumbs and blobs; §21.4) · `version_retention_gc` weekly · `usage_recompute` daily 02:00.
+Django email → SMTP env (Mailpit in dev). HTML+text templates: sign invite, reminder, declined, completed (+links), email-verification. Beat: `sign_reminders` hourly *(amended 2026-08-02, P8: the cadence a user chooses is measured in days, so the task only has to notice that a day has passed — hourly does that with no clock-time assumption about anybody's timezone, and a stuck run is visible sooner)* (pending recipients, every `reminder_every_days`, stop at expiry) · `sign_expirations` hourly · `trash_purge` daily (trashed >30 d) · `exports_purge` daily (>24 h) · **`guest_purge` hourly** (expired GuestSessions → hard-delete their documents, versions, thumbs and blobs; §21.4) · `usage_recompute` daily 02:00 · **`job_params_purge` daily** (blank the *inputs* of terminal jobs older than 30 d — patterns, replacement text, page lists; the row, and so the user's history, stays) · **`jobs_purge` daily** (delete terminal job rows older than `JOB_RETENTION_DAYS`, after their `exports/{job_id}/` prefix and with the bytes refunded). *(`version_retention_gc` removed 2026-08-02 — see §14.)*
 
 ## 16. Tiers, quotas & throttles (defaults; enforced from phase 2B, tightened in phase 9)
 
@@ -333,7 +333,7 @@ GOTENBERG_URL=http://gotenberg:3000
 SIGNING_CERT_PATH=/certs/zenpdf-dev.p12   SIGNING_CERT_PASSWORD=devpass
 TSA_URL=            # empty ⇒ PAdES B-B in dev; set a public TSA for B-T
 # Limits (see §16 — per-tier values live in settings.TIERS; these are the "free" overrides)
-MAX_UPLOAD_MB=100  USER_STORAGE_QUOTA_MB=2048  MAX_PAGES=2000  VERSION_RETENTION=50
+MAX_UPLOAD_MB=100  USER_STORAGE_QUOTA_MB=2048  MAX_PAGES=2000
 SIGN_REQUESTS_PER_MONTH=30  OCR_PAGES_PER_MONTH=2000
 # Anonymous access (see §21)
 GUEST_ACCESS_ENABLED=true   GUEST_TTL_HOURS=24        GUEST_TTL_MAX_HOURS=72

@@ -211,6 +211,16 @@
                 }
               </div>
             }
+            <!-- Say so rather than letting the list look complete: the panel
+                 shows a window now, and a user with a long history should know
+                 the older ones exist rather than assume they were pruned. -->
+            @if (viewer.versionCount() > viewer.versions().length) {
+              <p class="mt-2 text-[11px] text-slate-500" data-test="version-window">
+                Showing the {{ viewer.versions().length }} most recent of
+                {{ viewer.versionCount() }}. Nothing is deleted — older versions
+                stay in the document.
+              </p>
+            }
           }
         </div>
       </aside>
