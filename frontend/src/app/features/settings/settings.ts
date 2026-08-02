@@ -182,6 +182,7 @@ import { ToastService } from '../../shared/toast.service';
 
         @if (deleting()) {
           <div class="mt-4 rounded-lg border border-rose-200 bg-rose-50 p-4"
+               role="group" aria-label="Confirm account deletion"
                data-test="delete-confirm">
             <p class="text-sm text-rose-900">
               This deletes your documents and cannot be undone. Signature

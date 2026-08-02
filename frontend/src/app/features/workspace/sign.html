@@ -108,7 +108,9 @@
 @if (padOpen()) {
   <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
        data-test="signature-dialog">
-    <div class="w-full max-w-lg rounded-xl bg-white p-5 shadow-xl">
+    <div class="w-full max-w-lg rounded-xl bg-white p-5 shadow-xl"
+         zenModal role="dialog" aria-modal="true" aria-label="Your signature"
+         (zenModalEscape)="padOpen.set(false)">
       <h3 class="mb-3 text-lg font-semibold text-slate-800">Your signature</h3>
       <app-signature-pad (chosen)="onSignature($event)" />
       @if (isAccount()) {

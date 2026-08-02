@@ -284,7 +284,9 @@
 @if (padFor(); as field) {
   <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
        data-test="ceremony-pad">
-    <div class="w-full max-w-lg rounded-xl bg-white p-5 shadow-xl">
+    <div class="w-full max-w-lg rounded-xl bg-white p-5 shadow-xl"
+         zenModal role="dialog" aria-modal="true" aria-label="Draw your signature"
+         (zenModalEscape)="padFor.set(null)">
       <h3 class="mb-3 text-lg font-semibold text-slate-800">
         {{ field.type === 'initials' ? 'Your initials' : 'Your signature' }}
       </h3>
@@ -300,7 +302,9 @@
 @if (reporting()) {
   <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
        data-test="report-dialog">
-    <div class="w-full max-w-sm rounded-xl bg-white p-5 shadow-xl">
+    <div class="w-full max-w-sm rounded-xl bg-white p-5 shadow-xl"
+         zenModal role="dialog" aria-modal="true" aria-label="Report this request"
+         (zenModalEscape)="reporting.set(false)">
       <h3 class="text-lg font-semibold text-slate-800">Report this request</h3>
       <p class="mt-1 text-sm text-slate-500">
         Tell us if you did not expect this document. Enough reports pause it,
@@ -331,7 +335,9 @@
 @if (declining()) {
   <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
        data-test="decline-dialog">
-    <div class="w-full max-w-sm rounded-xl bg-white p-5 shadow-xl">
+    <div class="w-full max-w-sm rounded-xl bg-white p-5 shadow-xl"
+         zenModal role="dialog" aria-modal="true" aria-label="Decline to sign"
+         (zenModalEscape)="declining.set(false)">
       <h3 class="text-lg font-semibold text-slate-800">Decline to sign</h3>
       <p class="mt-1 text-sm text-slate-500">
         This stops the whole request. Everyone who has already signed is told,

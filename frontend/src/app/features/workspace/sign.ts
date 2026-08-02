@@ -17,6 +17,7 @@ import { Job, SavedSignature } from '../../core/models/models';
 import { EsignService } from '../../core/services/esign.service';
 import { OverlayDraft, OverlayItem } from '../../shared/page-overlay/overlay-model';
 import { PageOverlay } from '../../shared/page-overlay/page-overlay';
+import { ZenModal } from '../../shared/modal.directive';
 import { SignaturePad } from '../../shared/signature-pad';
 import { ToastService } from '../../shared/toast.service';
 
@@ -31,7 +32,7 @@ import { ToastService } from '../../shared/toast.service';
 @Component({
   selector: 'app-sign',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [FormsModule, PageOverlay, SignaturePad],
+  imports: [FormsModule, PageOverlay, SignaturePad, ZenModal],
   templateUrl: './sign.html',
 })
 export class Sign {

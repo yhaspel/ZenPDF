@@ -17,6 +17,7 @@ import { DocumentsService } from '../../core/services/documents.service';
 import { GuestTokenService } from '../../core/services/guest-token.service';
 import { TokenService } from '../../core/services/token.service';
 import { ConfirmService } from '../../shared/confirm.service';
+import { ZenModal } from '../../shared/modal.directive';
 import { PdfThumbnail } from '../../shared/pdf-thumbnail';
 import { saveBlob } from '../../shared/save-blob';
 import { ToastService } from '../../shared/toast.service';
@@ -37,7 +38,7 @@ type Dialog = null | 'split' | 'scale' | 'nup' | 'compress' | 'insert';
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
     FormsModule, RouterLink, NgxExtendedPdfViewerModule, CdkDropList, CdkDrag, PdfThumbnail,
-    Annotate, Edit, Forms, Convert, Compare, Protect, Sign,
+    Annotate, Edit, Forms, Convert, Compare, Protect, Sign, ZenModal,
   ],
   templateUrl: './workspace.html',
 })

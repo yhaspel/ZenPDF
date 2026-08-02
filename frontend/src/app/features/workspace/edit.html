@@ -398,7 +398,8 @@
 </div>
 
 @if (linkDialog()) {
-  <div class="fixed inset-0 z-40 flex items-center justify-center bg-black/40" data-test="link-dialog">
+  <div class="fixed inset-0 z-40 flex items-center justify-center bg-black/40" data-test="link-dialog"
+       zenModal role="dialog" aria-modal="true" aria-label="Link">
     <div class="w-full max-w-sm rounded-xl bg-white p-6 shadow-xl">
       <h3 class="mb-3 text-lg font-semibold">Add a link</h3>
       <input [ngModel]="linkUri()" (ngModelChange)="linkUri.set($event)"

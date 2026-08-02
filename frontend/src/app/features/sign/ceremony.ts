@@ -4,6 +4,7 @@ import { ActivatedRoute, RouterLink } from '@angular/router';
 
 import { CeremonyMeta, SignFieldModel } from '../../core/models/models';
 import { EsignService } from '../../core/services/esign.service';
+import { ZenModal } from '../../shared/modal.directive';
 import { SignaturePad } from '../../shared/signature-pad';
 
 type Screen = 'loading' | 'consent' | 'sign' | 'wait' | 'done' | 'closed' | 'error';
@@ -19,7 +20,7 @@ type Screen = 'loading' | 'consent' | 'sign' | 'wait' | 'done' | 'closed' | 'err
 @Component({
   selector: 'app-ceremony',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [FormsModule, RouterLink, SignaturePad],
+  imports: [FormsModule, RouterLink, SignaturePad, ZenModal],
   templateUrl: './ceremony.html',
 })
 export class Ceremony {

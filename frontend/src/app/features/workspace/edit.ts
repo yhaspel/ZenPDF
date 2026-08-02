@@ -27,6 +27,7 @@ import {
   OverlayItem,
   OverlayTool,
 } from '../../shared/page-overlay/overlay-model';
+import { ZenModal } from '../../shared/modal.directive';
 import { PageOverlay } from '../../shared/page-overlay/page-overlay';
 import { ToastService } from '../../shared/toast.service';
 
@@ -78,7 +79,7 @@ const POSITIONS: StampPosition[] = [
 @Component({
   selector: 'app-edit',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [FormsModule, PageOverlay],
+  imports: [FormsModule, PageOverlay, ZenModal],
   templateUrl: './edit.html',
 })
 export class Edit {
