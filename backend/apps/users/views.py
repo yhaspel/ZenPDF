@@ -1,5 +1,5 @@
 from django.conf import settings
-from django.http import HttpResponseRedirect
+from django.http import HttpResponse, HttpResponseRedirect
 from django.utils import timezone
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import extend_schema
@@ -127,6 +127,56 @@ class MeView(generics.RetrieveUpdateAPIView):
     @extend_schema(tags=["users"])
     def patch(self, request, *args, **kwargs):
         return super().patch(request, *args, **kwargs)
+
+
+class ExportView(APIView):
+    """`GET /api/users/me/export/` — everything we hold, as a zip (§10.1).
+
+    Inline rather than a job: it is bounded by the account's own storage quota,
+    and a download that needs polling is a download most people abandon. The
+    privacy policy offers this, so it exists.
+    """
+
+    permission_classes = [IsAccount]
+
+    @extend_schema(responses=OpenApiTypes.BINARY, tags=["users"])
+    def get(self, request):
+        from .privacy import export_zip
+
+        data, filename = export_zip(request.user)
+        response = HttpResponse(data, content_type="application/zip")
+        response["Content-Disposition"] = f'attachment; filename="{filename}"'
+        return response
+
+
+class DeleteAccountView(APIView):
+    """`DELETE /api/users/me/delete/` — close the account and erase it (§10.1).
+
+    Requires the current password in the body. Not because the session is in
+    doubt, but because this is the one irreversible action in the product and a
+    borrowed laptop should not be enough to take somebody's library with it.
+
+    What survives is stated plainly in the response and in the privacy policy:
+    completed signature envelopes, which are the *other parties'* evidence of
+    an agreement, detached from the account that sent them.
+    """
+
+    permission_classes = [IsAccount]
+    throttle_classes = [AuthThrottle]
+
+    @extend_schema(request=OpenApiTypes.OBJECT, responses=OpenApiTypes.OBJECT,
+                   tags=["users"])
+    def delete(self, request):
+        password = str(request.data.get("password") or "")
+        if not request.user.check_password(password):
+            raise ValidationFailed(
+                "That password is not right. Deleting an account cannot be "
+                "undone, so we ask before doing it."
+            )
+        from .privacy import delete_account
+
+        removed = delete_account(request.user)
+        return Response({"deleted": True, **removed})
 
 
 class UsageView(APIView):

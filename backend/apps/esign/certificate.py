@@ -95,13 +95,15 @@ def build(sign_request) -> bytes:
         Spacer(1, 10),
     ]
 
-    sender = sign_request.owner
-    owner_name = (getattr(sender, "display_name", "") or "").strip() or sender.email
+    # The snapshot, not the FK: a certificate that cannot be printed once the
+    # sender closes their account is not a record (§10.1).
+    sender_email = sign_request.sender_address
+    owner_name = sign_request.sender_display_name or sender_email
     story += [
         Paragraph("Document", style["h2"]),
         _table([
             ["Title", sign_request.title],
-            ["Sent by", f"{owner_name} <{sender.email}>"],
+            ["Sent by", f"{owner_name} <{sender_email}>"],
             ["Sent", _fmt(sign_request.sent_at)],
             ["Completed", _fmt(sign_request.completed_at)],
             ["Fingerprint (SHA-256)", sign_request.final_sha256 or "—"],

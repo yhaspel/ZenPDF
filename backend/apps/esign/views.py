@@ -465,7 +465,13 @@ class SignRequestSendView(APIView):
         sign_request.source_version = version
         sign_request.status = SignRequest.Status.SENT
         sign_request.sent_at = timezone.now()
-        sign_request.save(update_fields=["source_version", "status", "sent_at"])
+        # Who sent it, as text. The certificate and the ceremony read this
+        # rather than the FK, so the record still prints after the account is
+        # closed — which is the whole point of keeping the envelope (§10.1).
+        sign_request.sender_email = request.user.email
+        sign_request.sender_name = (request.user.display_name or "").strip()
+        sign_request.save(update_fields=["source_version", "status", "sent_at",
+                                         "sender_email", "sender_name"])
 
         first = routing.next_to_notify(sign_request)
         mailed = emails.notify_recipients(sign_request, first)
@@ -632,7 +638,6 @@ class PublicSignDetailView(PublicSignBase):
             recipient.save(update_fields=["status"])
             record(sign_request, "opened", recipient=recipient, request=request)
 
-        owner = sign_request.owner
         version = sign_request.source_version
         return Response({
             "title": sign_request.title,
@@ -641,8 +646,8 @@ class PublicSignDetailView(PublicSignBase):
             "status": sign_request.status,
             "expires_at": sign_request.expires_at,
             "sender": {
-                "name": (getattr(owner, "display_name", "") or "").strip(),
-                "email": owner.email,
+                "name": sign_request.sender_display_name,
+                "email": sign_request.sender_address,
             },
             "me": {
                 "name": recipient.name,

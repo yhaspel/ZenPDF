@@ -97,10 +97,33 @@ class SignRequest(models.Model):
                        Status.DECLINED}
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    owner = models.ForeignKey("users.User", on_delete=models.CASCADE,
+    # Nullable, and `SET_NULL` rather than `CASCADE`: a completed envelope is
+    # the *counterparty's* evidence of an agreement, and it has to survive the
+    # sender closing their account (§10.1). What does not survive is the link
+    # to the account — see `users/privacy.py`.
+    owner = models.ForeignKey("users.User", on_delete=models.SET_NULL,
+                              null=True, blank=True,
                               related_name="sign_requests")
-    document = models.ForeignKey("documents.Document", on_delete=models.CASCADE,
+    document = models.ForeignKey("documents.Document", on_delete=models.SET_NULL,
+                                 null=True, blank=True,
                                  related_name="sign_requests")
+    # Who sent it, as text, captured at send. The certificate and the public
+    # ceremony read *this*, not the FK: a record that cannot be printed once
+    # the account is gone is not a record.
+    sender_email = models.EmailField(blank=True)
+    sender_name = models.CharField(max_length=200, blank=True)
+
+    @property
+    def sender_address(self) -> str:
+        """The snapshot, falling back to the account while one exists — a draft
+        has not been sent yet, so it has no snapshot."""
+        return self.sender_email or getattr(self.owner, "email", "")
+
+    @property
+    def sender_display_name(self) -> str:
+        name = (self.sender_name
+                or getattr(self.owner, "display_name", "") or "").strip()
+        return name
     # Frozen at send: later edits to the document must not change what a
     # recipient is asked to sign, and must not change what was signed.
     source_version = models.ForeignKey("documents.DocumentVersion",

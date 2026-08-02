@@ -1,6 +1,10 @@
 import { DatePipe } from '@angular/common';
+import { HttpClient } from '@angular/common/http';
 import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
+import { Router } from '@angular/router';
+
+import { environment } from '../../../environments/environment';
 
 import { AuthFacade } from '../../abstraction/auth.facade';
 import { DocumentsFacade } from '../../abstraction/documents.facade';
@@ -156,6 +160,53 @@ import { ToastService } from '../../shared/toast.service';
           </div>
         </div>
       }
+
+      <!-- The two things the privacy policy promises, reachable rather than
+           promised (§10.1). Deletion is the only irreversible action in the
+           product, so it asks for the password and says what survives. -->
+      <div class="mt-6 rounded-xl bg-white p-6 shadow-sm" data-test="privacy-settings">
+        <h2 class="mb-2 font-semibold text-slate-700">Your data</h2>
+        <p class="text-sm text-slate-500">
+          Take a copy of everything we hold, or close the account for good.
+        </p>
+        <div class="mt-3 flex flex-wrap gap-2">
+          <a class="rounded-lg border border-slate-300 px-3 py-1 text-sm"
+             [href]="exportUrl()" data-test="export-data">
+            Download my data
+          </a>
+          <button class="rounded-lg border border-rose-300 px-3 py-1 text-sm text-rose-700"
+                  (click)="deleting.set(true)" data-test="delete-account">
+            Delete my account
+          </button>
+        </div>
+
+        @if (deleting()) {
+          <div class="mt-4 rounded-lg border border-rose-200 bg-rose-50 p-4"
+               data-test="delete-confirm">
+            <p class="text-sm text-rose-900">
+              This deletes your documents and cannot be undone. Signature
+              envelopes other people have already signed are kept as their
+              record of the agreement — the privacy policy explains why.
+            </p>
+            <input type="password" name="confirm-password"
+                   [(ngModel)]="deletePassword" placeholder="Your password"
+                   class="mt-3 w-full max-w-xs rounded-lg border border-slate-300 px-3 py-2"
+                   data-test="delete-password" />
+            @if (deleteError(); as message) {
+              <p class="mt-2 text-sm text-rose-700" data-test="delete-error">{{ message }}</p>
+            }
+            <div class="mt-3 flex gap-2">
+              <button class="rounded-lg bg-rose-600 px-3 py-1 text-sm text-white disabled:opacity-50"
+                      [disabled]="!deletePassword || busyDeleting()"
+                      (click)="confirmDelete()" data-test="delete-confirm-yes">
+                Delete everything
+              </button>
+              <button class="rounded-lg px-3 py-1 text-sm text-slate-500"
+                      (click)="deleting.set(false)">Cancel</button>
+            </div>
+          </div>
+        }
+      </div>
     </div>
   `,
 })
@@ -165,6 +216,8 @@ export class Settings {
   protected consent = inject(ConsentService);
   private config = inject(ConfigService);
   private toast = inject(ToastService);
+  private http = inject(HttpClient);
+  private router = inject(Router);
   protected displayName = '';
 
   protected readonly adsEnabled = () => this.config.ads().enabled;
@@ -185,6 +238,39 @@ export class Settings {
     this.displayName = this.auth.user()?.display_name ?? '';
     this.docs.refreshUsage();
     this.loadJobs();
+  }
+
+  protected deleting = signal(false);
+  protected busyDeleting = signal(false);
+  protected deleteError = signal('');
+  protected deletePassword = '';
+
+  /** A plain link, not a fetch: the browser already knows how to save a file,
+   *  and the export can be tens of megabytes. */
+  protected exportUrl(): string {
+    return `${environment.apiUrl}/users/me/export/`;
+  }
+
+  protected confirmDelete(): void {
+    this.busyDeleting.set(true);
+    this.deleteError.set('');
+    this.http
+      .request('delete', `${environment.apiUrl}/users/me/delete/`, {
+        body: { password: this.deletePassword },
+      })
+      .subscribe({
+        next: () => {
+          this.busyDeleting.set(false);
+          this.auth.logout();
+          this.router.navigateByUrl('/');
+        },
+        error: (err) => {
+          this.busyDeleting.set(false);
+          this.deleteError.set(
+            err?.error?.error?.message || 'That did not work. Try again.',
+          );
+        },
+      });
   }
 
   protected setJobFilter(value: string): void {
