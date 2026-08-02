@@ -28,7 +28,10 @@ bug nobody owns.
 - [ ] `pip-audit` and `npm audit` reviewed — the monthly pass is
       `docs/ops/dependencies.md`.
 - [ ] `./infra/test.sh --pg` green (the index assertions are vacuous on the
-      hermetic suite's SQLite).
+      hermetic suite's SQLite). It creates a test database from the same
+      100-connection budget the running stack is using, so do not run it while
+      an e2e suite or a load run is in flight — the symptom is
+      `FATAL: sorry, too many clients already`, not a test failure.
 - [ ] Anything started under a compose profile is gone: `./infra/down.sh` then
       `docker compose ps -a` empty. A profiled container that survives teardown
       blocks the network removal.

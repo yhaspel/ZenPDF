@@ -253,7 +253,7 @@
                      role="button" tabindex="0" [attr.aria-pressed]="pages.isSelected(p)"
                      [attr.aria-label]="'Page ' + (p + 1)"
                      (click)="onThumbClick(p, $event)"
-                     (keydown.enter)="onThumbClick(p, $event)" (keydown.space)="onThumbClick(p, $event)"
+                     (keydown.enter)="onThumbClick(p, $event)" (keydown.space)="onThumbClick(p, $event); $event.preventDefault()"
                      data-test="organize-page">
                   <div class="aspect-[3/4] overflow-hidden">
                     <app-pdf-thumbnail [docId]="doc.id" [page]="p" [width]="240" [version]="viewer.currentSeq() ?? undefined" />

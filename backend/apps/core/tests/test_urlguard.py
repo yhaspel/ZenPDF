@@ -162,3 +162,19 @@ def test_a_trailing_dot_does_not_smuggle_an_internal_name():
     fully-qualified-name marker, not a different host."""
     with pytest.raises(InvalidParams, match="our own network"):
         check_url("http://api./")
+
+
+def test_carrier_grade_nat_and_the_deprecated_relay_are_refused():
+    """Found by testing rather than reasoning, which is why they are written
+    out: `100.64.0.0/10` is neither `is_private` nor `is_global`, so the six
+    flags all missed it — and `192.88.99.0/24` *is* `is_global`, so even
+    adding `not ip.is_global` would not have closed it."""
+    for url in ("http://100.64.1.1/", "http://192.88.99.1/",
+                "http://198.18.0.1/"):
+        with pytest.raises(InvalidParams):
+            check_url(url)
+
+
+def test_an_ordinary_public_address_still_passes():
+    """The guard is only useful if it is not simply a wall."""
+    assert check_url("https://example.com/report.html").startswith("https://")

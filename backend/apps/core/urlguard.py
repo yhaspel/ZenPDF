@@ -51,6 +51,21 @@ METADATA_HOSTS = frozenset({
 })
 
 
+#: Ranges that are neither `is_private` nor usefully covered by the other
+#: predicates, and that a hosting provider may well route internally.
+#: `100.64.0.0/10` is carrier-grade NAT — `is_private` is False and
+#: `is_global` is False, so the six flags below all miss it. `192.88.99.0/24`
+#: is the deprecated 6to4 relay anycast, where `is_global` is *True*, so even
+#: adding `not ip.is_global` would not have closed it. Written out rather than
+#: derived, because both were found by somebody testing rather than reasoning.
+EXTRA_FORBIDDEN_NETWORKS = (
+    ipaddress.ip_network("100.64.0.0/10"),      # RFC 6598 carrier-grade NAT
+    ipaddress.ip_network("192.88.99.0/24"),     # RFC 7526, deprecated 6to4
+    ipaddress.ip_network("198.18.0.0/15"),      # RFC 2544 benchmarking
+    ipaddress.ip_network("64:ff9b::/96"),       # RFC 6052 NAT64
+)
+
+
 def _is_forbidden_ip(ip: IPAddress) -> bool:
     """Everything that is not a public, routable address."""
     return bool(
@@ -61,6 +76,8 @@ def _is_forbidden_ip(ip: IPAddress) -> bool:
         or ip.is_reserved
         or ip.is_unspecified
         or getattr(ip, "is_site_local", False)
+        or any(ip in network for network in EXTRA_FORBIDDEN_NETWORKS
+               if ip.version == network.version)
     )
 
 

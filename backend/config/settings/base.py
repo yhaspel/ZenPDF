@@ -533,7 +533,15 @@ LOGGING: dict = {
         "console": {
             "class": "logging.StreamHandler",
             "filters": ["correlation"],
-            "formatter": config("LOG_FORMAT", default="json"),
+            # Anything other than the two we define raises `ValueError:
+            # Unable to configure handler 'console'` at import time — a typo in
+            # an environment variable taking the process down before it can say
+            # why.
+            "formatter": (
+                config("LOG_FORMAT", default="json")
+                if config("LOG_FORMAT", default="json") in ("json", "structured")
+                else "json"
+            ),
         },
     },
     "root": {"handlers": ["console"], "level": config("LOG_LEVEL", default="INFO")},

@@ -20,6 +20,16 @@ export class DocumentsFacade {
   private _usage = signal<Usage | null>(null);
 
   /**
+   * Which query the visible list belongs to.
+   *
+   * `load()` and `loadMore()` hold no subscription, so a filter change while a
+   * page is in flight used to append the *old* query's rows to the *new*
+   * query's list — fourteen documents that do not match the search, and a
+   * count from the query nobody is looking at any more.
+   */
+  private generation = 0;
+
+  /**
    * Rows the server has already handed us for the current filter.
    *
    * Tracked separately from `documents().length` because the optimistic
@@ -54,9 +64,11 @@ export class DocumentsFacade {
    *  which is what resets the window. */
   load(): void {
     this._loading.set(true);
+    const generation = ++this.generation;
     this.offset = 0;
     this.docsSvc.list({ ...this.params(), limit: PAGE_SIZE, offset: 0 }).subscribe({
       next: (page) => {
+        if (generation !== this.generation) return;
         this._documents.set(page.results);
         this.offset = page.results.length;
         this._total.set(page.count);
@@ -77,9 +89,16 @@ export class DocumentsFacade {
    */
   loadMore(): void {
     if (this._loading() || this._loadingMore() || !this._hasMore()) return;
+    const generation = this.generation;
     this._loadingMore.set(true);
     this.docsSvc.list({ ...this.params(), limit: PAGE_SIZE, offset: this.offset }).subscribe({
       next: (page) => {
+        if (generation !== this.generation) {
+          // The filter changed while this page was in flight. Dropping it is
+          // the whole point: appending would mix two queries' results.
+          this._loadingMore.set(false);
+          return;
+        }
         this.offset += page.results.length;
         this._total.set(page.count);
         this._hasMore.set(page.next !== null);
@@ -109,13 +128,26 @@ export class DocumentsFacade {
 
   rename(id: string, title: string): void {
     this.patchLocal(id, { title });
-    this.docsSvc.patch(id, { title }).subscribe({ error: () => this.load() });
+    this.docsSvc.patch(id, { title }).subscribe({
+      // Same reasoning as `toggleStar`: a rename that stops matching the
+      // active search drops the row out of the server's result set.
+      next: () => { if (this.q()) this.load(); },
+      error: () => this.load(),
+    });
   }
 
   toggleStar(doc: DocumentModel): void {
     const next = !doc.starred;
     this.patchLocal(doc.id, { starred: next });
-    this.docsSvc.patch(doc.id, { starred: next }).subscribe({ error: () => this.load() });
+    this.docsSvc.patch(doc.id, { starred: next }).subscribe({
+      // Un-starring inside the Starred filter removes the row from the
+      // *server's* result set too, so the window we have consumed is one
+      // shorter — and without reloading, "Load more" skips exactly that many
+      // documents while `next: null` turns the button off, reporting a
+      // complete list that is missing a document.
+      next: () => { if (this.starred() && !next) this.load(); },
+      error: () => this.load(),
+    });
   }
 
   move(id: string, folder: string | null): void {

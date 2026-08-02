@@ -18,7 +18,7 @@ actually broken".
 | [secrets.md](secrets.md) | where secrets live, and why `SECRET_KEY` is a one-way door |
 | [dependencies.md](dependencies.md) | the monthly engine-library patch pass |
 
-## The three commands worth knowing before you need them
+## The commands worth knowing before you need them
 
 ```bash
 # What are the hottest queries actually costing? (dev only — prod runs managed

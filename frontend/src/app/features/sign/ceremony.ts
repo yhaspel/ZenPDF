@@ -180,6 +180,7 @@ export class Ceremony {
           this.filled.update((map) => ({ ...map, [field.id]: true }));
           this.padFor.set(null);
           this.busy.set(false);
+          this.restoreFocusAfterField(field.id);
         },
         error: (err) => {
           this.busy.set(false);
@@ -304,6 +305,18 @@ export class Ceremony {
   protected notice = signal('');
   /** A failure *inside* the report dialog, where the person can see it. */
   protected reportError = signal('');
+
+  /** After a signature is applied the field's button is replaced by a "done"
+   *  line, so focus falls to `<body>`. Put it on the control that replaced it,
+   *  so the next Tab continues from where the person was. */
+  private restoreFocusAfterField(fieldId: string): void {
+    setTimeout(() => {
+      const next = document.querySelector<HTMLElement>(
+        `[data-test="change-${fieldId}"]`);
+      (next ?? document.querySelector<HTMLElement>('[data-test=sign-heading]'))
+        ?.focus();
+    });
+  }
 
   protected downloadUrl(what: 'final' | 'certificate'): string {
     return this.esign.recipientDownloadUrl(this.token(), what);

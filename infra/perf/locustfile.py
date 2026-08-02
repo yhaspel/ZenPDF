@@ -74,7 +74,21 @@ def _login_once(environment, **_):
         _access_token = None
         print(f"[perf] login error: {exc}")
     if _access_token is None:
-        print("[perf] login failed — the signed-in scenario will not run")
+        # Not a warning: half the scenario cannot run, so the numbers would be
+        # a guest-only measurement wearing the label of a full one.
+        _abort(environment,
+               f"could not log in as {EMAIL}. The signed-in half of the "
+               f"scenario — five of the seven measured endpoints — cannot "
+               f"run, so this would not be the §10.2 measurement.")
+
+
+def _abort(environment, why: str) -> None:
+    """Stop the run and make sure the verdict says why rather than pretending."""
+    global _aborted
+    _aborted = why
+    print(f"[perf] ABORT — {why}")
+    if environment.runner is not None:
+        environment.runner.quit()
 
 
 def _get(client, path, name, headers):
@@ -110,7 +124,11 @@ class GuestVisitor(HttpUser):
                 r.success()
             else:
                 r.failure(f"no guest token (HTTP {r.status_code})")
-                self.environment.runner.quit()
+                _abort(self.environment,
+                       f"the API stopped issuing guest sessions "
+                       f"(HTTP {r.status_code}). On the dev stack this is "
+                       f"usually Postgres' connection ceiling — see "
+                       f"infra/perf/README.md.")
                 return
         # One real job so the poll below polls something. The endpoint is
         # DEBUG-only (`jobs/views.py`), so on a deployed host this 404s and the
@@ -193,10 +211,27 @@ class SignedInUser(HttpUser):
              "GET /api/users/me/usage/", self.headers)
 
 
+#: Set when something aborts the run early. A verdict computed over the five
+#: seconds before an abort is not a verdict, and printing it as one is how a
+#: green CI step comes to mean nothing.
+_aborted = ""
+
+
 @events.quitting.add_listener
 def _verdict(environment, **_):
     """Print the §10.2 verdict and set the exit code, so this is CI-able."""
     failed = []
+    if _aborted:
+        print(f"\n== §10.2 load smoke: NO RESULT ==\n  {_aborted}\n"
+              "  No budget is reported, because a measurement that stopped "
+              "early is not a measurement.")
+        environment.process_exit_code = 1
+        return
+    if not environment.stats.total.num_requests:
+        print("\n== §10.2 load smoke: NO RESULT ==\n  The run made no "
+              "requests at all. Check the login above and the --host.")
+        environment.process_exit_code = 1
+        return
     print(f"\n== §10.2 metadata budget (p95 <= {BUDGET_MS} ms) ==")
     for name in METADATA:
         entry = environment.stats.get(name, "GET")

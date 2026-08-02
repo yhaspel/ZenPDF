@@ -29,7 +29,7 @@ echo "======================================================"
 echo " Frontend lint (eslint via ng lint)"
 echo "======================================================"
 # A static template linter reaches every branch; axe can only see rendered DOM.
-# That difference is why this found nine unlabelled controls behind panel tabs
+# That difference is why this found twelve unlabelled controls behind panel tabs
 # the phase-10 a11y sweep never opened.
 docker compose run --rm -T --no-deps web npx ng lint
 

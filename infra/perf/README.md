@@ -4,17 +4,49 @@ One command, and a number the deployed host still owes you.
 
 ```bash
 # 1. Relax the throttles for the run only — see the locustfile docstring for
-#    why turning them off beats raising them.
-sed -i '' 's/^THROTTLES_DISABLED=.*/THROTTLES_DISABLED=true/' infra/.env
+#    why turning them off beats raising them. `grep -q` first, because an
+#    `infra/.env` created before this existed has no such line and a bare
+#    `sed` would silently match nothing.
+grep -q '^THROTTLES_DISABLED=' infra/.env || echo 'THROTTLES_DISABLED=false' >> infra/.env
+python3 - <<'EOF'
+import pathlib, re
+p = pathlib.Path('infra/.env')
+p.write_text(re.sub(r'^THROTTLES_DISABLED=.*$', 'THROTTLES_DISABLED=true',
+                    p.read_text(), flags=re.M))
+EOF
 docker compose -f infra/docker-compose.yml up -d api
 
-# 2. Run it. 200 users, 3 minutes, from inside the network.
-docker compose -f infra/docker-compose.yml --profile perf run --rm perf
+# 2. Run it. Start at 50 users on a laptop — see "the dev stack's ceiling".
+docker compose -f infra/docker-compose.yml --profile perf run --rm perf \
+  -f /mnt/locust/locustfile.py --host http://api:8000 \
+  --headless --users 50 --spawn-rate 10 --run-time 2m
 
 # 3. Put them back. This is not optional.
-sed -i '' 's/^THROTTLES_DISABLED=.*/THROTTLES_DISABLED=false/' infra/.env
+python3 - <<'EOF'
+import pathlib, re
+p = pathlib.Path('infra/.env')
+p.write_text(re.sub(r'^THROTTLES_DISABLED=.*$', 'THROTTLES_DISABLED=false',
+                    p.read_text(), flags=re.M))
+EOF
 docker compose -f infra/docker-compose.yml up -d api
 ```
+
+(Python rather than `sed -i`, because the in-place flag differs between BSD
+and GNU and the BSD form eats the script argument on Linux.)
+
+## The dev stack's ceiling — read this before believing a failure
+
+The compose `api` service runs `manage.py runserver`, which is one thread per
+live connection, and `CONN_MAX_AGE=600` gives each thread its own Postgres
+backend against `max_connections=100`. At 200 users the *database* runs out of
+connections before the API runs out of anything interesting, `/api/health/`
+starts reporting `db: false`, and what you have measured is the ceiling rather
+than the product. The connections drain by themselves within a minute or so.
+
+So: **50 users on the dev stack**, and 200 only against a deployment running
+gunicorn, which is what the number is for. A run that aborts now says so and
+exits non-zero rather than printing a five-second verdict as if it were three
+minutes.
 
 The run prints a verdict per endpoint against the 150 ms p95 budget and exits
 non-zero if any exceeded it **or** if anything was throttled — a p95 computed

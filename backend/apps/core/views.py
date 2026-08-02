@@ -94,7 +94,16 @@ class ClientErrorView(APIView):
 
 
 def _clip(value, limit: int) -> str:
-    return str(value or "").strip()[:limit]
+    """Trimmed **and** stripped of control characters.
+
+    This endpoint is unauthenticated and its fields reach a log line, so a
+    newline in the message is a forged log entry — the rule this project
+    already applies to the inbound request id, for a much smaller field. In
+    production the JSON formatter escapes them anyway; `logs.sh` uses the text
+    one, and that is where somebody reads.
+    """
+    text = str(value or "").strip()[:limit]
+    return "".join(ch if ch.isprintable() else " " for ch in text)
 
 
 class AdsTxtView(APIView):
