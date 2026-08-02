@@ -39,6 +39,8 @@ describe('tool pages', () => {
     'protect-pdf',
     'unlock-pdf',
     'redact-pdf',
+    // Phase 8
+    'sign-pdf',
   ];
 
   it('ships exactly the slugs its phases have shipped', () => {

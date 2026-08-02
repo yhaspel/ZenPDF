@@ -506,3 +506,136 @@ export interface PageRange {
   pages?: number[];
   skip_first?: boolean;
 }
+
+// --------------------------------------------------------------------------- //
+// Phase 8 — e-signatures
+// --------------------------------------------------------------------------- //
+export type SignatureKind = 'signature' | 'initials';
+export type SignatureMethod = 'draw' | 'type' | 'upload';
+
+export interface SavedSignature {
+  id: string;
+  kind: SignatureKind;
+  method: SignatureMethod;
+  typed_text: string;
+  font: string;
+  is_default: boolean;
+  created_at: string;
+}
+
+export type RecipientRole = 'signer' | 'approver' | 'viewer' | 'cc';
+export type RecipientStatus =
+  | 'pending' | 'notified' | 'viewed' | 'consented' | 'completed' | 'declined';
+
+export interface SignRecipient {
+  id: string;
+  email: string;
+  name: string;
+  role: RecipientRole;
+  order: number;
+  status: RecipientStatus;
+  completed_at: string | null;
+  last_notified_at: string | null;
+  decline_reason: string;
+}
+
+export type SignFieldType =
+  | 'signature' | 'initials' | 'date_signed' | 'text' | 'checkbox';
+
+export interface SignFieldModel {
+  id: string;
+  recipient_id: string;
+  page: number;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  type: SignFieldType;
+  required: boolean;
+  label: string;
+  filled?: boolean;
+  value?: string;
+}
+
+export type SignRequestStatus =
+  | 'draft' | 'sent' | 'completed' | 'declined' | 'expired' | 'canceled';
+
+export interface SignRequestModel {
+  id: string;
+  document: string;
+  document_title: string;
+  title: string;
+  message: string;
+  status: SignRequestStatus;
+  envelope_code: string;
+  expires_at: string | null;
+  reminder_every_days: number;
+  sent_at: string | null;
+  completed_at: string | null;
+  final_sha256: string;
+  created_at: string;
+  recipients: SignRecipient[];
+  fields_: SignFieldModel[];
+  page_count: number;
+}
+
+/** What a recipient sees at `/s/:token` — never another recipient's fields. */
+export interface CeremonyMeta {
+  title: string;
+  message: string;
+  envelope_code: string;
+  status: SignRequestStatus;
+  expires_at: string | null;
+  sender: { name: string; email: string };
+  me: {
+    name: string;
+    email: string;
+    role: RecipientRole;
+    status: RecipientStatus;
+    consented: boolean;
+    needs_consent: boolean;
+    my_turn: boolean;
+  };
+  page_count: number;
+  fields: SignFieldModel[];
+  disclosure_version: string;
+}
+
+export interface AuditEventModel {
+  id: string;
+  type: string;
+  created_at: string;
+  ip: string | null;
+  user_agent: string;
+  metadata: Record<string, unknown>;
+  recipient_email: string;
+  event_hash: string;
+}
+
+export interface SignatureReport {
+  field: string;
+  signer: string;
+  intact: boolean;
+  valid: boolean;
+  coverage: string;
+  whole_document: boolean;
+  signing_time: string | null;
+  timestamp: boolean;
+  trusted: boolean;
+  reason: string;
+  error?: string;
+}
+
+export interface VerifyReport {
+  sealed: boolean;
+  integrity: 'intact' | 'modified' | 'unsigned';
+  signatures: SignatureReport[];
+  envelope_match: {
+    found_code: string | null;
+    known: boolean;
+    sha256_match: boolean;
+    completed_at?: string;
+    signers?: { name: string; email: string; role: string;
+                completed_at: string | null }[];
+  };
+}

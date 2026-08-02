@@ -10,6 +10,16 @@ import { TokenService } from '../services/token.service';
 
 export const GUEST_HEADER = 'X-Guest-Token';
 
+/**
+ * The signing ceremony and the verification page carry **no** credential
+ * (phase-08): the token in the URL is the whole capability, and attaching this
+ * browser's account or guest token would tie a stranger's signing session to
+ * it — and mint a guest session for somebody who only came to sign a PDF.
+ */
+function isCredentialFree(url: string): boolean {
+  return url.includes('/public/sign/') || url.includes('/verify/');
+}
+
 function isAuthEndpoint(url: string): boolean {
   return (
     url.includes('/auth/login') ||
@@ -38,6 +48,9 @@ export const authInterceptor: HttpInterceptorFn = (req, next) => {
   // Auth endpoints carry the guest token *deliberately*: register and login
   // claim that session inline on success (§21.5). They never carry the JWT.
   let outgoing = req;
+  if (isCredentialFree(req.url)) {
+    return next(req);
+  }
   if (isAuthEndpoint(req.url)) {
     if (guestToken) {
       outgoing = req.clone({ setHeaders: { [GUEST_HEADER]: guestToken } });

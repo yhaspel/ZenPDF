@@ -21,5 +21,10 @@ export const serverRoutes: ServerRoute[] = [
   { path: 'auth/login', renderMode: RenderMode.Client },
   { path: 'auth/register', renderMode: RenderMode.Client },
   { path: 'app/**', renderMode: RenderMode.Client },
+  // Client-rendered, deliberately: the ceremony must never be cached by a CDN
+  // (one recipient's page served to another would be a disclosure), and both
+  // pages are worthless to a search engine.
+  { path: 's/:token', renderMode: RenderMode.Client },
+  { path: 'verify', renderMode: RenderMode.Client },
   { path: '**', renderMode: RenderMode.Client },
 ];

@@ -24,3 +24,9 @@ SPECTACULAR_SETTINGS["SERVE_INCLUDE_SCHEMA"] = False  # noqa: F405
 REST_FRAMEWORK["DEFAULT_THROTTLE_RATES"]["auth"] = config(  # noqa: F405
     "THROTTLE_AUTH", default="200/min",
 )
+# Same reasoning for the signing ceremony: 20/min is right for one stranger
+# signing one document, and wrong for an e2e run that plays every signer from
+# one address (phase-08).
+REST_FRAMEWORK["DEFAULT_THROTTLE_RATES"]["public_sign"] = config(  # noqa: F405
+    "THROTTLE_PUBLIC_SIGN", default="200/min",
+)

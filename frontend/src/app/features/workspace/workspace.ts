@@ -26,6 +26,7 @@ import { Convert } from './convert';
 import { Edit } from './edit';
 import { Forms } from './forms';
 import { Protect, ProtectTab } from './protect';
+import { Sign } from './sign';
 
 // `crop` left the dialog list in Phase 3: it is now drawn on the overlay
 // (Human review queue, 2026-07-19 — "revisit crop to use it then").
@@ -36,7 +37,7 @@ type Dialog = null | 'split' | 'scale' | 'nup' | 'compress' | 'insert';
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
     FormsModule, RouterLink, NgxExtendedPdfViewerModule, CdkDropList, CdkDrag, PdfThumbnail,
-    Annotate, Edit, Forms, Convert, Compare, Protect,
+    Annotate, Edit, Forms, Convert, Compare, Protect, Sign,
   ],
   templateUrl: './workspace.html',
 })
@@ -58,7 +59,8 @@ export class Workspace {
 
   protected leftTab = signal<'thumbs' | 'outline' | 'history'>('thumbs');
   protected mode = signal<
-    'view' | 'organize' | 'annotate' | 'edit' | 'forms' | 'convert' | 'compare' | 'protect'
+    'view' | 'organize' | 'annotate' | 'edit' | 'forms' | 'convert' | 'compare'
+    | 'protect' | 'sign'
   >('view');
   protected annotateTool = signal<AnnotateTool>('select');
   protected protectTab = signal<ProtectTab>('protect');
@@ -142,7 +144,8 @@ export class Workspace {
     this.route.queryParamMap.pipe(takeUntilDestroyed()).subscribe((params) => {
       const mode = params.get('mode');
       if (mode === 'annotate' || mode === 'edit' || mode === 'forms'
-          || mode === 'convert' || mode === 'compare' || mode === 'protect') {
+          || mode === 'convert' || mode === 'compare' || mode === 'protect'
+          || mode === 'sign') {
         this.mode.set(mode);
       }
       // `/redact-pdf` and `/unlock-pdf` land on the same mode but on a
@@ -406,6 +409,11 @@ export class Workspace {
 
   /** Protect/redact/sanitize produced a new version. */
   onProtectSaved(): void {
+    this.viewer.reload();
+  }
+
+  /** Self-sign produced a new version. */
+  onSigned(): void {
     this.viewer.reload();
   }
 
