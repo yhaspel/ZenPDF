@@ -75,9 +75,14 @@ class Document(models.Model):
     class Meta:
         ordering = ["-updated_at"]
         indexes = [
-            models.Index(fields=["owner", "trashed_at"]),
+            # The library list is `owned_by(...)` + "hide trashed" + newest
+            # first, and without `updated_at` in the index that last part is a
+            # sort of every row the first two matched (§10.2 EXPLAIN audit).
+            models.Index(fields=["owner", "trashed_at", "-updated_at"],
+                         name="doc_owner_trash_updated"),
+            models.Index(fields=["guest_session", "trashed_at", "-updated_at"],
+                         name="doc_guest_trash_updated"),
             models.Index(fields=["owner", "starred"]),
-            models.Index(fields=["guest_session", "trashed_at"]),
         ]
         constraints = [
             models.CheckConstraint(

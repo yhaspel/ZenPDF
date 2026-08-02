@@ -313,6 +313,10 @@ class AuditEvent(models.Model):
 
     class Meta:
         ordering = ("created_at", "id")
+        # Every append reads the tail of this chain, and the certificate reads
+        # all of it in order — both are this index (§10.2).
+        indexes = [models.Index(fields=["sign_request", "created_at"],
+                                name="audit_request_created")]
 
     def payload(self) -> dict:
         """Exactly what the hash covers. Canonical JSON: sorted keys, no
