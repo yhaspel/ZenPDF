@@ -370,6 +370,104 @@ def make_corrupt():
         fh.write(truncated)
 
 
+# --------------------------------------------------------------------------- #
+# Hostile corpus (phase-10 §10.1). Small files that are *shaped* like an attack
+# rather than large ones that are slow to run — the point is that the guard
+# fires, and a 1 GB fixture in git would be its own kind of harm.
+# --------------------------------------------------------------------------- #
+def make_page_bomb():
+    """A page tree that points at itself.
+
+    `/Count` claims a million pages and `/Kids` is a cycle, so anything that
+    walks the tree naively either allocates a million page objects or never
+    terminates. What we assert is that our reader refuses or counts honestly —
+    never that it "handles" it by hanging.
+    """
+    pdf = pikepdf.Pdf.new()
+    pdf.add_blank_page(page_size=(200, 200))
+    pages = pdf.Root.Pages
+    pages.Count = 1000000
+    node = pikepdf.Dictionary(Type=pikepdf.Name.Pages, Count=500000, Kids=[])
+    ref = pdf.make_indirect(node)
+    node.Kids = pikepdf.Array([ref])          # …a child that is its own parent
+    node.Parent = ref
+    pages.Kids.append(ref)
+    pdf.save(os.path.join(OUT, "page-bomb.pdf"))
+
+
+def make_deep_outline():
+    """An outline nested ten thousand deep.
+
+    Bookmarks are metadata we read at ingest and hand to the client. A tree
+    this shape is a stack overflow in anything that walks it recursively, and a
+    payload the size of the document in anything that does not cap it.
+    """
+    pdf = pikepdf.Pdf.new()
+    pdf.add_blank_page(page_size=(200, 200))
+    page = pdf.pages[0].obj
+
+    root = pdf.make_indirect(pikepdf.Dictionary(Type=pikepdf.Name.Outlines,
+                                                Count=1))
+    parent = root
+    first = None
+    for depth in range(10000):
+        item = pdf.make_indirect(pikepdf.Dictionary(
+            Title=pikepdf.String(f"level {depth}"),
+            Parent=parent,
+            Dest=pikepdf.Array([page, pikepdf.Name.Fit]),
+            Count=1,
+        ))
+        parent.First = item
+        parent.Last = item
+        if first is None:
+            first = item
+        parent = item
+    pdf.Root.Outlines = root
+    pdf.save(os.path.join(OUT, "deep-outline.pdf"))
+
+
+def make_stream_bomb():
+    """Eighty megabytes of nothing, deflated to a few kilobytes.
+
+    The classic decompression bomb, at a size that is honest about the shape
+    without being cruel to a laptop. Anything that inflates every stream it
+    meets — a sanitizer, a text extractor — pays the full price.
+    """
+    import zlib
+
+    payload = zlib.compress(b"0" * (80 * 1024 * 1024), 9)
+    pdf = pikepdf.Pdf.new()
+    pdf.add_blank_page(page_size=(200, 200))
+    stream = pikepdf.Stream(pdf, payload)
+    stream.Filter = pikepdf.Name.FlateDecode
+    stream.Type = pikepdf.Name.EmbeddedFile
+    pdf.Root.ZenBomb = pdf.make_indirect(stream)
+    pdf.save(os.path.join(OUT, "stream-bomb.pdf"))
+
+
+def make_zip_bomb_docx():
+    """A .docx (which is a zip) whose declared contents are a gigabyte.
+
+    Office import hands the file to LibreOffice; the central directory says how
+    big it claims to be *before* anything unpacks it, which is exactly the
+    moment to refuse.
+    """
+    import zipfile
+
+    path = os.path.join(OUT, "zip-bomb.docx")
+    with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr("[Content_Types].xml", "<Types/>")
+        archive.writestr("word/document.xml", b"0" * (1024 * 1024 * 1024))
+    print("  zip-bomb.docx", os.path.getsize(path), "bytes")
+
+
+def make_malformed_tiff():
+    """A TIFF header with a garbage IFD offset — decoders differ wildly on it."""
+    path = os.path.join(IMAGES, "malformed.tiff")
+    with open(path, "wb") as handle:
+        handle.write(b"II*\x00" + b"\xff\xff\xff\x7f" + os.urandom(512))
+
+
 if __name__ == "__main__":
     make_text()
     make_unicode()
@@ -388,6 +486,11 @@ if __name__ == "__main__":
     make_hebrew()
     make_xfa()
     make_corrupt()
+    make_page_bomb()
+    make_deep_outline()
+    make_stream_bomb()
+    make_zip_bomb_docx()
+    make_malformed_tiff()
     print("Fixtures written to", OUT)
     for name in sorted(os.listdir(OUT)):
         if name.endswith(".pdf"):

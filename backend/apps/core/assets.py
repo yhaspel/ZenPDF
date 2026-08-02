@@ -205,7 +205,11 @@ def source_key(principal, ref: str, extension: str) -> str:
 
 def store_source(principal, data: bytes, filename: str) -> dict:
     """Park a file that is about to be converted to PDF. Returns the wire shape."""
-    from apps.pdf_engine.engine.convert import extension_of, kind_of
+    from apps.pdf_engine.engine.convert import (
+        check_archive,
+        extension_of,
+        kind_of,
+    )
     from apps.pdf_engine.storage import get_storage
 
     from . import limits as L
@@ -214,6 +218,9 @@ def store_source(principal, data: bytes, filename: str) -> dict:
     # `.exe` never reaches storage, let alone LibreOffice.
     kind_of(filename)
     extension = extension_of(filename)
+    # Before storage, and long before LibreOffice: a .docx is a zip, and its
+    # central directory says how big it claims to unpack to (§10.1).
+    check_archive(data, filename)
 
     tier = L.for_principal(principal)
     if len(data) > tier.max_upload_bytes:

@@ -69,6 +69,40 @@ def kind_of(filename: str) -> str:
     )
 
 
+# A modern office file is a zip, and a zip states how big it claims to be in
+# its central directory — *before* anything unpacks it. That is the moment to
+# refuse: past it, the file is LibreOffice's problem and LibreOffice will try.
+# Both a ceiling and a ratio, because 200 MB of genuine spreadsheet is possible
+# and 1000:1 compression of it is not (phase-10 §10.1).
+MAX_ARCHIVE_UNCOMPRESSED_BYTES = 512 * 1024 * 1024
+MAX_ARCHIVE_RATIO = 200
+
+
+def check_archive(data: bytes, filename: str) -> None:
+    """Refuse a zip-based upload whose declared contents are a bomb."""
+    if not data[:2] == b"PK":
+        return  # .doc, .rtf, .txt, .csv — not a container
+    try:
+        with zipfile.ZipFile(io.BytesIO(data)) as archive:
+            entries = archive.infolist()
+    except zipfile.BadZipFile as exc:
+        raise UnsupportedFileError(
+            f"'{filename}' is damaged and could not be opened."
+        ) from exc
+
+    declared = sum(entry.file_size for entry in entries)
+    if declared > MAX_ARCHIVE_UNCOMPRESSED_BYTES:
+        raise UnsupportedFileError(
+            f"'{filename}' unpacks to {declared // (1024 * 1024)} MB, which is "
+            "more than we will convert."
+        )
+    if len(data) and declared / max(len(data), 1) > MAX_ARCHIVE_RATIO:
+        raise UnsupportedFileError(
+            f"'{filename}' is compressed far beyond what a document normally "
+            "is, so we have not opened it."
+        )
+
+
 def check_renderable(page, zoom: float) -> None:
     """Refuse a page that would allocate an unreasonable pixmap.
 
