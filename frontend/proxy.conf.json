@@ -3,5 +3,13 @@
     "target": "http://api:8000",
     "secure": false,
     "changeOrigin": true
+  },
+  "/ads.txt": {
+    "target": "http://api:8000",
+    "secure": false,
+    "changeOrigin": true,
+    "pathRewrite": {
+      "^/ads.txt": "/api/ads.txt"
+    }
   }
 }

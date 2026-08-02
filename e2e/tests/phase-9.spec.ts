@@ -94,7 +94,7 @@ test('phase 9: the legal pages are live, linked, and quote the real numbers', as
   // constant the *prerendered* copy is built from, and what the page shows.
   const config = await (await page.request.get('/api/config/')).json();
   const source = readFileSync(
-    new URL('../../frontend/src/app/core/retention.ts', import.meta.url),
+    path.resolve(__dirname, '../../frontend/src/app/core/retention.ts'),
     'utf8',
   );
   const stated = (key: string) => Number(new RegExp(`${key}: (\\d+)`).exec(source)![1]);
@@ -180,9 +180,17 @@ test('phase 9: an unverified account is told why it cannot send yet', async ({
   await page.click('[data-test=to-review]');
   await page.click('[data-test=send-request]');
 
-  // Refused, and the message says what to do about it — not a bare 403.
-  await expect(page.locator('[data-test=toast-error]')).toContainText(
-    'Confirm your email', { timeout: 60_000 });
+  // Refused *where it happens*, with the way out attached: a toast that fades
+  // takes the only next step with it, and everything they built is still here.
+  const gate = page.locator('[data-test=verify-gate]');
+  await expect(gate).toContainText('Confirm your email', { timeout: 60_000 });
+  await expect(page.locator('[data-test=review-recipient]').first()).toBeVisible();
+  await page.click('[data-test=verify-gate-resend]');
+  // Either answer is the right one, and both are honest: the link is on its
+  // way, or one was sent moments ago at signup and the cooldown says so.
+  await expect(gate).toContainText(/check your inbox|just sent one/i, {
+    timeout: 30_000,
+  });
 });
 
 test('phase 9: the usage panel shows real numbers after a metered run', async ({
@@ -203,8 +211,9 @@ test('phase 9: the usage panel shows real numbers after a metered run', async ({
     timeout: 60_000,
   });
   await page.click('[data-test=ocr-run]');
-  await expect(page.locator('[data-test=toast-success]')).toContainText(
-    'Text recognised', { timeout: 180_000 });
+  await expect(
+    page.locator('[data-test=toast-success]').filter({ hasText: 'Text recognised' }),
+  ).toBeVisible({ timeout: 180_000 });
 
   await page.goto('/app/settings');
   await expect(page.locator('[data-test=usage-table]')).toBeVisible();
