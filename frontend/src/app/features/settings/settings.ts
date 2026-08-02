@@ -1,6 +1,13 @@
 import { DatePipe } from '@angular/common';
 import { HttpClient } from '@angular/common/http';
-import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  ElementRef,
+  inject,
+  signal,
+  viewChild,
+} from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 
@@ -177,7 +184,7 @@ import { ToastService } from '../../shared/toast.service';
             {{ exporting() ? 'Preparing…' : 'Download my data' }}
           </button>
           <button class="rounded-lg border border-rose-300 px-3 py-1 text-sm text-rose-700"
-                  (click)="deleting.set(true)" data-test="delete-account">
+                  (click)="openDelete()" data-test="delete-account">
             Delete my account
           </button>
         </div>
@@ -191,14 +198,25 @@ import { ToastService } from '../../shared/toast.service';
               envelopes other people have already signed are kept as their
               record of the agreement — the privacy policy explains why.
             </p>
-            <input type="password" name="confirm-password"
-                   aria-label="Your password, to confirm deletion"
+            <label for="delete-password"
+                   class="mt-3 block text-sm font-medium text-slate-700">
+              Your password, to confirm
+            </label>
+            <input id="delete-password" type="password" name="confirm-password"
+                   #deletePasswordInput
                    [(ngModel)]="deletePassword" placeholder="Your password"
-                   class="mt-3 w-full max-w-xs rounded-lg border border-slate-300 px-3 py-2"
+                   [attr.aria-invalid]="deleteError() ? 'true' : null"
+                   aria-describedby="delete-error"
+                   class="mt-1 w-full max-w-xs rounded-lg border border-slate-300 px-3 py-2"
                    data-test="delete-password" />
-            @if (deleteError(); as message) {
-              <p class="mt-2 text-sm text-rose-700" data-test="delete-error">{{ message }}</p>
-            }
+            <!-- Assertive, and always present: a message that only appears
+                 when it is needed is a message a screen reader never
+                 announces, and this one is the difference between "wrong
+                 password" and "nothing happened". -->
+            <p id="delete-error" role="alert"
+               class="mt-2 text-sm text-rose-700" data-test="delete-error">
+              {{ deleteError() }}
+            </p>
             <div class="mt-3 flex gap-2">
               <button class="rounded-lg bg-rose-700 px-3 py-1 text-sm text-white disabled:opacity-50"
                       [disabled]="!deletePassword || busyDeleting()"
@@ -272,6 +290,16 @@ export class Settings {
           this.toast.error('Could not prepare that just now.');
         },
       });
+  }
+
+  private deletePasswordInput =
+    viewChild<ElementRef<HTMLInputElement>>('deletePasswordInput');
+
+  /** Opening the panel puts the cursor where the work is. Without this, a
+   *  keyboard user tabs from the button through everything below it. */
+  protected openDelete(): void {
+    this.deleting.set(true);
+    setTimeout(() => this.deletePasswordInput()?.nativeElement.focus());
   }
 
   protected confirmDelete(): void {

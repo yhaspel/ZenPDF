@@ -46,7 +46,10 @@ def test_export_is_a_zip_of_the_documents_and_a_manifest(api, uploaded_doc):
     assert resp["Content-Type"] == "application/zip"
     assert "attachment" in resp["Content-Disposition"]
 
-    with zipfile.ZipFile(io.BytesIO(resp.content)) as archive:
+    # Streamed from a temp file that is unlinked as it goes, so the bytes come
+    # from `streaming_content` rather than `.content`.
+    content = b"".join(resp.streaming_content)
+    with zipfile.ZipFile(io.BytesIO(content)) as archive:
         names = archive.namelist()
         manifest = json.loads(archive.read("manifest.json"))
         assert any(name.startswith("documents/") for name in names), names
@@ -54,7 +57,7 @@ def test_export_is_a_zip_of_the_documents_and_a_manifest(api, uploaded_doc):
     assert manifest["documents"][0]["title"] == uploaded_doc["title"]
     assert manifest["account"]["email"]
     # The file in the zip is the real PDF, not a placeholder.
-    with zipfile.ZipFile(io.BytesIO(resp.content)) as archive:
+    with zipfile.ZipFile(io.BytesIO(content)) as archive:
         pdf = archive.read(manifest["documents"][0]["file"])
     assert pdf.startswith(b"%PDF-")
 
@@ -73,7 +76,8 @@ def test_two_documents_with_the_same_title_are_two_files(api, fixture_bytes):
                                              content_type="application/pdf")},
                  format="multipart")
     resp = api.get("/api/users/me/export/")
-    with zipfile.ZipFile(io.BytesIO(resp.content)) as archive:
+    content = b"".join(resp.streaming_content)
+    with zipfile.ZipFile(io.BytesIO(content)) as archive:
         documents = [n for n in archive.namelist() if n.startswith("documents/")]
     assert len(documents) == 2, documents
 

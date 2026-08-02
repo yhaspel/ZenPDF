@@ -1,5 +1,5 @@
 from django.conf import settings
-from django.http import HttpResponse, HttpResponseRedirect
+from django.http import HttpResponseRedirect
 from django.utils import timezone
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import extend_schema
@@ -141,10 +141,19 @@ class ExportView(APIView):
 
     @extend_schema(responses=OpenApiTypes.BINARY, tags=["users"])
     def get(self, request):
+        import os
+
+        from django.http import FileResponse
+
         from .privacy import export_zip
 
-        data, filename = export_zip(request.user)
-        response = HttpResponse(data, content_type="application/zip")
+        path, filename = export_zip(request.user)
+        # Streamed from disk and unlinked as it goes: the zip can be as large
+        # as the account's whole quota, and holding that in the worker's memory
+        # for the duration of a download is how one export takes the API down.
+        handle = open(path, "rb")  # noqa: SIM115 - FileResponse closes it
+        os.unlink(path)            # POSIX: the bytes live until the fd closes
+        response = FileResponse(handle, content_type="application/zip")
         response["Content-Disposition"] = f'attachment; filename="{filename}"'
         return response
 

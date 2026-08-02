@@ -21,9 +21,9 @@ needs polling is a download most people abandon.
 """
 from __future__ import annotations
 
-import io
 import json
 import logging
+import tempfile
 import zipfile
 
 from django.db import transaction
@@ -38,8 +38,15 @@ logger = logging.getLogger(__name__)
 MAX_INLINE_DELETE_DOCUMENTS = 500
 
 
-def export_zip(user) -> tuple[bytes, str]:
-    """Everything we hold for this account, as a zip they can open offline."""
+def export_zip(user) -> tuple[str, str]:
+    """Everything we hold for this account, as a zip they can open offline.
+
+    Written to a temporary **file**, not to `BytesIO`: an account near the
+    2 GB quota would otherwise be built in memory and then copied again by
+    `getvalue()`, which is four gigabytes inside one gunicorn worker for a
+    download the browser is going to stream anyway. Returns the path and the
+    filename; the view streams and deletes it.
+    """
     from apps.core import limits as L
     from apps.core.principals import owned_by
     from apps.documents.models import Document
@@ -47,7 +54,7 @@ def export_zip(user) -> tuple[bytes, str]:
     from apps.pdf_engine.storage import get_storage
 
     storage = get_storage()
-    buf = io.BytesIO()
+    handle = tempfile.NamedTemporaryFile(suffix=".zip", delete=False)
     manifest = {
         "account": {
             "email": user.email,
@@ -63,7 +70,7 @@ def export_zip(user) -> tuple[bytes, str]:
         "storage_bytes_used": L.storage_used(user),
     }
 
-    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as archive:
+    with zipfile.ZipFile(handle, "w", zipfile.ZIP_DEFLATED) as archive:
         used = set()
         for document in owned_by(
                 Document.objects.select_related("current_version"), user):
@@ -105,7 +112,8 @@ def export_zip(user) -> tuple[bytes, str]:
         archive.writestr("manifest.json", json.dumps(manifest, indent=2))
         archive.writestr("README.txt", _README)
 
-    return buf.getvalue(), f"zenpdf-export-{timezone.now():%Y-%m-%d}.zip"
+    handle.close()
+    return handle.name, f"zenpdf-export-{timezone.now():%Y-%m-%d}.zip"
 
 
 _README = """\
@@ -145,10 +153,12 @@ def delete_account(user) -> dict:
 
     documents = owned_by(Document.objects.all(), user)
     if documents.count() > MAX_INLINE_DELETE_DOCUMENTS:
+        from django.conf import settings
+
         raise ValidationFailed(
             f"This account holds more than {MAX_INLINE_DELETE_DOCUMENTS} "
-            "documents. Write to us and we will do it by hand — we would "
-            "rather that than half-delete an account."
+            f"documents. Write to {settings.ABUSE_CONTACT_EMAIL} and we will "
+            "do it by hand — we would rather that than half-delete an account."
         )
 
     # A draft has reached nobody, so there is nothing in it to be evidence of —

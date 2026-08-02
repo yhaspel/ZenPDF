@@ -7,7 +7,7 @@ stack maps to eight services plus two managed add-ons.
 
 | Railway service | Start command | Notes |
 |---|---|---|
-| `api` | `gunicorn config.wsgi --bind 0.0.0.0:$PORT --workers $((2 * $(nproc) + 1))` | Public. Run migrations on deploy (below). |
+| `api` | `gunicorn config.wsgi --bind 0.0.0.0:$PORT --workers $((2 * $(nproc) + 1)) --timeout 120` | Public. Run migrations on deploy (below). **`--timeout`**: the default 30 s kills a large account's data export mid-build and the user gets a 502. |
 | `worker-default` | `celery -A config worker -Q default -c 2 --time-limit 300 --soft-time-limit 240` | Cheap page ops; 60 s is not enough for a large merge. |
 | `worker-heavy` | `celery -A config worker -Q heavy -c 1 --time-limit 900 --soft-time-limit 600 --max-tasks-per-child 20` | OCR and conversion. `--max-tasks-per-child` recycles the process, which is what bounds a slow memory leak in a C parser. |
 | `worker-render` | `celery -A config worker -Q render -c 2 --time-limit 300` | Thumbnails; neither cheap nor user-visible, so it gets its own lane. |
