@@ -97,7 +97,7 @@ def test_edit_text_creates_a_labeled_version(api, uploaded_doc):
         "edits": [{"page": 0, "block_bbox": block["bbox"], "new_text": "Rewritten"}],
     })
     assert job["status"] == "succeeded", job
-    versions = api.get(f"/api/documents/{uploaded_doc['id']}/versions/").json()
+    versions = api.get(f"/api/documents/{uploaded_doc['id']}/versions/").json()["results"]
     assert versions[0]["label"] == "Edited text (1 block(s))"
     assert "Rewritten" in _text(api, uploaded_doc["id"])
 
@@ -129,12 +129,12 @@ def test_a_guest_edits_text_end_to_end(guest, guest_doc):
 # find & replace — the two-step flow
 # --------------------------------------------------------------------------- #
 def test_find_replace_dry_run_makes_no_version(api, uploaded_doc):
-    before = api.get(f"/api/documents/{uploaded_doc['id']}/versions/").json()
+    before = api.get(f"/api/documents/{uploaded_doc['id']}/versions/").json()["results"]
     job = _op(api, uploaded_doc["id"], "find_replace", {"find": "page", "dry_run": True})
     assert job["status"] == "succeeded", job
     assert job["result"]["report"]["count"] >= 3
     assert job["result"]["report"]["dry_run"] is True
-    after = api.get(f"/api/documents/{uploaded_doc['id']}/versions/").json()
+    after = api.get(f"/api/documents/{uploaded_doc['id']}/versions/").json()["results"]
     assert len(after) == len(before), "a search must not mint a version"
 
 

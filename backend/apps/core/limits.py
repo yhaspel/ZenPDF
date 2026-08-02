@@ -42,7 +42,6 @@ class Limits:
     ocr_pages_per_day: int
     ocr_pages_per_month: int
     sign_requests_per_month: int
-    version_retention: int
     library: bool
     ads: bool
 
@@ -59,7 +58,6 @@ class Limits:
             "ocr_pages_per_day": self.ocr_pages_per_day,
             "ocr_pages_per_month": self.ocr_pages_per_month,
             "sign_requests_per_month": self.sign_requests_per_month,
-            "version_retention": self.version_retention,
             "library": self.library,
             "ads": self.ads,
         }
@@ -92,7 +90,6 @@ def for_tier(tier: str) -> Limits:
         ocr_pages_per_day=row["ocr_pages_per_day"],
         ocr_pages_per_month=row["ocr_pages_per_month"],
         sign_requests_per_month=row["sign_requests_per_month"],
-        version_retention=row["version_retention"],
         library=row["library"],
         ads=row["ads"],
     )
@@ -110,6 +107,27 @@ def storage_used(principal) -> int:
     if principal is None:
         return 0
     return principal.storage_bytes_used
+
+
+def storage_used_fresh(principal) -> int:
+    """`storage_used`, but from the database rather than the instance.
+
+    `bump_storage` writes with `F()` and never refreshes the object it was
+    handed, and a worker resolves its principal once per job — so inside a loop
+    every iteration reads the value the *first* one saw. That made the quota
+    check on `_create_document_from_bytes` decorative on exactly the path it was
+    added for: `split` on a 2 000-page document passed iteration 1 on a genuine
+    reading and iterations 2-2 000 on a stale one, and a single request took an
+    account from under quota to nearly twice it. Measured before this existed:
+    a three-page split saw `2898, 2898, 2898` while the row read
+    `2898, 3769, 4639`.
+
+    One extra `SELECT` per check, on a path that is about to write a blob.
+    """
+    if principal is None:
+        return 0
+    return type(principal).objects.filter(pk=principal.pk).values_list(
+        "storage_bytes_used", flat=True).first() or 0
 
 
 def bump_storage(principal, delta: int) -> None:
@@ -245,6 +263,53 @@ def record_ocr_pages(principal, pages: int) -> None:
         # 26 h, so a window opened at 23:59 still expires cleanly.
         cache.set(key, pages, timeout=93600)
     bump_monthly(principal, ocr_pages=pages)
+
+
+def enforce_storage(principal, incoming_bytes: int) -> None:
+    """Charge `incoming_bytes` against the storage quota, or raise (§16).
+
+    Four paths already read the quota before writing: upload
+    (`documents/views.py`), image assets and conversion sources
+    (`core/assets.py`), and claim (`core/claim.py`). Two wrote without reading
+    it — `_save_new_version` and `_create_document_from_bytes` both called
+    `bump_storage` and never looked at the result, so a principal already past
+    their quota kept minting versions *and* whole documents. Both now call this;
+    `test_version_quota.py` covers each.
+
+    One path is still deliberately unmetered-at-the-door: `_save_export` charges
+    for the artefact but does not refuse. An export is the escape hatch — it is
+    how somebody over quota gets their work out before deleting something — and
+    it deletes itself in 24 h. Refusing it would strand the account. Written
+    down because "all the doors are shut" is the sentence that stops the next
+    reader looking.
+
+    This is also what `version_retention` was reaching for and could not hold: a
+    per-*document* cap does not bound a per-*principal* cost, because fifty
+    versions each of unlimited documents is still unlimited. The quota does
+    bound it, is already published, is already on the usage panel, and — unlike
+    a pruned history — the user can clear it by deleting something.
+    """
+    if principal is None or incoming_bytes <= 0:
+        return
+    from .exceptions import QuotaExceeded
+
+    tier = for_principal(principal)
+    used = storage_used_fresh(principal)
+    if used + incoming_bytes <= tier.storage_bytes:
+        return
+    exc = QuotaExceeded(
+        f"That would take you past your {tier.storage_bytes // (1024 * 1024)} MB "
+        "of storage. Empty your trash or delete a document to free some up."
+        + (" Creating a free account gives you 2 GB."
+           if tier.tier == "guest" else "")
+    )
+    exc.zen_details = {
+        "quota_bytes": tier.storage_bytes,
+        "used_bytes": used,
+        "requested_bytes": incoming_bytes,
+        "tier": tier.tier,
+    }
+    raise exc
 
 
 def enforce_ocr_pages(principal, pages: int) -> None:

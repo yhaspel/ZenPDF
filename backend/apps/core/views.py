@@ -188,6 +188,15 @@ class ConfigView(APIView):
                     "guest_hours": settings.GUEST_TTL_HOURS,
                     "trash_days": settings.TRASH_RETENTION_DAYS,
                     "export_hours": settings.EXPORT_TTL_HOURS,
+                    # Published because it is enforced *and* observable: the
+                    # user can see their own job history in Settings, so the
+                    # day it starts disappearing is the day the policy should
+                    # already have said so.
+                    "job_days": settings.JOB_RETENTION_DAYS,
+                    # Published for one reason only: the privacy policy
+                    # states it, and every number that page states is
+                    # pinned to the sweeper that enforces it.
+                    "job_params_days": settings.JOB_PARAMS_RETENTION_DAYS,
                 },
             }
         )

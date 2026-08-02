@@ -28,11 +28,11 @@ def test_redelivered_task_does_not_run_twice(api, uploaded_doc):
     from apps.documents.tasks import run_operation
 
     job = _op(api, uploaded_doc["id"], "rotate_pages", {"pages": [0], "degrees": 90})
-    before = api.get(f"/api/documents/{uploaded_doc['id']}/versions/").json()
+    before = api.get(f"/api/documents/{uploaded_doc['id']}/versions/").json()["results"]
 
     run_operation(job["id"])
 
-    after = api.get(f"/api/documents/{uploaded_doc['id']}/versions/").json()
+    after = api.get(f"/api/documents/{uploaded_doc['id']}/versions/").json()["results"]
     assert len(after) == len(before)
     assert api.get(f"/api/jobs/{job['id']}/").json()["status"] == "succeeded"
 

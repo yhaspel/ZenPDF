@@ -291,7 +291,7 @@ def test_the_full_two_signer_loop_completes_and_seals(sent, anon, api):
 
     # The signed file also lands on the source document, for the owner.
     versions = api.get(
-        f"/api/documents/{sign_request.document_id}/versions/").json()
+        f"/api/documents/{sign_request.document_id}/versions/").json()["results"]
     assert versions[0]["label"] == "Signed"
 
 

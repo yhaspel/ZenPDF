@@ -24,7 +24,6 @@ describe('DocumentsFacade', () => {
     ocr_pages_per_day: 0,
     ocr_pages_per_month: 2000,
     sign_requests_per_month: 30,
-    version_retention: 50,
     library: true,
     ads: true,
   };

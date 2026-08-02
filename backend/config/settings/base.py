@@ -292,6 +292,15 @@ CELERY_BEAT_SCHEDULE = {
         "schedule": 3600.0,
     },
     # The 30-day trash promise the privacy policy makes (§15, §9A).
+    # Job inputs at a month, job rows at a year — see `apps/core/tasks.py`.
+    "job-params-purge": {
+        "task": "apps.core.tasks.job_params_purge",
+        "schedule": 86400.0,
+    },
+    "jobs-purge": {
+        "task": "apps.core.tasks.jobs_purge",
+        "schedule": 86400.0,
+    },
     "trash-purge": {
         "task": "apps.core.tasks.trash_purge",
         "schedule": 86400.0,
@@ -362,7 +371,6 @@ VERIFY_MAX_UPLOAD_BYTES = config("VERIFY_MAX_UPLOAD_BYTES",
 MAX_UPLOAD_MB = config("MAX_UPLOAD_MB", default=100, cast=int)
 USER_STORAGE_QUOTA_MB = config("USER_STORAGE_QUOTA_MB", default=2048, cast=int)
 MAX_PAGES = config("MAX_PAGES", default=2000, cast=int)
-VERSION_RETENTION = config("VERSION_RETENTION", default=50, cast=int)
 SIGN_REQUESTS_PER_MONTH = config("SIGN_REQUESTS_PER_MONTH", default=30, cast=int)
 OCR_PAGES_PER_MONTH = config("OCR_PAGES_PER_MONTH", default=2000, cast=int)
 MAX_CONCURRENT_JOBS = config("MAX_CONCURRENT_JOBS", default=3, cast=int)
@@ -402,7 +410,6 @@ TIERS = {
         "ocr_pages_per_day": config("GUEST_OCR_PAGES_PER_DAY", default=50, cast=int),
         "ocr_pages_per_month": 0,
         "sign_requests_per_month": 0,   # 0 ⇒ account_required, not quota_exceeded
-        "version_retention": config("GUEST_VERSION_RETENTION", default=10, cast=int),
         "library": False,
         "ads": True,
     },
@@ -416,7 +423,6 @@ TIERS = {
         "ocr_pages_per_day": 0,          # 0 ⇒ no daily window; the monthly cap applies
         "ocr_pages_per_month": OCR_PAGES_PER_MONTH,
         "sign_requests_per_month": SIGN_REQUESTS_PER_MONTH,
-        "version_retention": VERSION_RETENTION,
         "library": True,
         "ads": True,
     },
@@ -430,7 +436,6 @@ TIERS = {
         "ocr_pages_per_day": 0,
         "ocr_pages_per_month": config("PRO_OCR_PAGES_PER_MONTH", default=20000, cast=int),
         "sign_requests_per_month": config("PRO_SIGN_REQUESTS_PER_MONTH", default=300, cast=int),
-        "version_retention": config("PRO_VERSION_RETENTION", default=200, cast=int),
         "library": True,
         "ads": False,
     },
@@ -476,6 +481,12 @@ CONSENT_REQUIRED_REGIONS = config(
 # the policy and the beat schedule agree. A retention promise nobody checks is
 # the kind of sentence that quietly stops being true.
 TRASH_RETENTION_DAYS = config("TRASH_RETENTION_DAYS", default=30, cast=int)
+# A job row is *our* record of an operation, not the user's file. The inputs go
+# at a month — patterns, replacement text, page lists are a record of what was
+# in somebody's document — and the row itself at a year, which is past the
+# point where anybody could notice it leaving the twenty-row panel in Settings.
+JOB_PARAMS_RETENTION_DAYS = config("JOB_PARAMS_RETENTION_DAYS", default=30, cast=int)
+JOB_RETENTION_DAYS = config("JOB_RETENTION_DAYS", default=365, cast=int)
 
 # --- Abuse (§9B) ------------------------------------------------------------
 MAX_RECIPIENTS_PER_REQUEST = config("MAX_RECIPIENTS_PER_REQUEST", default=10, cast=int)

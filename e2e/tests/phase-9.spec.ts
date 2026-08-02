@@ -101,6 +101,8 @@ test('phase 9: the legal pages are live, linked, and quote the real numbers', as
   expect(stated('trash_days')).toBe(config.retention.trash_days);
   expect(stated('guest_hours')).toBe(config.retention.guest_hours);
   expect(stated('export_hours')).toBe(config.retention.export_hours);
+  expect(stated('job_days')).toBe(config.retention.job_days);
+  expect(stated('job_params_days')).toBe(config.retention.job_params_days);
 
   await expect(page.locator('[data-test=retention-trash]'))
     .toContainText(`${config.retention.trash_days} days`);
@@ -108,6 +110,12 @@ test('phase 9: the legal pages are live, linked, and quote the real numbers', as
     .toContainText(`${config.retention.guest_hours} hours`);
   await expect(page.locator('[data-test=retention-export]'))
     .toContainText(`${config.retention.export_hours} hours`);
+  // The operation record is a sentence rather than a table row: a row under
+  // "How long" reads as a clock on the reader's own files.
+  await expect(page.locator('[data-test=retention-jobs]'))
+    .toContainText(`${config.retention.job_days} days`);
+  await expect(page.locator('[data-test=retention-jobs]'))
+    .toContainText(`${config.retention.job_params_days} days`);
 
   await page.goto('/');
   await page.click('[data-test=footer-terms]');
