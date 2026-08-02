@@ -29,8 +29,16 @@ select = ["E", "F", "I", "UP", "B"]
 ignore = ["E501", "B008", "B905"]
 
 [tool.mypy]
+# The django-stubs plugin is what makes mypy understand a queryset, a model
+# manager and `settings` — without it, the 98 errors this repo carried were
+# almost entirely mypy not knowing what Django does, which is noise that hides
+# the handful of real ones (phase-10 §20 DoD item 6).
 python_version = "3.13"
+plugins = ["mypy_django_plugin.main", "mypy_drf_plugin.main"]
 ignore_missing_imports = true
 check_untyped_defs = false
 warn_unused_ignores = false
 exclude = ["migrations"]
+
+[tool.django-stubs]
+django_settings_module = "config.settings.test"

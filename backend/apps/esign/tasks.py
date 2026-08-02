@@ -101,8 +101,15 @@ def _finalize(sign_request_id: str) -> dict:
     if sign_request.status != SignRequest.Status.SENT:
         return {"skipped": sign_request.status}
 
+    version = sign_request.source_version
+    if version is None:
+        # Frozen at send, so this cannot happen for a `sent` request — unless
+        # the account was deleted and the envelope detached (§10.1), in which
+        # case there is nothing left to seal and saying so beats a 500.
+        return {"skipped": "source version is gone"}
+
     storage = get_storage()
-    source = storage.get_bytes(sign_request.source_version.storage_key)
+    source = storage.get_bytes(version.storage_key)
 
     data = _burn_fields(source, sign_request)
     data = SG.stamp_envelope_footer(

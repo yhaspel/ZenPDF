@@ -604,7 +604,8 @@ class PublicSignBase(APIView):
             # later (`canceled_by_abuse` was) cannot leave a dead link working.
             # A *completed* request is not closed: its recipients must still be
             # able to open it and download their copy (ESIGN retention).
-            raise TokenExpired(CLOSED_MESSAGES[sign_request.status])
+            raise TokenExpired(CLOSED_MESSAGES[
+                SignRequest.Status(sign_request.status)])
         if sign_request.status == SignRequest.Status.DRAFT:
             raise TokenInvalid("This request has not been sent yet.")
         if sign_request.expires_at and sign_request.expires_at < timezone.now():

@@ -17,6 +17,10 @@ class ZenAPIException(APIException):
     status_code: int = status.HTTP_400_BAD_REQUEST
     default_code: str = "error"
     default_detail: str = "An error occurred."
+    #: The structured half of the §6 error shape. Declared here rather than
+    #: attached ad hoc at each raise site, so the handler and the type checker
+    #: both know it exists.
+    zen_details: dict | None = None
 
 
 class ValidationFailed(ZenAPIException):
