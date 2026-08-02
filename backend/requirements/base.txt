@@ -12,5 +12,8 @@ django-storages[boto3]==1.14.6
 boto3==1.40.0
 psycopg[binary]==3.2.10
 dj-database-url==3.0.0
-Pillow==11.3.0
+# Bumped 2026-08-02 (phase-10 §10.1 dependency audit): 11.3.0 carries 18
+# advisories in image decoders, and this product decodes images somebody
+# else uploaded.
+Pillow==12.3.0
 jsonschema==4.25.0
