@@ -17,7 +17,9 @@ class User(AbstractUser):
         PRO = "pro"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    username = None  # login is by email
+    # Django's documented custom-user pattern: drop the field the base
+    # class declares rather than inherit it.
+    username = None  # type: ignore[assignment]  # login is by email
     email = models.EmailField(unique=True)
     display_name = models.CharField(max_length=150, blank=True)
     email_verified = models.BooleanField(default=False)
@@ -31,7 +33,8 @@ class User(AbstractUser):
     USERNAME_FIELD = "email"
     REQUIRED_FIELDS = []
 
-    objects = UserManager()
+    # Narrower than `AbstractUser.objects` by design — it is our manager.
+    objects = UserManager()  # type: ignore[misc,assignment]
 
     def save(self, *args, **kwargs):
         if self.email:

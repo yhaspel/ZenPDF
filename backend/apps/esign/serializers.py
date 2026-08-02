@@ -106,8 +106,11 @@ class FieldWriteSerializer(serializers.Serializer):
     w = serializers.FloatField(min_value=0.001, max_value=1)
     h = serializers.FloatField(min_value=0.001, max_value=1)
     type = serializers.ChoiceField(choices=SignField.Type.choices)
-    required = serializers.BooleanField(default=True)
-    label = serializers.CharField(max_length=100, required=False, allow_blank=True)
+    # DRF's metaclass pops declared fields out of the class body, so these
+    # never actually shadow `Field.required` / `Field.label`.
+    required = serializers.BooleanField(default=True)  # type: ignore[assignment]
+    label = serializers.CharField(  # type: ignore[assignment]
+        max_length=100, required=False, allow_blank=True)
 
 
 class PublicFieldSerializer(serializers.ModelSerializer):

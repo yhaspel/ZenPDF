@@ -401,11 +401,14 @@ def _recompress_images(doc: fitz.Document, max_dim: int, quality: int, grayscale
                 continue
             target_mode = "L" if grayscale else "RGB"
             if im.mode != target_mode:
-                im = im.convert(target_mode)
+                # Pillow returns `Image`; the variable started life as the
+                # `ImageFile` that `open()` gave us. Same object graph.
+                im = im.convert(target_mode)  # type: ignore[assignment]
             w, h = im.size
             if max(w, h) > max_dim:
                 ratio = max_dim / max(w, h)
-                im = im.resize((max(1, int(w * ratio)), max(1, int(h * ratio))))
+                im = im.resize(  # type: ignore[assignment]
+                    (max(1, int(w * ratio)), max(1, int(h * ratio))))
             buf = io.BytesIO()
             im.save(buf, format="JPEG", quality=quality, optimize=True)
             new = buf.getvalue()

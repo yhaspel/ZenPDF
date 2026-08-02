@@ -235,7 +235,7 @@ def text_blocks(data: bytes, page_index: int) -> dict:
         pw, ph = page.rect.width, page.rect.height
         rot = tuple(page.rotation_matrix)
         raw = page.get_text("dict")
-        blocks = []
+        blocks: list[dict] = []
         for block in raw.get("blocks", []):
             if block.get("type") != 0:
                 continue
@@ -244,7 +244,11 @@ def text_blocks(data: bytes, page_index: int) -> dict:
             for line in block.get("lines", []):
                 spans = []
                 for span in line.get("spans", []):
-                    x0, y0, x1, y1 = apply_matrix_rect(*span["bbox"], rot)
+                    # Unpacked rather than splatted: mypy miscounts
+                    # `f(*Any, positional)` and reports "too many arguments"
+                    # for a call that passes exactly the five it takes.
+                    sx0, sy0, sx1, sy1 = span["bbox"]
+                    x0, y0, x1, y1 = apply_matrix_rect(sx0, sy0, sx1, sy1, rot)
                     nr = _rect_dict(x0, y0, x1, y1, pw, ph)
                     flags = int(span.get("flags", 0))
                     spans.append({
@@ -259,10 +263,12 @@ def text_blocks(data: bytes, page_index: int) -> dict:
                         "bbox": nr,
                     })
                     text_parts.append(span.get("text", ""))
-                lx0, ly0, lx1, ly1 = apply_matrix_rect(*line["bbox"], rot)
+                a0, b0, a1, b1 = line["bbox"]
+                lx0, ly0, lx1, ly1 = apply_matrix_rect(a0, b0, a1, b1, rot)
                 lines.append({"bbox": _rect_dict(lx0, ly0, lx1, ly1, pw, ph), "spans": spans})
                 text_parts.append("\n")
-            bx0, by0, bx1, by1 = apply_matrix_rect(*block["bbox"], rot)
+            c0, d0, c1, d1 = block["bbox"]
+            bx0, by0, bx1, by1 = apply_matrix_rect(c0, d0, c1, d1, rot)
             blocks.append({
                 "block_id": int(block.get("number", len(blocks))),
                 "bbox": _rect_dict(bx0, by0, bx1, by1, pw, ph),
@@ -756,7 +762,7 @@ def _link_spec(doc: fitz.Document, page: fitz.Page, spec: dict) -> dict:
     rect = _raw_rect(spec.get("rect"), page)
     kind = spec.get("kind", "uri")
     if kind == "uri":
-        return {"kind": fitz.LINK_URI, "from": rect, "uri": _validate_uri(spec.get("uri"))}
+        return {"kind": fitz.LINK_URI, "from": rect, "uri": _validate_uri(spec.get("uri") or "")}
     if kind == "page":
         target = int(spec.get("page_target", 0))
         if target < 0 or target >= doc.page_count:

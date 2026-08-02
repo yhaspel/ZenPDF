@@ -10,6 +10,13 @@ for arg in "$@"; do
 done
 
 echo "======================================================"
+echo " Backend lint + types (ruff, mypy)"
+echo "======================================================"
+# mypy reached zero in phase 10 and the gate is what keeps it there. It got to
+# 98 findings in the first place by being run by nobody.
+docker compose run --rm -T api sh -c "ruff check . && mypy apps config"
+
+echo "======================================================"
 echo " Backend tests (pytest, config.settings.test)"
 echo "======================================================"
 # Force test settings: the api service's env_file sets dev, and pytest-django's

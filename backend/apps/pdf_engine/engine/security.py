@@ -50,7 +50,7 @@ def is_encrypted(data: bytes) -> bool:
         doc.close()
 
 
-def _permissions(spec: dict):
+def _permissions(spec: dict | None):
     """The §10 permission set → pikepdf's `Permissions`.
 
     Accessibility is hard-wired on. Everything else is the caller's choice, with
@@ -343,7 +343,9 @@ def _cut_hidden_content(pdf, page, off: set) -> int:
     depth = 0
     dropping_at = 0
     removed = 0
-    for operands, operator in instructions:
+    # pikepdf yields instructions that unpack as `(operands, operator)`;
+    # its stub omits `__iter__`, so the checker cannot see that.
+    for operands, operator in instructions:  # type: ignore[misc]
         op = str(operator)
         if op in {"BDC", "BMC"}:
             depth += 1

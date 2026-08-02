@@ -512,7 +512,7 @@ SENTRY_TRACES_SAMPLE_RATE = config("SENTRY_TRACES_SAMPLE_RATE", default=0.0,
 # `apps.core.logging` (§10.4). `LOG_FORMAT=text` gives the readable formatter
 # back for local work — the dev stack sets it, because a wall of JSON in
 # `logs.sh` helps nobody.
-LOGGING = {
+LOGGING: dict = {
     "version": 1,
     "disable_existing_loggers": False,
     "filters": {

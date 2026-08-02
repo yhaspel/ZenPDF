@@ -94,7 +94,17 @@ def _measure(data: bytes) -> tuple[str, int, int]:
     return sha, pages, len(data)
 
 
-def _version_bytes(version: DocumentVersion) -> bytes:
+def _version_bytes(version: DocumentVersion | None) -> bytes:
+    """`current_version` and `source_version` are both nullable.
+
+    A document still ingesting has no current version, and a source document
+    named by a cross-document op may be one — in which case the honest answer
+    is "not ready", not an `AttributeError` reported to the user as
+    `engine_error: 'NoneType' object has no attribute 'storage_key'`.
+    """
+    if version is None:
+        raise EngineError("That document has no readable version yet.",
+                          code="not_found")
     return get_storage().get_bytes(version.storage_key)
 
 
@@ -557,6 +567,13 @@ def run_operation(self, job_id: str):
     job.mark_running()
 
     document = job.document
+    if document is None:
+        # `Job.document` is `SET_NULL`, and three paths hard-delete a document
+        # (guest purge, permanent delete, account erasure). A job already in
+        # flight then loses its subject, and the user should be told that
+        # rather than shown an AttributeError with an engine_error code.
+        job.mark_failed("not_found", "The document was deleted.")
+        return
     try:
         # Inside the try: a job that has been marked running and then throws
         # before anything catches it stays `running` for ever, and the client
@@ -795,6 +812,9 @@ def revert_version(self, job_id: str):
     job.save(update_fields=["celery_task_id"])
     job.mark_running()
     document = job.document
+    if document is None:
+        job.mark_failed("not_found", "The document was deleted.")
+        return
     target_seq = job.params["seq"]
     try:
         with doc_lock(str(document.id)):

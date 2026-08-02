@@ -232,7 +232,7 @@ def redaction_previews_purge(hours: int = 1) -> int:
             continue
         for match in matches:
             match["text"] = ""
-        job.result = {**job.result, "report": {**report, "matches": matches}}
+        job.result = {**(job.result or {}), "report": {**report, "matches": matches}}
         job.save(update_fields=["result"])
         cleaned += 1
     if cleaned:
@@ -289,10 +289,10 @@ def heartbeat_ages() -> dict:
 def heartbeat_age_seconds() -> float | None:
     """The oldest lane, which is the one that matters: a stack is only as
     healthy as the worker that has stopped answering."""
-    ages = heartbeat_ages().values()
-    if any(age is None for age in ages):
+    ages = [age for age in heartbeat_ages().values() if age is not None]
+    if len(ages) != len(HEARTBEAT_QUEUES):
         return None
-    return max(ages)  # type: ignore[type-var]
+    return max(ages)
 
 
 def queue_depths() -> dict:

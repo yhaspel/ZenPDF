@@ -134,7 +134,9 @@ def ocr(data: bytes, *, languages=None, deskew: bool = False,
             options["skip_text"] = True
 
         try:
-            ocrmypdf.ocr(src, dst, **options)
+            # `ocr(**options)` against a fixed-kwarg overload; every key we
+            # pass is in the second overload, which mypy will not match.
+            ocrmypdf.ocr(src, dst, **options)  # type: ignore[call-overload]
         except EncryptedPdfError as exc:
             raise DocumentEncryptedError(
                 "This document is encrypted; unlock it before running OCR."

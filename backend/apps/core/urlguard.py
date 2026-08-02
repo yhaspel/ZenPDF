@@ -38,6 +38,11 @@ INTERNAL_HOSTS = frozenset({
 
 # Cloud metadata endpoints, which are the point of most SSRF attempts: they are
 # plain HTTP, unauthenticated, and hand out credentials.
+#: `ipaddress._BaseAddress` — what this used to be annotated with — has none of
+#: the six attributes the deny-list below reads, so mypy validated *none* of
+#: them. With the real union, deleting `or ip.is_private` is a type error.
+IPAddress = ipaddress.IPv4Address | ipaddress.IPv6Address
+
 METADATA_HOSTS = frozenset({
     "169.254.169.254",              # AWS / Azure / DigitalOcean / OpenStack
     "metadata.google.internal",     # GCP
@@ -46,7 +51,7 @@ METADATA_HOSTS = frozenset({
 })
 
 
-def _is_forbidden_ip(ip: ipaddress._BaseAddress) -> bool:
+def _is_forbidden_ip(ip: IPAddress) -> bool:
     """Everything that is not a public, routable address."""
     return bool(
         ip.is_private            # 10/8, 172.16/12, 192.168/16, fd00::/8, ::1, 127/8
@@ -59,7 +64,7 @@ def _is_forbidden_ip(ip: ipaddress._BaseAddress) -> bool:
     )
 
 
-def _resolve(host: str) -> list[ipaddress._BaseAddress]:
+def _resolve(host: str) -> list[IPAddress]:
     try:
         infos = socket.getaddrinfo(host, None, proto=socket.IPPROTO_TCP)
     except socket.gaierror as exc:

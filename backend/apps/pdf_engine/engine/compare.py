@@ -17,6 +17,7 @@ the UI can draw them over either side without conversion.
 from __future__ import annotations
 
 import difflib
+from typing import Any
 
 import fitz
 
@@ -237,7 +238,7 @@ def compare(a: bytes, b: bytes, *, offset: int = 0,
             has_b = 0 <= b_index < doc_b.page_count
             if not has_a and not has_b:
                 continue
-            entry = {
+            entry: dict[str, Any] = {
                 "a_page": a_index if has_a else None,
                 "b_page": b_index if has_b else None,
                 "text_changes": [],

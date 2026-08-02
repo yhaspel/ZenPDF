@@ -26,6 +26,7 @@ import logging
 import os
 import tempfile
 import zipfile
+from typing import Any
 
 from django.db import transaction
 from django.utils import timezone
@@ -56,7 +57,7 @@ def export_zip(user) -> tuple[str, str]:
 
     storage = get_storage()
     handle = tempfile.NamedTemporaryFile(suffix=".zip", delete=False)
-    manifest = {
+    manifest: dict[str, Any] = {
         "account": {
             "email": user.email,
             "display_name": user.display_name,
@@ -72,7 +73,7 @@ def export_zip(user) -> tuple[str, str]:
     }
 
     with zipfile.ZipFile(handle, "w", zipfile.ZIP_DEFLATED) as archive:
-        used = set()
+        used: set[str] = set()
         for document in owned_by(
                 Document.objects.select_related("current_version"), user):
             entry = {

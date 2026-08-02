@@ -40,9 +40,12 @@ def ingest_pdf(principal, data: bytes, title: str, *, folder: Folder | None = No
 
     if info["needs_repair"]:
         if not want_repair:
-            exc = UnsupportedFile("This PDF appears to be damaged.")
-            exc.zen_details = {"repair_offer": True}
-            raise exc
+            # A distinct name: Python deletes the `except … as exc` binding at
+            # the end of its block, so reusing it here is one line-move away
+            # from a `NameError` that only fires on the damaged-file path.
+            damaged = UnsupportedFile("This PDF appears to be damaged.")
+            damaged.zen_details = {"repair_offer": True}
+            raise damaged
         try:
             data = repair_pdf(data)
             info = validate_pdf(data)
@@ -51,18 +54,18 @@ def ingest_pdf(principal, data: bytes, title: str, *, folder: Folder | None = No
 
     tier_limits = L.for_principal(principal)
     if info["pages"] > tier_limits.max_pages:
-        exc = ValidationFailed(
+        too_many = ValidationFailed(
             f"This PDF has {info['pages']} pages; the limit is "
             f"{tier_limits.max_pages}."
             + (" Create a free account to work with larger documents."
                if tier_limits.tier == "guest" else "")
         )
-        exc.zen_details = {
+        too_many.zen_details = {
             "pages": info["pages"],
             "max_pages": tier_limits.max_pages,
             "tier": tier_limits.tier,
         }
-        raise exc
+        raise too_many
 
     document = Document.objects.create(
         **owner_kwargs(principal),
