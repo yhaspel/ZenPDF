@@ -72,11 +72,53 @@ class ConfigView(APIView):
                 "turnstile_site_key": (
                     settings.TURNSTILE_SITE_KEY if settings.CAPTCHA_ENABLED else ""
                 ),
-                "ads": {
-                    "client_id": settings.ADSENSE_CLIENT_ID if settings.ADS_ENABLED else "",
+                # Everything the ad layer needs, resolved server-side. When
+                # ads are off this is `{enabled: false}` and *nothing else* —
+                # no client id, no slot ids, no provider name — so a build with
+                # the flag off cannot accidentally load anything (§9A).
+                "ads": (
+                    {
+                        "enabled": True,
+                        "provider": settings.ADS_PROVIDER,
+                        "client_id": settings.ADSENSE_CLIENT_ID,
+                        "slots": {name: unit
+                                  for name, unit in settings.ADS_SLOTS.items() if unit},
+                    }
+                    if settings.ADS_ENABLED else {"enabled": False}
+                ),
+                # Where a consent banner is legally required. The client sends
+                # its region on the query string when it knows one; the rule
+                # lives here so it is one list rather than a regex in a
+                # component (§9A).
+                "consent_required": _consent_required(request),
+                "retention": {
+                    "guest_hours": settings.GUEST_TTL_HOURS,
+                    "trash_days": settings.TRASH_RETENTION_DAYS,
+                    "export_hours": settings.EXPORT_TTL_HOURS,
                 },
             }
         )
+
+
+def _consent_required(request) -> bool:
+    """Whether this visitor must be asked before any ad code loads.
+
+    The browser knows its own region and we do not want to geolocate an IP for
+    this, so the client tells us (`?region=DE`) and the decision is made here
+    against one configured list.
+
+    **No region at all → ask.** A browser reporting only "en" is common, and a
+    banner shown to somebody who did not need it costs a little revenue, while
+    one skipped for somebody who did is a compliance failure. A region that *is*
+    stated and is not on the list is taken at its word — the alternative is
+    asking the entire world.
+    """
+    if not settings.ADS_ENABLED:
+        return False
+    region = (request.query_params.get("region") or "").strip().upper()
+    if not region:
+        return True
+    return region in {r.strip().upper() for r in settings.CONSENT_REQUIRED_REGIONS}
 
 
 class GuestSessionView(APIView):

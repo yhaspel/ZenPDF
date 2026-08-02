@@ -259,8 +259,16 @@
   }
 
   <footer class="mt-auto border-t border-slate-200 px-4 py-3 text-[11px] text-slate-400">
-    Signed electronically through ZenPDF. This is a simple electronic signature
-    with a platform seal — not a qualified electronic signature.
+    <p>
+      Signed electronically through ZenPDF. This is a simple electronic
+      signature with a platform seal — not a qualified electronic signature.
+    </p>
+    <p class="mt-1">
+      <a routerLink="/legal/privacy" class="underline">Privacy</a> ·
+      <a routerLink="/legal/terms" class="underline">Terms</a> ·
+      <button class="underline" (click)="reporting.set(true)"
+              data-test="report-open">Report this request</button>
+    </p>
   </footer>
 </div>
 
@@ -275,6 +283,33 @@
       <div class="mt-3 flex justify-end">
         <button class="rounded-lg px-4 py-2 text-sm text-slate-500"
                 (click)="padFor.set(null)" data-test="pad-cancel">Cancel</button>
+      </div>
+    </div>
+  </div>
+}
+
+@if (reporting()) {
+  <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+       data-test="report-dialog">
+    <div class="w-full max-w-sm rounded-xl bg-white p-5 shadow-xl">
+      <h3 class="text-lg font-semibold text-slate-800">Report this request</h3>
+      <p class="mt-1 text-sm text-slate-500">
+        Tell us if you did not expect this document. Enough reports pause it,
+        and the sender is told why.
+      </p>
+      <label class="mt-3 block text-xs text-slate-500">
+        What is wrong? (optional)
+        <textarea rows="3" class="mt-1 w-full rounded border border-slate-300 p-2 text-sm"
+                  [ngModel]="reportReason()" (ngModelChange)="reportReason.set($event)"
+                  data-test="report-reason"></textarea>
+      </label>
+      <div class="mt-4 flex justify-end gap-2">
+        <button class="rounded-lg px-4 py-2 text-sm text-slate-500"
+                (click)="reporting.set(false)">Cancel</button>
+        <button class="rounded-lg bg-rose-600 px-4 py-2 text-sm font-medium text-white"
+                [disabled]="busy()" (click)="report()" data-test="report-send">
+          Report
+        </button>
       </div>
     </div>
   </div>

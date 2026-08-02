@@ -59,4 +59,16 @@ describe('authInterceptor — credential-free routes', () => {
     expect(req.request.headers.get('Authorization')).toBe('Bearer an-access-token');
     req.flush({});
   });
+
+  it('does not strip the credential from account endpoints that look similar', () => {
+    // `/verify/` as a substring also matches `/api/users/verify/send/`, which
+    // is the signed-in user asking for their own confirmation link.
+    for (const url of ['/api/users/verify/send/', '/api/users/verify/']) {
+      http.post(url, {}).subscribe();
+      const req = controller.expectOne(url);
+      expect(req.request.headers.get('Authorization'))
+        .toBe('Bearer an-access-token');
+      req.flush({});
+    }
+  });
 });

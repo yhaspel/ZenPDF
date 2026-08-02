@@ -13,8 +13,9 @@ from __future__ import annotations
 import logging
 
 from django.conf import settings
-from django.core.mail import send_mail
 from django.utils import timezone
+
+from apps.core import mail
 
 logger = logging.getLogger(__name__)
 
@@ -29,13 +30,16 @@ def _sender_name(sign_request) -> str:
 
 
 def _send(subject: str, body: str, to: list[str]) -> None:
+    """Through `core.mail`: suppression list, `List-Unsubscribe`, abuse contact.
+
+    A signing invitation is exactly the shape of a phishing mail, so the
+    recipient needs somewhere to complain that is not their spam button — and
+    somebody who has opted out must never be mailed again by any part of the
+    product (§9B).
+    """
     if not to:
         return
-    try:
-        send_mail(subject, body, settings.DEFAULT_FROM_EMAIL, to,
-                  fail_silently=False)
-    except Exception:  # noqa: BLE001 - a bounced invite must not fail the job
-        logger.exception("esign: could not send %r to %s", subject, to)
+    mail.send(subject, body, to)
 
 
 def notify_recipients(sign_request, recipients) -> None:
@@ -142,6 +146,24 @@ def notify_completed(sign_request, *, final_url: str, certificate_url: str) -> N
         f"  {settings.FRONTEND_BASE_URL}/app/sign/{sign_request.id}",
     ])
     _send(f"Completed: {sign_request.title}", owner_body, [sign_request.owner.email])
+
+
+def notify_paused_for_abuse(sign_request, reports: int) -> None:
+    """The owner is told, in plain words, by people rather than by a robot."""
+    body = "\n".join([
+        f'"{sign_request.title}" has been paused.',
+        "",
+        f"{reports} of the people you sent it to told us they did not expect "
+        "it. Nobody else will be asked to sign, and the links no longer work.",
+        "",
+        "If that is a surprise, check the addresses you entered — a typo sends "
+        "somebody's contract to a stranger. If you believe this is a mistake, "
+        f"reply to {settings.ABUSE_CONTACT_EMAIL}.",
+        "",
+        f"Envelope {sign_request.envelope_code}.",
+    ])
+    mail.send(f"Paused: {sign_request.title}", body, [sign_request.owner.email],
+              transactional=True)
 
 
 def notify_expired(sign_request, pending) -> None:

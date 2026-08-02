@@ -127,7 +127,16 @@ export interface AppConfig {
   };
   guest_ttl_hours: number;
   turnstile_site_key: string;
-  ads: { client_id: string };
+  /** `{enabled: false}` and nothing else when ads are off — no client id, no
+   *  slot ids — so a build with the flag off cannot load anything (§9A). */
+  ads: {
+    enabled: boolean;
+    provider?: string;
+    client_id?: string;
+    slots?: Record<string, string>;
+  };
+  consent_required: boolean;
+  retention: { guest_hours: number; trash_days: number; export_hours: number };
 }
 
 export interface Usage {

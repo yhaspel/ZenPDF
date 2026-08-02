@@ -1,4 +1,5 @@
 from django.utils import timezone
+from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import extend_schema
 from rest_framework import generics, status
 from rest_framework.permissions import AllowAny
@@ -18,6 +19,7 @@ from apps.core.principals import is_guest, label, owned_by
 from apps.core.throttling import AuthThrottle
 
 from .serializers import RegisterSerializer, UsageSerializer, UserSerializer
+from .verification import send_verification_email, user_from_verification_token
 
 
 def _claim_inline(request, user, payload: dict) -> dict:
@@ -175,3 +177,68 @@ class LogoutView(APIView):
         except TokenError as exc:
             raise ValidationFailed("Invalid or already-expired refresh token.") from exc
         return Response({"detail": "Logged out."}, status=status.HTTP_200_OK)
+
+
+# --------------------------------------------------------------------------- #
+# Email verification (§9B) — accounts only, and never a gate on uploading
+# --------------------------------------------------------------------------- #
+class SendVerificationView(APIView):
+    """`POST /api/users/verify/send/` — mail a fresh verification link."""
+
+    permission_classes = [IsAccount]
+    throttle_classes = [AuthThrottle]
+
+    @extend_schema(request=None, responses=OpenApiTypes.OBJECT, tags=["users"])
+    def post(self, request):
+        if request.user.email_verified:
+            return Response({"verified": True, "sent": False})
+        send_verification_email(request.user)
+        return Response({"verified": False, "sent": True})
+
+
+class VerifyEmailView(APIView):
+    """`POST /api/users/verify/` `{token}` — confirm the address.
+
+    Deliberately open to anyone holding the token: the link arrives in an email
+    client that may not be the browser that is signed in, and asking somebody
+    to log in before they can prove they own the address is a circle.
+    """
+
+    permission_classes = [AllowAny]
+    authentication_classes: list = []
+    throttle_classes = [AuthThrottle]
+
+    @extend_schema(request=OpenApiTypes.OBJECT, responses=OpenApiTypes.OBJECT,
+                   tags=["users"])
+    def post(self, request):
+        user = user_from_verification_token(str(request.data.get("token") or ""))
+        if user is None:
+            raise ValidationFailed(
+                "That verification link is not valid any more. Ask for a new one."
+            )
+        if not user.email_verified:
+            user.email_verified = True
+            user.save(update_fields=["email_verified"])
+        return Response({"verified": True, "email": user.email})
+
+
+class UnsubscribeView(APIView):
+    """`POST /api/mail/unsubscribe/` `{token}` — the one-click list-unsubscribe.
+
+    No auth: the token in the mail *is* the authority, and a person who wants
+    out must not have to sign in to get out.
+    """
+
+    permission_classes = [AllowAny]
+    authentication_classes: list = []
+
+    @extend_schema(request=OpenApiTypes.OBJECT, responses=OpenApiTypes.OBJECT,
+                   tags=["core"])
+    def post(self, request):
+        from apps.core.mail import email_from_unsubscribe_token, suppress
+
+        email = email_from_unsubscribe_token(str(request.data.get("token") or ""))
+        if not email:
+            raise ValidationFailed("That unsubscribe link is not valid.")
+        suppress(email, reason="unsubscribe")
+        return Response({"unsubscribed": True, "email": email})

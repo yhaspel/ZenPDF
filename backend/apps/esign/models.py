@@ -84,8 +84,17 @@ class SignRequest(models.Model):
         DECLINED = "declined"
         EXPIRED = "expired"
         CANCELED = "canceled"
+        # Paused by reports, not by the owner — kept distinct so the owner's
+        # notification and the audit trail can say which it was (§9B).
+        CANCELED_BY_ABUSE = "canceled_by_abuse"
 
     OPEN_STATUSES = {Status.DRAFT, Status.SENT}
+    # Finished *badly*: nothing more can happen and the links stop working.
+    # `completed` is deliberately not here — a recipient must still be able to
+    # open their own finished envelope and download their copy, which is the
+    # ESIGN retention path.
+    CLOSED_STATUSES = {Status.EXPIRED, Status.CANCELED, Status.CANCELED_BY_ABUSE,
+                       Status.DECLINED}
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     owner = models.ForeignKey("users.User", on_delete=models.CASCADE,
@@ -99,7 +108,8 @@ class SignRequest(models.Model):
                                        related_name="sign_requests")
     title = models.CharField(max_length=255)
     message = models.TextField(blank=True)
-    status = models.CharField(max_length=16, choices=Status.choices, default=Status.DRAFT)
+    status = models.CharField(max_length=20, choices=Status.choices,
+                              default=Status.DRAFT)
     envelope_code = models.CharField(max_length=16, unique=True, default=new_envelope_code)
     expires_at = models.DateTimeField(null=True, blank=True)
     reminder_every_days = models.PositiveSmallIntegerField(default=3)
@@ -121,6 +131,11 @@ class SignRequest(models.Model):
     @property
     def is_terminal(self) -> bool:
         return self.status not in self.OPEN_STATUSES
+
+    @property
+    def is_closed(self) -> bool:
+        """Finished badly — the signing links are dead."""
+        return self.status in self.CLOSED_STATUSES
 
     def acting_recipients(self):
         """The ones whose completion the request waits for.
@@ -327,6 +342,32 @@ class AuditEvent(models.Model):
 
     def delete(self, *args, **kwargs):
         raise ValueError("Audit events are append-only.")
+
+
+class AbuseReport(models.Model):
+    """Somebody said "I did not ask for this" (§9B).
+
+    Reported *per signing link*, because the person who can tell us is the
+    recipient, and the thing they can identify is the request they were sent.
+    Three distinct reporters pauses the request — one angry recipient should
+    not be able to stop a legitimate contract, and three is a signal.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    sign_request = models.ForeignKey(SignRequest, on_delete=models.CASCADE,
+                                     related_name="abuse_reports")
+    recipient = models.ForeignKey(Recipient, on_delete=models.SET_NULL, null=True,
+                                  blank=True, related_name="abuse_reports")
+    reason = models.TextField(blank=True)
+    ip = models.GenericIPAddressField(null=True, blank=True)
+    user_agent = models.CharField(max_length=500, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ("-created_at",)
+
+    def __str__(self) -> str:  # pragma: no cover - admin convenience
+        return f"report on {self.sign_request_id}"
 
 
 def record(sign_request, event_type, *, recipient=None, request=None, **metadata):

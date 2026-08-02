@@ -28,6 +28,16 @@ def _draw_png() -> str:
     return "data:image/png;base64," + base64.b64encode(data).decode()
 
 
+@pytest.fixture(autouse=True)
+def _verified_by_default(user):
+    """Phase 9 requires a confirmed address before an account may send mail in
+    its own name. Every test here that is *about* something else starts from a
+    verified account; the ones about the gate itself turn it off."""
+    user.email_verified = True
+    user.save(update_fields=["email_verified"])
+    return user
+
+
 @pytest.fixture
 def sign_request(api, uploaded_doc):
     resp = api.post("/api/sign-requests/",
@@ -283,6 +293,26 @@ def test_the_full_two_signer_loop_completes_and_seals(sent, anon, api):
     versions = api.get(
         f"/api/documents/{sign_request.document_id}/versions/").json()
     assert versions[0]["label"] == "Signed"
+
+
+def test_a_recipient_can_still_open_a_completed_envelope(sent, anon):
+    """The retention path: the completion screen, and the copy it links to,
+    have to keep working after the envelope finishes."""
+    request_id = sent["id"]
+    for email in ("first@example.com", "second@example.com"):
+        token = _token(request_id, email)
+        meta = _ceremony(anon, token)
+        _consent(anon, token)
+        for field in meta["fields"]:
+            if field["type"] == "signature":
+                _fill_signature(anon, token, field["id"])
+        anon.post(f"/api/public/sign/{token}/complete/", format="json")
+
+    token = _token(request_id, "first@example.com")
+    body = _ceremony(anon, token)
+    assert body["status"] == "completed"
+    assert body["me"]["status"] == "completed"
+    assert anon.get(f"/api/public/sign/{token}/download/final/").status_code == 200
 
 
 def test_a_completed_token_cannot_be_reused(sent, anon):
@@ -729,16 +759,23 @@ def test_a_draft_patch_with_nonsense_numbers_is_a_400(api, sign_request):
     assert "whole number" in resp.json()["error"]["message"]
 
 
-def test_the_public_endpoints_carry_their_declared_throttle(anon):
+def test_the_public_endpoints_are_actually_rate_limited(anon, settings):
     """`throttle_scope` alone does nothing — the project's defaults contain no
-    `ScopedRateThrottle`, so the declared rate was inert."""
+    `ScopedRateThrottle`, so a declared rate is inert until something applies
+    it. §9B gives `/verify` its own per-IP class; the render endpoint keeps the
+    scoped image-upload rate."""
     from rest_framework.throttling import ScopedRateThrottle
 
+    from apps.core.throttling import VerifyThrottle
     from apps.esign.views import SignatureRenderView, VerifyView
 
-    for view in (VerifyView, SignatureRenderView):
-        classes = [type(t) for t in view().get_throttles()]
-        assert ScopedRateThrottle in classes, view.__name__
+    assert VerifyThrottle in [type(t) for t in VerifyView().get_throttles()]
+    assert VerifyThrottle.scope == "verify"
+    assert settings.REST_FRAMEWORK["DEFAULT_THROTTLE_RATES"]["verify"] == "10/min"
+
+    assert ScopedRateThrottle in [
+        type(t) for t in SignatureRenderView().get_throttles()
+    ]
 
 
 def test_a_token_cannot_reach_another_request(api, anon, sent, uploaded_doc):
@@ -800,3 +837,118 @@ def test_deleting_a_saved_signature_takes_its_image_with_it(api):
 
     assert api.delete(f"/api/signatures/{created['id']}/").status_code == 204
     assert not storage.exists(key), "the image outlived the row"
+
+
+# --------------------------------------------------------------------------- #
+# Phase 9 — abuse controls on the signing path
+# --------------------------------------------------------------------------- #
+@pytest.fixture
+def verified(user):
+    """Phase 9 gates *sending* on a confirmed address; most tests here predate
+    that, so the fixtures below opt in explicitly."""
+    user.email_verified = True
+    user.save(update_fields=["email_verified"])
+    return user
+
+
+def test_an_unverified_account_cannot_send_but_can_build(api, sign_request, user):
+    user.email_verified = False
+    user.save(update_fields=["email_verified"])
+
+    people = _recipients(api, sign_request["id"], [
+        {"email": "s@example.com", "role": "signer", "order": 1}])
+    _fields(api, sign_request["id"], [_sign_field(people[0]["id"])])
+
+    resp = api.post(f"/api/sign-requests/{sign_request['id']}/send/", format="json")
+    assert resp.status_code == 403
+    assert resp.json()["error"]["code"] == "email_not_verified"
+    # …and nothing was mailed to anybody.
+    assert mail.outbox == []
+
+
+def test_a_request_cannot_go_to_more_people_than_the_cap(api, sign_request,
+                                                         verified, settings):
+    settings.MAX_RECIPIENTS_PER_REQUEST = 3
+    people = _recipients(api, sign_request["id"], [
+        {"email": f"s{i}@example.com", "role": "signer", "order": 1}
+        for i in range(4)
+    ])
+    _fields(api, sign_request["id"],
+            [_sign_field(person["id"]) for person in people])
+
+    resp = api.post(f"/api/sign-requests/{sign_request['id']}/send/", format="json")
+    assert resp.status_code == 400
+    assert "at most 3 people" in resp.json()["error"]["message"]
+
+
+def test_a_day_of_sending_to_strangers_is_capped(api, uploaded_doc, verified,
+                                                 settings):
+    """Not a product limit — a mail-volume one. An account that emails fifty
+    different people a day is either a mailing list or a compromised login."""
+    settings.MAX_DISTINCT_RECIPIENTS_PER_DAY = 2
+
+    for index in range(2):
+        draft = api.post("/api/sign-requests/", {"document": uploaded_doc["id"]},
+                         format="json").json()
+        people = _recipients(api, draft["id"], [
+            {"email": f"person{index}@example.com", "role": "signer", "order": 1}])
+        _fields(api, draft["id"], [_sign_field(people[0]["id"])])
+        resp = api.post(f"/api/sign-requests/{draft['id']}/send/", format="json")
+        assert resp.status_code == (200 if index == 0 else 200), resp.content
+
+    third = api.post("/api/sign-requests/", {"document": uploaded_doc["id"]},
+                     format="json").json()
+    people = _recipients(api, third["id"], [
+        {"email": "one-too-many@example.com", "role": "signer", "order": 1}])
+    _fields(api, third["id"], [_sign_field(people[0]["id"])])
+    resp = api.post(f"/api/sign-requests/{third['id']}/send/", format="json")
+    assert resp.status_code == 400
+    assert "different people in a day" in resp.json()["error"]["message"]
+
+
+def test_three_reports_pause_a_request_and_tell_the_owner(api, anon, sign_request,
+                                                          verified, settings):
+    settings.ABUSE_REPORTS_TO_PAUSE = 3
+    people = _recipients(api, sign_request["id"], [
+        {"email": f"r{i}@example.com", "role": "signer", "order": 1}
+        for i in range(3)
+    ])
+    _fields(api, sign_request["id"],
+            [_sign_field(person["id"]) for person in people])
+    api.post(f"/api/sign-requests/{sign_request['id']}/send/", format="json")
+
+    tokens = [_token(sign_request["id"], f"r{i}@example.com") for i in range(3)]
+
+    first = anon.post(f"/api/public/sign/{tokens[0]}/report/",
+                      {"reason": "I do not know this person"}, format="json")
+    assert first.json() == {"reported": True, "reports": 1, "paused": False}
+    # The same person twice is still one report — one angry recipient must not
+    # be able to stop a legitimate contract.
+    anon.post(f"/api/public/sign/{tokens[0]}/report/", {}, format="json")
+    assert SignRequest.objects.get(id=sign_request["id"]).status == "sent"
+
+    anon.post(f"/api/public/sign/{tokens[1]}/report/", {}, format="json")
+    mail.outbox.clear()
+    third = anon.post(f"/api/public/sign/{tokens[2]}/report/", {}, format="json")
+    assert third.json()["paused"] is True
+
+    sign_request_row = SignRequest.objects.get(id=sign_request["id"])
+    assert sign_request_row.status == "canceled_by_abuse"
+    assert [m.to for m in mail.outbox] == [[sign_request_row.owner.email]]
+    assert "paused" in mail.outbox[0].body.lower()
+    # …and the links stop working for everyone.
+    assert anon.get(f"/api/public/sign/{tokens[0]}/").status_code == 410
+
+
+def test_a_report_is_recorded_with_who_and_when(api, anon, sent):
+    from apps.esign.models import AbuseReport
+
+    token = _token(sent["id"], "first@example.com")
+    anon.credentials(HTTP_USER_AGENT="Mozilla/5.0 (Reporter)")
+    anon.post(f"/api/public/sign/{token}/report/", {"reason": "spam"},
+              format="json")
+
+    report = AbuseReport.objects.get(sign_request_id=sent["id"])
+    assert report.reason == "spam"
+    assert report.ip and "Reporter" in report.user_agent
+    assert report.recipient.email == "first@example.com"

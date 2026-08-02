@@ -1,7 +1,13 @@
 import { expect, request as pwRequest, test } from '@playwright/test';
 import path from 'node:path';
 
-import { FIXTURES, registerAndLogin, uploadFiles, uniqueEmail } from './helpers';
+import {
+  FIXTURES,
+  registerAndLogin,
+  registerVerifiedAndLogin,
+  uniqueEmail,
+  uploadFiles,
+} from './helpers';
 
 /**
  * Phase 8 — e-signatures (phase-08 "Tests → E2E").
@@ -137,7 +143,7 @@ test('phase 8: two signers in order, sealed, certified and verifiable', async ({
   const signerTwo = uniqueEmail('signer2');
   const watcher = uniqueEmail('cc');
 
-  await registerAndLogin(page, 'p8');
+  await registerVerifiedAndLogin(page, 'p8');
   await uploadFiles(page, ['text.pdf']);
   await page.locator('[data-test=doc-card] [data-test=open-doc]').first().click();
   await expect(page).toHaveURL(/\/app\/doc\//);
@@ -298,7 +304,7 @@ test('phase 8: a signer who declines stops the request', async ({ page, browser 
   await clearMail();
   const signer = uniqueEmail('decliner');
 
-  await registerAndLogin(page, 'p8decline');
+  await registerVerifiedAndLogin(page, 'p8decline');
   await uploadFiles(page, ['text.pdf']);
   await page.locator('[data-test=doc-card] [data-test=open-doc]').first().click();
   await page.click('[data-test=sign-toggle]');

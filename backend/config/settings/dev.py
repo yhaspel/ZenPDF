@@ -30,3 +30,14 @@ REST_FRAMEWORK["DEFAULT_THROTTLE_RATES"]["auth"] = config(  # noqa: F405
 REST_FRAMEWORK["DEFAULT_THROTTLE_RATES"]["public_sign"] = config(  # noqa: F405
     "THROTTLE_PUBLIC_SIGN", default="200/min",
 )
+# …and the same for the guest and anonymous windows (phase-09). §16's numbers
+# assume one visitor per address; in dev the whole e2e suite — every guest,
+# every signer, every tool page — is a single IP, so the fiftieth test fails
+# for a reason that has nothing to do with what it asserts. The throttles
+# themselves are exercised properly in unit tests with overridden rates, and
+# production keeps §16.
+REST_FRAMEWORK["DEFAULT_THROTTLE_RATES"].update({  # noqa: F405
+    "anon": config("THROTTLE_ANON", default="600/min"),  # noqa: F405
+    "guest": config("THROTTLE_GUEST", default="600/min"),  # noqa: F405
+    "user": config("THROTTLE_USER", default="600/min"),  # noqa: F405
+})

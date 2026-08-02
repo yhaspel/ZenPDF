@@ -1,6 +1,6 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { ActivatedRoute } from '@angular/router';
+import { ActivatedRoute, RouterLink } from '@angular/router';
 
 import { CeremonyMeta, SignFieldModel } from '../../core/models/models';
 import { EsignService } from '../../core/services/esign.service';
@@ -19,7 +19,7 @@ type Screen = 'loading' | 'consent' | 'sign' | 'wait' | 'done' | 'closed' | 'err
 @Component({
   selector: 'app-ceremony',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [FormsModule, SignaturePad],
+  imports: [FormsModule, RouterLink, SignaturePad],
   templateUrl: './ceremony.html',
 })
 export class Ceremony {
@@ -37,6 +37,8 @@ export class Ceremony {
   protected declining = signal(false);
   protected declineReason = signal('');
   protected finalizing = signal(false);
+  protected reporting = signal(false);
+  protected reportReason = signal('');
   protected values = signal<Record<string, string>>({});
   protected filled = signal<Record<string, boolean>>({});
 
@@ -265,6 +267,26 @@ export class Ceremony {
         error: () => this.finalizing.set(false),
       });
     }, 1500);
+  }
+
+  /** "I did not ask for this" (§9B). Three distinct reporters pause it. */
+  protected report(): void {
+    this.busy.set(true);
+    this.esign.report(this.token(), this.reportReason()).subscribe({
+      next: (res) => {
+        this.busy.set(false);
+        this.reporting.set(false);
+        this.error.set(
+          res.paused
+            ? 'Thank you — this request has been paused and the sender told.'
+            : 'Thank you. We have recorded your report.',
+        );
+      },
+      error: () => {
+        this.busy.set(false);
+        this.error.set('That did not send. Try again in a moment.');
+      },
+    });
   }
 
   protected downloadUrl(what: 'final' | 'certificate'): string {

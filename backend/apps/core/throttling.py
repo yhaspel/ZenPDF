@@ -81,3 +81,36 @@ class PublicSignThrottle(SimpleRateThrottle):
 
     def get_cache_key(self, request, view):
         return self.cache_format % {"scope": self.scope, "ident": self.get_ident(request)}
+
+
+class UploadThrottle(SimpleRateThrottle):
+    """Per-*account* upload rate (§9B: 20/hour).
+
+    Keyed on the user, not the IP: an office behind one address is many people,
+    and a guest is already covered by `GuestThrottle` + `GuestIPThrottle`. An
+    anonymous caller returns `None`, which means "this throttle has no opinion"
+    — not "allow anything", because the guest throttles still run.
+    """
+
+    scope = "upload"
+
+    def get_cache_key(self, request, view):
+        user = getattr(request, "user", None)
+        if user is None or not user.is_authenticated:
+            return None
+        return self.cache_format % {"scope": self.scope, "ident": str(user.pk)}
+
+
+class VerifyThrottle(SimpleRateThrottle):
+    """Per-IP rate for `/api/verify/` (§9B: 10/min).
+
+    It has no principal by design — the person checking a document they were
+    sent is a stranger — so the address is all there is to key on.
+    """
+
+    scope = "verify"
+
+    def get_cache_key(self, request, view):
+        return self.cache_format % {
+            "scope": self.scope, "ident": self.get_ident(request),
+        }

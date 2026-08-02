@@ -32,13 +32,14 @@ from apps.core import limits as L
 from apps.core.assets import ImageRejected, asset_key, store_image
 from apps.core.exceptions import (
     ConsentRequired,
+    EmailNotVerified,
     TokenExpired,
     TokenInvalid,
     ValidationFailed,
 )
 from apps.core.permissions import IsAccount
 from apps.core.principals import owned_by
-from apps.core.throttling import PublicSignThrottle
+from apps.core.throttling import PublicSignThrottle, VerifyThrottle
 from apps.documents.models import Document
 from apps.pdf_engine.engine import seal as SEAL
 from apps.pdf_engine.engine import signatures as SG
@@ -350,6 +351,28 @@ class SignRequestDetailView(APIView):
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
+def _check_recipient_limits(user, recipients) -> None:
+    """Two caps, both about mail volume rather than product shape (§9B)."""
+    if len(recipients) > settings.MAX_RECIPIENTS_PER_REQUEST:
+        raise ValidationFailed(
+            f"A request can go to at most "
+            f"{settings.MAX_RECIPIENTS_PER_REQUEST} people."
+        )
+    since = timezone.now() - timezone.timedelta(days=1)
+    already = set(
+        Recipient.objects.filter(sign_request__owner=user,
+                                 sign_request__sent_at__gte=since)
+        .values_list("email", flat=True)
+    )
+    distinct = already | {r.email.lower() for r in recipients}
+    if len(distinct) > settings.MAX_DISTINCT_RECIPIENTS_PER_DAY:
+        raise ValidationFailed(
+            f"That would email more than "
+            f"{settings.MAX_DISTINCT_RECIPIENTS_PER_DAY} different people in a "
+            "day. If you need to send to more, get in touch."
+        )
+
+
 def _bounded(value, low: int, high: int, name: str) -> int:
     """An int in range, or a 400 — `int("soon")` was a 500."""
     try:
@@ -417,6 +440,12 @@ class SignRequestSendView(APIView):
         if version is None:
             raise ValidationFailed("That document has no content to send.")
 
+        # §9B: confirmed address before we will send mail in your name. It
+        # gates *this* and nothing else — never uploading, because a guest
+        # uploads freely and an account must not be worse off than a stranger.
+        if not request.user.email_verified:
+            raise EmailNotVerified()
+        _check_recipient_limits(request.user, recipients)
         L.enforce_sign_requests(request.user)
 
         # Frozen here, deliberately: everything after this point reads
@@ -532,10 +561,15 @@ class PublicSignBase(APIView):
             # token" is the honest answer to a bad one.
             raise TokenInvalid("This signing link is not valid.")
         sign_request = recipient.sign_request
-        if sign_request.status in {SignRequest.Status.EXPIRED,
-                                   SignRequest.Status.CANCELED,
-                                   SignRequest.Status.DECLINED}:
-            raise TokenExpired(f"This request was {sign_request.status}.")
+        if sign_request.is_closed:
+            # Derived from the model rather than listed here, so a status added
+            # later (`canceled_by_abuse` was) cannot leave a dead link working.
+            # A *completed* request is not closed: its recipients must still be
+            # able to open it and download their copy (ESIGN retention).
+            raise TokenExpired(
+                "This request was "
+                f"{sign_request.get_status_display().replace('_', ' ')}."
+            )
         if sign_request.status == SignRequest.Status.DRAFT:
             raise TokenInvalid("This request has not been sent yet.")
         if sign_request.expires_at and sign_request.expires_at < timezone.now():
@@ -761,6 +795,47 @@ class PublicSignDeclineView(PublicSignBase):
         return Response({"declined": True})
 
 
+class PublicSignReportView(PublicSignBase):
+    """`POST …/report/` — "I did not ask for this" (§9B).
+
+    Reachable with the recipient's own token, because the person who can tell
+    us is the person who was mailed. Three distinct reporters pauses the
+    request and tells the owner: one angry recipient must not be able to stop a
+    legitimate contract, and three is a signal worth acting on.
+    """
+
+    @extend_schema(request=OpenApiTypes.OBJECT, responses=OpenApiTypes.OBJECT,
+                   tags=["esign-public"])
+    def post(self, request, token):
+        recipient = Recipient.objects.select_related("sign_request").filter(
+            token=token).first()
+        if recipient is None:
+            raise TokenInvalid("This link is not valid.")
+        sign_request = recipient.sign_request
+
+        from .models import AbuseReport, client_ip
+
+        AbuseReport.objects.get_or_create(
+            sign_request=sign_request, recipient=recipient,
+            defaults={
+                "reason": str(request.data.get("reason") or "")[:2000],
+                "ip": client_ip(request),
+                "user_agent": (request.META.get("HTTP_USER_AGENT") or "")[:500],
+            },
+        )
+        reports = sign_request.abuse_reports.values("recipient_id").distinct().count()
+        paused = False
+        if (reports >= settings.ABUSE_REPORTS_TO_PAUSE
+                and not sign_request.is_terminal):
+            sign_request.status = SignRequest.Status.CANCELED_BY_ABUSE
+            sign_request.save(update_fields=["status"])
+            record(sign_request, "canceled", request=request,
+                   reason="abuse_reports", reports=reports)
+            emails.notify_paused_for_abuse(sign_request, reports)
+            paused = True
+        return Response({"reported": True, "reports": reports, "paused": paused})
+
+
 class PublicSignDownloadView(PublicSignBase):
     """A recipient's own copy of the finished document (ESIGN retention)."""
 
@@ -783,7 +858,9 @@ class PublicSignDownloadView(PublicSignBase):
 class VerifyView(APIView):
     permission_classes = [AllowAny]
     authentication_classes: list = []
-    throttle_scope = "image_upload"
+    # §9B: 10/min/IP. It has no principal by design — the person checking a
+    # document they were sent is a stranger.
+    throttle_classes = [VerifyThrottle]
 
     @extend_schema(request=OpenApiTypes.OBJECT, responses=OpenApiTypes.OBJECT,
                    tags=["esign-public"])
@@ -827,16 +904,6 @@ class VerifyView(APIView):
                     ]
         report["envelope_match"] = envelope
         return Response(report)
-
-    def get_throttles(self):
-        """The scoped rate **in addition to** the defaults.
-
-        `throttle_scope` on its own does nothing: the project's
-        `DEFAULT_THROTTLE_CLASSES` contains no `ScopedRateThrottle`, so the
-        declared 60/hour was inert and this endpoint ran on the 30/min anon
-        bucket instead (same fix, and the same reason, as `core/views.py`).
-        """
-        return [*super().get_throttles(), ScopedRateThrottle()]
 
 
 

@@ -52,6 +52,8 @@ urlpatterns = [
          name="public-sign-complete"),
     path("public/sign/<str:token>/decline/", views.PublicSignDeclineView.as_view(),
          name="public-sign-decline"),
+    path("public/sign/<str:token>/report/", views.PublicSignReportView.as_view(),
+         name="public-sign-report"),
     path("public/sign/<str:token>/download/<str:what>/",
          views.PublicSignDownloadView.as_view(), name="public-sign-download"),
 

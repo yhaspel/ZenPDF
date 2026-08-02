@@ -189,4 +189,10 @@
       </div>
     }
   </section>
+
+  <!-- The dashboard right rail (§9A), desktop only: below 1280px the layout is
+       already tight and an ad column would push the library off the screen. -->
+  <aside class="hidden w-[300px] shrink-0 xl:block">
+    <app-ad-slot name="dashboard-rail" [height]="600" />
+  </aside>
 </div>

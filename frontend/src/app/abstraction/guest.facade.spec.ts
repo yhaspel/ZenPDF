@@ -91,7 +91,7 @@ describe('GuestFacade', () => {
     // no further round trip may happen.
     const httpMock = TestBed.inject(HttpTestingController);
     facade.captureToken('already-have-one');
-    httpMock.match((r) => r.url.endsWith('/config/')).forEach((r) => r.flush({}));
+    httpMock.match((r) => r.url.includes('/config/')).forEach((r) => r.flush({}));
 
     let done = false;
     facade.ensureSession().subscribe(() => (done = true));

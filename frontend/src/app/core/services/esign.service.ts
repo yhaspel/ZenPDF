@@ -147,6 +147,12 @@ export class EsignService {
       `${this.base}/public/sign/${token}/decline/`, { reason });
   }
 
+  report(token: string, reason: string):
+    Observable<{ reported: boolean; reports: number; paused: boolean }> {
+    return this.http.post<{ reported: boolean; reports: number; paused: boolean }>(
+      `${this.base}/public/sign/${token}/report/`, { reason });
+  }
+
   recipientDownloadUrl(token: string, what: 'final' | 'certificate'): string {
     return `${this.base}/public/sign/${token}/download/${what}/`;
   }

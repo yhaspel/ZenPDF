@@ -3,6 +3,7 @@ import { RouterLink } from '@angular/router';
 
 import { AuthFacade } from '../../abstraction/auth.facade';
 import { TOOL_PAGES } from '../../core/tool-pages';
+import { AdSlot } from '../../shared/ad-slot';
 
 /**
  * The landing page is a directory of working tools, not a signup wall (§21.1).
@@ -13,7 +14,7 @@ import { TOOL_PAGES } from '../../core/tool-pages';
 @Component({
   selector: 'app-landing',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [RouterLink],
+  imports: [RouterLink, AdSlot],
   template: `
     <div class="min-h-screen bg-gradient-to-b from-indigo-50 to-white">
       <header class="mx-auto flex max-w-5xl items-center justify-between px-6 py-4">
@@ -51,7 +52,24 @@ import { TOOL_PAGES } from '../../core/tool-pages';
             </li>
           }
         </ul>
+
+        <!-- One of the three allowed surfaces (§9A). Renders nothing at all
+             unless ads are enabled *and* this visitor consented. -->
+        <div class="mt-10">
+          <app-ad-slot name="landing" [height]="250" />
+        </div>
       </main>
+
+      <footer class="border-t border-slate-200 bg-white/60 px-6 py-6 text-center text-xs text-slate-400">
+        <p>
+          <a routerLink="/about" class="underline" data-test="footer-about">About</a> ·
+          <a routerLink="/legal/privacy" class="underline" data-test="footer-privacy">Privacy</a> ·
+          <a routerLink="/legal/terms" class="underline" data-test="footer-terms">Terms</a> ·
+          <a routerLink="/legal/esign-disclosure" class="underline">E-sign disclosure</a> ·
+          <a routerLink="/verify" class="underline">Verify a signed PDF</a>
+        </p>
+        <p class="mt-2">Free, paid for by advertising. Files are deleted automatically.</p>
+      </footer>
     </div>
   `,
 })

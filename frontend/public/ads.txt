@@ -1,0 +1,8 @@
+# ads.txt — Authorized Digital Sellers (IAB).
+#
+# Empty of sellers on purpose: nothing here is authorised to sell ZenPDF
+# inventory until the AdSense account exists. The file is served so the
+# crawler finds a valid, deliberate answer rather than a 404 — and so the day
+# the publisher id arrives, one line changes.
+#
+# google.com, pub-XXXXXXXXXXXXXXXX, DIRECT, f08c47fec0942fa0

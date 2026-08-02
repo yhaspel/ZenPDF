@@ -162,6 +162,38 @@ def exports_purge() -> dict:
     return stats
 
 
+@shared_task(name="apps.core.tasks.trash_purge")
+def trash_purge() -> dict:
+    """Delete documents that have been in the trash past the retention window.
+
+    §15 lists this task and the privacy policy quotes its number. Both are read
+    from `TRASH_RETENTION_DAYS`, and a test asserts the policy, the setting and
+    this task agree — a retention promise nobody checks is the kind of sentence
+    that quietly stops being true.
+    """
+    from datetime import timedelta
+
+    from apps.documents.models import Document
+    from apps.documents.views import DocumentDetailView
+
+    cutoff = timezone.now() - timedelta(days=settings.TRASH_RETENTION_DAYS)
+    stale = Document.objects.filter(trashed_at__isnull=False,
+                                    trashed_at__lt=cutoff)
+    purged, kept = 0, 0
+    for document in stale.iterator():
+        try:
+            DocumentDetailView._purge(document)
+            purged += 1
+        except Exception:  # noqa: BLE001
+            # A document under a signature request refuses deletion by design
+            # (phase-08) — that is a reason to leave it, not to fail the sweep.
+            kept += 1
+            logger.info("trash_purge: kept %s (still referenced)", document.id)
+    if purged or kept:
+        logger.info("trash_purge: removed %s, kept %s", purged, kept)
+    return {"purged": purged, "kept": kept}
+
+
 def redaction_previews_purge(hours: int = 1) -> int:
     """Blank the matched text kept by redaction previews (phase-07, §17).
 

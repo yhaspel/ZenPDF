@@ -17,12 +17,16 @@ export const GUEST_HEADER = 'X-Guest-Token';
  * it — and mint a guest session for somebody who only came to sign a PDF.
  */
 function isCredentialFree(url: string): boolean {
+  // Matched precisely, not by substring: `/verify/` alone also matches
+  // `/api/users/verify/send/`, which is an *account* action — stripping its
+  // credential turned "send me the confirmation link" into a 403.
+  const path = url.split('?')[0];
   return (
-    url.includes('/public/sign/')
-    || url.includes('/verify/')
+    path.includes('/api/public/sign/')
+    || path.endsWith('/api/verify/')
     // The ceremony's "Type" tab renders through this, and a stale token on it
     // navigated a *stranger* to our login page mid-signature.
-    || url.includes('/signatures/render/')
+    || path.endsWith('/api/signatures/render/')
   );
 }
 
