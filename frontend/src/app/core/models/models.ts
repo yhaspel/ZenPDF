@@ -397,6 +397,64 @@ export interface FormFieldOp {
 /** A value as it travels to `fill_form`. */
 export type FormValue = string | boolean;
 
+// --------------------------------------------------------------------------- //
+// Phase 6 — OCR, conversion, compare
+// --------------------------------------------------------------------------- //
+export interface OcrOptions {
+  languages: string[];
+  deskew?: boolean;
+  rotate_pages?: boolean;
+  clean?: boolean;
+  /** Re-OCR pages that already have text — off by default, deliberately. */
+  force?: boolean;
+}
+
+export type ExportFormat = 'docx' | 'images' | 'txt' | 'md' | 'html' | 'pdfa';
+
+/** What a `convert_to` job leaves behind: an artefact, not a new version. */
+export interface JobExport {
+  filename: string;
+  content_type: string;
+  size_bytes: number;
+  storage_key: string;
+}
+
+/** A file parked by `POST /api/uploads/source/`, awaiting conversion. */
+export interface SourceAsset {
+  ref: string;
+  filename: string;
+  size_bytes: number;
+  kind: 'pdf' | 'image' | 'html' | 'office';
+}
+
+export interface TextChange {
+  kind: 'insert' | 'delete' | 'replace';
+  a_text: string;
+  b_text: string;
+  a_rect: Rect | null;
+  b_rect: Rect | null;
+}
+
+export interface ComparePage {
+  a_page: number | null;
+  b_page: number | null;
+  text_changes: TextChange[];
+  visual_regions: Rect[];
+  visual_share: number;
+}
+
+export interface CompareReport {
+  pages: ComparePage[];
+  summary: {
+    a_pages: number;
+    b_pages: number;
+    offset: number;
+    changed_pages: number;
+    text_changes: number;
+    identical: boolean;
+  };
+}
+
 export type StampPosition =
   | 'top-left' | 'top-center' | 'top-right'
   | 'bottom-left' | 'bottom-center' | 'bottom-right';

@@ -2,6 +2,8 @@ import { Page, expect } from '@playwright/test';
 import path from 'node:path';
 
 export const FIXTURES = path.resolve(__dirname, '../../backend/tests/fixtures/pdfs');
+/** The one fixture that is deliberately not a PDF (phase-06 image import). */
+export const IMAGES = path.resolve(__dirname, '../../backend/tests/fixtures/images');
 
 export function uniqueEmail(prefix: string): string {
   return `${prefix}-${Date.now()}-${Math.floor(Math.random() * 1e6)}@e2e.local`;

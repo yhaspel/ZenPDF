@@ -243,3 +243,61 @@ def test_monthly_heavy_ops_row_is_written_alongside_the_redis_window(user):
     assert counter.heavy_ops == 1
     # Month granularity only — the hourly window is never a row (§16).
     assert len(counter.period) == 7
+
+
+# --------------------------------------------------------------------------- #
+# OCR pages (§16) — advertised on /api/config/ and the usage panel, so it has
+# to be enforced rather than merely quoted (phase-06).
+# --------------------------------------------------------------------------- #
+def test_ocr_pages_are_counted_against_the_monthly_quota(api, fixture_bytes):
+    from django.core.files.uploadedfile import SimpleUploadedFile
+
+    upload = SimpleUploadedFile("scan.pdf", fixture_bytes("scanned.pdf"),
+                                content_type="application/pdf")
+    doc = api.post("/api/documents/", {"file": upload}, format="multipart").json()
+    resp = api.post(f"/api/documents/{doc['id']}/operations/",
+                    {"type": "ocr", "params": {"languages": ["eng"]},
+                     "base_version_seq": 1}, format="json")
+    assert resp.status_code == 202, resp.content
+    assert api.get(f"/api/jobs/{resp.json()['id']}/").json()["status"] == "succeeded"
+
+    usage = api.get("/api/users/me/usage/").json()
+    assert usage["counters"]["ocr_pages"] == 2, usage
+
+
+def test_a_guest_is_capped_per_day_and_an_account_per_month(guest, api, settings):
+    """§16 states the guest allowance per day and the account allowance per
+    month, so the check has to look at whichever window that tier actually
+    uses — a guest row of 0 months meant "no monthly limit", not "no OCR"."""
+    from apps.core.models import GuestSession
+
+    session = GuestSession.mint(ip="203.0.113.7", user_agent="pytest")[0]
+    tiers = copy.deepcopy(settings.TIERS)
+    tiers["guest"]["ocr_pages_per_day"] = 3
+    settings.TIERS = tiers
+
+    L.enforce_ocr_pages(session, 3)          # exactly the allowance is fine
+    L.record_ocr_pages(session, 3)
+    with pytest.raises(Exception, match="this day"):
+        L.enforce_ocr_pages(session, 1)
+
+
+def test_a_document_past_the_monthly_ocr_quota_is_refused_before_the_job(
+    api, uploaded_doc, settings,
+):
+    """A page-count pre-check: OCR is the most expensive thing we do, and a
+    document over quota should be refused rather than started and abandoned."""
+    from apps.jobs.models import Job
+
+    tiers = copy.deepcopy(settings.TIERS)
+    tiers["free"]["ocr_pages_per_month"] = 1
+    settings.TIERS = tiers
+
+    resp = api.post(f"/api/documents/{uploaded_doc['id']}/operations/",
+                    {"type": "ocr", "params": {"languages": ["eng"]},
+                     "base_version_seq": 1}, format="json")
+    assert resp.status_code == 429, resp.content
+    body = resp.json()["error"]
+    assert "OCR pages" in body["message"]
+    assert body["details"]["limit"] == 1
+    assert Job.objects.filter(type="ocr").count() == 0

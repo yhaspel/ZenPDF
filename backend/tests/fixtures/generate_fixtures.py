@@ -6,8 +6,9 @@ Run inside the api/worker image (needs fitz + pikepdf):
 
 Produces, under tests/fixtures/pdfs/:
     text.pdf, unicode.pdf, form.pdf, form-multi.pdf, scanned.pdf,
-    encrypted.pdf, rotated-90.pdf, corrupt.pdf, large-generated.pdf,
-    hebrew-rtl.pdf, xfa-form.pdf
+    scanned-hebrew.pdf, compare-a.pdf, compare-b.pdf, encrypted.pdf,
+    rotated-90.pdf, corrupt.pdf, large-generated.pdf, hebrew-rtl.pdf,
+    xfa-form.pdf
 
 Committed to the repo so tests don't regenerate; re-run to refresh.
 """
@@ -18,7 +19,9 @@ import fitz
 import pikepdf
 
 OUT = os.path.join(os.path.dirname(__file__), "pdfs")
+IMAGES = os.path.join(os.path.dirname(__file__), "images")
 os.makedirs(OUT, exist_ok=True)
+os.makedirs(IMAGES, exist_ok=True)
 
 
 def _text_doc(pages: int, prefix: str) -> fitz.Document:
@@ -117,6 +120,72 @@ def make_scanned():
     out.save(os.path.join(OUT, "scanned.pdf"), deflate=True)
     out.close()
     src.close()
+
+
+def make_scanned_hebrew():
+    """An image-only page of Hebrew — the phase-06 OCR acceptance criterion.
+
+    Rendered from `insert_htmlbox` rather than `insert_text` because only the
+    former applies bidi reordering, so the pixels are in the order a reader
+    sees them, which is what tesseract has to cope with. Rasterised at ~300 dpi:
+    Hebrew is harder to recognise than Latin and 180 dpi is marginal.
+    """
+    src = fitz.open()
+    page = src.new_page(width=595, height=842)
+    page.insert_htmlbox(
+        fitz.Rect(60, 60, 535, 200),
+        '<div dir="rtl" style="font-size:30px">שלום עולם</div>',
+    )
+    page.insert_htmlbox(
+        fitz.Rect(60, 220, 535, 360),
+        '<div dir="rtl" style="font-size:26px">מסמך סרוק לבדיקה</div>',
+    )
+    out = fitz.open()
+    pix = src[0].get_pixmap(matrix=fitz.Matrix(4.2, 4.2))
+    dest = out.new_page(width=src[0].rect.width, height=src[0].rect.height)
+    dest.insert_image(dest.rect, pixmap=pix)
+    out.save(os.path.join(OUT, "scanned-hebrew.pdf"), deflate=True)
+    out.close()
+    src.close()
+
+
+def make_sample_image():
+    """A PNG for the image-import path (phase-06) — the one fixture in the
+    corpus that is deliberately *not* a PDF."""
+    doc = fitz.open()
+    page = doc.new_page(width=400, height=260)
+    page.draw_rect(page.rect, color=None, fill=(0.96, 0.97, 1.0))
+    page.insert_text((30, 90), "ZenPDF sample image", fontsize=22)
+    page.insert_text((30, 130), "for the image-to-PDF route", fontsize=13)
+    pix = page.get_pixmap(matrix=fitz.Matrix(2, 2))
+    doc.close()
+    pix.save(os.path.join(IMAGES, "sample.png"))
+
+
+def make_compare_pair():
+    """Two nearly-identical documents, for compare (phase-06 §Tests).
+
+    One word changed, one paragraph added, and a black box stamped on page 2 —
+    a text-only change, a structural change, and a change the text diff cannot
+    see, which is the whole reason the visual pass exists.
+    """
+    for name, changed in (("compare-a.pdf", False), ("compare-b.pdf", True)):
+        doc = fitz.open()
+        page = doc.new_page(width=595, height=842)
+        page.insert_text((72, 100), "Quarterly report", fontsize=22)
+        page.insert_text((72, 140),
+                         "Revenue grew by twelve percent this quarter.",
+                         fontsize=12)
+        if changed:
+            page.insert_text((72, 170), "An extra line only B has.", fontsize=12)
+        second = doc.new_page(width=595, height=842)
+        second.insert_text((72, 100), "Appendix", fontsize=22)
+        second.insert_text((72, 140), "The figures above are unaudited.", fontsize=12)
+        if changed:
+            # Visible to a pixel comparison, invisible to a text diff.
+            second.draw_rect(fitz.Rect(200, 300, 420, 420), color=None, fill=(0, 0, 0))
+        doc.save(os.path.join(OUT, name))
+        doc.close()
 
 
 def make_rotated():
@@ -231,6 +300,9 @@ if __name__ == "__main__":
     make_form()
     make_multi_form()
     make_scanned()
+    make_scanned_hebrew()
+    make_compare_pair()
+    make_sample_image()
     make_rotated()
     make_large()
     make_encrypted()

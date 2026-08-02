@@ -212,10 +212,10 @@ All document mutations/derivations run as Jobs with `type` from this registry. P
 | edit_form_fields_batch | 5 | PyMuPDF (+pyHanko for signature fields) | ops[]: add/update/delete of field specs {type, name, rect §8, page, options…} |
 | import_form_data | 5 | PyMuPDF | format ∈ {json, csv}, data (the file's text, inline, ≤ 2 MB), flatten_after bool |
 | ocr | 6 | OCRmyPDF | languages[], deskew bool, rotate_pages bool, clean bool, force bool |
-| convert_from | 6 | Gotenberg / PyMuPDF | source upload (docx/xlsx/pptx/odt/rtf/txt/img/html) or url → new document |
-| convert_to | 6 | pdf2docx / PyMuPDF / pymupdf4llm / OCRmyPDF | target ∈ {docx, images(png/jpg+dpi), txt, md, html, pdfa} → export |
-| repair | 6 | pikepdf | — |
-| compare | 6 | PyMuPDF | other_document_id → export: diff report (JSON + rendered) |
+| convert_from | 6 | Gotenberg / PyMuPDF | `upload_ref` **or `upload_refs[]`** (several images → one document, a page each) or `url`, `fit ∈ {a4, original}` → new document. Cross-document: no primary document in the URL |
+| convert_to | 6 | pdf2docx / PyMuPDF / pymupdf4llm / OCRmyPDF | format ∈ {docx, images(png/jpg+dpi), txt, md, html, pdfa} → **export** (`produces="export"`: an artefact beside the document at `exports/{job_id}/…`, downloaded via `GET /api/jobs/{id}/download/`, never a new version) |
+| repair | 6 | PyMuPDF (`repair_pdf`, phase-1) | — |
+| compare | 6 | PyMuPDF | other_document_id, offset (v1 alignment), visual bool → **report**: `{pages[], summary}` returned inline on the job, not an export — it is consumed by the compare UI, which draws the rects itself, and minting a downloadable artefact for an inspection nobody downloads is storage nobody asked for. The "rendered" half is backlog. |
 | encrypt | 7 | pikepdf | user_password?, owner_password, permissions{} (AES-256) |
 | decrypt | 7 | pikepdf | password |
 | set_permissions | 7 | pikepdf | owner_password, permissions{} |
@@ -248,7 +248,7 @@ Workers: prefork, `max_memory_per_child=1.5 GB`, non-root, open PDFs per-task (n
 
 ## 13. Storage
 
-Bucket `zenpdf`, all private. Keys: `docs/{document_id}/v{seq}.pdf` · `thumbs/{document_id}/{seq}/p{page}@{w}.png` · **`uploads/{g|u}/{principal_id}/{ref}.png`** (added phase 3 — ephemeral *image* assets a principal uploaded: custom stamps, image watermarks, inserted images; guest ones purged with the session) · `sigs/{user_id}/{signature_id}.png` · `sigs/guest/{guest_session_id}/{ref}.png` (ephemeral, purged with the session) · `sign/{sign_request_id}/{final.pdf|certificate.pdf}` · `exports/{job_id}/{filename}` (TTL 24 h via beat GC).
+Bucket `zenpdf`, all private. Keys: `docs/{document_id}/v{seq}.pdf` · `thumbs/{document_id}/{seq}/p{page}@{w}.png` · **`uploads/{g|u}/{principal_id}/{ref}.{ext}`** (added phase 3 — ephemeral assets a principal uploaded: custom stamps, image watermarks and inserted images as `.png`; since phase 6 also *conversion sources* awaiting `convert_from`, which keep their own extension because LibreOffice decides what a file is from its name. Deleted as soon as the conversion has run; guest ones purged with the session either way) · `sigs/{user_id}/{signature_id}.png` · `sigs/guest/{guest_session_id}/{ref}.png` (ephemeral, purged with the session) · `sign/{sign_request_id}/{final.pdf|certificate.pdf}` · `exports/{job_id}/{filename}` (TTL 24 h via beat GC).
 
 **`uploads/…` refs are principal-derived, never client-supplied paths.** The API returns an opaque `ref` (`^[A-Za-z0-9_-]{6,64}$`) and every read rebuilds the key from the *caller's* principal, so a ref cannot address another principal's asset even if it leaks. Uploaded images are re-encoded to PNG on the way in, which normalizes the format for the engine and drops EXIF (GPS included) before it can be pasted into a document the user is about to share. Guest documents use the **same key layout** (keyed by document id, not principal) so claiming a session (§21.5) is a metadata-only reparent — no blob copying. Guest blobs are deleted by `guest_purge` (§15) when the session expires.
 

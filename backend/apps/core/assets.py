@@ -187,6 +187,109 @@ def store_image(principal, data: bytes) -> dict:
     return {"ref": ref, "width": width, "height": height, "content_type": "image/png"}
 
 
+def source_key(principal, ref: str, extension: str) -> str:
+    """`uploads/{g|u}/{id}/{ref}.{ext}` for a *conversion source* (phase-06).
+
+    Same namespace, same ref rules and the same guest purge as an image asset —
+    a Word file waiting to be converted is exactly as ephemeral as a stamp. It
+    keeps its real extension because LibreOffice decides what it is looking at
+    from the filename.
+    """
+    if not REF_RE.match(ref or ""):
+        raise ImageRejected(f"invalid upload ref {ref!r}")
+    ext = (extension or "").lstrip(".").lower()
+    if not ext.isalnum() or len(ext) > 8:
+        raise ImageRejected(f"invalid file type {extension!r}")
+    return f"{principal_prefix(principal)}{ref}.{ext}"
+
+
+def store_source(principal, data: bytes, filename: str) -> dict:
+    """Park a file that is about to be converted to PDF. Returns the wire shape."""
+    from apps.pdf_engine.engine.convert import extension_of, kind_of
+    from apps.pdf_engine.storage import get_storage
+
+    from . import limits as L
+
+    # Raises UnsupportedFileError for anything outside the offered set, so a
+    # `.exe` never reaches storage, let alone LibreOffice.
+    kind_of(filename)
+    extension = extension_of(filename)
+
+    tier = L.for_principal(principal)
+    if len(data) > tier.max_upload_bytes:
+        raise ImageRejected(
+            f"Files must be {tier.max_upload_bytes // (1024 * 1024)} MB or smaller."
+        )
+    used = L.storage_used(principal)
+    if used + len(data) > tier.storage_bytes:
+        raise AssetQuotaExceeded(
+            "Storing this file would exceed your storage quota.",
+            quota=tier.storage_bytes, used=used,
+        )
+
+    ref = secrets.token_urlsafe(18).replace("=", "")[:32]
+    get_storage().put_bytes(source_key(principal, ref, extension), data,
+                            content_type="application/octet-stream")
+    L.bump_storage(principal, len(data))
+    return {"ref": ref, "filename": filename, "size_bytes": len(data), "kind": kind_of(filename)}
+
+
+def load_source(principal, ref: str) -> tuple[bytes, str]:
+    """The parked file for `ref`, plus a filename carrying its real extension.
+
+    Found by listing the principal's own prefix rather than by trusting a
+    client-supplied extension — the ref is the only thing the client names, and
+    the prefix is derived from the caller, so this cannot cross principals.
+    """
+    from apps.pdf_engine.storage import get_storage
+
+    if not REF_RE.match(str(ref or "")):
+        raise ImageRejected(f"invalid upload ref {ref!r}")
+    storage = get_storage()
+    prefix = principal_prefix(principal)
+    for key in storage.list_prefix(prefix):
+        name = key[len(prefix):]
+        stem, _, extension = name.rpartition(".")
+        if stem == str(ref):
+            return storage.get_bytes(key), f"{stem}.{extension}"
+    raise ImageRejected(f"upload '{ref}' was not found; upload it again")
+
+
+def discard_source(principal, ref: str) -> int:
+    """Delete a parked conversion source and refund its storage.
+
+    Called once the conversion has run, successfully or not. Without it the
+    file is charged to the principal for ever with no way to free it: a guest's
+    prefix is at least swept when the session expires, but an account's is
+    never swept at all, and since phase-06 every non-PDF the dashboard accepts
+    lands here.
+    """
+    from apps.pdf_engine.storage import get_storage
+
+    from . import limits as L
+
+    if not REF_RE.match(str(ref or "")):
+        return 0
+    storage = get_storage()
+    prefix = principal_prefix(principal)
+    removed = 0
+    for key in storage.list_prefix(prefix):
+        stem = key[len(prefix):].rpartition(".")[0]
+        if stem != str(ref):
+            continue
+        try:
+            size = storage.head(key).get("size", 0)
+        except Exception:  # noqa: BLE001
+            size = 0
+        try:
+            storage.delete(key)
+        except Exception:  # noqa: BLE001
+            continue
+        L.bump_storage(principal, -int(size))
+        removed += 1
+    return removed
+
+
 def move_assets(from_kind: str, from_id, to_principal) -> int:
     """Re-key one principal's assets onto another. Used by claim-on-signup.
 
@@ -204,10 +307,14 @@ def move_assets(from_kind: str, from_id, to_principal) -> int:
     moved = 0
     for key in storage.list_prefix(source):
         try:
+            # Content type from the key, not assumed: since phase-06 this
+            # namespace also holds conversion sources (.docx, .tiff, .html).
+            content_type = ("image/png" if key.endswith(".png")
+                            else "application/octet-stream")
             storage.put_bytes(
                 f"{target}{key[len(source):]}",
                 storage.get_bytes(key),
-                content_type="image/png",
+                content_type=content_type,
             )
             storage.delete(key)
             moved += 1

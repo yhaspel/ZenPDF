@@ -18,7 +18,15 @@ export type ToolKind =
   | 'edit'
   | 'watermark'
   | 'page-numbers'
-  | 'fill-form';
+  | 'fill-form'
+  | 'ocr'
+  | 'pdf-to-word'
+  | 'word-to-pdf'
+  | 'jpg-to-pdf'
+  | 'pdf-to-jpg'
+  | 'html-to-pdf'
+  | 'compare'
+  | 'repair';
 
 export interface ToolFaq {
   q: string;
@@ -465,6 +473,287 @@ export const TOOL_PAGES: ToolPageDef[] = [
     minFiles: 1,
     multiple: false,
     cta: 'Fill out form',
+  },
+  {
+    slug: 'ocr-pdf',
+    kind: 'ocr',
+    title: 'OCR PDF — make a scanned PDF searchable, free | ZenPDF',
+    metaDescription:
+      'Turn a scanned PDF into text you can search, select and copy. English, Hebrew, German, French and Spanish. Free, no account, no watermark.',
+    h1: 'Make a scanned PDF searchable',
+    intro: [
+      'A scanned document is a photograph of a page. It looks like text to you and is a picture to every computer that handles it: you cannot search it, select a sentence, copy a figure out of it, or edit a word. OCR fixes that by reading the picture and writing what it says into the file as an invisible text layer.',
+      'The page itself is left exactly as it is. Nothing is redrawn, no font is substituted, and the document still looks like the scan you started with — the text layer sits behind the image, lined up with the words, which is why selecting a line highlights the right pixels.',
+      'Five languages ship ready to use: English, Hebrew, German, French and Spanish. Hebrew and other right-to-left scripts come back in the correct reading order, which is the part naive OCR usually gets wrong.',
+      'Three optional clean-up passes are available in the workspace: straightening a crooked scan, turning sideways pages the right way up, and removing speckles before reading. They help a photographed page and can slightly blur an already-clean one, so they are off by default.',
+      'A PDF that already has real text is left alone by default. Re-reading a picture of text you already have is a downgrade, not an improvement, so replacing an existing text layer is something you have to ask for explicitly.',
+      'Accuracy depends on the scan. Three hundred DPI, straight, and in focus reads almost perfectly; a photograph taken at an angle in poor light will have mistakes. We do not pretend otherwise — check anything that matters, particularly numbers.',
+      'Once a document has been through OCR the rest of ZenPDF opens up for it: the editor will let you change the text, find and replace works, and highlighting attaches to real words instead of guessing.',
+      'Free, no account, and nothing watermarked. Guest files are deleted automatically within 24 hours.',
+    ],
+    faq: [
+      {
+        q: 'Does OCR change how my document looks?',
+        a: 'No. The page image is untouched; the recognised text goes in as an invisible layer behind it, aligned with the words.',
+      },
+      {
+        q: 'Which languages are supported?',
+        a: 'English, Hebrew, German, French and Spanish are installed. Pick more than one if a document mixes them.',
+      },
+      {
+        q: 'Will it be perfect?',
+        a: 'On a clean 300 DPI scan it is very close. On a phone photo taken at an angle it will make mistakes — check anything that matters, especially numbers.',
+      },
+      {
+        q: 'My PDF already has text. Should I run OCR?',
+        a: 'No, and by default we skip those pages. Replacing real text with a reading of a picture of it makes the document worse.',
+      },
+    ],
+    minFiles: 1,
+    multiple: false,
+    cta: 'Run OCR',
+  },
+  {
+    slug: 'pdf-to-word',
+    kind: 'pdf-to-word',
+    title: 'PDF to Word — convert PDF to editable DOCX free | ZenPDF',
+    metaDescription:
+      'Convert a PDF into an editable Word document. Free, no account, no watermark. Files auto-delete within 24 hours.',
+    h1: 'Convert PDF to Word',
+    intro: [
+      'Turn a PDF into a .docx you can open and edit in Word, Google Docs, LibreOffice or Pages. Drop the file in and the converted document downloads straight away.',
+      'It is worth knowing what this conversion actually does, because every tool that offers it is doing the same difficult thing. A PDF does not contain paragraphs, headings, tables or columns — it contains glyphs at coordinates. Converting to Word means *reconstructing* a document structure that was never there, by looking at where things sit on the page and inferring what they were.',
+      'That reconstruction is good on straightforward documents: a letter, a report, a contract in a single column comes across with its paragraphs, its bold, and usually its tables intact. It is weaker on complex layouts — magazine columns, heavy use of text boxes, forms with ruled lines — where the inferred structure will need tidying.',
+      'Scanned PDFs are a different matter entirely. There are no glyphs to work from, only pixels, so the result would be a Word document containing one large picture. Run OCR first and the conversion has real text to work with.',
+      'The original PDF is untouched. Converting produces a new file to download; nothing about the document in your library changes.',
+      'No account is needed and the result is not watermarked. For the reverse direction — a Word file into a PDF — use the Word to PDF tool.',
+      'Downloads are kept for 24 hours and then deleted, along with the file you uploaded if you are working without an account.',
+    ],
+    faq: [
+      {
+        q: 'Will the layout be identical?',
+        a: 'Close on simple documents, approximate on complex ones. A PDF has no paragraphs to recover — the structure is inferred from where things sit on the page.',
+      },
+      {
+        q: 'Can I convert a scanned PDF to Word?',
+        a: 'Run OCR on it first. Without a text layer there is nothing to convert but pixels, and you would get a Word file containing a picture.',
+      },
+      {
+        q: 'Is the converted file editable?',
+        a: 'Yes — it is a real .docx with editable text, not an image in a wrapper.',
+      },
+    ],
+    minFiles: 1,
+    multiple: false,
+    cta: 'Convert to Word',
+  },
+  {
+    slug: 'word-to-pdf',
+    kind: 'word-to-pdf',
+    title: 'Word to PDF — convert DOCX to PDF online free | ZenPDF',
+    metaDescription:
+      'Convert Word, Excel, PowerPoint, OpenDocument and RTF files to PDF. Free, no account, no watermark, fonts and layout preserved.',
+    h1: 'Convert Word to PDF',
+    intro: [
+      'Turn a Word document into a PDF that looks the same everywhere. Drop the .docx in and download the PDF — no account, no watermark, no email address.',
+      'The conversion runs through LibreOffice, which reads the file the way an office suite does rather than guessing at the XML: styles, headers and footers, page breaks, tables, images and embedded fonts all come across. What you see in Word is what lands in the PDF, within the ordinary limits of two different rendering engines.',
+      'Other office formats work through the same route: .doc, .odt and .rtf for text; .xlsx, .ods and .csv for spreadsheets; .pptx and .odp for slides. Plain .txt too, which is occasionally the quickest way to get a clean, printable page.',
+      'Converting to PDF is what to do before sending a document to someone who should not edit it, or who might not have the fonts you used. A PDF carries its fonts with it; a Word file trusts the recipient to have them, and substitutes silently when they do not.',
+      'The result opens in the workspace if you want to keep working — add a watermark, number the pages, protect it with a password, or sign it — or you can simply download it and close the tab.',
+      'Very large or unusual documents can take a few seconds; the conversion runs on our servers and the result is checked to be a readable PDF before it is handed back, so a broken conversion is reported as one rather than downloaded as a file that will not open.',
+      'Guest files are deleted automatically within 24 hours. A free account keeps them in a library instead and raises the size limits.',
+    ],
+    faq: [
+      {
+        q: 'Will my formatting survive?',
+        a: 'Yes, in almost all cases. The conversion uses LibreOffice, so styles, tables, headers, images and embedded fonts are handled properly rather than approximated.',
+      },
+      {
+        q: 'What file types can I convert?',
+        a: 'Word (.doc, .docx), OpenDocument (.odt, .ods, .odp), RTF, plain text, Excel (.xls, .xlsx), CSV and PowerPoint (.ppt, .pptx).',
+      },
+      {
+        q: 'Do I need Microsoft Word installed?',
+        a: 'No. The conversion happens on our servers; you need nothing but a browser.',
+      },
+    ],
+    minFiles: 1,
+    multiple: false,
+    cta: 'Convert to PDF',
+  },
+  {
+    slug: 'jpg-to-pdf',
+    kind: 'jpg-to-pdf',
+    title: 'JPG to PDF — convert images to PDF online free | ZenPDF',
+    metaDescription:
+      'Turn JPG, PNG or TIFF images into a PDF. Multi-page TIFFs keep every page. Free, no account, no watermark.',
+    h1: 'Convert images to PDF',
+    intro: [
+      'Turn photographs and scans into a PDF — one page per image, in the order you add them. JPG, PNG, TIFF, BMP, GIF and WebP all work.',
+      'A multi-page TIFF, which is what a lot of office scanners and fax gateways produce, keeps every one of its frames: a twelve-page scan becomes a twelve-page PDF rather than a PDF of its first page. This is the case most image-to-PDF converters quietly get wrong.',
+      'Images are fitted to A4 by default, centred and scaled to keep their proportions, which is what you want for something that will be printed or filed. The workspace also offers original size, where each page matches its image exactly — better for screenshots and for images that are already the right shape.',
+      'Photographs of documents are worth a second step: run OCR afterwards and the text in the picture becomes searchable and selectable, which turns a photo of a receipt into something you can actually find later.',
+      'The image data is embedded as-is rather than re-encoded, so nothing is degraded on the way in. A PDF of photographs is a large file by nature; compress it afterwards if it needs to fit an email.',
+      'No account, no watermark, and nothing is sent to a third party. Guest files are deleted automatically within 24 hours.',
+    ],
+    faq: [
+      {
+        q: 'Can I combine several images into one PDF?',
+        a: 'Yes — add them all and each becomes a page, in the order you added them.',
+      },
+      {
+        q: 'Does a multi-page TIFF keep all its pages?',
+        a: 'Yes. Every frame becomes a page.',
+      },
+      {
+        q: 'Are my images re-compressed?',
+        a: 'No. The image data is embedded as it arrived, so nothing is degraded. Use the compress tool afterwards if the file needs to be smaller.',
+      },
+    ],
+    minFiles: 1,
+    multiple: true,
+    cta: 'Convert to PDF',
+  },
+  {
+    slug: 'pdf-to-jpg',
+    kind: 'pdf-to-jpg',
+    title: 'PDF to JPG — convert PDF pages to images free | ZenPDF',
+    metaDescription:
+      'Convert every page of a PDF into a JPG or PNG image at the resolution you choose. Free, no account, no watermark.',
+    h1: 'Convert PDF to images',
+    intro: [
+      'Turn each page of a PDF into an image. You get a zip containing one file per page, numbered in order, ready to drop into a slide deck, a web page or a chat message.',
+      'A zip rather than a single image on purpose: a document has more than one page, and a tool that silently converts only the first is a tool that has wasted your time. Ten pages give you ten files.',
+      'Resolution is yours to choose in the workspace, from 72 DPI for something that will only ever be looked at on a screen up to 300 DPI for print. Higher DPI means a sharper image and a much larger file — 300 DPI is roughly seventeen times the pixels of 72.',
+      'JPEG and PNG are both available. JPEG is smaller and right for pages that are mostly photographs; PNG is lossless and right for pages of text and diagrams, where JPEG artefacts show up as fuzz around the letters.',
+      'Converting to images is a one-way door: the result is pixels, with no text layer, so nothing in it can be searched, selected or edited afterwards. That is sometimes exactly what you want — an image of a page cannot be copied out of or reflowed — but it is worth knowing before you send the result to someone who may need the text.',
+      'The original PDF is untouched. Free, no account, and the zip is kept for 24 hours before it is deleted.',
+    ],
+    faq: [
+      {
+        q: 'Do I get one image or one per page?',
+        a: 'One per page, delivered as a zip, numbered in page order.',
+      },
+      {
+        q: 'What resolution should I choose?',
+        a: '72–150 DPI for anything that will be viewed on a screen, 300 DPI for print. Higher means sharper and much bigger.',
+      },
+      {
+        q: 'Can I get the text back afterwards?',
+        a: 'Not from the images — they are pixels. Keep the original PDF, or run OCR on the images if the original is gone.',
+      },
+    ],
+    minFiles: 1,
+    multiple: false,
+    cta: 'Convert to images',
+  },
+  {
+    slug: 'html-to-pdf',
+    kind: 'html-to-pdf',
+    title: 'HTML to PDF — convert a web page or HTML file to PDF | ZenPDF',
+    metaDescription:
+      'Convert an HTML file into a PDF, rendered by a real browser engine. Free, no account, no watermark.',
+    h1: 'Convert HTML to PDF',
+    intro: [
+      'Turn an HTML file into a PDF that looks the way the page looks. The conversion runs through a real Chromium browser, so CSS, web fonts, flexbox and grid layouts, SVG and print stylesheets are all handled properly rather than approximated by a converter with its own idea of HTML.',
+      'This is the right tool for an invoice or a report your system generates as HTML, for an email you have saved, or for documentation you want to archive as a fixed, printable file.',
+      'If the page has a print stylesheet, that is what you get — the same layout a browser would send to a printer, without the navigation and the cookie banner.',
+      'Upload an HTML file and any styles that are inlined or embedded in it are applied. A page that pulls its stylesheet from elsewhere on the web will render unstyled, so save the complete page if you want it to look right.',
+      'The result is a normal PDF: searchable, selectable, and ready for anything else here — sign it, number the pages, protect it, or merge it into a larger document.',
+      'Page size and margins follow the page\'s own print rules. An HTML document that says nothing about printing gets sensible A4 defaults; one with a print stylesheet gets exactly what that stylesheet asks for, including page breaks you have placed deliberately.',
+      'Converting by address rather than by file is available from the import box in your library. It is deliberately restricted: addresses that resolve inside a private network are refused, because a converter that will fetch any address on request is a tool for reading things it should not.',
+      'Free, no account, and nothing watermarked. Guest files are deleted automatically within 24 hours.',
+    ],
+    faq: [
+      {
+        q: 'Does it handle modern CSS?',
+        a: 'Yes. Rendering is done by Chromium, so what a browser shows is what the PDF contains — including flexbox, grid, web fonts and SVG.',
+      },
+      {
+        q: 'Why does my page look unstyled?',
+        a: 'Most likely its stylesheet lives at another address that the uploaded file cannot reach. Save the complete page, with its styles inlined or embedded, and convert that.',
+      },
+      {
+        q: 'Can I convert a page by URL?',
+        a: 'Yes, from the import box in your library. For safety, addresses inside private networks are refused.',
+      },
+    ],
+    minFiles: 1,
+    multiple: false,
+    cta: 'Convert to PDF',
+  },
+  {
+    slug: 'compare-pdf',
+    kind: 'compare',
+    title: 'Compare PDF — find the differences between two PDFs free | ZenPDF',
+    metaDescription:
+      'Compare two PDFs side by side and see exactly what changed — added, removed and rewritten text, plus visual differences. Free, no account.',
+    h1: 'Compare two PDFs',
+    intro: [
+      'Put two versions of a document next to each other and see what actually changed. Every added, removed and rewritten passage is listed; clicking one moves both sides to that page and highlights it where it sits.',
+      'Two comparisons run, because they catch different things. The text comparison aligns the words of each page and reports the differences precisely — the wording, not an approximation of it. The visual comparison renders both pages and finds regions of pixels that differ, which catches everything the text pass cannot see: a moved figure, a changed logo, a redaction box, a different chart.',
+      'That second pass matters more than it sounds. A clause deleted from a contract and a signature block quietly moved are both "changes", and only one of them involves any words changing.',
+      'Pages are matched by position, with an offset control for the common case where one side gained or lost a page near the front. Set the offset to one and page one is compared with page two, and so on down the document.',
+      'Small rendering noise — anti-aliasing, a fraction of a millimetre of drift — is ignored, so a page that is genuinely unchanged is reported as unchanged rather than as a scatter of meaningless boxes.',
+      'Scanned documents can be compared visually, but their text cannot be compared until they have been through OCR: there is nothing to align. Run OCR on both sides first and the text comparison works normally.',
+      'Both documents stay exactly as they were. Comparing reads them and produces a report; it never writes anything back.',
+      'Free, no account, and no watermark. Guest files are deleted automatically within 24 hours.',
+    ],
+    faq: [
+      {
+        q: 'What kinds of change does it find?',
+        a: 'Added, removed and rewritten text, reported word by word — plus visual differences, which catch changes that involve no text at all, such as a moved image or a redaction.',
+      },
+      {
+        q: 'The pages do not line up. What do I do?',
+        a: 'Use the page offset. If one side gained a cover page, set the offset to 1 so page 1 is compared with page 2.',
+      },
+      {
+        q: 'Can I compare scanned documents?',
+        a: 'Visually, yes. For a text comparison, run OCR on both first — a scan has no text to align.',
+      },
+      {
+        q: 'Does comparing change my files?',
+        a: 'No. Both documents are read and left exactly as they were.',
+      },
+    ],
+    minFiles: 2,
+    multiple: true,
+    cta: 'Compare PDFs',
+  },
+  {
+    slug: 'repair-pdf',
+    kind: 'repair',
+    title: 'Repair PDF — fix a damaged or corrupted PDF file free | ZenPDF',
+    metaDescription:
+      'Rebuild a damaged PDF so it opens again. Free, no account, no watermark. Files auto-delete within 24 hours.',
+    h1: 'Repair a damaged PDF',
+    intro: [
+      'A PDF that will not open, or that opens with an error, is usually not lost. Most damage is to the file\'s index rather than to its content: the pages, text and images are still in there, and what has gone wrong is the table that says where they are.',
+      'Repair rebuilds that structure. The file is read with error recovery, every object that can be found is recovered, the cross-reference table is rebuilt from scratch, and the result is written out cleanly.',
+      'The usual causes are an interrupted download, a copy that stopped halfway, a crash while saving, or a transfer that mangled line endings. All of those damage the wrapper rather than the contents, which is why recovery works as often as it does.',
+      'What repair cannot do is invent content that is not there. If a file was truncated at 60% of its length, the last 40% of the pages are genuinely gone — you will get back everything that survived, which is usually better than nothing but is not the whole document.',
+      'The same recovery runs automatically when you upload a damaged file: rather than refusing it, we offer to repair it on the way in. This page is for a file already in your library that has started misbehaving, or one you would rather clean up before sending on.',
+      'Repairing also tidies a file that opens perfectly well — normalising object streams and rebuilding the index often makes a bloated PDF noticeably smaller. Every repair creates a new version, so the original is still there if you preferred it.',
+      'Free, no account, and no watermark.',
+    ],
+    faq: [
+      {
+        q: 'Can you recover any damaged PDF?',
+        a: 'Most of them. Damage is usually to the index rather than the content, and that can be rebuilt. A file truncated halfway has genuinely lost the rest — you get back what survived.',
+      },
+      {
+        q: 'Will repairing change my document?',
+        a: 'The pages, text and images are preserved. The internal structure is rewritten, which often makes the file smaller.',
+      },
+      {
+        q: 'My file will not even upload.',
+        a: 'Upload it anyway — a damaged file is offered a repair pass on the way in rather than being rejected.',
+      },
+    ],
+    minFiles: 1,
+    multiple: false,
+    cta: 'Repair PDF',
   },
 ];
 

@@ -26,6 +26,15 @@ describe('tool pages', () => {
     'add-page-numbers',
     // Phase 5
     'fill-pdf-form',
+    // Phase 6
+    'ocr-pdf',
+    'pdf-to-word',
+    'word-to-pdf',
+    'jpg-to-pdf',
+    'pdf-to-jpg',
+    'html-to-pdf',
+    'compare-pdf',
+    'repair-pdf',
   ];
 
   it('ships exactly the slugs its phases have shipped', () => {

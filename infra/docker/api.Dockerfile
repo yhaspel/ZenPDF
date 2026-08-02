@@ -11,12 +11,20 @@ ENV PYTHONUNBUFFERED=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1
 # Runtime deps for the engine stack: OCRmyPDF needs tesseract + ghostscript + unpaper + pngquant.
 # LibreOffice is deliberately NOT here — it lives only in the gotenberg container (phase-00 §0.4).
+#
+# Language packs are eng+heb+deu+fra+spa (phase-06): Hebrew is an acceptance
+# criterion, not a nice-to-have — the owner's own documents are RTL. Anything
+# else is a build arg rather than a code change, so adding Arabic or Russian is
+# `--build-arg OCR_EXTRA_LANGS="tesseract-ocr-ara tesseract-ocr-rus"`.
+ARG OCR_EXTRA_LANGS=""
 RUN apt-get update && apt-get install -y --no-install-recommends \
         tesseract-ocr \
         tesseract-ocr-eng \
+        tesseract-ocr-heb \
         tesseract-ocr-deu \
         tesseract-ocr-fra \
         tesseract-ocr-spa \
+        ${OCR_EXTRA_LANGS} \
         ghostscript \
         unpaper \
         pngquant \

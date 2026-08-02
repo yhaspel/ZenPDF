@@ -44,8 +44,23 @@ services:
     image: gotenberg/gotenberg:8
     command:
       - gotenberg
+      # JavaScript stays off: we render documents and web pages, not
+      # applications, and it is the largest single piece of attack surface in
+      # the container that fetches URLs on a user's behalf.
       - --chromium-disable-javascript=true
-      - --chromium-allow-list=file:///tmp/.*
+      # Layer 2 of the SSRF guard (§17, phase-06). `apps/core/urlguard.py` is
+      # layer 1 and checks the URL a user typed; this is what covers the hops it
+      # cannot see — a redirect into the private space, and a name that resolves
+      # publicly when we check it and privately when Chromium connects, because
+      # the deny-list is evaluated on *every navigation*.
+      #
+      # Kept in step with `urlguard.INTERNAL_HOSTS` and the private ranges by
+      # `apps/core/tests/test_urlguard.py::test_gotenberg_denies_what_layer_one_denies`.
+      # The literal is the fallback on purpose: `.env` files predate this
+      # setting on existing machines, and `${VAR}` alone would have passed an
+      # *empty* deny-list — silently turning layer 2 off on exactly the boxes
+      # that have been running longest.
+      - --chromium-deny-list=${GOTENBERG_DENY_LIST:-^file:(?!//\/tmp/).*|^[a-z]+://(?:[^/@]*@)?(localhost|127\.\d+(\.\d+)?(\.\d+)?|0\.0\.0\.0|0x[0-9a-f]+|0\d+(\.\d+)?(\.\d+)?(\.\d+)?|\d\d\d\d\d\d\d\d\d?\d?|\[?::1\]?|\[?::ffff:.*|\[?0:0:0:0:0:(0|ffff):.*|\[?fd[0-9a-f][0-9a-f]:.*|\[?fe80:.*|169\.254\.\d+\.\d+|10\.\d+\.\d+\.\d+|172\.(1[6-9]|2\d|3[01])\.\d+\.\d+|192\.168\.\d+\.\d+|100\.100\.200\.200|metadata\.google\.internal|metadata\.goog|.*\.internal|api|web|db|redis|storage|mailpit|gotenberg|beat|worker-default|worker-heavy|worker-render)\.?([:/].*)?$$}
 
   mailpit:
     image: axllent/mailpit:v1.30

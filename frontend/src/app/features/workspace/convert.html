@@ -1,0 +1,139 @@
+<div class="flex min-h-0 flex-1" data-test="convert-mode">
+  <aside class="flex w-72 shrink-0 flex-col gap-4 overflow-y-auto border-r border-slate-200 bg-white p-3 text-sm">
+    <!-- OCR -->
+    <section class="flex flex-col gap-2" data-test="ocr-panel">
+      <h3 class="text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+        Make a scan searchable
+      </h3>
+      @if (isScanned()) {
+        <p class="rounded border border-amber-200 bg-amber-50 p-2 text-[11px] text-amber-800"
+           data-test="ocr-scanned-hint">
+          This document is a picture of text. Running OCR adds a text layer, which
+          makes it searchable, selectable and editable — the pages themselves are
+          left exactly as they are.
+        </p>
+      }
+
+      <label class="text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+        Languages
+      </label>
+      <div class="grid grid-cols-2 gap-1">
+        @for (lang of languages; track lang.code) {
+          <button class="rounded border border-slate-200 px-2 py-1 text-left text-[11px]"
+                  [class.bg-indigo-600]="isChosen(lang.code)"
+                  [class.text-white]="isChosen(lang.code)"
+                  (click)="toggleLanguage(lang.code)"
+                  [attr.data-test]="'ocr-lang-' + lang.code">{{ lang.label }}</button>
+        }
+      </div>
+
+      <div class="flex flex-col gap-1 text-[11px] text-slate-600">
+        <label class="flex items-center gap-2">
+          <input type="checkbox" [ngModel]="deskew()" (ngModelChange)="deskew.set($event)"
+                 data-test="ocr-deskew" />
+          Straighten crooked scans
+        </label>
+        <label class="flex items-center gap-2">
+          <input type="checkbox" [ngModel]="rotatePages()" (ngModelChange)="rotatePages.set($event)"
+                 data-test="ocr-rotate" />
+          Turn sideways pages the right way up
+        </label>
+        <label class="flex items-center gap-2">
+          <input type="checkbox" [ngModel]="clean()" (ngModelChange)="clean.set($event)"
+                 data-test="ocr-clean" />
+          Clean up speckles before reading
+        </label>
+        <label class="flex items-center gap-2">
+          <input type="checkbox" [ngModel]="force()" (ngModelChange)="force.set($event)"
+                 data-test="ocr-force" />
+          Redo OCR on pages that already have text
+        </label>
+      </div>
+      <p class="text-[10px] text-slate-400">
+        Cleaning and straightening help a photographed page and can blur a clean one.
+        Redoing OCR replaces a document’s real text with a reading of a picture of it,
+        so it is off unless you ask.
+      </p>
+
+      <button class="rounded bg-indigo-600 px-3 py-1.5 font-medium text-white disabled:opacity-40"
+              [disabled]="busy()" (click)="runOcr()" data-test="ocr-run">
+        {{ busy() ? 'Working…' : 'Run OCR' }}
+      </button>
+    </section>
+
+    <!-- Export -->
+    <section class="flex flex-col gap-2 border-t border-slate-200 pt-3" data-test="export-panel">
+      <h3 class="text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+        Convert to another format
+      </h3>
+      <div class="grid grid-cols-2 gap-1">
+        @for (item of formats; track item.format) {
+          <button class="rounded border border-slate-200 px-2 py-1 text-left"
+                  [disabled]="busy()"
+                  (click)="runExport(item.format)"
+                  [attr.data-test]="'export-' + item.format"
+                  [title]="item.note">
+            <span class="block text-[11px] font-medium text-slate-700">{{ item.label }}</span>
+          </button>
+        }
+      </div>
+      @for (item of formats; track item.format) {
+        @if (pendingFormat() === item.format) {
+          <p class="text-[10px] text-slate-400" data-test="export-note">{{ item.note }}</p>
+        }
+      }
+
+      <div class="flex items-center gap-2 text-[11px] text-slate-500">
+        <label class="flex items-center gap-1">
+          Image DPI
+          <input type="number" min="72" max="300" class="w-16 rounded border border-slate-300 px-1 py-0.5"
+                 [ngModel]="imageDpi()" (ngModelChange)="imageDpi.set(+$event)"
+                 data-test="export-dpi" />
+        </label>
+        <label class="flex items-center gap-1">
+          as
+          <select class="rounded border border-slate-300 px-1 py-0.5"
+                  [ngModel]="imageFormat()" (ngModelChange)="imageFormat.set($event)"
+                  data-test="export-image-format">
+            <option value="png">PNG</option>
+            <option value="jpg">JPEG</option>
+          </select>
+        </label>
+      </div>
+
+      @if (convert.lastExport()) {
+        <button class="rounded bg-emerald-600 px-3 py-1.5 font-medium text-white"
+                (click)="downloadExport()" data-test="export-download">
+          Download {{ convert.exportName() }}
+        </button>
+        <p class="text-[10px] text-slate-400">
+          Exports are kept for 24 hours, then deleted.
+        </p>
+      }
+    </section>
+
+    <!-- Repair -->
+    <section class="flex flex-col gap-2 border-t border-slate-200 pt-3" data-test="repair-panel">
+      <h3 class="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Repair</h3>
+      <p class="text-[10px] text-slate-400">
+        Rebuilds the file’s internal structure. Worth trying if a document opens
+        with errors elsewhere, or was recovered on upload.
+      </p>
+      <button class="rounded border border-slate-300 px-3 py-1.5 text-[11px]"
+              [disabled]="busy()" (click)="runRepair()" data-test="repair-run">
+        Repair this document
+      </button>
+    </section>
+  </aside>
+
+  <main class="flex min-h-0 flex-1 items-center justify-center bg-slate-100 p-8">
+    <div class="max-w-md text-center text-sm text-slate-500">
+      <p class="text-4xl">🔁</p>
+      <p class="mt-3">
+        Pick what you want on the left. OCR and repair produce a new version of this
+        document; the other formats produce a file to download and leave the document
+        as it is.
+      </p>
+    </div>
+  </main>
+</div>

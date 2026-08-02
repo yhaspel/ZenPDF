@@ -38,6 +38,18 @@
                 [class.text-indigo-600]="mode() !== 'forms'" data-test="forms-toggle">
           {{ mode() === 'forms' ? 'Done' : 'Forms' }}
         </button>
+        <button (click)="mode.set(mode() === 'convert' ? 'view' : 'convert')"
+                class="rounded px-3 py-1 font-medium"
+                [class.bg-indigo-600]="mode() === 'convert'" [class.text-white]="mode() === 'convert'"
+                [class.text-indigo-600]="mode() !== 'convert'" data-test="convert-toggle">
+          {{ mode() === 'convert' ? 'Done' : 'Convert' }}
+        </button>
+        <button (click)="mode.set(mode() === 'compare' ? 'view' : 'compare')"
+                class="rounded px-3 py-1 font-medium"
+                [class.bg-indigo-600]="mode() === 'compare'" [class.text-white]="mode() === 'compare'"
+                [class.text-indigo-600]="mode() !== 'compare'" data-test="compare-toggle">
+          {{ mode() === 'compare' ? 'Done' : 'Compare' }}
+        </button>
         <button (click)="dialog.set('split')" class="rounded px-2 py-1 text-slate-600 hover:bg-slate-100" data-test="tool-split">Split</button>
         <button (click)="dialog.set('compress')" class="rounded px-2 py-1 text-slate-600 hover:bg-slate-100" data-test="tool-compress">Compress</button>
       </div>
@@ -71,10 +83,21 @@
         [docId]="doc.id"
         [pageCount]="viewer.pageCount()"
         [currentSeq]="viewer.currentSeq()"
+        [ocrAvailable]="true"
         (saved)="onEditSaved()"
         (conflict)="onAnnotationConflict()"
         (ocrRequested)="onOcrRequested()"
       />
+    } @else if (mode() === 'convert') {
+      <app-convert
+        [docId]="doc.id"
+        [currentSeq]="viewer.currentSeq()"
+        [isScanned]="cameFromScannedGate()"
+        (saved)="onConvertSaved()"
+        (conflict)="onAnnotationConflict()"
+      />
+    } @else if (mode() === 'compare') {
+      <app-compare [docId]="doc.id" [currentSeq]="viewer.currentSeq()" />
     } @else if (mode() === 'forms') {
       <app-forms
         [docId]="doc.id"

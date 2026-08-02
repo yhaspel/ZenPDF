@@ -1,11 +1,15 @@
 from django.conf import settings
+from django.http import HttpResponse
+from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import extend_schema
 from rest_framework import generics, status
+from rest_framework.exceptions import NotFound
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.core.authentication import require_principal
 from apps.core.principals import job_owner_kwargs, owned_by
+from apps.pdf_engine.storage import get_storage
 
 from .models import Job
 from .serializers import JobSerializer
@@ -55,6 +59,34 @@ class JobCancelView(APIView):
             # Cooperative cancel: long tasks check status between steps.
             job.mark_canceled()
         return Response(JobSerializer(job).data, status=status.HTTP_200_OK)
+
+
+class JobDownloadView(APIView):
+    """`GET /api/jobs/{id}/download/` — the export a `convert_to` job produced.
+
+    Scoped to the caller's own jobs, so another principal's export 404s like
+    everything else (§21.2). The blob lives at `exports/{job_id}/…` and is swept
+    by the 24 h export TTL (§15), so a link that worked yesterday answering 404
+    today is the design, not a bug — the UI says so at download time.
+    """
+
+    @extend_schema(responses={200: OpenApiTypes.BINARY}, tags=["jobs"])
+    def get(self, request, pk):
+        job = generics.get_object_or_404(
+            owned_by(Job.objects.all(), _principal(request)), pk=pk
+        )
+        export = (job.result or {}).get("export") if job.result else None
+        if not export:
+            raise NotFound("That job has no download.")
+        storage = get_storage()
+        key = export["storage_key"]
+        if not storage.exists(key):
+            raise NotFound("That download has expired. Run the export again.")
+        response = HttpResponse(storage.get_bytes(key),
+                                content_type=export["content_type"])
+        filename = export["filename"].replace('"', "")
+        response["Content-Disposition"] = f'attachment; filename="{filename}"'
+        return response
 
 
 class DemoJobView(APIView):

@@ -23,7 +23,12 @@
 
     <section class="mt-8 rounded-2xl bg-white p-6 shadow-sm" data-test="tool-widget">
       @if (phase() !== 'done') {
-        <app-upload-dropzone (filesPicked)="onFilesPicked($event)" />
+        <app-upload-dropzone
+          [accept]="acceptFor(tool().kind)"
+          [prompt]="promptFor(tool().kind)"
+          [hint]="hintFor(tool().kind)"
+          (filesPicked)="onFilesPicked($event)"
+        />
 
         @if (picked().length) {
           <ul class="mt-4 divide-y divide-slate-100" data-test="picked-list">
@@ -75,6 +80,24 @@
       @if (phase() === 'done') {
         <div data-test="tool-result">
           <p class="text-lg font-medium text-slate-800">Done.</p>
+
+          @if (exportJob()) {
+            <!-- The tool produced a file rather than a document (phase-06). -->
+            <div class="mt-4 flex items-center justify-between gap-3 rounded-lg bg-slate-50 p-3">
+              <span class="text-sm text-slate-700" data-test="converted-name">
+                {{ convertedName() }}
+              </span>
+              <button
+                type="button"
+                class="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700"
+                (click)="downloadConverted()"
+                data-test="tool-download-converted"
+              >
+                Download
+              </button>
+            </div>
+            <p class="mt-2 text-xs text-slate-400">Kept for 24 hours, then deleted.</p>
+          }
           <ul class="mt-4 divide-y divide-slate-100">
             @for (doc of results(); track doc.id) {
               <li class="flex items-center justify-between gap-3 py-3">

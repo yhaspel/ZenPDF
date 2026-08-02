@@ -76,7 +76,41 @@
     </div>
 
     @if (!docs.trashed()) {
-      <app-upload-dropzone (filesPicked)="onFilesPicked($event)" />
+      <app-upload-dropzone
+        [accept]="importable"
+        [prompt]="'Drop files here or click to browse'"
+        [hint]="'PDFs, Word, Excel, PowerPoint, images and HTML — anything else becomes a PDF'"
+        (filesPicked)="onFilesPicked($event)"
+      />
+
+      <div class="flex items-center gap-2" data-test="import-url-row">
+        <input
+          class="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm"
+          placeholder="…or paste a web address to save as PDF"
+          [ngModel]="importUrl()"
+          (ngModelChange)="importUrl.set($event)"
+          (keyup.enter)="importFromUrl()"
+          name="importUrl"
+          data-test="import-url"
+        />
+        <button
+          class="rounded-lg bg-slate-100 px-3 py-2 text-sm text-slate-700 disabled:opacity-40"
+          [disabled]="!importUrl().trim()"
+          (click)="importFromUrl()"
+          data-test="import-url-btn"
+        >Save as PDF</button>
+      </div>
+
+      @if (importing().length) {
+        <div class="space-y-1" data-test="importing-list">
+          @for (name of importing(); track name) {
+            <div class="flex items-center gap-2 rounded-lg bg-white px-3 py-2 text-sm shadow-sm">
+              <span class="flex-1 truncate">{{ name }}</span>
+              <span class="text-slate-400">converting…</span>
+            </div>
+          }
+        </div>
+      }
     }
 
     @if (upload.uploads().length) {

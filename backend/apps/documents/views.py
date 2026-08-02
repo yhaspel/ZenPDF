@@ -620,6 +620,11 @@ class DocumentOperationView(APIView):
         except EngineError as exc:
             raise ValidationFailed(exc.message) from exc
         _guard_operation(request, op_type, principal)
+        if op_type == "ocr":
+            # Before the hourly window is charged: OCR is the most expensive
+            # thing we do, and a document past the monthly page quota should be
+            # refused rather than started and abandoned (§16, phase-06 risks).
+            L.enforce_ocr_pages(principal, document.page_count)
         L.enforce_metered_op(principal, op_type)
 
         job = Job.objects.create(
@@ -652,9 +657,26 @@ class CrossDocumentOperationView(APIView):
         except EngineError as exc:
             raise ValidationFailed(exc.message) from exc
 
-        # Ownership + encryption check on every source document. No minting:
-        # every input is a document the caller already owns.
-        principal = _principal(request)
+        if op_type == "convert_from":
+            # Layer 1 of the SSRF guard, at the edge (§17, phase-06): checked
+            # here so the user gets an immediate 400 rather than a job that
+            # fails a minute later, and again in the worker because params are
+            # stored and could be replayed.
+            url = (params.get("url") or "").strip()
+            if url:
+                from apps.core.urlguard import check_url
+
+                try:
+                    check_url(url)
+                except EngineError as exc:
+                    raise ValidationFailed(exc.message) from exc
+            elif not (params.get("upload_ref") or params.get("upload_refs")):
+                raise ValidationFailed("Provide a file to convert or a web address.")
+
+        # Ownership + encryption check on every source document. Minting only
+        # where there are none to own: `convert_from` starts from an uploaded
+        # file or a URL, so a guest converting one may have no session yet.
+        principal = _principal(request, write=not op.source_id_params)
         if principal is None:
             raise NotFound("Not found.")
         ids = []

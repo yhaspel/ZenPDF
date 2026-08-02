@@ -17,6 +17,7 @@ import {
   PageWords,
   Paginated,
   SearchHit,
+  SourceAsset,
 } from '../models/models';
 
 export interface DocListParams {
@@ -150,6 +151,18 @@ export class DocumentsService {
       params: hp,
       responseType: 'blob',
     });
+  }
+
+  /** Phase 6 — park a file for `convert_from` (office/image/html). */
+  uploadSource(file: File): Observable<SourceAsset> {
+    const form = new FormData();
+    form.append('file', file);
+    return this.http.post<SourceAsset>(`${this.base}/uploads/source/`, form);
+  }
+
+  /** The artefact a `convert_to` job produced (§15, 24 h TTL). */
+  downloadExport(jobId: string): Observable<Blob> {
+    return this.http.get(`${this.base}/jobs/${jobId}/download/`, { responseType: 'blob' });
   }
 
   /** Ephemeral image asset (§13 `uploads/…`) → an opaque, principal-scoped ref. */

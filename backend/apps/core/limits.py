@@ -210,6 +210,79 @@ def is_metered(op_type: str) -> bool:
     return op_type in METERED_OPS
 
 
+def ocr_pages_used_this_month(principal, *, period: str = "") -> int:
+    """Pages OCR'd in the given month (default: this one)."""
+    if principal is None:
+        return 0
+    from .models import UsageCounter
+    from .principals import job_owner_kwargs
+
+    row = UsageCounter.objects.filter(
+        period=period or timezone.now().strftime("%Y-%m"),
+        **job_owner_kwargs(principal),
+    ).first()
+    return row.ocr_pages if row else 0
+
+
+def ocr_pages_used_today(principal) -> int:
+    return int(cache.get(_window_key(principal, "ocrpages", _day_bucket()), 0))
+
+
+def record_ocr_pages(principal, pages: int) -> None:
+    """Charge OCR'd pages to both windows (§16).
+
+    A guest's allowance is per *day* and an account's per *month*, so both are
+    kept: the daily figure in Redis beside the other short windows, the monthly
+    one in `core.UsageCounter` where it survives a Redis flush.
+    """
+    pages = max(0, int(pages))
+    if principal is None or not pages:
+        return
+    key = _window_key(principal, "ocrpages", _day_bucket())
+    try:
+        cache.incr(key, pages)
+    except ValueError:
+        # 26 h, so a window opened at 23:59 still expires cleanly.
+        cache.set(key, pages, timeout=93600)
+    bump_monthly(principal, ocr_pages=pages)
+
+
+def enforce_ocr_pages(principal, pages: int) -> None:
+    """Charge `pages` against the OCR page quota, or raise (§16).
+
+    A page-count pre-check rather than a post-hoc tally: OCR is the most
+    expensive thing we do, and a 300-page document should be refused *before*
+    a worker spends ten minutes on it. The limit is advertised in
+    `/api/config/` and on the usage panel, so leaving it unenforced would make
+    both of those a claim rather than a fact.
+
+    §16 states the guest allowance per day and the account allowance per month;
+    a tier whose row is 0 simply has no limit on that window.
+    """
+    from .exceptions import QuotaExceeded
+
+    tier = for_principal(principal)
+    wanted = max(0, int(pages))
+    windows = (
+        ("day", tier.ocr_pages_per_day, ocr_pages_used_today(principal)),
+        ("month", tier.ocr_pages_per_month, ocr_pages_used_this_month(principal)),
+    )
+    for window, limit, used in windows:
+        if not limit or used + wanted <= limit:
+            continue
+        exc = QuotaExceeded(
+            f"That would take you past your {limit} OCR pages for this {window} "
+            f"(you have used {used})."
+            + (" Create a free account for a higher limit."
+               if tier.tier == "guest" else "")
+        )
+        exc.zen_details = {
+            "limit": limit, "used": used, "requested": wanted,
+            "window": window, "tier": tier.tier,
+        }
+        raise exc
+
+
 def enforce_metered_op(principal, op_type: str) -> None:
     """Charge one metered op against the hourly window, or raise.
 

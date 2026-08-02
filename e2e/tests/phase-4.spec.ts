@@ -114,10 +114,14 @@ test('phase 4: the scanned-page gate blocks the editor and offers OCR', async ({
   await expect(gate).toBeVisible({ timeout: 30_000 });
   await expect(gate).toContainText('This page is a scan');
 
-  // The CTA ships disabled until Phase 6 lands OCR — with a tooltip that says so.
+  // Phase 4 shipped this CTA disabled with a "coming with OCR tool" tooltip;
+  // its own acceptance criterion says "then enabled", and Phase 6 landed OCR.
+  // The gate is still Phase 4's — what changed is that it now leads somewhere.
   const cta = page.locator('[data-test=scanned-ocr-cta]');
-  await expect(cta).toBeDisabled();
-  await expect(cta).toHaveAttribute('title', 'coming with OCR tool');
+  await expect(cta).toBeEnabled();
+  await expect(cta).toHaveAttribute('title', 'Run OCR on this document');
+  await cta.click();
+  await expect(page.locator('[data-test=convert-mode]')).toBeVisible();
 });
 
 test('phase 4: whiteout states plainly that it is not redaction', async ({ page }) => {

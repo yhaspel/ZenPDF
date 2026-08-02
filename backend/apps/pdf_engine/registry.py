@@ -16,17 +16,21 @@ class Op:
     type: str
     queue: str
     schema: dict
-    # "version" | "documents" | "version_or_report" — the last one is
-    # `find_replace`, whose dry run inspects the document and changes nothing,
-    # so it must not mint a version (§10, amended).
+    # "version" | "documents" | "report" | "export" | "version_or_report".
+    # `version_or_report` is `find_replace`, whose dry run inspects the document
+    # and changes nothing, so it must not mint a version (§10, amended).
+    # `export` is a downloadable artefact rather than a new version of the
+    # document — Word, images, text (§15, phase-06).
     produces: str
     source_id_params: tuple = field(default_factory=tuple)
 
     @property
     def is_cross_document(self) -> bool:
         # A cross-document op takes ALL its inputs from params (no primary doc
-        # in the URL): merge / alternate_mix.
-        return self.type in {"merge", "alternate_mix"}
+        # in the URL): merge / alternate_mix, and since phase-06 `convert_from`,
+        # whose input is an uploaded file or a web address rather than anything
+        # already in the library.
+        return self.type in {"merge", "alternate_mix", "convert_from"}
 
 
 OPERATIONS: dict[str, Op] = {
@@ -77,6 +81,15 @@ OPERATIONS: dict[str, Op] = {
     "edit_form_fields_batch": Op("edit_form_fields_batch", "default",
                                  S.EDIT_FORM_FIELDS_BATCH, "version"),
     "import_form_data": Op("import_form_data", "default", S.IMPORT_FORM_DATA, "version"),
+    # Phase 6 — OCR, conversion, compare, repair (§10, §12: `heavy` queue).
+    # Three of these are also `METERED_OPS` (§16) — a different set from the
+    # queue, deliberately: the queue is worker sizing, metering is cost control.
+    "ocr": Op("ocr", "heavy", S.OCR, "version"),
+    "convert_to": Op("convert_to", "heavy", S.CONVERT_TO, "export"),
+    "convert_from": Op("convert_from", "heavy", S.CONVERT_FROM, "documents"),
+    "compare": Op("compare", "heavy", S.COMPARE, "report",
+                  source_id_params=("other_document_id",)),
+    "repair": Op("repair", "heavy", S.REPAIR, "version"),
 }
 
 
