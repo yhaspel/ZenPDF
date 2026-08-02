@@ -35,6 +35,10 @@ describe('tool pages', () => {
     'html-to-pdf',
     'compare-pdf',
     'repair-pdf',
+    // Phase 7
+    'protect-pdf',
+    'unlock-pdf',
+    'redact-pdf',
   ];
 
   it('ships exactly the slugs its phases have shipped', () => {

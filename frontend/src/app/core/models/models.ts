@@ -455,6 +455,49 @@ export interface CompareReport {
   };
 }
 
+// --------------------------------------------------------------------------- //
+// Phase 7 — security & redaction
+// --------------------------------------------------------------------------- //
+export interface PdfPermissions {
+  print: 'none' | 'lowres' | 'full';
+  copy: boolean;
+  modify: 'none' | 'form_fill' | 'annotate' | 'full';
+  /** Always true. A PDF a screen reader cannot open excludes its user for no
+   *  security gain, so the engine ignores a request to restrict it. */
+  accessibility?: boolean;
+}
+
+export type RedactPresetKind = 'ssn' | 'email' | 'phone' | 'credit_card' | 'iban';
+
+export interface RedactPattern {
+  kind: 'preset' | 'regex';
+  value: string;
+}
+
+export interface RedactMatch {
+  id: string;
+  page: number;
+  rect: Rect;
+  text: string;
+}
+
+export interface RedactReport {
+  count: number;
+  matches: RedactMatch[];
+  dry_run: boolean;
+}
+
+export interface SanitizeReport {
+  metadata: number;
+  xmp: number;
+  javascript: number;
+  embedded_files: number;
+  hidden_layers_flatten: number;
+  links_external: number;
+  comments: number;
+  total: number;
+}
+
 export type StampPosition =
   | 'top-left' | 'top-center' | 'top-right'
   | 'bottom-left' | 'bottom-center' | 'bottom-right';

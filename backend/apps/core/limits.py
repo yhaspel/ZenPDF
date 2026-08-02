@@ -283,6 +283,46 @@ def enforce_ocr_pages(principal, pages: int) -> None:
         raise exc
 
 
+# --------------------------------------------------------------------------- #
+# Wrong-password attempts (phase-07, §17)
+# --------------------------------------------------------------------------- #
+PASSWORD_ATTEMPTS_PER_MINUTE = 5
+
+
+def _password_key(document_id) -> str:
+    return f"zen:pwfail:{document_id}:{timezone.now().strftime('%Y%m%d%H%M')}"
+
+
+def record_password_failure(document_id) -> None:
+    """Count one wrong password against this document's minute window."""
+    key = _password_key(document_id)
+    try:
+        cache.incr(key)
+    except ValueError:
+        cache.set(key, 1, timeout=180)
+
+
+def enforce_password_attempts(document_id) -> None:
+    """Refuse further attempts after five wrong passwords in a minute.
+
+    Per *document*, not per principal: the thing being guessed at is one
+    document's password, and an attacker who could open several sessions would
+    otherwise get five tries each. The window is short — this is meant to make
+    brute force pointless, not to lock out the owner who mistyped.
+    """
+    from .exceptions import QuotaExceeded
+
+    used = int(cache.get(_password_key(document_id), 0))
+    if used < PASSWORD_ATTEMPTS_PER_MINUTE:
+        return
+    exc = QuotaExceeded(
+        "Too many incorrect passwords for this document. Wait a minute and try again."
+    )
+    exc.zen_details = {"limit": PASSWORD_ATTEMPTS_PER_MINUTE, "used": used,
+                       "window": "minute"}
+    raise exc
+
+
 def enforce_metered_op(principal, op_type: str) -> None:
     """Charge one metered op against the hourly window, or raise.
 

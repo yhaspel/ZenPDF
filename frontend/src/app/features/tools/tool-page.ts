@@ -230,16 +230,21 @@ export class ToolPage {
     // version of arranging pages, marking a document up or rewriting its text.
     // Hand straight to the workspace, opened on the right mode — still with no
     // login anywhere in the path.
-    const interactive: Partial<Record<typeof tool.kind, string>> = {
-      organize: '',
-      annotate: 'annotate',
-      edit: 'edit',
-      'fill-form': 'forms',
+    const interactive: Partial<Record<typeof tool.kind, Record<string, string>>> = {
+      organize: {},
+      annotate: { mode: 'annotate' },
+      edit: { mode: 'edit' },
+      'fill-form': { mode: 'forms' },
+      // Phase 7. None of these can run unattended: two need a password the
+      // user has not given yet, and redaction must show what it found before
+      // it removes anything.
+      protect: { mode: 'protect' },
+      unlock: { mode: 'protect' },
+      redact: { mode: 'protect', tab: 'redact' },
     };
     if (tool.kind in interactive) {
-      const mode = interactive[tool.kind];
       this.router.navigate(['/app/doc', primary.id], {
-        queryParams: mode ? { mode } : {},
+        queryParams: interactive[tool.kind],
       });
       return;
     }

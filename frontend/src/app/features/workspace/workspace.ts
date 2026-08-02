@@ -10,6 +10,7 @@ import { CompareFacade } from '../../abstraction/compare.facade';
 import { GuestFacade } from '../../abstraction/guest.facade';
 import { JobsFacade } from '../../abstraction/jobs.facade';
 import { PagesFacade } from '../../abstraction/pages.facade';
+import { SecurityFacade } from '../../abstraction/security.facade';
 import { ViewerFacade } from '../../abstraction/viewer.facade';
 import { Job, SearchHit } from '../../core/models/models';
 import { DocumentsService } from '../../core/services/documents.service';
@@ -24,6 +25,7 @@ import { Compare } from './compare';
 import { Convert } from './convert';
 import { Edit } from './edit';
 import { Forms } from './forms';
+import { Protect, ProtectTab } from './protect';
 
 // `crop` left the dialog list in Phase 3: it is now drawn on the overlay
 // (Human review queue, 2026-07-19 — "revisit crop to use it then").
@@ -34,7 +36,7 @@ type Dialog = null | 'split' | 'scale' | 'nup' | 'compress' | 'insert';
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
     FormsModule, RouterLink, NgxExtendedPdfViewerModule, CdkDropList, CdkDrag, PdfThumbnail,
-    Annotate, Edit, Forms, Convert, Compare,
+    Annotate, Edit, Forms, Convert, Compare, Protect,
   ],
   templateUrl: './workspace.html',
 })
@@ -47,6 +49,7 @@ export class Workspace {
   protected guests = inject(GuestFacade);
   protected annotations = inject(AnnotationsFacade);
   private compares = inject(CompareFacade);
+  protected security = inject(SecurityFacade);
   private guestTokens = inject(GuestTokenService);
   private route = inject(ActivatedRoute);
   private router = inject(Router);
@@ -55,9 +58,10 @@ export class Workspace {
 
   protected leftTab = signal<'thumbs' | 'outline' | 'history'>('thumbs');
   protected mode = signal<
-    'view' | 'organize' | 'annotate' | 'edit' | 'forms' | 'convert' | 'compare'
+    'view' | 'organize' | 'annotate' | 'edit' | 'forms' | 'convert' | 'compare' | 'protect'
   >('view');
   protected annotateTool = signal<AnnotateTool>('select');
+  protected protectTab = signal<ProtectTab>('protect');
   /** Set when Annotate was entered *from* the Organize toolbar's Crop button. */
   private cropReturnsToOrganize = false;
   /** Set when the Phase-4 scanned gate handed over to Convert. */
@@ -127,8 +131,14 @@ export class Workspace {
     this.route.queryParamMap.pipe(takeUntilDestroyed()).subscribe((params) => {
       const mode = params.get('mode');
       if (mode === 'annotate' || mode === 'edit' || mode === 'forms'
-          || mode === 'convert' || mode === 'compare') {
+          || mode === 'convert' || mode === 'compare' || mode === 'protect') {
         this.mode.set(mode);
+      }
+      // `/redact-pdf` and `/unlock-pdf` land on the same mode but on a
+      // different tab — the page has to *be* the tool it advertised (§21.6).
+      const tab = params.get('tab');
+      if (mode === 'protect' && (tab === 'redact' || tab === 'sanitize')) {
+        this.protectTab.set(tab);
       }
       // `/compare-pdf` uploads both documents and sends the second one here.
       // Without this the guest who just picked two files has to pick one of
@@ -372,6 +382,29 @@ export class Workspace {
   submitPassword(pw: string): void {
     this.password.set(pw);
     this.passwordPrompt.set(false);
+    // The viewer got it via `[password]`; the facade holds it for every
+    // *operation* on this document, so nothing prompts again (phase-07).
+    const doc = this.viewer.doc();
+    if (doc && pw) this.security.remember(doc.id, pw);
+  }
+
+  /** Protect/redact/sanitize produced a new version. */
+  onProtectSaved(): void {
+    this.viewer.reload();
+  }
+
+  /**
+   * Redaction with "put the result in a new document" — the default, because
+   * this document's earlier versions still contain what was removed.
+   */
+  onRedactedCopy(docId: string): void {
+    this.router.navigate(['/app/doc', docId]);
+  }
+
+  /** The Protect tool's own unlock box succeeded, or the top-level prompt did. */
+  openProtect(tab: ProtectTab = 'protect'): void {
+    this.protectTab.set(tab);
+    this.mode.set('protect');
   }
 
   /**

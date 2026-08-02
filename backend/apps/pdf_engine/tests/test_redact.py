@@ -128,10 +128,11 @@ def test_the_dry_run_finds_the_fixture_pii(fixture_bytes):
     report = R.find_matches(fixture_bytes("pii.pdf"),
                             patterns=[{"kind": "preset", "value": "email"}])
     assert report["dry_run"] is True
-    assert report["count"] == 2, report
+    assert report["count"] == 3, report
     found = {m["text"] for m in report["matches"]}
     assert "dana.cohen@example.com" in found
     assert "r.levi@mail.example.co.uk" in found
+    assert "sam.parker@example.org" in found
     for match in report["matches"]:
         rect = match["rect"]
         assert 0 <= rect["x"] <= 1 and 0 <= rect["y"] <= 1
@@ -169,12 +170,13 @@ def test_pattern_redaction_removes_the_content_irrecoverably(fixture_bytes):
 
     out, report = R.redact(original,
                            patterns=[{"kind": "preset", "value": "email"}])
-    assert report["applied"] == 2, report
+    assert report["applied"] == 3, report
     assert report["verification"] == {"rechecked": True, "residual_matches": 0}
 
     text = _text(out)
     assert "dana.cohen@example.com" not in text
     assert "r.levi@mail.example.co.uk" not in text
+    assert "sam.parker@example.org" not in text
     # The bytes, not just the extraction: this is the whole difference from
     # whiteout, which leaves the string in the file for anyone to copy out.
     raw = raw_text_bytes(out)
@@ -246,7 +248,7 @@ def test_only_applies_the_matches_that_were_kept(fixture_bytes):
     and the count applied must equal the count kept, not the count found."""
     found = R.find_matches(fixture_bytes("pii.pdf"),
                            patterns=[{"kind": "preset", "value": "email"}])
-    assert found["count"] == 2
+    assert found["count"] == 3
     keep = [found["matches"][0]["id"]]
 
     out, report = R.redact(fixture_bytes("pii.pdf"),

@@ -195,8 +195,12 @@ def make_pii():
     page = doc.new_page(width=595, height=842)
     page.insert_text((60, 80), "Client record", fontsize=20)
     lines = [
+        # Three emails, deliberately: the review list is only worth having if a
+        # user can keep some matches and drop others, and two is not enough to
+        # show that (phase-07 E2E: "review shows 3, uncheck 1, apply 2").
         "Email: dana.cohen@example.com",
         "Second email: r.levi@mail.example.co.uk",
+        "Copy to: sam.parker@example.org",
         "Social security number: 123-45-6789",
         "Telephone: +44 20 7946 0958",
         "Card on file: 4111 1111 1111 1111",

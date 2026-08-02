@@ -628,6 +628,11 @@ class DocumentOperationView(APIView):
         except EngineError as exc:
             raise ValidationFailed(exc.message) from exc
         _guard_operation(request, op_type, principal)
+        if document_password or any(key in params for key in Job.SENSITIVE_PARAMS):
+            # Five wrong passwords a minute for this document and the next
+            # attempt is refused, whoever is asking — the thing being guessed
+            # at belongs to the document, not to the session (phase-07).
+            L.enforce_password_attempts(document.id)
         if op_type == "ocr":
             # Before the hourly window is charged: OCR is the most expensive
             # thing we do, and a document past the monthly page quota should be

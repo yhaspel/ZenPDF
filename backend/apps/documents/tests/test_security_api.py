@@ -85,6 +85,29 @@ def test_the_wrong_password_fails_the_job_with_its_own_code(api, uploaded_doc):
     assert job["error_code"] == "invalid_password"
 
 
+def test_guessing_is_throttled_per_document(api, uploaded_doc):
+    """Five wrong passwords a minute and the sixth attempt is refused (§17).
+
+    Per document rather than per session: an attacker with several sessions
+    would otherwise get five tries each, which is not a limit.
+    """
+    from django.core.cache import cache
+
+    cache.clear()
+    _op(api, uploaded_doc["id"], "encrypt",
+        {"owner_password": "owner", "user_password": "user"})
+    for _ in range(5):
+        job = _op(api, uploaded_doc["id"], "decrypt", {"password": "no"}, base_seq=2)
+        assert job["error_code"] == "invalid_password"
+
+    resp = api.post(f"/api/documents/{uploaded_doc['id']}/operations/",
+                    {"type": "decrypt", "params": {"password": "user"},
+                     "base_version_seq": 2}, format="json")
+    assert resp.status_code == 429
+    assert resp.json()["error"]["code"] == "quota_exceeded"
+    cache.clear()
+
+
 def test_an_encrypted_document_refuses_work_without_the_password(api, uploaded_doc):
     _op(api, uploaded_doc["id"], "encrypt",
         {"owner_password": "owner", "user_password": "user"})
@@ -196,7 +219,7 @@ def test_the_dry_run_returns_a_review_list_and_mints_no_version(api, pii_doc):
               {"patterns": [{"kind": "preset", "value": "email"}], "dry_run": True})
     assert job["status"] == "succeeded", job
     report = job["result"]["report"]
-    assert report["count"] == 2
+    assert report["count"] == 3
     assert all("rect" in m and "text" in m for m in report["matches"])
 
     after = api.get(f"/api/documents/{pii_doc['id']}/versions/").json()

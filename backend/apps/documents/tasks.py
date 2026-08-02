@@ -589,6 +589,11 @@ def run_operation(self, job_id: str):
     except EngineError as exc:
         # `details` carries the structured half of the §6 error shape — e.g.
         # `text_overflow`'s `fits_at_size`, which the editor turns into an offer.
+        if exc.code == "invalid_password":
+            # The guess is only known to be wrong here, in the worker — so this
+            # is where the per-document attempt window is charged; the next
+            # request is what gets refused (phase-07).
+            L.record_password_failure(document.id)
         job.mark_failed(exc.code, exc.message, exc.details)
     except Document.DoesNotExist:
         job.mark_failed("not_found", "A referenced document was not found.")

@@ -3,6 +3,8 @@ import { Injectable, signal } from '@angular/core';
 interface ConfirmRequest {
   message: string;
   confirmLabel: string;
+  /** When set, the user must type this exactly before confirming (phase-07). */
+  requireText?: string;
   resolve: (ok: boolean) => void;
 }
 
@@ -10,9 +12,9 @@ interface ConfirmRequest {
 export class ConfirmService {
   readonly current = signal<ConfirmRequest | null>(null);
 
-  ask(message: string, confirmLabel = 'Confirm'): Promise<boolean> {
+  ask(message: string, confirmLabel = 'Confirm', requireText?: string): Promise<boolean> {
     return new Promise((resolve) => {
-      this.current.set({ message, confirmLabel, resolve });
+      this.current.set({ message, confirmLabel, requireText, resolve });
     });
   }
 

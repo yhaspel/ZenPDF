@@ -1,0 +1,333 @@
+<div class="flex min-h-0 flex-1" data-test="protect-mode">
+  <!-- Left: panel -->
+  <aside class="flex w-80 shrink-0 flex-col overflow-y-auto border-r border-slate-200 bg-white text-sm">
+    <div class="flex border-b border-slate-200 text-xs">
+      <button class="flex-1 py-2" [class.font-semibold]="tab() === 'protect'"
+              [class.text-indigo-600]="tab() === 'protect'"
+              (click)="tab.set('protect')" data-test="tab-protect">Password</button>
+      <button class="flex-1 py-2" [class.font-semibold]="tab() === 'redact'"
+              [class.text-indigo-600]="tab() === 'redact'"
+              (click)="tab.set('redact')" data-test="tab-redact">Redact</button>
+      <button class="flex-1 py-2" [class.font-semibold]="tab() === 'sanitize'"
+              [class.text-indigo-600]="tab() === 'sanitize'"
+              (click)="tab.set('sanitize')" data-test="tab-sanitize">Clean up</button>
+    </div>
+
+    @if (tab() === 'protect') {
+      <div class="flex flex-col gap-3 p-3">
+        @if (isEncrypted()) {
+          <div class="rounded border border-amber-300 bg-amber-50 p-2 text-[11px] text-amber-800"
+               data-test="encrypted-notice">
+            This document is password-protected.
+            @if (security.isUnlocked(docId())) {
+              It is unlocked for this session — the password is kept in memory only
+              and is forgotten when you close the tab.
+            } @else {
+              Enter its password to keep working on it.
+            }
+          </div>
+
+          <label class="text-[11px] text-slate-500">
+            Password to open
+            <input type="password" autocomplete="off"
+                   class="mt-1 w-full rounded border border-slate-300 px-2 py-1 text-[11px]"
+                   [ngModel]="unlockPassword()" (ngModelChange)="unlockPassword.set($event)"
+                   data-test="unlock-password" />
+          </label>
+          <div class="flex gap-1">
+            <button class="flex-1 rounded bg-indigo-600 px-2 py-1.5 text-[11px] font-medium text-white disabled:opacity-40"
+                    [disabled]="security.busy()" (click)="rememberForSession()"
+                    data-test="unlock-session">
+              Unlock for this session
+            </button>
+            <button class="rounded border border-slate-300 px-2 py-1.5 text-[11px] disabled:opacity-40"
+                    [disabled]="security.busy() || !unlockPassword()" (click)="applyUnlock()"
+                    data-test="remove-password">
+              Remove password
+            </button>
+          </div>
+          <p class="text-[10px] text-slate-400">
+            Removing the password saves an unprotected version. Anyone with the
+            link to this document could then open it.
+          </p>
+        }
+
+        <div class="mt-1 border-t border-slate-100 pt-3">
+          <p class="text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+            {{ isEncrypted() ? 'Change protection' : 'Add a password' }}
+          </p>
+        </div>
+
+        <label class="text-[11px] text-slate-500">
+          Owner password (required)
+          <input type="password" autocomplete="new-password"
+                 class="mt-1 w-full rounded border border-slate-300 px-2 py-1 text-[11px]"
+                 [ngModel]="ownerPassword()" (ngModelChange)="ownerPassword.set($event)"
+                 data-test="owner-password" />
+        </label>
+        @if (passwordStrength().label) {
+          <div class="flex items-center gap-2" data-test="strength">
+            <div class="h-1 flex-1 rounded bg-slate-200">
+              <div class="h-1 rounded"
+                   [class.bg-rose-500]="passwordStrength().score <= 1"
+                   [class.bg-amber-500]="passwordStrength().score === 2"
+                   [class.bg-emerald-500]="passwordStrength().score === 3"
+                   [style.width.%]="passwordStrength().score * 33.4"></div>
+            </div>
+            <span class="text-[10px] text-slate-500">{{ passwordStrength().label }}</span>
+          </div>
+        }
+        <p class="text-[10px] text-slate-400">
+          The owner password lifts the restrictions below. Keep it — without it
+          nobody, including us, can change them back.
+        </p>
+
+        <label class="text-[11px] text-slate-500">
+          Password to open (optional)
+          <input type="password" autocomplete="new-password"
+                 class="mt-1 w-full rounded border border-slate-300 px-2 py-1 text-[11px]"
+                 [ngModel]="userPassword()" (ngModelChange)="userPassword.set($event)"
+                 data-test="user-password" />
+        </label>
+        @if (userPassword()) {
+          <label class="text-[11px] text-slate-500">
+            Confirm password to open
+            <input type="password" autocomplete="new-password"
+                   class="mt-1 w-full rounded border border-slate-300 px-2 py-1 text-[11px]"
+                   [ngModel]="confirmPassword()" (ngModelChange)="confirmPassword.set($event)"
+                   data-test="confirm-password" />
+          </label>
+          @if (!passwordsMatch()) {
+            <p class="text-[10px] text-rose-600" data-test="mismatch">
+              These do not match.
+            </p>
+          }
+        }
+
+        <div class="rounded border border-slate-200 p-2">
+          <p class="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+            What readers may do
+          </p>
+          <label class="mt-2 block text-[11px] text-slate-600">
+            Printing
+            <select class="mt-0.5 w-full rounded border border-slate-300 px-1 py-1"
+                    [ngModel]="printLevel()" (ngModelChange)="printLevel.set($event)"
+                    data-test="perm-print">
+              <option value="full">Print at full quality</option>
+              <option value="lowres">Print at low quality only</option>
+              <option value="none">No printing</option>
+            </select>
+          </label>
+          <label class="mt-2 block text-[11px] text-slate-600">
+            Changing the document
+            <select class="mt-0.5 w-full rounded border border-slate-300 px-1 py-1"
+                    [ngModel]="modifyLevel()" (ngModelChange)="modifyLevel.set($event)"
+                    data-test="perm-modify">
+              <option value="full">Edit freely</option>
+              <option value="annotate">Comment and fill in forms</option>
+              <option value="form_fill">Fill in forms only</option>
+              <option value="none">No changes</option>
+            </select>
+          </label>
+          <label class="mt-2 flex items-center gap-2 text-[11px] text-slate-600">
+            <input type="checkbox" [ngModel]="allowCopy()"
+                   (ngModelChange)="allowCopy.set($event)" data-test="perm-copy" />
+            Copy text and images out
+          </label>
+          <p class="mt-2 text-[10px] text-slate-400">
+            Screen readers can always read the document — that permission is never
+            restricted. These settings ask readers' software to co-operate; they
+            are not a guarantee, unlike the open password.
+          </p>
+        </div>
+
+        <button class="rounded bg-indigo-600 px-3 py-1.5 font-medium text-white disabled:opacity-40"
+                [disabled]="security.busy()" (click)="applyProtection()"
+                data-test="apply-protection">
+          {{ isEncrypted() ? 'Re-protect' : 'Protect document' }}
+        </button>
+        @if (isEncrypted()) {
+          <button class="rounded border border-slate-300 px-3 py-1 text-[11px] disabled:opacity-40"
+                  [disabled]="security.busy()" (click)="changePermissions()"
+                  data-test="change-permissions">
+            Change restrictions only
+          </button>
+        }
+      </div>
+    }
+
+    @if (tab() === 'redact') {
+      <div class="flex flex-col gap-3 p-3">
+        <p class="rounded border border-slate-200 bg-slate-50 p-2 text-[11px] text-slate-500">
+          Redaction <strong>removes</strong> content — unlike the editor's whiteout,
+          which only covers it. Searching finds <em>text</em>: anything scanned, or
+          drawn as an outline, has to be covered with an area instead.
+        </p>
+
+        <div>
+          <p class="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+            Areas
+          </p>
+          <button class="mt-1 w-full rounded border px-2 py-1 text-[11px]"
+                  [class.border-slate-900]="drawing()" [class.bg-slate-900]="drawing()"
+                  [class.text-white]="drawing()" [class.border-slate-300]="!drawing()"
+                  (click)="drawing.set(!drawing())" data-test="draw-areas">
+            {{ drawing() ? 'Drawing — click to stop' : 'Draw an area on the page' }}
+          </button>
+          @if (security.areas().length) {
+            <p class="mt-1 text-[11px] text-slate-500" data-test="area-count">
+              {{ security.areas().length }} area(s) marked. Click one to remove it.
+            </p>
+          }
+        </div>
+
+        <div class="border-t border-slate-100 pt-3">
+          <p class="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+            Find and remove
+          </p>
+          <div class="mt-1 flex flex-wrap gap-1">
+            @for (preset of presets; track preset.value) {
+              <button class="rounded-full border px-2 py-0.5 text-[11px]"
+                      [class.border-indigo-500]="isPreset(preset.value)"
+                      [class.bg-indigo-50]="isPreset(preset.value)"
+                      [class.text-indigo-700]="isPreset(preset.value)"
+                      [class.border-slate-300]="!isPreset(preset.value)"
+                      (click)="togglePreset(preset.value)"
+                      [attr.data-test]="'preset-' + preset.value">
+                {{ preset.label }}
+              </button>
+            }
+          </div>
+          <label class="mt-2 block text-[11px] text-slate-500">
+            Words to remove
+            <input class="mt-0.5 w-full rounded border border-slate-300 px-2 py-1 text-[11px]"
+                   [ngModel]="searchText()" (ngModelChange)="searchText.set($event)"
+                   data-test="redact-search" />
+          </label>
+          <label class="mt-2 block text-[11px] text-slate-500">
+            Or a pattern (regular expression)
+            <input class="mt-0.5 w-full rounded border border-slate-300 px-2 py-1 font-mono text-[11px]"
+                   [ngModel]="customPattern()" (ngModelChange)="customPattern.set($event)"
+                   data-test="redact-regex" />
+          </label>
+          <label class="mt-1 flex items-center gap-2 text-[11px] text-slate-600">
+            <input type="checkbox" [ngModel]="matchCase()"
+                   (ngModelChange)="matchCase.set($event)" data-test="redact-case" />
+            Match capitals exactly
+          </label>
+          <button class="mt-2 w-full rounded border border-slate-300 px-2 py-1 text-[11px] disabled:opacity-40"
+                  [disabled]="security.busy()" (click)="preview()" data-test="redact-preview">
+            Review what would be removed
+          </button>
+        </div>
+
+        @if (security.report(); as report) {
+          <div class="border-t border-slate-100 pt-3" data-test="redact-review">
+            <p class="text-[11px] text-slate-600">
+              {{ report.count }} match(es) — {{ security.keptIds().length }} selected.
+            </p>
+            <div class="mt-1 flex max-h-64 flex-col gap-1 overflow-y-auto">
+              @for (match of security.matches(); track match.id) {
+                <label class="flex items-start gap-2 rounded border border-slate-200 p-1.5 text-[11px]"
+                       data-test="match-row">
+                  <input type="checkbox" class="mt-0.5" [checked]="isKept(match.id)"
+                         (change)="security.toggleMatch(match.id)"
+                         [attr.data-test]="'match-' + match.id" />
+                  <span class="min-w-0 flex-1">
+                    <span class="block truncate font-mono text-slate-700">{{ match.text }}</span>
+                    <button class="text-[10px] text-indigo-600 underline"
+                            (click)="page.set(match.page)">Page {{ match.page + 1 }}</button>
+                  </span>
+                </label>
+              }
+            </div>
+          </div>
+        }
+
+        <div class="border-t border-slate-100 pt-3">
+          <label class="flex items-start gap-2 text-[11px] text-slate-600">
+            <input type="checkbox" class="mt-0.5" [ngModel]="cleanCopy()"
+                   (ngModelChange)="cleanCopy.set($event)" data-test="clean-copy" />
+            <span>
+              Put the result in a new document
+              <span class="block text-[10px] text-slate-400">
+                Recommended. Version history keeps every earlier version of this
+                document — and those still contain what you are removing. A new
+                document has no history to leak.
+              </span>
+            </span>
+          </label>
+          <label class="mt-2 block text-[11px] text-slate-500">
+            Text on the black boxes (optional)
+            <input class="mt-0.5 w-full rounded border border-slate-300 px-2 py-1 text-[11px]"
+                   placeholder="REDACTED"
+                   [ngModel]="redactLabel()" (ngModelChange)="redactLabel.set($event)"
+                   data-test="redact-label" />
+          </label>
+          <button class="mt-2 w-full rounded bg-rose-600 px-3 py-1.5 font-medium text-white disabled:opacity-40"
+                  [disabled]="security.busy() || !security.hasWork()"
+                  (click)="applyRedaction()" data-test="apply-redaction">
+            Apply redaction
+          </button>
+        </div>
+      </div>
+    }
+
+    @if (tab() === 'sanitize') {
+      <div class="flex flex-col gap-3 p-3">
+        <p class="text-[11px] text-slate-500">
+          Documents carry more than they show. Pick what to strip out before you
+          send this one on.
+        </p>
+        @for (item of sanitizeItems; track item.key) {
+          <label class="flex items-start gap-2 text-[11px] text-slate-600">
+            <input type="checkbox" class="mt-0.5" [checked]="sanitizeChoices()[item.key]"
+                   (change)="toggleSanitize(item.key)"
+                   [attr.data-test]="'sanitize-' + item.key" />
+            <span>
+              {{ item.label }}
+              <span class="block text-[10px] text-slate-400">{{ item.note }}</span>
+            </span>
+          </label>
+        }
+        <button class="rounded bg-indigo-600 px-3 py-1.5 font-medium text-white disabled:opacity-40"
+                [disabled]="security.busy()" (click)="applySanitize()"
+                data-test="apply-sanitize">
+          Clean up document
+        </button>
+      </div>
+    }
+  </aside>
+
+  <!-- Right: the page -->
+  <main class="flex min-h-0 flex-1 flex-col bg-slate-100">
+    <div class="flex items-center gap-2 border-b border-slate-200 bg-white px-4 py-2 text-sm">
+      <button (click)="prevPage()" [disabled]="page() === 0"
+              class="rounded px-2 py-1 disabled:opacity-30" data-test="protect-prev">‹</button>
+      <span class="text-slate-500" data-test="protect-page">
+        Page {{ page() + 1 }} / {{ pageCount() }}
+      </span>
+      <button (click)="nextPage()" [disabled]="page() >= pageCount() - 1"
+              class="rounded px-2 py-1 disabled:opacity-30" data-test="protect-next">›</button>
+      @if (security.busy()) {
+        <span class="text-xs text-indigo-500" data-test="protect-busy">working…</span>
+      }
+    </div>
+    <div class="min-h-0 flex-1 overflow-auto p-6">
+      <div class="relative mx-auto w-fit">
+        <app-page-overlay
+          [docId]="docId()"
+          [page]="page()"
+          [version]="currentSeq() ?? undefined"
+          [renderWidth]="zoom()"
+          [items]="overlayItems()"
+          [tool]="drawing() ? 'rect' : 'select'"
+          [drawStroke]="'#111827'"
+          [drawFill]="'#111827'"
+          (created)="onDrawn($event)"
+          (selectionChanged)="onSelect($event)"
+        />
+      </div>
+    </div>
+  </main>
+</div>
