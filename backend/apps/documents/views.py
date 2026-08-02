@@ -38,7 +38,7 @@ from apps.pdf_engine.engine import render as engine_render
 from apps.pdf_engine.engine import search_text
 from apps.pdf_engine.engine import text as engine_text
 from apps.pdf_engine.engine.inspect import inspect as inspect_pdf
-from apps.pdf_engine.exceptions import EngineError
+from apps.pdf_engine.exceptions import DocumentEncryptedError, EngineError
 from apps.pdf_engine.storage import get_storage
 
 from .filters import DocumentFilter
@@ -357,6 +357,11 @@ class ThumbnailView(APIView):
                 blob = storage.get_bytes(version.storage_key)
                 png = engine_render.render_thumbnail(blob, n, width, annots=with_annots)
                 storage.put_bytes(key, png, content_type="image/png")
+            except DocumentEncryptedError as exc:
+                # 423, not 400: "unlock it" is a thing the client can do, and
+                # the thumbnail strip of a protected document asks for one of
+                # these per page (phase-07).
+                raise DocumentEncrypted(exc.message) from exc
             except EngineError as exc:
                 raise ValidationFailed(exc.message) from exc
         resp = HttpResponse(png, content_type="image/png")

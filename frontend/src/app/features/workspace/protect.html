@@ -22,6 +22,11 @@
             @if (security.isUnlocked(docId())) {
               It is unlocked for this session — the password is kept in memory only
               and is forgotten when you close the tab.
+              <span class="mt-1 block">
+                Editing it (rotating a page, redacting, anything) saves an
+                unprotected version, because the original encryption cannot be put
+                back without both of its passwords. Protect it again afterwards.
+              </span>
             } @else {
               Enter its password to keep working on it.
             }

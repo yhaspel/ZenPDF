@@ -119,6 +119,16 @@ def test_an_encrypted_document_refuses_work_without_the_password(api, uploaded_d
     assert resp.json()["error"]["code"] == "document_encrypted"
 
 
+def test_a_locked_page_answers_423_rather_than_falling_over(api, uploaded_doc):
+    """The thumbnail strip asks for one of these per page, and a protected
+    document has no pages to draw — so it must be an answer, not a 500."""
+    _op(api, uploaded_doc["id"], "encrypt",
+        {"owner_password": "owner", "user_password": "user"})
+    resp = api.get(f"/api/documents/{uploaded_doc['id']}/pages/0/thumbnail/?w=120")
+    assert resp.status_code == 423
+    assert resp.json()["error"]["code"] == "document_encrypted"
+
+
 def test_the_session_password_lets_ordinary_work_continue(api, uploaded_doc):
     """Acceptance criterion: "session-password ops work without re-prompting".
 
@@ -138,6 +148,32 @@ def test_the_session_password_lets_ordinary_work_continue(api, uploaded_doc):
 
     detail = api.get(f"/api/documents/{uploaded_doc['id']}/").json()
     assert detail["page_count"] == 3
+
+
+def test_editing_an_unlocked_document_says_the_password_came_off(api, uploaded_doc):
+    """The tradeoff, made visible rather than silent.
+
+    An engine works on decrypted bytes and returns a new file; neither password
+    is recoverable from the other, so the original encryption cannot be put
+    back faithfully. What must never happen is a document quietly ceasing to be
+    protected — so the flag flips and the version label says why.
+    """
+    _op(api, uploaded_doc["id"], "encrypt",
+        {"owner_password": "owner", "user_password": "user"})
+    resp = api.post(f"/api/documents/{uploaded_doc['id']}/operations/",
+                    {"type": "rotate_pages",
+                     "params": {"pages": [0], "degrees": 90},
+                     "document_password": "user",
+                     "base_version_seq": 2}, format="json")
+    assert api.get(f"/api/jobs/{resp.json()['id']}/").json()["status"] == "succeeded"
+
+    assert api.get(f"/api/documents/{uploaded_doc['id']}/").json()["is_encrypted"] is False
+    label = api.get(f"/api/documents/{uploaded_doc['id']}/versions/").json()[0]["label"]
+    assert "password removed" in label, label
+
+    from apps.pdf_engine.engine import security as S
+
+    assert S.is_encrypted(_content(api, uploaded_doc["id"])) is False
 
 
 def test_permissions_can_be_changed(api, uploaded_doc):

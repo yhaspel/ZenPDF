@@ -56,6 +56,9 @@ export class SecurityFacade {
   // ------------------------------------------------------------------ //
   // Session password
   // ------------------------------------------------------------------ //
+  /** Which documents are unlocked — a signal, so the viewer can react to it. */
+  readonly unlockedIds = this.passwords.unlocked;
+
   remember(docId: string, password: string): void {
     this.passwords.remember(docId, password);
   }

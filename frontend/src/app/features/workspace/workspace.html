@@ -65,7 +65,8 @@
       <div class="flex items-center gap-3 bg-amber-50 px-4 py-2 text-sm text-amber-700"
            data-test="encrypted-banner">
         @if (security.isUnlocked(doc.id)) {
-          🔓 Unlocked for this session — the password is held in memory only.
+          🔓 Unlocked for this session. Editing it removes the password — add one
+          again afterwards if you still want it.
         } @else {
           🔒 This document is password-protected. Unlock it to keep working on it.
         }

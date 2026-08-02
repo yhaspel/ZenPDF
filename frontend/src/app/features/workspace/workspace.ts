@@ -88,7 +88,18 @@ export class Workspace {
   protected insertCount = signal(1);
 
   protected passwordPrompt = signal(false);
-  protected password = signal<string | null>(null);
+  /**
+   * What PDF.js needs to render an encrypted document — read from the session
+   * store rather than kept a second time here, so that unlocking anywhere (the
+   * prompt, the Protect panel, or protecting the document in the first place)
+   * is enough to make the viewer work.
+   */
+  protected readonly password = computed(() => {
+    const doc = this.viewer.doc();
+    if (!doc) return null;
+    this.security.unlockedIds(); // the dependency; the map itself is not one
+    return this.security.passwordFor(doc.id) || null;
+  });
 
   readonly contentUrl = computed(() => {
     const d = this.viewer.doc();
@@ -170,7 +181,10 @@ export class Workspace {
       this.annotations.load(doc.id, seq);
     });
     effect(() => {
-      if (this.viewer.doc()?.is_encrypted && !this.password()) {
+      const doc = this.viewer.doc();
+      // Not when the session already knows the password — including the case
+      // where the user has just *chosen* it, which is no time to ask for it.
+      if (doc?.is_encrypted && !this.security.isUnlocked(doc.id)) {
         this.passwordPrompt.set(true);
       }
     });
@@ -380,10 +394,9 @@ export class Workspace {
   }
 
   submitPassword(pw: string): void {
-    this.password.set(pw);
     this.passwordPrompt.set(false);
-    // The viewer got it via `[password]`; the facade holds it for every
-    // *operation* on this document, so nothing prompts again (phase-07).
+    // One place: the viewer reads it from here through `password()`, and every
+    // *operation* carries it too, so nothing prompts again (phase-07).
     const doc = this.viewer.doc();
     if (doc && pw) this.security.remember(doc.id, pw);
   }
@@ -398,6 +411,10 @@ export class Workspace {
    * this document's earlier versions still contain what was removed.
    */
   onRedactedCopy(docId: string): void {
+    // Land on the *document*, not on the redaction panel of a different one:
+    // the work is finished, and what the user wants now is to look at it.
+    this.mode.set('view');
+    this.protectTab.set('protect');
     this.router.navigate(['/app/doc', docId]);
   }
 

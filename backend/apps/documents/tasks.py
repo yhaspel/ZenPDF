@@ -520,7 +520,9 @@ def run_operation(self, job_id: str):
             # teach fifteen of them about passwords, the document is unlocked
             # here, once — except for the three ops whose whole subject *is*
             # the lock, which take their own credentials.
+            unlocked_here = False
             if op.type not in SELF_UNLOCKING:
+                unlocked_here = document.is_encrypted
                 primary_bytes = SEC.open_with_password(
                     primary_bytes, job.params.get("document_password", "")
                 )
@@ -562,6 +564,19 @@ def run_operation(self, job_id: str):
                 return
 
             if kind == "version":
+                if unlocked_here:
+                    # Editing a protected document takes the protection off it.
+                    #
+                    # The engine works on decrypted bytes and returns a new
+                    # file; the original's encryption cannot be put back
+                    # faithfully, because neither password is recoverable from
+                    # the other — opening with the open password does not
+                    # reveal the owner password, and re-encrypting with the one
+                    # we were given would quietly make it both. So the
+                    # protection comes off, and the *label says so*: a document
+                    # that stopped being protected without anyone being told is
+                    # the version of this that actually hurts someone.
+                    label = f"{label} (password removed)"
                 version = _save_new_version(document=document, data=payload, label=label,
                                             created_by=created_by_user(job), job=job)
                 # `encrypt` and `decrypt` change what the *document* is, not
@@ -569,6 +584,9 @@ def run_operation(self, job_id: str):
                 # password off this flag.
                 if report and "encrypted" in report:
                     document.is_encrypted = bool(report["encrypted"])
+                    document.save(update_fields=["is_encrypted"])
+                elif unlocked_here:
+                    document.is_encrypted = False
                     document.save(update_fields=["is_encrypted"])
                 job.mark_succeeded({
                     "document_id": str(document.id),

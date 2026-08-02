@@ -52,29 +52,54 @@ test('phase 7: protect a document, reopen it, unlock it, then work on it', async
   await expect(successToast(page, 'Document protected')).toBeVisible({ timeout: 60_000 });
   await expect(page.locator('[data-test=encrypted-banner]')).toBeVisible({ timeout: 60_000 });
 
-  // --- 2. Reopen it in a clean session: it asks for the password. ---
-  const url = page.url();
-  await page.goto('/app/dashboard');
-  await page.goto(url);
+  // --- 2. Reopen it: the session password is in memory, so a reload asks. ---
+  await page.reload();
   await expect(page.locator('[data-test=pdf-password]')).toBeVisible({ timeout: 60_000 });
   await page.fill('[data-test=pdf-password]', 'open-sesame-42');
   await page.click('[data-test=pdf-password-submit]');
 
-  // --- 3. Unlocked: an ordinary operation runs without prompting again. ---
+  // --- 3. Remove the password entirely, with the session password. ---
   await expect(page.locator('[data-test=encrypted-banner]')).toContainText('Unlocked');
+  await openProtect(page);
+  await page.fill('[data-test=unlock-password]', 'open-sesame-42');
+  await page.click('[data-test=remove-password]');
+  await expect(successToast(page, 'Password removed')).toBeVisible({ timeout: 60_000 });
+  await expect(page.locator('[data-test=encrypted-banner]')).toHaveCount(0, { timeout: 60_000 });
+});
+
+test('phase 7: editing an unlocked document says the password came off', async ({ page }) => {
+  test.setTimeout(180_000);
+  await registerAndLogin(page, 'p7edit');
+  await uploadFiles(page, ['text.pdf']);
+  await openDoc(page);
+
+  await openProtect(page);
+  await page.fill('[data-test=owner-password]', 'owner-key-9999');
+  await page.fill('[data-test=user-password]', 'open-sesame-42');
+  await page.fill('[data-test=confirm-password]', 'open-sesame-42');
+  await page.click('[data-test=apply-protection]');
+  await expect(successToast(page, 'Document protected')).toBeVisible({ timeout: 60_000 });
+
+  // The banner says what is about to happen *before* it happens.
+  const banner = page.locator('[data-test=encrypted-banner]');
+  await expect(banner).toContainText('Editing it removes the password', { timeout: 60_000 });
+
+  // An ordinary operation runs with the session password — nothing re-prompts.
+  await page.click('[data-test=protect-toggle]');
   await page.click('[data-test=organize-toggle]');
   await page.locator('[data-test=organize-page]').first().click();
   await page.click('[data-test=op-rotate]');
   await expect(successToast(page, 'Rotated')).toBeVisible({ timeout: 60_000 });
   await expect(page.locator('[data-test=pdf-password]')).toHaveCount(0);
 
-  // --- 4. Remove the password entirely. ---
+  // …and the history records that the protection came off, rather than the
+  // document quietly ceasing to be protected.
+  await expect(banner).toHaveCount(0, { timeout: 60_000 });
   await page.click('[data-test=organize-toggle]');
-  await openProtect(page);
-  await page.fill('[data-test=unlock-password]', 'open-sesame-42');
-  await page.click('[data-test=remove-password]');
-  await expect(successToast(page, 'Password removed')).toBeVisible({ timeout: 60_000 });
-  await expect(page.locator('[data-test=encrypted-banner]')).toHaveCount(0, { timeout: 60_000 });
+  await page.click('[data-test=tab-history]');
+  await expect(page.locator('[data-test=version-row]').first()).toContainText(
+    'password removed',
+  );
 });
 
 test('phase 7: redact every email but one, and prove the text is gone', async ({ page }) => {
