@@ -347,3 +347,50 @@ def test_the_operational_detail_is_for_operators(api, user, anon):
     assert set(body["queues"]) == set(HEARTBEAT_QUEUES)
     assert set(body["workers"]) == set(HEARTBEAT_QUEUES)
     assert body["worker_heartbeat_age_seconds"] < 5
+
+
+# --------------------------------------------------------------------------- #
+# Client-side crashes (§10.4) — reported to our own origin, not to a vendor
+# --------------------------------------------------------------------------- #
+def test_a_client_crash_becomes_a_log_line(anon, caplog):
+    import logging
+
+    with caplog.at_level(logging.ERROR, logger="apps.core.views"):
+        resp = anon.post("/api/client-errors/", {
+            "name": "TypeError",
+            "message": "Cannot read properties of undefined",
+            "stack": "at chunk-ABC123.js:1:4096",
+            "route": "/app/doc/123",
+        }, format="json")
+    assert resp.status_code == 204
+    assert "Cannot read properties of undefined" in caplog.text
+
+
+def test_a_client_crash_report_needs_no_credential(anon, guest):
+    """A crash report must not identify the browser that sent it."""
+    for client in (anon, guest):
+        resp = client.post("/api/client-errors/",
+                           {"name": "Error", "message": "boom"}, format="json")
+        assert resp.status_code == 204
+
+
+def test_the_server_re_scrubs_what_the_browser_sent(anon, caplog):
+    """The browser's copy of the redaction rules is a convenience, not the
+    control — this endpoint accepts input from anybody."""
+    import logging
+
+    with caplog.at_level(logging.ERROR, logger="apps.core.views"):
+        anon.post("/api/client-errors/", {
+            "name": "Error",
+            "message": "failed for alice@example.com",
+            "route": "/s/SECRETTOKENabcdefghijklmnopqrstuvwxyz012345",
+            "stack": "at /api/public/sign/SECRETTOKENabcdefghijklmnop/complete/",
+        }, format="json")
+    assert "alice@example.com" not in caplog.text
+    assert "SECRETTOKEN" not in caplog.text
+    # …and enough shape survives to be worth reading.
+    assert "/s/" in caplog.text or "[token]" in caplog.text
+
+
+def test_an_empty_report_is_accepted_and_dropped(anon):
+    assert anon.post("/api/client-errors/", {}, format="json").status_code == 204

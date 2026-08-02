@@ -43,7 +43,7 @@ _TOKEN_PATH = re.compile(
 _LONG_TOKEN = re.compile(r"\b[A-Za-z0-9_-]{32,}\b")
 
 
-def _redact(value):
+def redact(value):
     """Strip addresses and capability tokens out of a free-text string."""
     if not isinstance(value, str):
         return value
@@ -59,7 +59,7 @@ def _before_send(event, hint):
     if request:
         headers = request.get("headers") or {}
         request["headers"] = {
-            k: _redact(v) for k, v in headers.items()
+            k: redact(v) for k, v in headers.items()
             if k.lower() not in _SENSITIVE_HEADERS
         }
         # A body is a document, a password, or a signature. None of them.
@@ -70,7 +70,7 @@ def _before_send(event, hint):
         # The URL keeps its shape — which view broke is the whole point — with
         # the capability taken out of the path.
         if request.get("url"):
-            request["url"] = _redact(request["url"])
+            request["url"] = redact(request["url"])
         event["request"] = request
 
     # The user is identified by opaque id only — never the address.
@@ -87,10 +87,10 @@ def _before_send(event, hint):
         # A Django IntegrityError puts the address in the message:
         # `Key (email)=(alice@example.com) already exists`.
         if entry.get("value"):
-            entry["value"] = _redact(entry["value"])
+            entry["value"] = redact(entry["value"])
     logentry = event.get("logentry")
     if logentry:
-        logentry["message"] = _redact(logentry.get("message"))
+        logentry["message"] = redact(logentry.get("message"))
         logentry.pop("params", None)
 
     tags = event.setdefault("tags", {})

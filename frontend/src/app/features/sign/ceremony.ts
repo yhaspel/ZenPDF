@@ -153,6 +153,10 @@ export class Ceremony {
       next: () => {
         this.busy.set(false);
         this.screen.set('sign');
+        // After ZenModal's own focus restore, so this wins: the person has
+        // just agreed and should land on what they are signing.
+        setTimeout(() => document
+          .querySelector<HTMLElement>('[data-test="sign-heading"]')?.focus());
       },
       error: (err) => {
         this.busy.set(false);

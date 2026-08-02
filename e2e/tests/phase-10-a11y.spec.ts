@@ -12,9 +12,11 @@ import { registerAndLogin, uploadFiles } from './helpers';
  *   or *critical* findings. axe finds perhaps a third of real barriers, which
  *   makes it a floor rather than a pass mark.
  * * **A keyboard-only pass through the signing ceremony**, driven with real
- *   Tab and Enter. That flow is the legally sensitive one: somebody using a
- *   screen reader has to be able to sign a document, and "the mouse works" is
- *   not an answer.
+ *   Tab, Enter and Space, from the consent box to the finished envelope. That
+ *   flow is the legally sensitive one: somebody using a screen reader has to
+ *   be able to sign a document, and "the mouse works" is not an answer. The
+ *   signature is *typed* — drawing on a canvas is not a keyboard gesture, and
+ *   the Type tab is the WCAG-conformant alternative that already exists.
  *
  * Findings are printed with their target so a failure is actionable rather
  * than a count.
@@ -161,15 +163,18 @@ test('phase 10: a signer can complete the ceremony with the keyboard alone',
     })
   ).json();
   const recipientId = withRecipients.recipients[0].id;
-  await page.request.patch(`/api/sign-requests/${request.id}/`, {
-    headers: auth,
-    data: {
-      fields: [{
-        recipient_id: recipientId, page: 0, x: 0.1, y: 0.7, w: 0.3, h: 0.06,
-        type: 'signature', required: true,
-      }],
-    },
-  });
+  const withFields = await (
+    await page.request.patch(`/api/sign-requests/${request.id}/`, {
+      headers: auth,
+      data: {
+        fields: [{
+          recipient_id: recipientId, page: 0, x: 0.1, y: 0.7, w: 0.3, h: 0.06,
+          type: 'signature', required: true,
+        }],
+      },
+    })
+  ).json();
+  const fieldId = withFields.fields_[0].id;
   const sent = await page.request.post(
     `/api/sign-requests/${request.id}/send/`, { headers: auth });
   expect(sent.ok(), await sent.text()).toBeTruthy();
@@ -197,5 +202,40 @@ test('phase 10: a signer can complete the ceremony with the keyboard alone',
     timeout: 60_000,
   });
   await scan(ceremony, 'ceremony (signing)');
+
+  // The signature itself, typed. Drawing on a canvas is not a keyboard
+  // gesture; the Type tab is the accessible alternative, so it is the one that
+  // has to work — a ceremony a signer cannot *finish* is not keyboard-complete.
+  await tabTo(ceremony, `sign-${fieldId}`);
+  await ceremony.keyboard.press('Enter');
+  await expect(ceremony.locator('[data-test=ceremony-pad]')).toBeVisible();
+  await scan(ceremony, 'ceremony (signature pad)');
+
+  // Inside a focus trap Tab cannot leave the dialog, so `tabTo` either finds
+  // the control or spins inside it — which is exactly the assertion.
+  await tabTo(ceremony, 'sig-tab-type');
+  await ceremony.keyboard.press('Enter');
+  await tabTo(ceremony, 'sig-text');
+  await ceremony.keyboard.type('Ada Lovelace');
+  await tabTo(ceremony, 'sig-font-dancing');
+  await ceremony.keyboard.press('Enter');
+  // "Use this" is disabled until the server render arrives, and a disabled
+  // button is not in the tab order — tabbing for it before the preview exists
+  // reports it unreachable, which it is not.
+  await expect(ceremony.locator('[data-test=sig-preview]')).toBeVisible({
+    timeout: 30_000,
+  });
+  await tabTo(ceremony, 'sig-use');
+  await ceremony.keyboard.press('Enter');
+
+  await expect(ceremony.locator('[data-test=ceremony-pad]')).toHaveCount(0);
+  await expect(ceremony.locator('[data-test=field-done]')).toBeVisible();
+
+  await tabTo(ceremony, 'finish');
+  await ceremony.keyboard.press('Enter');
+  await expect(ceremony.locator('[data-test=done-screen]')).toBeVisible({
+    timeout: 60_000,
+  });
+  await scan(ceremony, 'ceremony (done)');
   await guest.close();
 });

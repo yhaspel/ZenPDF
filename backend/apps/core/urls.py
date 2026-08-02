@@ -4,6 +4,7 @@ from apps.users.views import UnsubscribeView
 
 from .views import (
     AdsTxtView,
+    ClientErrorView,
     ConfigView,
     GuestClaimView,
     GuestSessionView,
@@ -15,6 +16,9 @@ from .views import (
 
 urlpatterns = [
     path("config/", ConfigView.as_view(), name="config"),
+    # Browser-side crashes, reported to our own origin rather than to a vendor
+    # (§10.4) — see the phase-10 decision on why there is no browser SDK.
+    path("client-errors/", ClientErrorView.as_view(), name="client-errors"),
     # Proxied to the site root by nginx — a crawler will only accept it there.
     path("ads.txt", AdsTxtView.as_view(), name="ads-txt"),
     path("health/", HealthView.as_view(), name="health"),

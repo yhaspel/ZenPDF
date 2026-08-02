@@ -65,6 +65,13 @@ before then — a version number is a claim about all of it.
 - [ ] Ads: `docs/09-adsense-readiness.md`, which is its own checklist. The
       product ships launchable with `ADS_ENABLED=false`.
 
+## Accessibility
+
+- [ ] Run `docs/10-accessibility-screen-reader-script.md` — twenty minutes with
+      VoiceOver or NVDA on the signing ceremony. axe and the keyboard test are
+      automated and pass; this is the part that cannot be. §10.3 names this
+      flow as the legally sensitive one.
+
 ## Operations
 
 - [ ] `SENTRY_DSN` set (the wiring ships inert; PII is scrubbed at the SDK
