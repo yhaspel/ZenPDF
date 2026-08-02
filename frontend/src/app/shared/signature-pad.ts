@@ -94,6 +94,7 @@ export const SIGNATURE_FONTS = [
           <label class="block text-xs text-slate-500">
             A photo or scan of your signature
             <input type="file" accept="image/png,image/jpeg" class="mt-1 w-full text-xs"
+                   aria-label="Choose a signature image"
                    (change)="onFile($event)" data-test="sig-file" />
           </label>
           <p class="mt-1 text-[11px] text-slate-500">

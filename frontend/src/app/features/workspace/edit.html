@@ -58,6 +58,7 @@
         @if (mode() === 'image') {
           <label class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Add an image</label>
           <input type="file" accept="image/png,image/jpeg" (change)="onImageFile($event)"
+                 aria-label="Choose an image to insert"
                  class="text-[11px]" data-test="image-upload" />
           <label class="flex items-center gap-1 text-[11px] text-slate-500">
             <input type="checkbox" [ngModel]="imageKeepAspect()"
@@ -69,6 +70,7 @@
               <p class="text-[11px] text-indigo-800">Selected: {{ img.width }}×{{ img.height }}</p>
               <label class="mt-1 block text-[11px]">Replace with
                 <input type="file" accept="image/png,image/jpeg"
+                       aria-label="Choose a replacement image"
                        (change)="onImageFile($event, true)" data-test="image-replace" />
               </label>
               <button class="mt-1 w-full rounded bg-rose-700 px-2 py-1 text-white"
@@ -137,6 +139,7 @@
           <input [ngModel]="wmText()" (ngModelChange)="wmText.set($event)" placeholder="Watermark text"
                  class="mb-1 w-full rounded border border-slate-300 px-2 py-1" data-test="wm-text" />
           <input type="file" accept="image/png,image/jpeg" (change)="onWatermarkImage($event)"
+                 aria-label="Choose a watermark image"
                  class="mb-1 w-full text-[11px]" data-test="wm-image" />
           <label class="text-[11px] text-slate-500">Opacity {{ (wmOpacity() * 100).toFixed(0) }}%</label>
           <input type="range" min="0.05" max="1" step="0.05" [ngModel]="wmOpacity()"

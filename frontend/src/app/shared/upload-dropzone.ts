@@ -19,6 +19,7 @@ import { ChangeDetectionStrategy, Component, input, output, signal } from '@angu
       <span class="text-xs text-slate-500">{{ hint() }}</span>
       <input
         type="file"
+        aria-label="Choose PDF files to upload"
         class="hidden"
         [accept]="accept()"
         multiple

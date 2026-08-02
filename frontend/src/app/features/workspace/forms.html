@@ -121,6 +121,7 @@
           <label class="text-[11px] text-slate-500">
             Import data
             <input type="file" accept=".json,.csv,application/json,text/csv"
+                   aria-label="Choose form data to import"
                    class="mt-1 w-full text-[11px]" (change)="onImportFile($event)"
                    data-test="form-import" />
           </label>

@@ -59,22 +59,25 @@
     </div>
 
     <div>
-      <label class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Colour</label>
-      <input type="color" [ngModel]="color()" (ngModelChange)="color.set($event)"
+      <label for="annot-colour"
+             class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Colour</label>
+      <input id="annot-colour" type="color" [ngModel]="color()" (ngModelChange)="color.set($event)"
              class="mt-1 h-8 w-full cursor-pointer rounded border border-slate-200" data-test="annot-color" />
     </div>
     <div>
-      <label class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+      <label for="annot-width"
+             class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
         Line width — {{ strokeWidth() }}
       </label>
-      <input type="range" min="1" max="12" [ngModel]="strokeWidth()" (ngModelChange)="strokeWidth.set(+$event)"
+      <input id="annot-width" type="range" min="1" max="12" [ngModel]="strokeWidth()" (ngModelChange)="strokeWidth.set(+$event)"
              class="w-full" data-test="annot-width" />
     </div>
     <div>
-      <label class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+      <label for="annot-opacity"
+             class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
         Opacity — {{ (opacity() * 100).toFixed(0) }}%
       </label>
-      <input type="range" min="0.1" max="1" step="0.1" [ngModel]="opacity()" (ngModelChange)="opacity.set(+$event)"
+      <input id="annot-opacity" type="range" min="0.1" max="1" step="0.1" [ngModel]="opacity()" (ngModelChange)="opacity.set(+$event)"
              class="w-full" data-test="annot-opacity" />
     </div>
 
@@ -101,6 +104,7 @@
     <div>
       <label class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Custom stamp</label>
       <input type="file" accept="image/png,image/jpeg" (change)="onStampFile($event)"
+             aria-label="Choose a stamp image"
              class="mt-1 w-full text-[11px]" data-test="stamp-upload" />
       @if (stampRef()) {
         <p class="text-[11px] text-emerald-600">Image ready — drag a box to place it.</p>
