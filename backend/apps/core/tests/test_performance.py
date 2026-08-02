@@ -37,9 +37,16 @@ def _plan(queryset) -> str:
     return queryset.explain()
 
 
-@pytest.mark.skipif(connection.vendor != "postgresql",
-                    reason="query plans are backend-specific; the suite's "
-                           "SQLite would make this assertion vacuous")
+#: Query plans are backend-specific, and the hermetic suite runs on SQLite —
+#: where `assert "Seq Scan" not in plan` is vacuous. These run under
+#: `config.settings.dev` (Postgres): `./infra/test.sh --pg`.
+PG_ONLY = pytest.mark.skipif(
+    connection.vendor != "postgresql",
+    reason="query plans are backend-specific; the suite's SQLite would make "
+           "this assertion vacuous")
+
+
+@PG_ONLY
 def test_the_library_list_needs_no_sort(user):
     """`owned_by` + hide-trashed + newest-first is the single most-run query in
     the product, and it must not sort.
@@ -131,3 +138,68 @@ def test_thumbnails_have_their_own_lane():
 
     routes = settings.CELERY_TASK_ROUTES
     assert routes["apps.documents.tasks.generate_thumbnails_task"]["queue"] == "render"
+
+
+def _seed_jobs(user, count=SEED):
+    from apps.jobs.models import Job
+
+    Job.objects.bulk_create([
+        Job(user=user, type="rotate_pages",
+            status="queued" if i % 97 == 0 else "succeeded")
+        for i in range(count)
+    ])
+    with connection.cursor() as cursor:
+        cursor.execute("ANALYZE jobs_job")
+
+
+@PG_ONLY
+def test_the_job_list_needs_no_sort(user):
+    """`jobs_job` has no purge — `reap_stalled_jobs` only fails stuck rows — so
+    an account's history only grows, and one page of 50 must not read all of
+    it."""
+    from apps.core.principals import owned_by
+    from apps.jobs.models import Job
+
+    _seed_jobs(user)
+    plan = _plan(owned_by(Job.objects.all(), user).order_by("-created_at")[:50])
+    assert "job_user_recent" in plan, plan
+    assert "Sort" not in plan, plan
+    assert "Seq Scan" not in plan, plan
+
+
+@PG_ONLY
+def test_the_concurrency_precheck_still_has_its_own_index(user):
+    """`(user, status)` has to survive the new index: it is read on **every**
+    operation dispatch, which is far hotter than the list."""
+    from apps.core.principals import owned_by
+    from apps.jobs.models import Job
+
+    _seed_jobs(user)
+    plan = _plan(owned_by(
+        Job.objects.filter(status__in=[Job.Status.QUEUED, Job.Status.RUNNING]),
+        user,
+    ))
+    assert "Seq Scan" not in plan, plan
+    assert "Index" in plan, plan
+
+
+@PG_ONLY
+def test_the_sign_request_list_needs_no_sort(user):
+    """The sender's own screen. Without `(owner, -created_at)` the plan reads
+    every envelope the account ever sent, probes `documents_document` once per
+    row for the `select_related`, then top-N heapsorts."""
+    from apps.esign.models import SignRequest
+
+    SignRequest.objects.bulk_create([
+        SignRequest(owner=user, title=f"Envelope {i}",
+                    envelope_code=f"PERF{i:012d}")
+        for i in range(SEED)
+    ])
+    with connection.cursor() as cursor:
+        cursor.execute("ANALYZE esign_signrequest")
+
+    plan = _plan(SignRequest.objects.filter(owner=user)
+                 .select_related("document")[:50])
+    assert "sign_owner_recent" in plan, plan
+    assert "Sort" not in plan, plan
+    assert "Seq Scan on esign_signrequest" not in plan, plan

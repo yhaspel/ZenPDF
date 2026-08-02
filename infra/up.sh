@@ -43,6 +43,13 @@ if [ "$ready" -ne 1 ]; then
   echo "       Check: ./logs.sh api"
   exit 1
 fi
+echo "==> Enabling pg_stat_statements..."
+# The `shared_preload_libraries` half is a compose command override; this is
+# the other half, here rather than in /docker-entrypoint-initdb.d because that
+# only fires on a *fresh* volume and every existing dev box already has one.
+docker compose exec -T db psql -v ON_ERROR_STOP=1 -U "${POSTGRES_USER:-zen}" \
+  -d "${POSTGRES_DB:-zenpdf}" -c "CREATE EXTENSION IF NOT EXISTS pg_stat_statements;" >/dev/null
+
 
 echo "==> Applying migrations..."
 docker compose exec -T api python manage.py migrate --noinput

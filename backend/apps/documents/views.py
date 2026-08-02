@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from django.conf import settings
 from django.http import HttpResponse, HttpResponseNotModified, StreamingHttpResponse
+from django.http.response import HttpResponseBase
 from django.utils import timezone
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import extend_schema
@@ -138,6 +139,10 @@ def _stream_version(version: DocumentVersion, request, *, filename: str,
     disposition = "attachment" if as_attachment else "inline"
     rng = None if as_attachment else _parse_range(request.headers.get("Range", ""), size)
 
+    # `HttpResponse` and `StreamingHttpResponse` are siblings under
+    # `HttpResponseBase`, not parent and child, so the variable is declared as
+    # the base they share rather than inferred from whichever arm ran first.
+    resp: HttpResponseBase
     if rng == "invalid":
         resp = HttpResponse(status=416)
         resp["Content-Range"] = f"bytes */{size}"

@@ -16,6 +16,8 @@ Self-signing is not here at all: it is an operation on a document
 """
 from __future__ import annotations
 
+from datetime import timedelta
+
 from django.conf import settings
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
@@ -291,7 +293,7 @@ class SignRequestListView(generics.ListAPIView):
             owner=request.user, document=document,
             title=(data.get("title") or document.title)[:255],
             message=data.get("message", ""),
-            expires_at=timezone.now() + timezone.timedelta(days=days),
+            expires_at=timezone.now() + timedelta(days=days),
             reminder_every_days=data.get("reminder_every_days", 3),
         )
         record(sign_request, "created", request=request, document=str(document.id))
@@ -334,7 +336,7 @@ class SignRequestDetailView(APIView):
             if key in data:
                 setattr(sign_request, key, str(data[key])[:5000])
         if "expires_in_days" in data:
-            sign_request.expires_at = timezone.now() + timezone.timedelta(
+            sign_request.expires_at = timezone.now() + timedelta(
                 days=_bounded(data["expires_in_days"], 1, 365, "expires_in_days"))
         if "reminder_every_days" in data:
             sign_request.reminder_every_days = _bounded(
@@ -364,7 +366,7 @@ def _check_recipient_limits(user, recipients) -> None:
             f"A request can go to at most "
             f"{settings.MAX_RECIPIENTS_PER_REQUEST} people."
         )
-    since = timezone.now() - timezone.timedelta(days=1)
+    since = timezone.now() - timedelta(days=1)
     already = {
         email.lower() for email in
         Recipient.objects.filter(sign_request__owner=user,

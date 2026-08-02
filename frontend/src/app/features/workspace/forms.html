@@ -150,10 +150,10 @@
         </div>
 
         @if (armed() === 'radio' || armed() === 'combobox' || armed() === 'listbox') {
-          <label class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+          <label for="arm-options" class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
             Options (one per line)
           </label>
-          <textarea rows="3" class="rounded border border-slate-300 p-1 text-[11px]"
+          <textarea id="arm-options" rows="3" class="rounded border border-slate-300 p-1 text-[11px]"
                     [ngModel]="draftOptions()" (ngModelChange)="draftOptions.set($event)"
                     data-test="arm-options"></textarea>
           @if (armed() === 'radio') {

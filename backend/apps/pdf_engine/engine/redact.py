@@ -322,7 +322,7 @@ def find_matches(data: bytes, *, patterns=None, search_text: str = "",
 
     doc = fitz.open(stream=data, filetype="pdf")
     try:
-        matches = []
+        matches: list[dict] = []
         with _deadline():
             for index in _pages_in_scope(doc, scope):
                 page = doc[index]

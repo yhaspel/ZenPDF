@@ -55,7 +55,10 @@ export class AuthFacade {
   logout(): void {
     const refresh = this.tokens.refresh;
     if (refresh) {
-      this.authSvc.logout(refresh).subscribe({ error: () => {} });
+      this.authSvc.logout(refresh).subscribe({
+        // Best-effort: the local session is cleared either way.
+        error: () => { /* ignored */ },
+      });
     }
     this.clearSession();
     this.router.navigate(['/auth/login']);

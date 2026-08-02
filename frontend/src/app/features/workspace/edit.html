@@ -56,9 +56,8 @@
         }
 
         @if (mode() === 'image') {
-          <label class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Add an image</label>
-          <input type="file" accept="image/png,image/jpeg" (change)="onImageFile($event)"
-                 aria-label="Choose an image to insert"
+          <label for="edit-image-upload" class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Add an image</label>
+          <input id="edit-image-upload" type="file" accept="image/png,image/jpeg" (change)="onImageFile($event)"
                  class="text-[11px]" data-test="image-upload" />
           <label class="flex items-center gap-1 text-[11px] text-slate-500">
             <input type="checkbox" [ngModel]="imageKeepAspect()"
@@ -141,18 +140,18 @@
           <input type="file" accept="image/png,image/jpeg" (change)="onWatermarkImage($event)"
                  aria-label="Choose a watermark image"
                  class="mb-1 w-full text-[11px]" data-test="wm-image" />
-          <label class="text-[11px] text-slate-500">Opacity {{ (wmOpacity() * 100).toFixed(0) }}%</label>
-          <input type="range" min="0.05" max="1" step="0.05" [ngModel]="wmOpacity()"
+          <label for="wm-opacity" class="text-[11px] text-slate-500">Opacity {{ (wmOpacity() * 100).toFixed(0) }}%</label>
+          <input id="wm-opacity" type="range" min="0.05" max="1" step="0.05" [ngModel]="wmOpacity()"
                  (ngModelChange)="wmOpacity.set(+$event)" class="w-full" data-test="wm-opacity" />
-          <label class="text-[11px] text-slate-500">Angle {{ wmRotation() }}°</label>
-          <input type="range" min="-180" max="180" step="5" [ngModel]="wmRotation()"
+          <label for="wm-rotation" class="text-[11px] text-slate-500">Angle {{ wmRotation() }}°</label>
+          <input id="wm-rotation" type="range" min="-180" max="180" step="5" [ngModel]="wmRotation()"
                  (ngModelChange)="wmRotation.set(+$event)" class="w-full" data-test="wm-rotation" />
           <div class="flex items-center gap-2">
-            <label class="flex-1 text-[11px] text-slate-500">Size {{ wmSize() }}pt</label>
-            <input type="number" min="8" max="200" [ngModel]="wmSize()"
+            <label for="wm-size" class="flex-1 text-[11px] text-slate-500">Size {{ wmSize() }}pt</label>
+            <input id="wm-size" type="number" min="8" max="200" [ngModel]="wmSize()"
                    (ngModelChange)="wmSize.set(+$event)"
                    class="w-16 rounded border border-slate-300 px-1 py-0.5" data-test="wm-size" />
-            <input type="color" [ngModel]="wmColor()" (ngModelChange)="wmColor.set($event)"
+            <input type="color" aria-label="Watermark colour" [ngModel]="wmColor()" (ngModelChange)="wmColor.set($event)"
                    class="h-7 w-9" data-test="wm-color" />
           </div>
           <label class="flex items-center gap-1 text-[11px] text-slate-500">
@@ -179,8 +178,8 @@
                   class="mb-1 w-full rounded border border-slate-300 px-2 py-1" data-test="pn-position">
             @for (p of positions; track p) { <option [value]="p">{{ p }}</option> }
           </select>
-          <label class="text-[11px] text-slate-500">Start numbering at</label>
-          <input type="number" min="0" [ngModel]="pnStartAt()" (ngModelChange)="pnStartAt.set(+$event)"
+          <label for="pn-start-at" class="text-[11px] text-slate-500">Start numbering at</label>
+          <input id="pn-start-at" type="number" min="0" [ngModel]="pnStartAt()" (ngModelChange)="pnStartAt.set(+$event)"
                  class="mb-1 w-full rounded border border-slate-300 px-2 py-1" data-test="pn-start-at" />
           <label class="flex items-center gap-1 text-[11px] text-slate-500">
             <input type="checkbox" [ngModel]="pnSkipFirst()" (ngModelChange)="pnSkipFirst.set($event)"

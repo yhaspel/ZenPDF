@@ -49,6 +49,7 @@ export const SIGNATURE_FONTS = [
                   [class.text-indigo-700]="tab() === t.value"
                   [class.border-slate-300]="tab() !== t.value"
                   (click)="tab.set(t.value)"
+                  [attr.aria-pressed]="tab() === t.value"
                   [attr.data-test]="'sig-tab-' + t.value">{{ t.label }}</button>
         }
       </div>
@@ -71,6 +72,7 @@ export const SIGNATURE_FONTS = [
           <input class="w-full rounded-lg border border-slate-300 px-3 py-2"
                  placeholder="Type your name"
                  [ngModel]="typed()" (ngModelChange)="onTyped($event)"
+                 aria-label="Your name, as you want it to appear"
                  data-test="sig-text" />
           <div class="mt-2 flex flex-wrap gap-1 text-xs">
             @for (font of fonts; track font.value) {
@@ -79,16 +81,19 @@ export const SIGNATURE_FONTS = [
                       [class.bg-indigo-50]="chosenFont() === font.value"
                       [class.border-slate-300]="chosenFont() !== font.value"
                       (click)="chooseFont(font.value)"
+                      [attr.aria-pressed]="chosenFont() === font.value"
                       [attr.data-test]="'sig-font-' + font.value">
                 {{ font.label }}
               </button>
             }
           </div>
+          <div aria-live="polite">
           @if (preview()) {
             <img [src]="preview()" alt="Your typed signature"
                  class="mt-3 max-h-24 rounded border border-slate-200 bg-white p-2"
                  data-test="sig-preview" />
           }
+          </div>
         }
         @case ('upload') {
           <label class="block text-xs text-slate-500">

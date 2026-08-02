@@ -38,6 +38,11 @@ INTERNAL_HOSTS = frozenset({
 
 # Cloud metadata endpoints, which are the point of most SSRF attempts: they are
 # plain HTTP, unauthenticated, and hand out credentials.
+#: `ipaddress._BaseAddress` — what this used to be annotated with — has none of
+#: the six attributes the deny-list below reads, so mypy validated *none* of
+#: them. With the real union, deleting `or ip.is_private` is a type error.
+IPAddress = ipaddress.IPv4Address | ipaddress.IPv6Address
+
 METADATA_HOSTS = frozenset({
     "169.254.169.254",              # AWS / Azure / DigitalOcean / OpenStack
     "metadata.google.internal",     # GCP
@@ -46,7 +51,22 @@ METADATA_HOSTS = frozenset({
 })
 
 
-def _is_forbidden_ip(ip: ipaddress._BaseAddress) -> bool:
+#: Ranges that are neither `is_private` nor usefully covered by the other
+#: predicates, and that a hosting provider may well route internally.
+#: `100.64.0.0/10` is carrier-grade NAT — `is_private` is False and
+#: `is_global` is False, so the six flags below all miss it. `192.88.99.0/24`
+#: is the deprecated 6to4 relay anycast, where `is_global` is *True*, so even
+#: adding `not ip.is_global` would not have closed it. Written out rather than
+#: derived, because both were found by somebody testing rather than reasoning.
+EXTRA_FORBIDDEN_NETWORKS = (
+    ipaddress.ip_network("100.64.0.0/10"),      # RFC 6598 carrier-grade NAT
+    ipaddress.ip_network("192.88.99.0/24"),     # RFC 7526, deprecated 6to4
+    ipaddress.ip_network("198.18.0.0/15"),      # RFC 2544 benchmarking
+    ipaddress.ip_network("64:ff9b::/96"),       # RFC 6052 NAT64
+)
+
+
+def _is_forbidden_ip(ip: IPAddress) -> bool:
     """Everything that is not a public, routable address."""
     return bool(
         ip.is_private            # 10/8, 172.16/12, 192.168/16, fd00::/8, ::1, 127/8
@@ -56,10 +76,12 @@ def _is_forbidden_ip(ip: ipaddress._BaseAddress) -> bool:
         or ip.is_reserved
         or ip.is_unspecified
         or getattr(ip, "is_site_local", False)
+        or any(ip in network for network in EXTRA_FORBIDDEN_NETWORKS
+               if ip.version == network.version)
     )
 
 
-def _resolve(host: str) -> list[ipaddress._BaseAddress]:
+def _resolve(host: str) -> list[IPAddress]:
     try:
         infos = socket.getaddrinfo(host, None, proto=socket.IPPROTO_TCP)
     except socket.gaierror as exc:

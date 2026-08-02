@@ -11,14 +11,20 @@
     </div>
   </header>
 
-  @if (error(); as message) {
-    <p class="m-4 rounded border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700"
-       data-test="ceremony-error">{{ message }}</p>
-  }
-  @if (notice(); as message) {
-    <p class="m-4 rounded border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800"
-       data-test="ceremony-notice">{{ message }}</p>
-  }
+  <!-- The region has to exist before the message does: a live region created
+       *with* its content is one a screen reader never announces. -->
+  <div role="alert">
+    @if (error(); as message) {
+      <p class="m-4 rounded border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700"
+         data-test="ceremony-error">{{ message }}</p>
+    }
+  </div>
+  <div role="status">
+    @if (notice(); as message) {
+      <p class="m-4 rounded border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800"
+         data-test="ceremony-notice">{{ message }}</p>
+    }
+  </div>
 
   @switch (screen()) {
     @case ('loading') {
@@ -81,8 +87,12 @@
       @if (meta(); as m) {
         <section class="flex flex-1 flex-col" data-test="sign-screen">
           <div class="sticky top-0 z-10 border-b border-slate-200 bg-white px-4 py-2">
-            <p class="text-sm font-medium text-slate-800">{{ m.title }}</p>
-            <p class="text-[11px] text-slate-500" data-test="progress">
+            <!-- A heading, and focusable: consent moves focus here, so a
+                 screen reader announces what the person is now signing rather
+                 than starting again from the top of the page. -->
+            <h1 class="text-sm font-medium text-slate-800" tabindex="-1"
+                data-test="sign-heading">{{ m.title }}</h1>
+            <p class="text-[11px] text-slate-500" role="status" data-test="progress">
               {{ doneCount() }} of {{ required().length }} field(s) done
               @if (nextField(); as next) {
                 · next: {{ label(next) }} on page {{ next.page + 1 }}
@@ -100,6 +110,7 @@
                   <p class="text-[11px] font-medium text-slate-500">
                     {{ label(field) }}
                     <button class="text-indigo-700 underline"
+                            [attr.aria-label]="'Go to ' + label(field) + ' on page ' + (field.page + 1)"
                             (click)="goToField(field)"
                             [attr.data-test]="'goto-' + field.id">· page {{ field.page + 1 }}</button>
                     @if (field.required) { <span class="text-rose-500">*</span> }
@@ -114,6 +125,7 @@
                              [ngModel]="values()[field.id]"
                              (ngModelChange)="stage(field, $event)"
                              (blur)="commit(field)"
+                             [attr.aria-label]="label(field) + ' on page ' + (field.page + 1)"
                              [attr.data-test]="'field-' + field.id" />
                     }
                     @case ('checkbox') {
@@ -129,6 +141,8 @@
                         <p class="mt-1 text-sm text-emerald-700" data-test="field-done">
                           ✓ Signed
                           <button class="ml-2 text-[11px] text-indigo-600 underline"
+                                  [attr.aria-label]="'Change ' + label(field)"
+                                  [attr.data-test]="'change-' + field.id"
                                   (click)="openPad(field)">Change</button>
                         </p>
                       } @else {
@@ -285,7 +299,8 @@
   <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
        data-test="ceremony-pad">
     <div class="w-full max-w-lg rounded-xl bg-white p-5 shadow-xl"
-         zenModal role="dialog" aria-modal="true" aria-label="Draw your signature"
+         zenModal role="dialog" aria-modal="true"
+         [attr.aria-label]="field.type === 'initials' ? 'Your initials' : 'Your signature'"
          (zenModalEscape)="padFor.set(null)">
       <h3 class="mb-3 text-lg font-semibold text-slate-800">
         {{ field.type === 'initials' ? 'Your initials' : 'Your signature' }}

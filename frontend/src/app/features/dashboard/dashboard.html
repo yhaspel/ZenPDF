@@ -184,8 +184,11 @@
                 {{ doc.starred ? '⭐' : '☆' }}
               </button>
               @if (editingId() === doc.id) {
-                <input [ngModel]="editingTitle()" (ngModelChange)="editingTitle.set($event)" name="rn" (keyup.enter)="commitRename()" (blur)="commitRename()"
-                       class="flex-1 rounded border border-indigo-300 px-1 text-sm" data-test="rename-input" autofocus />
+                <!-- eslint-disable-next-line @angular-eslint/template/no-autofocus --
+                     the field only exists once the person clicked Rename, so focus
+                     follows their action rather than hijacking page load. -->
+                <input autofocus [ngModel]="editingTitle()" (ngModelChange)="editingTitle.set($event)" name="rn" (keyup.enter)="commitRename()" (blur)="commitRename()"
+                       class="flex-1 rounded border border-indigo-300 px-1 text-sm" data-test="rename-input" />
               } @else {
                 <p class="flex-1 truncate text-sm font-medium text-slate-700" data-test="doc-title" [title]="doc.title">{{ doc.title }}</p>
               }
@@ -196,6 +199,26 @@
             </p>
           </div>
         }
+      </div>
+      <div class="flex flex-col items-center gap-2 pt-2">
+        @if (docs.hasMore()) {
+          <!-- `#loadMoreBtn` and the focus restore below: the button is
+               disabled while the page loads, and a disabled button loses
+               focus to <body> — from which reaching it again costs a couple
+               of hundred Tab presses. -->
+          <button type="button" #loadMoreBtn (click)="loadMore(loadMoreBtn)"
+                  [disabled]="docs.loadingMore()"
+                  class="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                  data-test="load-more">
+            {{ docs.loadingMore() ? 'Loading…' : 'Load more' }}
+          </button>
+        }
+        <!-- Polite, because appending is silent: a screen reader otherwise gets
+             no confirmation that the list grew. -->
+        <p class="text-xs text-slate-500" aria-live="polite" tabindex="-1"
+           data-test="doc-count">
+          Showing {{ docs.documents().length }} of {{ docs.total() }}
+        </p>
       </div>
     }
   </section>

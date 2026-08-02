@@ -165,6 +165,10 @@ REST_FRAMEWORK = {
         # session, but each one decodes an untrusted file — so the endpoint gets
         # its own scope rather than sharing the general write budget.
         "image_upload": config("THROTTLE_IMAGE_UPLOAD", default="60/hour"),
+        # A crash report is unauthenticated and arrives from any browser. Five
+        # distinct crashes per page load is already the client's own cap;
+        # anything above this is somebody pointing a loop at it.
+        "client_error": config("THROTTLE_CLIENT_ERROR", default="20/hour"),
     },
     "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
     "TEST_REQUEST_DEFAULT_FORMAT": "json",
@@ -512,7 +516,7 @@ SENTRY_TRACES_SAMPLE_RATE = config("SENTRY_TRACES_SAMPLE_RATE", default=0.0,
 # `apps.core.logging` (§10.4). `LOG_FORMAT=text` gives the readable formatter
 # back for local work — the dev stack sets it, because a wall of JSON in
 # `logs.sh` helps nobody.
-LOGGING = {
+LOGGING: dict = {
     "version": 1,
     "disable_existing_loggers": False,
     "filters": {
@@ -529,7 +533,15 @@ LOGGING = {
         "console": {
             "class": "logging.StreamHandler",
             "filters": ["correlation"],
-            "formatter": config("LOG_FORMAT", default="json"),
+            # Anything other than the two we define raises `ValueError:
+            # Unable to configure handler 'console'` at import time — a typo in
+            # an environment variable taking the process down before it can say
+            # why.
+            "formatter": (
+                config("LOG_FORMAT", default="json")
+                if config("LOG_FORMAT", default="json") in ("json", "structured")
+                else "json"
+            ),
         },
     },
     "root": {"handlers": ["console"], "level": config("LOG_LEVEL", default="INFO")},

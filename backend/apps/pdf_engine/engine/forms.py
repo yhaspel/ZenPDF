@@ -415,7 +415,7 @@ def _select_radio_options(raw: bytes, choices: dict[str, str]) -> bytes:
     pdf = pikepdf.open(io.BytesIO(raw))
     try:
         acro = pdf.Root.get("/AcroForm")
-        for field in list((acro or {}).get("/Fields") or []):
+        for field in list((acro or {}).get("/Fields") or []):  # type: ignore[call-overload]
             name = str(field.get("/T", ""))
             if name not in choices:
                 continue
@@ -532,7 +532,7 @@ def parse_form_data(payload: bytes, *, fmt: str = "json") -> dict:
 def _rect_for(spec: dict, page: fitz.Page) -> fitz.Rect:
     """Widgets are annotations — the page's unrotated space (§8)."""
     try:
-        norm = NormRect.from_dict(spec.get("rect"))
+        norm = NormRect.from_dict(spec.get("rect") or {})
     except ValueError as exc:
         raise InvalidParams(f"invalid rect: {exc}") from exc
     x0, y0, x1, y1 = norm_to_page_rect(norm, page.rect.width, page.rect.height)
@@ -679,7 +679,7 @@ def _build_radio_group(raw: bytes, spec: dict) -> bytes:
         parent.Kids = pikepdf.Array(kids)
 
         acro = pdf.Root.AcroForm
-        fields = [f for f in (acro.get("/Fields") or [])
+        fields = [f for f in ((acro.get("/Fields") if acro is not None else None) or [])
                   if not (f.is_indirect and f.objgen in kid_ids)]
         fields.append(parent)
         acro.Fields = pikepdf.Array(fields)
@@ -717,7 +717,10 @@ def _add_signature_field(raw: bytes, spec: dict) -> bytes:
         sig_fields.append_signature_field(
             writer,
             sig_fields.SigFieldSpec(
-                sig_field_name=spec["name"], on_page=page_number, box=box,
+                # pyHanko annotates `box` as ints and writes `FloatObject`s
+                # from it; ints here would truncate the placement.
+                sig_field_name=spec["name"], on_page=page_number,
+                box=box,  # type: ignore[arg-type]
             ),
         )
     except Exception as exc:  # noqa: BLE001
@@ -744,7 +747,7 @@ def _prune_acroform_field(raw: bytes, name: str) -> tuple[bytes, int]:
         acro = pdf.Root.get("/AcroForm")
         if acro is None:
             return raw, 0
-        fields = list(acro.get("/Fields") or [])
+        fields = list((acro.get("/Fields") if acro is not None else None) or [])
         kept = [f for f in fields if str(f.get("/T", "")) != name]
         if len(kept) == len(fields):
             return raw, 0
@@ -785,7 +788,7 @@ def _existing_names(raw: bytes) -> set[str]:
     """
     import pikepdf
 
-    names = set()
+    names: set[str] = set()
     doc = _open(raw)
     try:
         for index in range(doc.page_count):
@@ -799,7 +802,7 @@ def _existing_names(raw: bytes) -> set[str]:
     pdf = pikepdf.open(io.BytesIO(raw))
     try:
         acro = pdf.Root.get("/AcroForm")
-        for field in list((acro or {}).get("/Fields") or []):
+        for field in list((acro or {}).get("/Fields") or []):  # type: ignore[call-overload]
             title = str(field.get("/T", ""))
             if title:
                 names.add(title)

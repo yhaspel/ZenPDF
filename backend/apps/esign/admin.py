@@ -131,6 +131,7 @@ class SignFieldAdmin(admin.ModelAdmin):
     search_fields = ("sign_request__envelope_code", "recipient__email")
 
 
+@admin.action(description="Ban: deactivate and stop their signature requests")
 def _ban_users(modeladmin, request, queryset):
     """Deactivate accounts and stop their open signature requests (§9B)."""
     from .models import record
@@ -149,6 +150,7 @@ def _ban_users(modeladmin, request, queryset):
     )
 
 
+@admin.action(description="Move to trash (recoverable for 30 days)")
 def _soft_delete_documents(modeladmin, request, queryset):
     """Move to trash rather than destroy: the 30-day window is what makes a
     mistaken moderation call recoverable (§9B)."""
@@ -156,6 +158,3 @@ def _soft_delete_documents(modeladmin, request, queryset):
         trashed_at=timezone.now())
     modeladmin.message_user(request, f"Moved {moved} document(s) to trash.")
 
-
-_ban_users.short_description = "Ban: deactivate and stop their signature requests"
-_soft_delete_documents.short_description = "Move to trash (recoverable for 30 days)"

@@ -12,5 +12,8 @@ if [ "${1:-}" != "--yes" ]; then
 fi
 
 echo "==> Tearing down and removing volumes..."
-docker compose down -v
+# `--profile "*"` or a container started under a profile (perf, flower)
+# survives teardown and blocks the network removal with "Resource is
+# still in use".
+docker compose --profile "*" down -v
 exec ./up.sh

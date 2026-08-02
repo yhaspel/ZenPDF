@@ -146,7 +146,16 @@ class SignRequest(models.Model):
 
     class Meta:
         ordering = ("-created_at",)
-        indexes = [models.Index(fields=["owner", "status"])]
+        indexes = [
+            models.Index(fields=["owner", "status"]),
+            # The sender's own list has no status filter — the view sets no
+            # `filterset_fields` and the SPA sends none — so `(owner, status)`
+            # gives the owner prefix and nothing for `ORDER BY created_at
+            # DESC`. At 102k documents that was 612 buffers: 200 primary-key
+            # probes into `documents_document` for the `select_related`, then a
+            # top-N heapsort, to return 50 rows. 155 and no sort with this.
+            models.Index(fields=["owner", "-created_at"], name="sign_owner_recent"),
+        ]
 
     def __str__(self) -> str:  # pragma: no cover - admin convenience
         return f"{self.envelope_code} — {self.title}"

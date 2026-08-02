@@ -38,6 +38,19 @@ function isPdf(file: File): boolean {
   templateUrl: './dashboard.html',
 })
 export class Dashboard {
+  /** Append the next page and put focus back where the person left it.
+   *
+   *  The button disables itself while loading, and a disabled element cannot
+   *  hold focus — so a keyboard user lands on `<body>` and has to Tab past
+   *  every card to get back. */
+  protected loadMore(button: HTMLButtonElement): void {
+    this.docs.loadMore();
+    setTimeout(() => {
+      if (this.docs.hasMore()) button.focus();
+      else document.querySelector<HTMLElement>('[data-test=doc-count]')?.focus();
+    }, 0);
+  }
+
   protected docs = inject(DocumentsFacade);
   protected folders = inject(FoldersFacade);
   protected upload = inject(UploadFacade);

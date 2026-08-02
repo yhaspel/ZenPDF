@@ -91,7 +91,7 @@ describe('authInterceptor — guest credential', () => {
 
   it('clears the token on guest_expired and does not attempt a refresh', () => {
     guestTokens.set('guest-abc');
-    http.get('/api/documents/').subscribe({ error: () => {} });
+    http.get('/api/documents/').subscribe({ error: () => { /* the assertion is below */ } });
     httpMock.expectOne('/api/documents/').flush(
       { error: { code: 'guest_expired', message: 'gone', details: {} } },
       { status: 410, statusText: 'Gone' },
@@ -105,7 +105,7 @@ describe('authInterceptor — guest credential', () => {
 
   it('does not redirect a guest to the login form on 401', () => {
     guestTokens.set('guest-abc');
-    http.get('/api/documents/').subscribe({ error: () => {} });
+    http.get('/api/documents/').subscribe({ error: () => { /* the assertion is below */ } });
     httpMock
       .expectOne('/api/documents/')
       .flush(null, { status: 401, statusText: 'Unauthorized' });
@@ -117,7 +117,7 @@ describe('authInterceptor — guest credential', () => {
 
   it('surfaces account_required as an upgrade prompt', () => {
     guestTokens.set('guest-abc');
-    http.get('/api/folders/').subscribe({ error: () => {} });
+    http.get('/api/folders/').subscribe({ error: () => { /* the assertion is below */ } });
     httpMock.expectOne('/api/folders/').flush(
       {
         error: {

@@ -4,8 +4,10 @@
     <div class="flex items-center gap-3 border-b border-slate-200 bg-white px-4 py-2">
       <a routerLink="/app/dashboard" class="text-slate-500 hover:text-slate-600" data-test="back">←</a>
       @if (renaming()) {
-        <input [ngModel]="titleDraft()" (ngModelChange)="titleDraft.set($event)" (keyup.enter)="commitRename()" (blur)="commitRename()"
-               class="rounded border border-indigo-300 px-2 py-1 text-sm font-medium" data-test="title-input" autofocus />
+        <!-- eslint-disable-next-line @angular-eslint/template/no-autofocus --
+             the field only exists once the person clicked the title. -->
+        <input autofocus [ngModel]="titleDraft()" (ngModelChange)="titleDraft.set($event)" (keyup.enter)="commitRename()" (blur)="commitRename()"
+               class="rounded border border-indigo-300 px-2 py-1 text-sm font-medium" data-test="title-input" />
       } @else {
         <button class="font-medium text-slate-800" (click)="startRename()" data-test="doc-title">{{ doc.title }}</button>
       }
@@ -182,7 +184,7 @@
                         [class.ring-2]="pages.isSelected(p)" [class.ring-indigo-500]="pages.isSelected(p)"
                         (click)="onThumbClick(p, $event)" data-test="rail-thumb">
                   <div class="aspect-[3/4]">
-                    <app-pdf-thumbnail [docId]="doc.id" [page]="p" [width]="160" [version]="viewer.currentSeq() ?? undefined" />
+                    <app-pdf-thumbnail [docId]="doc.id" [page]="p" [width]="240" [version]="viewer.currentSeq() ?? undefined" />
                   </div>
                   <span class="block py-0.5 text-center text-[10px] text-slate-500">{{ p + 1 }}</span>
                 </button>
@@ -248,9 +250,13 @@
               @for (p of order(); track p) {
                 <div cdkDrag class="cursor-move rounded-lg border bg-white p-1 shadow-sm"
                      [class.ring-2]="pages.isSelected(p)" [class.ring-indigo-500]="pages.isSelected(p)"
-                     (click)="onThumbClick(p, $event)" data-test="organize-page">
+                     role="button" tabindex="0" [attr.aria-pressed]="pages.isSelected(p)"
+                     [attr.aria-label]="'Page ' + (p + 1)"
+                     (click)="onThumbClick(p, $event)"
+                     (keydown.enter)="onThumbClick(p, $event)" (keydown.space)="onThumbClick(p, $event); $event.preventDefault()"
+                     data-test="organize-page">
                   <div class="aspect-[3/4] overflow-hidden">
-                    <app-pdf-thumbnail [docId]="doc.id" [page]="p" [width]="200" [version]="viewer.currentSeq() ?? undefined" />
+                    <app-pdf-thumbnail [docId]="doc.id" [page]="p" [width]="240" [version]="viewer.currentSeq() ?? undefined" />
                   </div>
                   <span class="block py-0.5 text-center text-xs text-slate-500">{{ p + 1 }}</span>
                 </div>
@@ -305,10 +311,10 @@
           </select>
         } @else if (d === 'insert') {
           <h3 class="mb-4 text-lg font-semibold">Insert blank pages</h3>
-          <label class="text-sm text-slate-500">At index</label>
-          <input type="number" min="0" [ngModel]="insertAt()" (ngModelChange)="insertAt.set(+$event)" class="mb-2 w-full rounded border border-slate-300 px-3 py-2" data-test="insert-at" />
-          <label class="text-sm text-slate-500">Count</label>
-          <input type="number" min="1" [ngModel]="insertCount()" (ngModelChange)="insertCount.set(+$event)" class="w-full rounded border border-slate-300 px-3 py-2" data-test="insert-count" />
+          <label for="insert-at" class="text-sm text-slate-500">At index</label>
+          <input id="insert-at" type="number" min="0" [ngModel]="insertAt()" (ngModelChange)="insertAt.set(+$event)" class="mb-2 w-full rounded border border-slate-300 px-3 py-2" data-test="insert-at" />
+          <label for="insert-count" class="text-sm text-slate-500">Count</label>
+          <input id="insert-count" type="number" min="1" [ngModel]="insertCount()" (ngModelChange)="insertCount.set(+$event)" class="w-full rounded border border-slate-300 px-3 py-2" data-test="insert-count" />
         }
         <div class="mt-6 flex justify-end gap-3">
           <button (click)="dialog.set(null)" class="rounded-lg px-4 py-2 text-slate-600 hover:bg-slate-100" data-test="dialog-cancel">Cancel</button>

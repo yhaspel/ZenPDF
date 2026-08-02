@@ -11,6 +11,7 @@ import hashlib
 import logging
 
 from celery import shared_task
+from celery.exceptions import SoftTimeLimitExceeded
 from django.conf import settings
 from django.utils import timezone
 
@@ -24,6 +25,7 @@ from apps.core.principals import (
     principal_of,
 )
 from apps.jobs.models import Job
+from apps.jobs.tasks import TIMEOUT_MESSAGE
 from apps.pdf_engine import registry
 from apps.pdf_engine.engine import annotations as A
 from apps.pdf_engine.engine import compare as CMP
@@ -94,7 +96,17 @@ def _measure(data: bytes) -> tuple[str, int, int]:
     return sha, pages, len(data)
 
 
-def _version_bytes(version: DocumentVersion) -> bytes:
+def _version_bytes(version: DocumentVersion | None) -> bytes:
+    """`current_version` and `source_version` are both nullable.
+
+    A document still ingesting has no current version, and a source document
+    named by a cross-document op may be one — in which case the honest answer
+    is "not ready", not an `AttributeError` reported to the user as
+    `engine_error: 'NoneType' object has no attribute 'storage_key'`.
+    """
+    if version is None:
+        raise EngineError("That document has no readable version yet.",
+                          code="not_found")
     return get_storage().get_bytes(version.storage_key)
 
 
@@ -552,11 +564,25 @@ def run_operation(self, job_id: str):
     # reached a terminal state must never run twice (§12).
     if job.is_terminal:
         return
+    if job.status == Job.Status.RUNNING:
+        # Redelivery of a job whose worker died mid-task. The row is still
+        # `running` because a SIGKILL runs no handler, so running it again
+        # means feeding a worker the same document that just killed one — for
+        # as long as it keeps killing them. The file is the point; fail it.
+        job.mark_failed("timeout", TIMEOUT_MESSAGE)
+        return
     job.celery_task_id = self.request.id or ""
     job.save(update_fields=["celery_task_id"])
     job.mark_running()
 
     document = job.document
+    if document is None:
+        # `Job.document` is `SET_NULL`, and three paths hard-delete a document
+        # (guest purge, permanent delete, account erasure). A job already in
+        # flight then loses its subject, and the user should be told that
+        # rather than shown an AttributeError with an engine_error code.
+        job.mark_failed("not_found", "The document was deleted.")
+        return
     try:
         # Inside the try: a job that has been marked running and then throws
         # before anything catches it stays `running` for ever, and the client
@@ -684,6 +710,14 @@ def run_operation(self, job_id: str):
         job.mark_failed(exc.code, exc.message, exc.details)
     except Document.DoesNotExist:
         job.mark_failed("not_found", "A referenced document was not found.")
+    except SoftTimeLimitExceeded:
+        # The soft limit lands *inside* the task (§12), which makes this the
+        # only kill path that can still write a terminal state — the hard limit
+        # behind it is a SIGKILL and leaves the row to `reap_stalled_jobs`.
+        # Both paths say the same sentence, and neither says
+        # `SoftTimeLimitExceeded(60,)`: `error_message` reaches a toast.
+        logger.warning("job %s exceeded its soft time limit", job.id)
+        job.mark_failed("timeout", TIMEOUT_MESSAGE)
     except Exception as exc:  # noqa: BLE001
         # Logged as well as recorded on the job: an unexpected exception is an
         # operator problem (a stale worker, a broken dependency), and marking
@@ -697,6 +731,13 @@ def run_cross_document_operation(self, job_id: str):
     """merge / alternate_mix — inputs come entirely from params (§10, /api/operations/)."""
     job = Job.objects.get(id=job_id)
     if job.is_terminal:  # redelivery of an already-finished job (§12)
+        return
+    if job.status == Job.Status.RUNNING:
+        # Redelivery of a job whose worker died mid-task. The row is still
+        # `running` because a SIGKILL runs no handler, so running it again
+        # means feeding a worker the same document that just killed one — for
+        # as long as it keeps killing them. The file is the point; fail it.
+        job.mark_failed("timeout", TIMEOUT_MESSAGE)
         return
     job.celery_task_id = self.request.id or ""
     job.save(update_fields=["celery_task_id"])
@@ -781,6 +822,14 @@ def run_cross_document_operation(self, job_id: str):
         job.mark_failed(exc.code, exc.message)
     except Document.DoesNotExist:
         job.mark_failed("not_found", "A referenced document was not found.")
+    except SoftTimeLimitExceeded:
+        # The soft limit lands *inside* the task (§12), which makes this the
+        # only kill path that can still write a terminal state — the hard limit
+        # behind it is a SIGKILL and leaves the row to `reap_stalled_jobs`.
+        # Both paths say the same sentence, and neither says
+        # `SoftTimeLimitExceeded(60,)`: `error_message` reaches a toast.
+        logger.warning("job %s exceeded its soft time limit", job.id)
+        job.mark_failed("timeout", TIMEOUT_MESSAGE)
     except Exception as exc:  # noqa: BLE001
         job.mark_failed("engine_error", f"Operation failed: {exc}")
 
@@ -791,10 +840,17 @@ def revert_version(self, job_id: str):
     job = Job.objects.select_related("document").get(id=job_id)
     if job.is_terminal:  # redelivery of an already-finished job (§12)
         return
+    if job.status == Job.Status.RUNNING:
+        # Redelivery of a job whose worker died mid-task — see run_operation.
+        job.mark_failed("timeout", TIMEOUT_MESSAGE)
+        return
     job.celery_task_id = self.request.id or ""
     job.save(update_fields=["celery_task_id"])
     job.mark_running()
     document = job.document
+    if document is None:
+        job.mark_failed("not_found", "The document was deleted.")
+        return
     target_seq = job.params["seq"]
     try:
         with doc_lock(str(document.id)):
@@ -830,6 +886,14 @@ def revert_version(self, job_id: str):
             })
     except DocumentVersion.DoesNotExist:
         job.mark_failed("not_found", f"Version {target_seq} not found.")
+    except SoftTimeLimitExceeded:
+        # The soft limit lands *inside* the task (§12), which makes this the
+        # only kill path that can still write a terminal state — the hard limit
+        # behind it is a SIGKILL and leaves the row to `reap_stalled_jobs`.
+        # Both paths say the same sentence, and neither says
+        # `SoftTimeLimitExceeded(60,)`: `error_message` reaches a toast.
+        logger.warning("job %s exceeded its soft time limit", job.id)
+        job.mark_failed("timeout", TIMEOUT_MESSAGE)
     except Exception as exc:  # noqa: BLE001
         job.mark_failed("engine_error", f"Revert failed: {exc}")
 
@@ -851,5 +915,9 @@ def generate_thumbnails_task(self, document_id: str, seq: int, pages: int, width
         try:
             png = R.render_thumbnail(data, page, width)
             storage.put_bytes(key, png, content_type="image/png")
+        except SoftTimeLimitExceeded:
+            # Partial thumbnails are fine; swallowing our own soft limit and
+            # then taking the SIGKILL behind it is not.
+            return
         except Exception:  # noqa: BLE001
             continue

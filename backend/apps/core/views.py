@@ -1,4 +1,6 @@
 """Public config + health + guest-session endpoints (§6, §16, §21)."""
+import logging
+
 from django.conf import settings
 from django.db import connections
 from django.http import HttpResponse
@@ -42,6 +44,66 @@ def guest_state(principal) -> dict:
         ),
         "storage_bytes_used": principal.storage_bytes_used,
     }
+
+
+logger = logging.getLogger(__name__)
+
+class ClientErrorView(APIView):
+    """`POST /api/client-errors/` — the browser half of §10.4, without a vendor.
+
+    §10.4 names Angular alongside the api and the workers. A browser SDK would
+    have meant a third party's code on the signing ceremony, a source-map
+    upload to make its stack traces readable, and a processor the privacy
+    policy does not name — for a payload this endpoint can carry itself.
+
+    The SPA posts four short strings, already scrubbed there, and this hands
+    them to the same logger as everything else: with `SENTRY_DSN` set they
+    become Sentry issues through `_before_send`, and without one they are still
+    a line in `logs.sh`. The stack rides in `extra`, which the JSON formatter
+    keeps and the Sentry scrubber deliberately drops — an operator reading logs
+    wants it, and a third party does not need it.
+    """
+
+    permission_classes = [AllowAny]
+    # No credential is attached and none is wanted: a crash report must not
+    # identify the browser that sent it.
+    authentication_classes: list = []
+    throttle_scope = "client_error"
+
+    def get_throttles(self):
+        return [*super().get_throttles(), ScopedRateThrottle()]
+
+    @extend_schema(request=OpenApiTypes.OBJECT, responses={204: None},
+                   tags=["core"])
+    def post(self, request):
+        from .observability import redact
+
+        data = request.data if isinstance(request.data, dict) else {}
+        name = _clip(data.get("name"), 100)
+        message = _clip(data.get("message"), 300)
+        if not message:
+            return Response(status=status.HTTP_204_NO_CONTENT)
+        route = _clip(data.get("route"), 200)
+        # Re-scrubbed here: the browser's copy of the rules is a convenience,
+        # not the control — this endpoint accepts input from anybody.
+        logger.error(
+            redact(f"client error: {name}: {message} at {route}"),
+            extra={"client_stack": redact(_clip(data.get("stack"), 2000))},
+        )
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+def _clip(value, limit: int) -> str:
+    """Trimmed **and** stripped of control characters.
+
+    This endpoint is unauthenticated and its fields reach a log line, so a
+    newline in the message is a forged log entry — the rule this project
+    already applies to the inbound request id, for a much smaller field. In
+    production the JSON formatter escapes them anyway; `logs.sh` uses the text
+    one, and that is where somebody reads.
+    """
+    text = str(value or "").strip()[:limit]
+    return "".join(ch if ch.isprintable() else " " for ch in text)
 
 
 class AdsTxtView(APIView):

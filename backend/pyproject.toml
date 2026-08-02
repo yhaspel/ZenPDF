@@ -37,7 +37,9 @@ python_version = "3.13"
 plugins = ["mypy_django_plugin.main", "mypy_drf_plugin.main"]
 ignore_missing_imports = true
 check_untyped_defs = false
-warn_unused_ignores = false
+# True, so the seven `type: ignore`s below self-delete the day the
+# upstream stubs are fixed rather than quietly outliving their reason.
+warn_unused_ignores = true
 exclude = ["migrations"]
 
 [tool.django-stubs]

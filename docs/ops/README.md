@@ -18,9 +18,17 @@ actually broken".
 | [secrets.md](secrets.md) | where secrets live, and why `SECRET_KEY` is a one-way door |
 | [dependencies.md](dependencies.md) | the monthly engine-library patch pass |
 
-## The three commands worth knowing before you need them
+## The commands worth knowing before you need them
 
 ```bash
+# What are the hottest queries actually costing? (dev only — prod runs managed
+# Postgres, where the app role cannot CREATE EXTENSION)
+docker compose -f infra/docker-compose.yml exec -T db psql -U zen -d zenpdf -c \
+"SELECT calls, round(mean_exec_time::numeric,2) mean_ms,
+        round(total_exec_time::numeric,0) total_ms, rows, left(query,90) query
+ FROM pg_stat_statements WHERE query NOT LIKE '%pg_stat_statements%'
+ ORDER BY total_exec_time DESC LIMIT 15;"
+
 # Is it up, and is anything degraded?
 curl -s https://<host>/api/health/ | jq
 
