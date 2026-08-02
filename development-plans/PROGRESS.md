@@ -15,7 +15,7 @@ This file is the **single source of truth for execution status**. Every agent se
 | 5 — Forms | [phase-05-forms.md](phase-05-forms.md) | ✅ Complete | 2026-08-02 | 2026-08-02 | Fill + form builder; four PyMuPDF limits worked around at the PDF level |
 | 6 — OCR, conversion & compare | [phase-06-ocr-conversion-compare.md](phase-06-ocr-conversion-compare.md) | ✅ Complete | 2026-08-02 | 2026-08-02 | OCR (5 languages incl. Hebrew), 6 exports, 4 imports, compare, repair; 8 tool pages |
 | 7 — Security & redaction | [phase-07-security-redaction.md](phase-07-security-redaction.md) | ✅ Complete | 2026-08-02 | 2026-08-02 | AES-256 + graded permissions, true redaction (area + pattern, with a verification pass), sanitize; 3 tool pages |
-| 8 — E-signatures | [phase-08-esignatures.md](phase-08-esignatures.md) | ⬜ Not started | — | — | Human gate: legal text + prod cert |
+| 8 — E-signatures | [phase-08-esignatures.md](phase-08-esignatures.md) | 🔵 In progress | 2026-08-02 | — | Human gate: legal text + prod cert. Carries the 2B GATE (guest self_sign, guest sign-request → account_required) |
 | 9 — Ads & abuse controls | [phase-09-ads-and-abuse-controls.md](phase-09-ads-and-abuse-controls.md) | ⬜ Not started | — | — | Human-owned: AdSense/CMP accounts, legal pages |
 | 10 — Hardening & release | [phase-10-hardening-release.md](phase-10-hardening-release.md) | ⬜ Not started | — | — | Human-owned: domain/DNS/TLS, deploy creds, sign-offs |
 
@@ -46,6 +46,19 @@ Status values: ⬜ Not started · 🔵 In progress · 🟡 Blocked · 🟠 Await
 ## Phase sections
 
 _(Created by the executing agent per protocol step 2. Keep newest phase at top.)_
+
+### Phase 8 — E-Signatures · 🔵 In progress (started 2026-08-02)
+
+**Acceptance criteria** (copied verbatim from phase-08-esignatures.md):
+- [ ] Self-sign in <4 clicks from an open document.
+- [ ] Full 2-signer sequential flow works on a phone-sized viewport without login.
+- [ ] Completed PDF opens in Acrobat/any validator showing an intact signature; ANY byte modification flips verification to invalid (test proves).
+- [ ] Audit trail + certificate reproduce every event with IP/UA/UTC and chain integrity.
+- [ ] Consent is unskippable and its exact disclosure text is versioned in the repo (legal page + hash recorded in audit metadata).
+- [ ] Reminders/expiry fire per beat schedule (time-warped tests).
+- [ ] Monthly sign-request quota enforced (§16).
+
+**Carried from Phase 2B (GATE):** guest `self_sign` via `signature_upload_ref` works with no account, and a guest attempting to *send* a signature request gets 403 `account_required`. Both must be demonstrated here before Phase 8 signs off.
 
 ### Phase 7 — Security & Redaction · ✅ Complete (2026-08-02)
 
