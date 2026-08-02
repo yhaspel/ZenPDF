@@ -11,7 +11,7 @@ import { EsignService } from '../../core/services/esign.service';
   imports: [RouterLink],
   template: `
     <div class="mx-auto w-full max-w-3xl p-6" data-test="request-list">
-      <a routerLink="/app/dashboard" class="text-sm text-slate-400 hover:text-slate-600">←
+      <a routerLink="/app/dashboard" class="text-sm text-slate-500 hover:text-slate-600">←
         Documents</a>
       <h1 class="mt-2 text-xl font-semibold text-slate-800">Sent for signature</h1>
 
@@ -27,7 +27,7 @@ import { EsignService } from '../../core/services/esign.service';
           <li class="rounded border border-slate-200 bg-white p-3" data-test="request-row">
             <a [routerLink]="['/app/sign', request.id]" class="flex flex-wrap items-center gap-2">
               <span class="font-medium text-slate-800">{{ request.title }}</span>
-              <span class="text-xs text-slate-400">{{ request.envelope_code }}</span>
+              <span class="text-xs text-slate-500">{{ request.envelope_code }}</span>
               <span class="ml-auto rounded-full px-2 py-0.5 text-xs"
                     [class.bg-emerald-50]="request.status === 'completed'"
                     [class.text-emerald-700]="request.status === 'completed'"

@@ -16,7 +16,7 @@ import { ChangeDetectionStrategy, Component, input, output, signal } from '@angu
     >
       <span class="text-3xl">⬆️</span>
       <span class="font-medium text-slate-600">{{ prompt() }}</span>
-      <span class="text-xs text-slate-400">{{ hint() }}</span>
+      <span class="text-xs text-slate-500">{{ hint() }}</span>
       <input
         type="file"
         class="hidden"

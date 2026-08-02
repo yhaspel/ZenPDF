@@ -47,11 +47,11 @@
               <div class="rounded border border-slate-200 p-2" data-test="field-row">
                 <div class="flex items-baseline gap-1">
                   <span class="truncate text-[11px] font-medium text-slate-700">{{ field.name }}</span>
-                  <span class="text-[10px] text-slate-400">{{ field.type }}</span>
+                  <span class="text-[10px] text-slate-500">{{ field.type }}</span>
                   @if (field.flags.required) {
                     <span class="text-[10px] text-rose-500" title="Required">*</span>
                   }
-                  <span class="ml-auto text-[10px] text-slate-300">p{{ field.page + 1 }}</span>
+                  <span class="ml-auto text-[10px] text-slate-500">p{{ field.page + 1 }}</span>
                 </div>
 
                 @switch (field.type) {
@@ -79,7 +79,7 @@
                     </div>
                   }
                   @case ('signature') {
-                    <p class="mt-1 text-[11px] text-slate-400" data-test="signature-placeholder">
+                    <p class="mt-1 text-[11px] text-slate-500" data-test="signature-placeholder">
                       Signature field — sign it with the signing tool.
                     </p>
                   }
@@ -129,7 +129,7 @@
                   [disabled]="busy()" (click)="saveAndFlatten()" data-test="form-flatten">
             Flatten form
           </button>
-          <p class="text-[10px] text-slate-400">
+          <p class="text-[10px] text-slate-500">
             Flattening prints the values onto the page and removes the fields. It cannot be
             undone, except by reverting in version history.
           </p>
@@ -149,14 +149,14 @@
         </div>
 
         @if (armed() === 'radio' || armed() === 'combobox' || armed() === 'listbox') {
-          <label class="text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+          <label class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
             Options (one per line)
           </label>
           <textarea rows="3" class="rounded border border-slate-300 p-1 text-[11px]"
                     [ngModel]="draftOptions()" (ngModelChange)="draftOptions.set($event)"
                     data-test="arm-options"></textarea>
           @if (armed() === 'radio') {
-            <p class="text-[10px] text-slate-400">
+            <p class="text-[10px] text-slate-500">
               Draw one box — the other choices are laid out below it at the same size.
             </p>
           }

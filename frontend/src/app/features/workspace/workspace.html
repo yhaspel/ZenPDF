@@ -2,14 +2,14 @@
   <div class="flex h-full flex-col">
     <!-- Top bar -->
     <div class="flex items-center gap-3 border-b border-slate-200 bg-white px-4 py-2">
-      <a routerLink="/app/dashboard" class="text-slate-400 hover:text-slate-600" data-test="back">←</a>
+      <a routerLink="/app/dashboard" class="text-slate-500 hover:text-slate-600" data-test="back">←</a>
       @if (renaming()) {
         <input [ngModel]="titleDraft()" (ngModelChange)="titleDraft.set($event)" (keyup.enter)="commitRename()" (blur)="commitRename()"
                class="rounded border border-indigo-300 px-2 py-1 text-sm font-medium" data-test="title-input" autofocus />
       } @else {
         <button class="font-medium text-slate-800" (click)="startRename()" data-test="doc-title">{{ doc.title }}</button>
       }
-      <span class="text-xs text-slate-400">v{{ viewer.currentSeq() }} · {{ doc.page_count }} pages</span>
+      <span class="text-xs text-slate-500">v{{ viewer.currentSeq() }} · {{ doc.page_count }} pages</span>
       @if (busy()) { <span class="text-xs text-indigo-500" data-test="busy">working…</span> }
 
       <div class="ml-auto flex items-center gap-2 text-sm">
@@ -86,7 +86,7 @@
     <!-- Organize toolbar -->
     @if (mode() === 'organize') {
       <div class="flex flex-wrap items-center gap-2 border-b border-slate-200 bg-slate-50 px-4 py-2 text-sm" data-test="organize-toolbar">
-        <span class="text-slate-400">{{ pages.selection().size }} selected</span>
+        <span class="text-slate-500">{{ pages.selection().size }} selected</span>
         <button (click)="rotate()" class="rounded bg-white px-3 py-1 shadow-sm hover:bg-slate-100" data-test="op-rotate">⟳ Rotate</button>
         <button (click)="remove()" class="rounded bg-white px-3 py-1 shadow-sm hover:bg-slate-100" data-test="op-delete">🗑 Delete</button>
         <button (click)="duplicate()" class="rounded bg-white px-3 py-1 shadow-sm hover:bg-slate-100" data-test="op-duplicate">⧉ Duplicate</button>
@@ -95,7 +95,7 @@
         <button (click)="startCrop()" class="rounded bg-white px-3 py-1 shadow-sm hover:bg-slate-100" data-test="op-crop">◱ Crop</button>
         <button (click)="dialog.set('scale')" class="rounded bg-white px-3 py-1 shadow-sm hover:bg-slate-100" data-test="op-scale">⤢ Scale</button>
         <button (click)="dialog.set('nup')" class="rounded bg-white px-3 py-1 shadow-sm hover:bg-slate-100" data-test="op-nup">▦ N-up</button>
-        <span class="text-xs text-slate-400">Drag thumbnails to reorder</span>
+        <span class="text-xs text-slate-500">Drag thumbnails to reorder</span>
       </div>
     }
 
@@ -184,7 +184,7 @@
                   <div class="aspect-[3/4]">
                     <app-pdf-thumbnail [docId]="doc.id" [page]="p" [width]="160" [version]="viewer.currentSeq() ?? undefined" />
                   </div>
-                  <span class="block py-0.5 text-center text-[10px] text-slate-400">{{ p + 1 }}</span>
+                  <span class="block py-0.5 text-center text-[10px] text-slate-500">{{ p + 1 }}</span>
                 </button>
               }
             </div>
@@ -197,13 +197,13 @@
                 </button>
               }
             } @else {
-              <p class="p-2 text-xs text-slate-400">No outline in this document.</p>
+              <p class="p-2 text-xs text-slate-500">No outline in this document.</p>
             }
           } @else {
             @for (v of viewer.versions(); track v.id) {
               <div class="mb-1 rounded border border-slate-100 p-2 text-xs" data-test="version-row">
                 <div class="font-medium text-slate-700">v{{ v.seq }} · {{ v.label }}</div>
-                <div class="text-slate-400">{{ (v.size_bytes / 1024).toFixed(0) }} KB</div>
+                <div class="text-slate-500">{{ (v.size_bytes / 1024).toFixed(0) }} KB</div>
                 @if (v.seq !== viewer.currentSeq()) {
                   <button class="mt-1 text-indigo-600 hover:underline" (click)="confirmRevert(v.seq)" data-test="revert">Revert to this</button>
                 }
@@ -252,7 +252,7 @@
                   <div class="aspect-[3/4] overflow-hidden">
                     <app-pdf-thumbnail [docId]="doc.id" [page]="p" [width]="200" [version]="viewer.currentSeq() ?? undefined" />
                   </div>
-                  <span class="block py-0.5 text-center text-xs text-slate-400">{{ p + 1 }}</span>
+                  <span class="block py-0.5 text-center text-xs text-slate-500">{{ p + 1 }}</span>
                 </div>
               }
             </div>

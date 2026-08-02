@@ -4,7 +4,7 @@ import { ChangeDetectionStrategy, Component, input } from '@angular/core';
   selector: 'app-empty-state',
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
-    <div class="flex flex-col items-center justify-center gap-2 p-12 text-center text-slate-400"
+    <div class="flex flex-col items-center justify-center gap-2 p-12 text-center text-slate-500"
          data-test="empty-state">
       <div class="text-4xl">{{ icon() }}</div>
       <p class="text-lg font-medium text-slate-500">{{ title() }}</p>

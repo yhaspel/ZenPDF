@@ -56,7 +56,7 @@
         }
 
         @if (mode() === 'image') {
-          <label class="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Add an image</label>
+          <label class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Add an image</label>
           <input type="file" accept="image/png,image/jpeg" (change)="onImageFile($event)"
                  class="text-[11px]" data-test="image-upload" />
           <label class="flex items-center gap-1 text-[11px] text-slate-500">
@@ -71,7 +71,7 @@
                 <input type="file" accept="image/png,image/jpeg"
                        (change)="onImageFile($event, true)" data-test="image-replace" />
               </label>
-              <button class="mt-1 w-full rounded bg-rose-600 px-2 py-1 text-white"
+              <button class="mt-1 w-full rounded bg-rose-700 px-2 py-1 text-white"
                       (click)="deleteSelectedImage()" data-test="image-delete">Delete image</button>
             </div>
           }
@@ -89,7 +89,7 @@
 
         <!-- Find & replace: two steps, always -->
         <div class="border-t border-slate-200 pt-3">
-          <p class="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-400">Find &amp; replace</p>
+          <p class="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Find &amp; replace</p>
           <input [ngModel]="findText()" (ngModelChange)="findText.set($event); onQueryChanged()" placeholder="Find"
                  class="mb-1 w-full rounded border border-slate-300 px-2 py-1" data-test="replace-find-input" />
           <input [ngModel]="replaceText()" (ngModelChange)="replaceText.set($event)" placeholder="Replace with"
@@ -115,7 +115,7 @@
                   <input type="checkbox" [checked]="isKept(match.id)"
                          (change)="edits.toggleMatch(match.id)" data-test="replace-toggle" />
                   <span class="flex-1">
-                    <span class="text-slate-400">p{{ match.page + 1 }}</span>
+                    <span class="text-slate-500">p{{ match.page + 1 }}</span>
                     <span class="ml-1 text-slate-600">{{ match.context }}</span>
                   </span>
                 </label>
@@ -133,7 +133,7 @@
     @if (tab() === 'stamps') {
       <div class="flex flex-col gap-4 p-3">
         <div>
-          <p class="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-400">Watermark</p>
+          <p class="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Watermark</p>
           <input [ngModel]="wmText()" (ngModelChange)="wmText.set($event)" placeholder="Watermark text"
                  class="mb-1 w-full rounded border border-slate-300 px-2 py-1" data-test="wm-text" />
           <input type="file" accept="image/png,image/jpeg" (change)="onWatermarkImage($event)"
@@ -168,10 +168,10 @@
         </div>
 
         <div class="border-t border-slate-200 pt-3">
-          <p class="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-400">Page numbers</p>
+          <p class="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Page numbers</p>
           <input [ngModel]="pnFormat()" (ngModelChange)="pnFormat.set($event)"
                  class="mb-1 w-full rounded border border-slate-300 px-2 py-1" data-test="pn-format" />
-          <p class="mb-1 text-[10px] text-slate-400">Tokens: &#123;page&#125; &#123;total&#125; &#123;date&#125;</p>
+          <p class="mb-1 text-[10px] text-slate-500">Tokens: &#123;page&#125; &#123;total&#125; &#123;date&#125;</p>
           <select [ngModel]="pnPosition()" (ngModelChange)="pnPosition.set($event)"
                   class="mb-1 w-full rounded border border-slate-300 px-2 py-1" data-test="pn-position">
             @for (p of positions; track p) { <option [value]="p">{{ p }}</option> }
@@ -188,8 +188,8 @@
         </div>
 
         <div class="border-t border-slate-200 pt-3">
-          <p class="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-400">Header / footer</p>
-          <p class="mb-1 text-[10px] text-slate-400">Header — left / centre / right</p>
+          <p class="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Header / footer</p>
+          <p class="mb-1 text-[10px] text-slate-500">Header — left / centre / right</p>
           <div class="mb-1 flex gap-1">
             <input [ngModel]="hfHeader().left" (ngModelChange)="setHeaderSlot('left', $event)"
                    placeholder="Left" class="w-1/3 rounded border border-slate-300 px-1 py-1 text-[11px]"
@@ -201,7 +201,7 @@
                    placeholder="Right" class="w-1/3 rounded border border-slate-300 px-1 py-1 text-[11px]"
                    data-test="hf-top-right" />
           </div>
-          <p class="mb-1 text-[10px] text-slate-400">Footer — left / centre / right</p>
+          <p class="mb-1 text-[10px] text-slate-500">Footer — left / centre / right</p>
           <div class="mb-1 flex gap-1">
             <input [ngModel]="hfFooterSlots().left" (ngModelChange)="setFooterSlot('left', $event)"
                    placeholder="Left" class="w-1/3 rounded border border-slate-300 px-1 py-1 text-[11px]"
@@ -213,7 +213,7 @@
                    placeholder="Right" class="w-1/3 rounded border border-slate-300 px-1 py-1 text-[11px]"
                    data-test="hf-bottom-right" />
           </div>
-          <p class="mb-1 text-[10px] text-slate-400">Tokens: &#123;page&#125; &#123;total&#125; &#123;date&#125;</p>
+          <p class="mb-1 text-[10px] text-slate-500">Tokens: &#123;page&#125; &#123;total&#125; &#123;date&#125;</p>
           <label class="flex items-center gap-1 text-[11px] text-slate-500">
             <input type="checkbox" [ngModel]="hfSkipFirst()" (ngModelChange)="hfSkipFirst.set($event)"
                    data-test="hf-skip-first" /> Skip the first page
@@ -223,7 +223,7 @@
         </div>
 
         <div class="border-t border-slate-200 pt-3">
-          <p class="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-400">Bates numbering</p>
+          <p class="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Bates numbering</p>
           <div class="mb-1 flex gap-1">
             <input [ngModel]="batesPrefix()" (ngModelChange)="batesPrefix.set($event)" placeholder="Prefix"
                    class="w-1/2 rounded border border-slate-300 px-2 py-1" data-test="bates-prefix" />
@@ -249,10 +249,10 @@
         </div>
 
         <div class="border-t border-slate-200 pt-3">
-          <p class="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+          <p class="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
             Overlay another PDF
           </p>
-          <p class="mb-1 text-[10px] text-slate-400">Letterhead or background, from one of your documents.</p>
+          <p class="mb-1 text-[10px] text-slate-500">Letterhead or background, from one of your documents.</p>
           <select [ngModel]="overlayDocId()" (ngModelChange)="overlayDocId.set($event)"
                   (focus)="loadOverlaySources()"
                   class="mb-1 w-full rounded border border-slate-300 px-2 py-1" data-test="overlay-doc">
@@ -273,7 +273,7 @@
 
     @if (tab() === 'info') {
       <div class="flex flex-col gap-3 p-3">
-        <p class="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Document properties</p>
+        <p class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Document properties</p>
         <input [ngModel]="metaTitle()" (ngModelChange)="metaTitle.set($event)" placeholder="Title"
                class="w-full rounded border border-slate-300 px-2 py-1" data-test="meta-title" />
         <input [ngModel]="metaAuthor()" (ngModelChange)="metaAuthor.set($event)" placeholder="Author"
@@ -293,7 +293,7 @@
         </button>
 
         <div class="border-t border-slate-200 pt-3">
-          <p class="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-400">Bookmarks</p>
+          <p class="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Bookmarks</p>
           @for (bm of bookmarks(); track $index) {
             <div class="mb-1 flex items-center gap-1" data-test="bookmark-row">
               <input type="number" min="1" max="6" [ngModel]="bm.level"
@@ -403,7 +403,7 @@
       <h3 class="mb-3 text-lg font-semibold">Add a link</h3>
       <input [ngModel]="linkUri()" (ngModelChange)="linkUri.set($event)"
              class="w-full rounded border border-slate-300 px-3 py-2" data-test="link-uri" />
-      <p class="mt-1 text-[11px] text-slate-400">Only http(s) and mailto links can be added.</p>
+      <p class="mt-1 text-[11px] text-slate-500">Only http(s) and mailto links can be added.</p>
       <div class="mt-4 flex justify-end gap-3">
         <button (click)="linkDialog.set(false)" class="rounded-lg px-4 py-2 text-slate-600">Cancel</button>
         <button (click)="saveLink()" class="rounded-lg bg-indigo-600 px-4 py-2 text-white"

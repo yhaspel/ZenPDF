@@ -22,7 +22,7 @@ import { GuestBanner } from '../../shared/guest-banner';
                class="text-slate-600" data-test="nav-dashboard">Documents</a>
             <a routerLink="/app/settings" routerLinkActive="text-indigo-600 font-medium"
                class="text-slate-600" data-test="nav-settings">Settings</a>
-            <span class="text-slate-400">{{ auth.user()?.email }}</span>
+            <span class="text-slate-500">{{ auth.user()?.email }}</span>
             <button (click)="auth.logout()" class="text-slate-600 hover:text-rose-600" data-test="logout">
               Log out
             </button>

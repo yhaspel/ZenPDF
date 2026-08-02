@@ -24,12 +24,12 @@ import { ToastService } from '../../shared/toast.service';
       <h1 class="mb-6 text-2xl font-bold text-slate-800">Settings</h1>
       <div class="rounded-xl bg-white p-6 shadow-sm">
         <h2 class="mb-4 font-semibold text-slate-700">Profile</h2>
-        <label class="mb-1 block text-sm text-slate-500">Email</label>
-        <input [value]="auth.user()?.email" disabled
+        <label for="settings-email" class="mb-1 block text-sm text-slate-500">Email</label>
+        <input id="settings-email" [value]="auth.user()?.email" disabled
                class="mb-4 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-slate-500" />
-        <label class="mb-1 block text-sm text-slate-500">Display name</label>
+        <label for="settings-name" class="mb-1 block text-sm text-slate-500">Display name</label>
         <div class="flex gap-2">
-          <input [(ngModel)]="displayName" class="flex-1 rounded-lg border border-slate-300 px-3 py-2" data-test="display-name" />
+          <input id="settings-name" name="display-name" [(ngModel)]="displayName" class="flex-1 rounded-lg border border-slate-300 px-3 py-2" data-test="display-name" />
           <button (click)="save()" class="rounded-lg bg-indigo-600 px-4 py-2 text-white hover:bg-indigo-700" data-test="save-profile">
             Save
           </button>
@@ -121,8 +121,8 @@ import { ToastService } from '../../shared/toast.service';
               @for (job of jobs(); track job.id) {
                 <tr class="border-b border-slate-100" data-test="job-row">
                   <td class="py-1">{{ job.type }}</td>
-                  <td class="py-1 text-slate-400">{{ job.status }}</td>
-                  <td class="py-1 text-right text-slate-400">
+                  <td class="py-1 text-slate-500">{{ job.status }}</td>
+                  <td class="py-1 text-right text-slate-500">
                     {{ job.created_at | date: 'd MMM, HH:mm' }}
                   </td>
                 </tr>
@@ -130,7 +130,7 @@ import { ToastService } from '../../shared/toast.service';
             </tbody>
           </table>
         } @else {
-          <p class="mt-2 text-sm text-slate-400" data-test="job-history-empty">
+          <p class="mt-2 text-sm text-slate-500" data-test="job-history-empty">
             Nothing yet.
           </p>
         }
@@ -189,6 +189,7 @@ import { ToastService } from '../../shared/toast.service';
               record of the agreement — the privacy policy explains why.
             </p>
             <input type="password" name="confirm-password"
+                   aria-label="Your password, to confirm deletion"
                    [(ngModel)]="deletePassword" placeholder="Your password"
                    class="mt-3 w-full max-w-xs rounded-lg border border-slate-300 px-3 py-2"
                    data-test="delete-password" />
@@ -196,7 +197,7 @@ import { ToastService } from '../../shared/toast.service';
               <p class="mt-2 text-sm text-rose-700" data-test="delete-error">{{ message }}</p>
             }
             <div class="mt-3 flex gap-2">
-              <button class="rounded-lg bg-rose-600 px-3 py-1 text-sm text-white disabled:opacity-50"
+              <button class="rounded-lg bg-rose-700 px-3 py-1 text-sm text-white disabled:opacity-50"
                       [disabled]="!deletePassword || busyDeleting()"
                       (click)="confirmDelete()" data-test="delete-confirm-yes">
                 Delete everything

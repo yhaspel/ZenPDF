@@ -38,7 +38,7 @@ import { environment } from '../../../environments/environment';
           <p class="text-sm text-slate-500">One moment…</p>
         }
       }
-      <p class="mt-6 text-xs text-slate-400">
+      <p class="mt-6 text-xs text-slate-500">
         <a routerLink="/" class="underline">ZenPDF</a>
       </p>
     </div>

@@ -15,11 +15,11 @@ import { AuthFacade } from '../../abstraction/auth.facade';
         @if (error()) {
           <p class="mb-4 rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-600" data-test="login-error">{{ error() }}</p>
         }
-        <label class="mb-1 block text-sm font-medium text-slate-600">Email</label>
-        <input name="email" type="email" required [(ngModel)]="email"
+        <label for="login-email" class="mb-1 block text-sm font-medium text-slate-600">Email</label>
+        <input id="login-email" name="email" type="email" required [(ngModel)]="email"
                class="mb-4 w-full rounded-lg border border-slate-300 px-3 py-2" data-test="email" />
-        <label class="mb-1 block text-sm font-medium text-slate-600">Password</label>
-        <input name="password" type="password" required [(ngModel)]="password"
+        <label for="login-password" class="mb-1 block text-sm font-medium text-slate-600">Password</label>
+        <input id="login-password" name="password" type="password" required [(ngModel)]="password"
                class="mb-6 w-full rounded-lg border border-slate-300 px-3 py-2" data-test="password" />
         <button type="submit" [disabled]="loading()"
                 class="w-full rounded-lg bg-indigo-600 py-2 font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
@@ -27,7 +27,7 @@ import { AuthFacade } from '../../abstraction/auth.facade';
           {{ loading() ? 'Signing in…' : 'Sign in' }}
         </button>
         <p class="mt-4 text-center text-sm text-slate-500">
-          No account? <a routerLink="/auth/register" class="text-indigo-600" data-test="to-register">Create one</a>
+          No account? <a routerLink="/auth/register" class="text-indigo-600 underline" data-test="to-register">Create one</a>
         </p>
       </form>
     </div>

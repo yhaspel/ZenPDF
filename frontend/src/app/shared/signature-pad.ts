@@ -63,7 +63,7 @@ export const SIGNATURE_FONTS = [
                   (pointerup)="up()"
                   (pointerleave)="up()"
                   data-test="sig-canvas"></canvas>
-          <p class="mt-1 text-[11px] text-slate-400">
+          <p class="mt-1 text-[11px] text-slate-500">
             Draw with a finger, a stylus or the mouse.
           </p>
         }
@@ -96,7 +96,7 @@ export const SIGNATURE_FONTS = [
             <input type="file" accept="image/png,image/jpeg" class="mt-1 w-full text-xs"
                    (change)="onFile($event)" data-test="sig-file" />
           </label>
-          <p class="mt-1 text-[11px] text-slate-400">
+          <p class="mt-1 text-[11px] text-slate-500">
             The paper is removed by brightness, which is crude: a dark or
             shadowed photo comes back as a dark blob. Drawing gives a better
             result.

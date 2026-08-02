@@ -51,14 +51,14 @@
               Remove password
             </button>
           </div>
-          <p class="text-[10px] text-slate-400">
+          <p class="text-[10px] text-slate-500">
             Removing the password saves an unprotected version. Anyone with the
             link to this document could then open it.
           </p>
         }
 
         <div class="mt-1 border-t border-slate-100 pt-3">
-          <p class="text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+          <p class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
             {{ isEncrypted() ? 'Change protection' : 'Add a password' }}
           </p>
         </div>
@@ -82,7 +82,7 @@
             <span class="text-[10px] text-slate-500">{{ passwordStrength().label }}</span>
           </div>
         }
-        <p class="text-[10px] text-slate-400">
+        <p class="text-[10px] text-slate-500">
           The owner password lifts the restrictions below. Keep it — without it
           nobody, including us, can change them back.
         </p>
@@ -110,7 +110,7 @@
         }
 
         <div class="rounded border border-slate-200 p-2">
-          <p class="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+          <p class="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
             What readers may do
           </p>
           <label class="mt-2 block text-[11px] text-slate-600">
@@ -139,7 +139,7 @@
                    (ngModelChange)="allowCopy.set($event)" data-test="perm-copy" />
             Copy text and images out
           </label>
-          <p class="mt-2 text-[10px] text-slate-400">
+          <p class="mt-2 text-[10px] text-slate-500">
             Screen readers can always read the document — that permission is never
             restricted. These settings ask readers' software to co-operate; they
             are not a guarantee, unlike the open password.
@@ -170,7 +170,7 @@
         </p>
 
         <div>
-          <p class="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+          <p class="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
             Areas
           </p>
           <button class="mt-1 w-full rounded border px-2 py-1 text-[11px]"
@@ -187,7 +187,7 @@
         </div>
 
         <div class="border-t border-slate-100 pt-3">
-          <p class="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+          <p class="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
             Find and remove
           </p>
           <div class="mt-1 flex flex-wrap gap-1">
@@ -265,7 +265,7 @@
                    (ngModelChange)="cleanCopy.set($event)" data-test="clean-copy" />
             <span>
               Put the result in a new document
-              <span class="block text-[10px] text-slate-400">
+              <span class="block text-[10px] text-slate-500">
                 Recommended. Version history keeps every earlier version of this
                 document — and those still contain what you are removing. A new
                 document has no history to leak.
@@ -279,7 +279,7 @@
                    [ngModel]="redactLabel()" (ngModelChange)="redactLabel.set($event)"
                    data-test="redact-label" />
           </label>
-          <button class="mt-2 w-full rounded bg-rose-600 px-3 py-1.5 font-medium text-white disabled:opacity-40"
+          <button class="mt-2 w-full rounded bg-rose-700 px-3 py-1.5 font-medium text-white disabled:opacity-40"
                   [disabled]="security.busy() || !security.hasWork()"
                   (click)="applyRedaction()" data-test="apply-redaction">
             Apply redaction
@@ -301,7 +301,7 @@
                    [attr.data-test]="'sanitize-' + item.key" />
             <span>
               {{ item.label }}
-              <span class="block text-[10px] text-slate-400">{{ item.note }}</span>
+              <span class="block text-[10px] text-slate-500">{{ item.note }}</span>
             </span>
           </label>
         }
