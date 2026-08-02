@@ -1,0 +1,241 @@
+@if (request(); as request) {
+  <div class="flex h-full flex-col" data-test="request-builder">
+    <div class="flex items-center gap-3 border-b border-slate-200 bg-white px-4 py-2">
+      <a [routerLink]="['/app/doc', docId()]" class="text-slate-400 hover:text-slate-600"
+         data-test="builder-back">←</a>
+      <span class="font-medium text-slate-800">Send for signature</span>
+      <span class="text-xs text-slate-400">{{ request.document_title }}</span>
+      <div class="ml-auto flex items-center gap-2 text-xs">
+        @for (n of [1, 2, 3, 4]; track n) {
+          <span class="rounded-full px-2 py-0.5"
+                [class.bg-indigo-600]="step() === n" [class.text-white]="step() === n"
+                [class.bg-slate-100]="step() !== n" [class.text-slate-500]="step() !== n">
+            {{ n }}
+          </span>
+        }
+      </div>
+    </div>
+
+    @switch (step()) {
+      @case (1) {
+        <section class="mx-auto w-full max-w-2xl p-6" data-test="step-recipients">
+          <h1 class="text-lg font-semibold text-slate-800">Who needs to act?</h1>
+          <p class="mt-1 text-sm text-slate-500">
+            People with the same number are asked at the same time. Different
+            numbers go in order.
+          </p>
+
+          <div class="mt-4 flex flex-col gap-2">
+            @for (row of recipients(); track $index) {
+              <div class="flex flex-wrap items-center gap-2 rounded border border-slate-200 bg-white p-2"
+                   data-test="recipient-row">
+                <input class="min-w-48 flex-1 rounded border border-slate-300 px-2 py-1 text-sm"
+                       placeholder="email@example.com" [ngModel]="row.email"
+                       (ngModelChange)="update($index, { email: $event })"
+                       [attr.data-test]="'recipient-email-' + $index" />
+                <input class="w-32 rounded border border-slate-300 px-2 py-1 text-sm"
+                       placeholder="Name" [ngModel]="row.name"
+                       (ngModelChange)="update($index, { name: $event })"
+                       [attr.data-test]="'recipient-name-' + $index" />
+                <select class="rounded border border-slate-300 px-2 py-1 text-sm"
+                        [ngModel]="row.role"
+                        (ngModelChange)="update($index, { role: $event })"
+                        [attr.data-test]="'recipient-role-' + $index">
+                  @for (role of roles; track role) {
+                    <option [value]="role">{{ role }}</option>
+                  }
+                </select>
+                <input type="number" min="1" max="50"
+                       class="w-16 rounded border border-slate-300 px-2 py-1 text-sm"
+                       [ngModel]="row.order"
+                       (ngModelChange)="update($index, { order: +$event })"
+                       [attr.data-test]="'recipient-order-' + $index" />
+                <button class="text-slate-400 hover:text-rose-600"
+                        (click)="removeRecipient($index)"
+                        [attr.data-test]="'recipient-remove-' + $index">✕</button>
+              </div>
+            }
+          </div>
+
+          <button class="mt-2 rounded border border-slate-300 px-3 py-1 text-sm"
+                  (click)="addRecipient()" data-test="add-recipient">
+            Add someone
+          </button>
+          <p class="mt-3 text-[11px] text-slate-400">
+            A <strong>signer</strong> fills in fields. An <strong>approver</strong>
+            says yes or no without signing. A <strong>viewer</strong> must open it.
+            A <strong>cc</strong> just gets the finished document.
+          </p>
+
+          <button class="mt-4 rounded-lg bg-indigo-600 px-4 py-2 font-medium text-white disabled:opacity-40"
+                  [disabled]="busy()" (click)="saveRecipients()" data-test="to-fields">
+            Next: place fields
+          </button>
+        </section>
+      }
+
+      @case (2) {
+        <section class="flex min-h-0 flex-1" data-test="step-fields">
+          <aside class="w-64 shrink-0 overflow-y-auto border-r border-slate-200 bg-white p-3 text-sm">
+            <p class="text-[11px] text-slate-500">
+              Pick a person and a field type, then drag a box on the page.
+            </p>
+            <div class="mt-2 flex flex-col gap-1">
+              @for (row of recipients(); track row.id) {
+                @if (row.role === 'signer' || row.role === 'approver') {
+                  <button class="flex items-center gap-2 rounded border px-2 py-1 text-left text-[11px]"
+                          [class.border-indigo-500]="armedFor() === row.id"
+                          [class.bg-indigo-50]="armedFor() === row.id"
+                          [class.border-slate-200]="armedFor() !== row.id"
+                          (click)="armedFor.set(row.id!)"
+                          [attr.data-test]="'arm-' + row.email">
+                    <span class="h-3 w-3 rounded-full"
+                          [style.background]="colorFor(row.id!)"></span>
+                    <span class="truncate">{{ row.name || row.email }}</span>
+                    <span class="ml-auto text-slate-400">{{ fieldsFor(row.id!) }}</span>
+                  </button>
+                }
+              }
+            </div>
+
+            <div class="mt-3 grid grid-cols-2 gap-1">
+              @for (type of fieldTypes; track type) {
+                <button class="rounded border px-2 py-1 text-[11px]"
+                        [class.bg-slate-900]="armedType() === type"
+                        [class.text-white]="armedType() === type"
+                        [class.border-slate-200]="armedType() !== type"
+                        (click)="armedType.set(type)"
+                        [attr.data-test]="'field-type-' + type">
+                  {{ type.replace('_', ' ') }}
+                </button>
+              }
+            </div>
+
+            <label class="mt-3 flex items-center gap-2 text-[11px] text-slate-600">
+              <input type="checkbox" [ngModel]="armedRequired()"
+                     (ngModelChange)="armedRequired.set($event)"
+                     data-test="field-required" />
+              Required
+            </label>
+            <p class="mt-2 text-[10px] text-slate-400">
+              A <em>date signed</em> field fills itself in when the person
+              finishes — nobody types it.
+            </p>
+
+            <button class="mt-4 w-full rounded-lg bg-indigo-600 px-3 py-2 text-sm font-medium text-white disabled:opacity-40"
+                    [disabled]="busy()" (click)="saveFields()" data-test="to-message">
+              Next: message
+            </button>
+            <button class="mt-1 w-full rounded px-3 py-1 text-[11px] text-slate-500"
+                    (click)="step.set(1)">Back</button>
+          </aside>
+
+          <main class="flex min-h-0 flex-1 flex-col bg-slate-100">
+            <div class="flex items-center gap-2 border-b border-slate-200 bg-white px-4 py-2 text-sm">
+              <button (click)="prevPage()" [disabled]="page() === 0"
+                      class="rounded px-2 py-1 disabled:opacity-30"
+                      data-test="builder-prev">‹</button>
+              <span class="text-slate-500" data-test="builder-page">
+                Page {{ page() + 1 }} / {{ pageCount() }}
+              </span>
+              <button (click)="nextPage()" [disabled]="page() >= pageCount() - 1"
+                      class="rounded px-2 py-1 disabled:opacity-30"
+                      data-test="builder-next">›</button>
+            </div>
+            <div class="min-h-0 flex-1 overflow-auto p-6">
+              <div class="relative mx-auto w-fit">
+                <app-page-overlay
+                  [docId]="docId()"
+                  [page]="page()"
+                  [renderWidth]="zoom()"
+                  [items]="overlayItems()"
+                  [tool]="armedFor() ? 'rect' : 'select'"
+                  [drawStroke]="'#4f46e5'"
+                  (created)="onDrawn($event)"
+                  (selectionChanged)="onSelect($event)"
+                />
+              </div>
+            </div>
+          </main>
+        </section>
+      }
+
+      @case (3) {
+        <section class="mx-auto w-full max-w-2xl p-6" data-test="step-message">
+          <h1 class="text-lg font-semibold text-slate-800">Anything to say?</h1>
+          <label class="mt-3 block text-xs text-slate-500">
+            Message (goes in the email)
+            <textarea rows="4" class="mt-1 w-full rounded border border-slate-300 p-2 text-sm"
+                      [ngModel]="message()" (ngModelChange)="message.set($event)"
+                      data-test="builder-message"></textarea>
+          </label>
+          <div class="mt-3 flex gap-4">
+            <label class="text-xs text-slate-500">
+              Expires after
+              <input type="number" min="1" max="365"
+                     class="ml-1 w-20 rounded border border-slate-300 px-2 py-1 text-sm"
+                     [ngModel]="expiresInDays()"
+                     (ngModelChange)="expiresInDays.set(+$event)"
+                     data-test="builder-expiry" /> days
+            </label>
+            <label class="text-xs text-slate-500">
+              Remind every
+              <input type="number" min="0" max="90"
+                     class="ml-1 w-20 rounded border border-slate-300 px-2 py-1 text-sm"
+                     [ngModel]="reminderDays()"
+                     (ngModelChange)="reminderDays.set(+$event)"
+                     data-test="builder-reminder" /> days (0 = never)
+            </label>
+          </div>
+          <div class="mt-4 flex gap-2">
+            <button class="rounded-lg bg-indigo-600 px-4 py-2 font-medium text-white disabled:opacity-40"
+                    [disabled]="busy()" (click)="saveMessage()" data-test="to-review">
+              Next: review
+            </button>
+            <button class="rounded px-3 py-2 text-sm text-slate-500"
+                    (click)="step.set(2)">Back</button>
+          </div>
+        </section>
+      }
+
+      @default {
+        <section class="mx-auto w-full max-w-2xl p-6" data-test="step-review">
+          <h1 class="text-lg font-semibold text-slate-800">Ready to send</h1>
+          <p class="mt-1 text-sm text-slate-500">
+            {{ request.title }} · envelope {{ request.envelope_code }}
+          </p>
+
+          <ul class="mt-4 flex flex-col gap-1 text-sm">
+            @for (row of recipients(); track row.id) {
+              <li class="flex items-center gap-2 rounded border border-slate-200 bg-white p-2"
+                  data-test="review-recipient">
+                <span class="h-3 w-3 rounded-full" [style.background]="colorFor(row.id!)"></span>
+                <span>{{ row.name || row.email }}</span>
+                <span class="text-xs text-slate-400">{{ row.role }} · step {{ row.order }}</span>
+                <span class="ml-auto text-xs text-slate-400">
+                  {{ fieldsFor(row.id!) }} field(s)
+                </span>
+              </li>
+            }
+          </ul>
+
+          <p class="mt-4 text-[11px] text-slate-400">
+            Sending freezes this version of the document. Later edits to it will
+            not change what these people are asked to sign.
+          </p>
+
+          <div class="mt-4 flex gap-2">
+            <button class="rounded-lg bg-emerald-600 px-4 py-2 font-medium text-white disabled:opacity-40"
+                    [disabled]="busy()" (click)="send()" data-test="send-request">
+              Send it
+            </button>
+            <button class="rounded px-3 py-2 text-sm text-slate-500"
+                    (click)="step.set(3)">Back</button>
+          </div>
+        </section>
+      }
+    }
+  </div>
+} @else {
+  <p class="p-6 text-sm text-slate-500" data-test="builder-loading">Preparing…</p>
+}

@@ -156,26 +156,32 @@ class _FakeRequest:
 def test_no_guest_reachable_route_accepts_a_recipient_address():
     """The precise invariant: address *selection*, not message *triggering*.
 
-    Phase 8 legitimately mails fixed addresses on ceremony actions. What must
-    never exist is a path where an unauthenticated party names the recipient.
-    Sign-request routes do not exist yet (Phase 8); this asserts that, and
-    becomes a live gate the moment they do.
+    Phase 8 legitimately mails fixed addresses on ceremony actions — a signer
+    completing notifies the next one, and that address was chosen by an
+    identified account when the request was built. What must never exist is a
+    path where an **unauthenticated** party names the recipient.
+
+    Written in Phase 2B as a tripwire for routes that did not exist yet; Phase
+    8 shipped them, so it now checks what it always meant to.
     """
     from django.urls import get_resolver
 
-    recipient_routes = [
-        str(p.pattern)
-        for p in get_resolver().url_patterns
-        for p in getattr(p, "url_patterns", [p])
-        if "sign-request" in str(p.pattern) or "recipients" in str(p.pattern)
+    from apps.core.permissions import IsAccount
+
+    routes = [
+        (str(pattern.pattern), pattern.callback)
+        for entry in get_resolver().url_patterns
+        for pattern in getattr(entry, "url_patterns", [entry])
+        if "sign-request" in str(pattern.pattern)
+        or "recipients" in str(pattern.pattern)
     ]
-    for route in recipient_routes:
-        # If Phase 8 adds one of these, it must carry IsAccount — this test
-        # fails loudly rather than silently passing on an empty list.
-        pytest.fail(
-            f"Route {route} exists: assert it declares IsAccount before shipping."
+    assert routes, "the sign-request routes vanished — this gate is now vacuous"
+    for route, callback in routes:
+        view = getattr(callback, "cls", None) or getattr(callback, "view_class", None)
+        assert view is not None, route
+        assert IsAccount in getattr(view, "permission_classes", []), (
+            f"{route} can name an email recipient without an account (§17e, §21.3)"
         )
-    assert recipient_routes == []
 
 
 def test_guest_flows_send_no_mail(guest, fixture_bytes):

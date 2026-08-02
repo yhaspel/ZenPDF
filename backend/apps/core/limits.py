@@ -323,6 +323,48 @@ def enforce_password_attempts(document_id) -> None:
     raise exc
 
 
+def sign_requests_used_this_month(principal) -> int:
+    if principal is None:
+        return 0
+    from .models import UsageCounter
+    from .principals import job_owner_kwargs
+
+    row = UsageCounter.objects.filter(
+        period=timezone.now().strftime("%Y-%m"), **job_owner_kwargs(principal),
+    ).first()
+    return row.sign_requests if row else 0
+
+
+def record_sign_request(principal) -> None:
+    bump_monthly(principal, sign_requests=1)
+
+
+def enforce_sign_requests(principal) -> None:
+    """The monthly signature-request quota (§16, phase-08 criterion 7).
+
+    A guest's row is 0, which is `account_required` rather than
+    `quota_exceeded` — the guest cannot send one at all, and telling them they
+    are out of allowance would be a lie about a feature they never had.
+    """
+    from .exceptions import AccountRequired, QuotaExceeded
+
+    tier = for_principal(principal)
+    if not tier.sign_requests_per_month:
+        raise AccountRequired(
+            "Create a free account to send a document for signature. Signing "
+            "one yourself needs no account."
+        )
+    used = sign_requests_used_this_month(principal)
+    if used >= tier.sign_requests_per_month:
+        exc = QuotaExceeded(
+            f"You have sent your {tier.sign_requests_per_month} signature "
+            f"requests for this month."
+        )
+        exc.zen_details = {"limit": tier.sign_requests_per_month, "used": used,
+                           "window": "month", "tier": tier.tier}
+        raise exc
+
+
 def enforce_metered_op(principal, op_type: str) -> None:
     """Charge one metered op against the hourly window, or raise.
 

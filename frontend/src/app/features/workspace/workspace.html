@@ -50,6 +50,12 @@
                 [class.text-indigo-600]="mode() !== 'compare'" data-test="compare-toggle">
           {{ mode() === 'compare' ? 'Done' : 'Compare' }}
         </button>
+        <button (click)="mode.set(mode() === 'sign' ? 'view' : 'sign')"
+                class="rounded px-3 py-1 font-medium"
+                [class.bg-indigo-600]="mode() === 'sign'" [class.text-white]="mode() === 'sign'"
+                [class.text-indigo-600]="mode() !== 'sign'" data-test="sign-toggle">
+          {{ mode() === 'sign' ? 'Done' : 'Sign' }}
+        </button>
         <button (click)="mode.set(mode() === 'protect' ? 'view' : 'protect')"
                 class="rounded px-3 py-1 font-medium"
                 [class.bg-indigo-600]="mode() === 'protect'" [class.text-white]="mode() === 'protect'"
@@ -114,6 +120,15 @@
       />
     } @else if (mode() === 'compare') {
       <app-compare [docId]="doc.id" [currentSeq]="viewer.currentSeq()" />
+    } @else if (mode() === 'sign') {
+      <app-sign
+        [docId]="doc.id"
+        [docTitle]="doc.title"
+        [pageCount]="viewer.pageCount()"
+        [currentSeq]="viewer.currentSeq()"
+        (saved)="onSigned()"
+        (conflict)="onAnnotationConflict()"
+      />
     } @else if (mode() === 'protect') {
       <app-protect
         [docId]="doc.id"

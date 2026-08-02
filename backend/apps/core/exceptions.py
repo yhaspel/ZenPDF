@@ -90,6 +90,18 @@ class GuestExpired(ZenAPIException):
     default_detail = "Your guest session has ended and its files were deleted."
 
 
+class ConsentRequired(ZenAPIException):
+    """A signing action before agreeing to sign electronically (§8B).
+
+    403 rather than 400: it is a permission state, and the ceremony branches on
+    the code to show the consent screen rather than an error message.
+    """
+
+    status_code = status.HTTP_403_FORBIDDEN
+    default_code = "consent_required"
+    default_detail = "Agree to sign electronically before filling anything in."
+
+
 class CaptchaRequired(ZenAPIException):
     """A metered op needs a one-per-session challenge first (§17c)."""
 

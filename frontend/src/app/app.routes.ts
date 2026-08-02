@@ -49,12 +49,46 @@ export const routes: Routes = [
         loadComponent: () => import('./features/workspace/workspace').then((m) => m.Workspace),
       },
       {
+        // Sending a document for signature is account-only (§21.3): ESIGN
+        // attribution needs an identified sender, and a guest-triggerable
+        // outbound email path is a spam relay pointed at our own domain.
+        path: 'sign/new/:docId',
+        canActivate: [accountGuard],
+        data: { accountReason: 'signing' },
+        loadComponent: () =>
+          import('./features/sign/request-builder').then((m) => m.RequestBuilder),
+      },
+      {
+        path: 'sign/:id',
+        canActivate: [accountGuard],
+        data: { accountReason: 'signing' },
+        loadComponent: () =>
+          import('./features/sign/request-detail').then((m) => m.RequestDetail),
+      },
+      {
         path: 'settings',
         canActivate: [accountGuard],
         data: { accountReason: 'settings' },
         loadComponent: () => import('./features/settings/settings').then((m) => m.Settings),
       },
     ],
+  },
+  {
+    // The ceremony and the verification page are public and carry no
+    // credential at all — the token in the URL is the whole capability (§8B).
+    path: 's/:token',
+    loadComponent: () => import('./features/sign/ceremony').then((m) => m.Ceremony),
+  },
+  {
+    // The consent text at a stable address, so a signer can read what they
+    // agreed to without a live signing link (§7).
+    path: 'legal/esign-disclosure',
+    loadComponent: () =>
+      import('./features/sign/disclosure-page').then((m) => m.DisclosurePage),
+  },
+  {
+    path: 'verify',
+    loadComponent: () => import('./features/sign/verify').then((m) => m.Verify),
   },
   { path: '**', redirectTo: '' },
 ];

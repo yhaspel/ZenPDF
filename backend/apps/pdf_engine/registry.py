@@ -100,6 +100,9 @@ OPERATIONS: dict[str, Op] = {
     "set_permissions": Op("set_permissions", "default", S.SET_PERMISSIONS, "version"),
     "redact": Op("redact", "heavy", S.REDACT, "version_or_report"),
     "sanitize": Op("sanitize", "default", S.SANITIZE, "version"),
+    # Phase 8 — e-signatures (§10). Self-sign is cheap and guest-accessible;
+    # the sealed multi-party finalize is not an op, it is its own task.
+    "self_sign": Op("self_sign", "default", S.SELF_SIGN, "version"),
 }
 
 

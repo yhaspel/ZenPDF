@@ -1,0 +1,112 @@
+@if (request(); as request) {
+  <div class="mx-auto w-full max-w-3xl p-6" data-test="request-detail">
+    <a routerLink="/app/dashboard" class="text-sm text-slate-400 hover:text-slate-600">←
+      Documents</a>
+    <h1 class="mt-2 text-xl font-semibold text-slate-800">{{ request.title }}</h1>
+    <p class="text-sm text-slate-500">
+      Envelope {{ request.envelope_code }} ·
+      <span data-test="request-status">{{ request.status }}</span>
+    </p>
+
+    <div class="mt-4 flex gap-1 text-xs">
+      <button class="rounded-full border px-3 py-1"
+              [class.border-indigo-500]="tab() === 'status'"
+              [class.bg-indigo-50]="tab() === 'status'"
+              [class.border-slate-300]="tab() !== 'status'"
+              (click)="tab.set('status')" data-test="tab-status">Progress</button>
+      <button class="rounded-full border px-3 py-1"
+              [class.border-indigo-500]="tab() === 'audit'"
+              [class.bg-indigo-50]="tab() === 'audit'"
+              [class.border-slate-300]="tab() !== 'audit'"
+              (click)="tab.set('audit')" data-test="tab-audit">Audit trail</button>
+    </div>
+
+    @if (tab() === 'status') {
+      <ul class="mt-4 flex flex-col gap-2">
+        @for (person of request.recipients; track person.id) {
+          <li class="flex flex-wrap items-center gap-2 rounded border border-slate-200 bg-white p-3 text-sm"
+              data-test="recipient-status">
+            <span class="font-medium text-slate-700">{{ person.name || person.email }}</span>
+            <span class="text-xs text-slate-400">{{ person.role }} · step {{ person.order }}</span>
+            <span class="ml-auto rounded-full px-2 py-0.5 text-xs"
+                  [class.bg-emerald-50]="person.status === 'completed'"
+                  [class.text-emerald-700]="person.status === 'completed'"
+                  [class.bg-rose-50]="person.status === 'declined'"
+                  [class.text-rose-700]="person.status === 'declined'"
+                  [class.bg-slate-100]="person.status !== 'completed' && person.status !== 'declined'"
+                  [class.text-slate-600]="person.status !== 'completed' && person.status !== 'declined'">
+              {{ person.status }}
+            </span>
+            @if (person.decline_reason) {
+              <p class="w-full text-xs text-rose-600">“{{ person.decline_reason }}”</p>
+            }
+          </li>
+        }
+      </ul>
+
+      @if (request.status === 'completed') {
+        <div class="mt-4 flex flex-wrap gap-2">
+          <button class="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white"
+                  (click)="download('final')" data-test="download-final">
+            Download the signed document
+          </button>
+          <button class="rounded-lg border border-slate-300 px-4 py-2 text-sm"
+                  (click)="download('certificate')" data-test="download-certificate">
+            Certificate of completion
+          </button>
+        </div>
+        <p class="mt-2 break-all text-[11px] text-slate-400" data-test="final-hash">
+          Fingerprint (SHA-256): {{ request.final_sha256 }}
+        </p>
+      } @else if (request.status === 'sent') {
+        <div class="mt-4 flex gap-2">
+          <button class="rounded-lg border border-slate-300 px-4 py-2 text-sm disabled:opacity-40"
+                  [disabled]="busy()" (click)="remind()" data-test="remind">
+            Send a reminder
+          </button>
+          <button class="rounded-lg border border-rose-300 px-4 py-2 text-sm text-rose-600 disabled:opacity-40"
+                  [disabled]="busy()" (click)="cancel()" data-test="cancel-request">
+            Cancel the request
+          </button>
+        </div>
+        <p class="mt-2 text-[11px] text-slate-400">
+          A reminder goes to whoever is being waited on, at most once a day.
+        </p>
+      }
+    } @else {
+      @if (chain(); as chain) {
+        <p class="mt-4 rounded border p-2 text-xs"
+           [class.border-emerald-200]="chain.intact" [class.bg-emerald-50]="chain.intact"
+           [class.text-emerald-800]="chain.intact"
+           [class.border-rose-200]="!chain.intact" [class.bg-rose-50]="!chain.intact"
+           [class.text-rose-800]="!chain.intact"
+           data-test="chain-status">
+          {{ chain.intact
+             ? 'Every event is linked to the one before it, and the chain verifies.'
+             : 'THE CHAIN DOES NOT VERIFY — this record has been altered.' }}
+        </p>
+      }
+      <table class="mt-3 w-full text-left text-xs">
+        <thead class="text-slate-400">
+          <tr>
+            <th class="py-1">When (UTC)</th><th>Event</th><th>Who</th>
+            <th>IP</th><th>Detail</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (event of events(); track event.id) {
+            <tr class="border-t border-slate-100" data-test="audit-row">
+              <td class="py-1 text-slate-500">{{ event.created_at }}</td>
+              <td class="text-slate-700">{{ event.type }}</td>
+              <td class="text-slate-500">{{ event.recipient_email || '—' }}</td>
+              <td class="text-slate-500">{{ event.ip || '—' }}</td>
+              <td class="text-slate-400">{{ detail(event) }}</td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    }
+  </div>
+} @else {
+  <p class="p-6 text-sm text-slate-500" data-test="detail-loading">Loading…</p>
+}

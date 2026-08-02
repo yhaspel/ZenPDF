@@ -241,6 +241,8 @@ export class ToolPage {
       protect: { mode: 'protect' },
       unlock: { mode: 'protect' },
       redact: { mode: 'protect', tab: 'redact' },
+      // Phase 8: self-sign is the no-account path this page advertises.
+      sign: { mode: 'sign' },
     };
     if (tool.kind in interactive) {
       this.router.navigate(['/app/doc', primary.id], {

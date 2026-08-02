@@ -73,6 +73,15 @@ ALLOWED: dict[str, set[str]] = {
     # that lifts a document's restrictions. Nothing to do with row ownership,
     # and the engine has no database access at all (phase-07).
     "pdf_engine/engine/security.py": {"owner="},
+    # Saved signatures and sign requests are **account-only** (§21.3, and
+    # phase-08 states it normatively): sending email in somebody's name needs
+    # an identified sender. `request.user` there *is* the principal, and the
+    # rows have no guest column to confuse it with. The one lookup that crosses
+    # into guest-capable data — the document being sent — goes through
+    # `owned_by()` like everything else (phase-08).
+    "esign/views.py": {"request.user", "owner="},
+    # Model definitions declare the fields the patterns match.
+    "esign/models.py": {"owner="},
 }
 
 

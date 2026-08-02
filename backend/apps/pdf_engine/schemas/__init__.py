@@ -830,3 +830,36 @@ SANITIZE = {
     },
     "additionalProperties": False,
 }
+
+
+# --------------------------------------------------------------------------- #
+# Phase 8 — e-signatures
+# --------------------------------------------------------------------------- #
+SELF_SIGN = {
+    "type": "object",
+    "required": ["placements"],
+    "properties": {
+        "placements": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 100,
+            "items": {
+                "type": "object",
+                "required": ["page", "rect"],
+                "properties": {
+                    "page": {"type": "integer", "minimum": 0},
+                    "rect": _NORM_RECT,
+                    # One of the two, checked in the engine rather than here:
+                    # `signature_id` is a saved signature (account-only), and
+                    # `signature_upload_ref` is an ephemeral upload, **which is
+                    # how a guest signs** (§21.3, the Phase-2B gate).
+                    "signature_id": {"type": "string", "maxLength": 64},
+                    "signature_upload_ref": {"type": "string", "maxLength": 64},
+                },
+                "additionalProperties": False,
+            },
+        },
+        "include_date": {"type": "boolean"},
+    },
+    "additionalProperties": False,
+}

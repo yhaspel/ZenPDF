@@ -12,6 +12,7 @@ import logging
 
 from celery import shared_task
 from django.conf import settings
+from django.utils import timezone
 
 from apps.core import limits as L
 from apps.core.principals import (
@@ -33,6 +34,7 @@ from apps.pdf_engine.engine import pages as P
 from apps.pdf_engine.engine import redact as RD
 from apps.pdf_engine.engine import render as R
 from apps.pdf_engine.engine import security as SEC
+from apps.pdf_engine.engine import signatures as SG
 from apps.pdf_engine.exceptions import EngineError
 from apps.pdf_engine.storage import get_storage
 
@@ -487,7 +489,52 @@ def _apply_single(op, primary_bytes, params, source_bytes, *, job=None):
             title = _clean_copy_title(job)
             return "documents", [{"title": title, "data": data}], "Redacted", report
         return "version", data, "Redacted", report
+
+    # --- Phase 8: self-sign ---------------------------------------------- #
+    if t == "self_sign":
+        placements = params.get("placements") or []
+        data = SG.self_sign(
+            primary_bytes,
+            placements=placements,
+            images=_signature_images(job, placements),
+            include_date=params.get("include_date", False),
+            date_text=timezone.now().strftime("Signed %Y-%m-%d %H:%M UTC"),
+        )
+        return "version", data, "Signed (self)", {"placements": len(placements)}
     raise EngineError(f"Unsupported single-document op '{t}'")
+
+
+def _signature_images(job: Job, placements) -> dict[str, bytes]:
+    """Resolve each placement's signature to bytes, scoped to the principal.
+
+    Two sources, and the split *is* §21.3: a `signature_id` is a row in the
+    caller's own signature library (accounts only), and a
+    `signature_upload_ref` is an ephemeral upload in the caller's own asset
+    prefix — which is how a guest signs, with no account and nothing kept.
+    """
+    from apps.esign.models import SavedSignature
+    from apps.pdf_engine.storage import get_storage
+
+    principal = principal_of(job)
+    images: dict[str, bytes] = {}
+
+    refs = [str(p.get("signature_upload_ref")) for p in placements
+            if p.get("signature_upload_ref")]
+    images.update(_load_images(job, refs))
+
+    ids = {str(p.get("signature_id")) for p in placements if p.get("signature_id")}
+    if ids:
+        if is_guest(principal):
+            # Not a 404 dressed up: a guest has no library, and saying so is
+            # what turns this into a signup prompt rather than a dead end.
+            raise EngineError(
+                "Saved signatures need a free account. Draw or type one instead.",
+                code="account_required",
+            )
+        storage = get_storage()
+        for row in SavedSignature.objects.filter(user=principal, id__in=ids):
+            images[str(row.id)] = storage.get_bytes(row.storage_key)
+    return images
 
 
 # --------------------------------------------------------------------------- #

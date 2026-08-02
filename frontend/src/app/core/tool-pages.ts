@@ -29,7 +29,8 @@ export type ToolKind =
   | 'repair'
   | 'protect'
   | 'unlock'
-  | 'redact';
+  | 'redact'
+  | 'sign';
 
 export interface ToolFaq {
   q: string;
@@ -865,6 +866,43 @@ export const TOOL_PAGES: ToolPageDef[] = [
     minFiles: 1,
     multiple: false,
     cta: 'Redact PDF',
+  },
+  {
+    slug: 'sign-pdf',
+    kind: 'sign',
+    title: 'Sign PDF — add your signature to a document free | ZenPDF',
+    metaDescription:
+      'Draw, type or upload your signature and place it on a PDF. Free, no account, no watermark. Files auto-delete within 24 hours.',
+    h1: 'Sign a PDF',
+    intro: [
+      'Put your signature on a document. Draw it with a finger, a stylus or the mouse, type your name in a handwriting face, or photograph one you have already signed on paper — then click where it goes and download the result.',
+      'You do not need an account to sign something yourself. The signature you draw is kept in this browser for the session and nowhere else; close the tab and it is gone. A free account keeps it for next time, which is the only difference.',
+      'Signing flattens the signature into the page. That matters: an image that sits on top as an annotation can be dragged off, deleted, or simply not printed by some viewers. Once applied it is part of the page, like ink. The version before it stays in the document history if you change your mind.',
+      'If somebody *else* needs to sign — a client, a tenant, a co-founder — that is a different job, and it needs a free account: we email them a personal link, they agree to sign electronically, they sign in their own browser, and when everyone is done the finished document is sealed and a certificate of completion records who did what, when, and from where. That certificate is what makes an electronic signature worth having in a disagreement.',
+      'What we do is a simple electronic signature with a platform seal — the same thing Documenso and DocuSeal do, and the same thing most business agreements are signed with. It is not a qualified electronic signature (QES), which requires a government-accredited identity check, and we do not claim otherwise anywhere.',
+      'Free, no account, and no watermark. Guest files are deleted automatically within 24 hours.',
+    ],
+    faq: [
+      {
+        q: 'Is an electronic signature legally binding?',
+        a: 'In most places, for most agreements, yes — the U.S. ESIGN Act and UETA, and the EU\'s eIDAS "simple" tier, all recognise them. Some documents (wills, some property transfers) still need paper or a notary. If it matters, ask a lawyer about your specific document.',
+      },
+      {
+        q: 'Do I need an account?',
+        a: 'Not to sign a document yourself. Sending one to somebody else for signature does need a free account, because we have to be able to say who sent it.',
+      },
+      {
+        q: 'Can the signature be removed afterwards?',
+        a: 'Not from the page — it is flattened into the content. Your own copy keeps the earlier version in its history, so you can go back if you signed the wrong thing.',
+      },
+      {
+        q: 'What happens to my signature image?',
+        a: 'Without an account it lives in your browser for the session and in temporary storage that is deleted within 24 hours. With an account it is saved to your signature library until you delete it.',
+      },
+    ],
+    minFiles: 1,
+    multiple: false,
+    cta: 'Sign PDF',
   },
 ];
 
