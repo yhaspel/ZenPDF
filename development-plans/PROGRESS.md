@@ -608,6 +608,8 @@ The rest, in one line each: a signature on a rotated page landed off the edge an
 
 **Deviations from the plan, all recorded above.** Declining consent yields no ads rather than non-personalized ones. The signup Turnstile sits on register and on completing a signature, not on opening a signing link. Account deletion stays a request-by-email path and the legal copy was corrected to say so, rather than growing a route this phase did not scope.
 
+**One flake observed, not fixed here.** `phase-8.spec.ts::two signers in order` failed once during a full-suite run and passed on the next full run and in isolation; the stubbed-config race in `phase-9.spec.ts` (Playwright disposing a `route.fetch()` response mid-navigation) *was* fixed, by snapshotting `/api/config/` before installing the route. The phase-8 one is timing in another phase's spec and is left for its owner.
+
 **Environment.** The macOS virtiofs duplicate-file artefact recurred (`* 2.*` files break ruff and `ng build`); the tracked `auth.interceptor 2.ts` orphan was finally removed, since it was inside `src/` and compiled. The frontend Vitest run OOM'd once and passed on re-run — the known Docker VM memory item.
 
 ## Human review queue

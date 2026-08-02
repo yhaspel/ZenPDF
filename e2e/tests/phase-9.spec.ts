@@ -294,9 +294,10 @@ test('phase 9: with ads on and consent granted, slots appear — and only there'
   // *client* behaviour with ads switched on, which is otherwise only reachable
   // by restarting the stack with a different env.
   await page.context().clearCookies();
+  // Snapshotted *before* the route is installed: fetching inside the handler
+  // races page navigation, and Playwright disposes the response mid-read.
+  const body = await (await page.request.get('/api/config/')).json();
   await page.route('**/api/config/**', async (route) => {
-    const response = await route.fetch();
-    const body = await response.json();
     await route.fulfill({
       json: {
         ...body,
@@ -335,9 +336,8 @@ test('phase 9: with ads on and consent granted, slots appear — and only there'
 
 test('phase 9: declining is a real answer and loads nothing', async ({ page }) => {
   await page.context().clearCookies();
+  const body = await (await page.request.get('/api/config/')).json();
   await page.route('**/api/config/**', async (route) => {
-    const response = await route.fetch();
-    const body = await response.json();
     await route.fulfill({
       json: {
         ...body,
