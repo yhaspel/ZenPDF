@@ -50,11 +50,14 @@ def reap_stalled_jobs() -> int:
     """
     now = timezone.now()
     cutoff = now - timedelta(seconds=settings.JOB_STALL_TIMEOUT)
-    return Job.objects.filter(
+    stalled = list(Job.objects.filter(
         status__in=[Job.Status.QUEUED, Job.Status.RUNNING], created_at__lt=cutoff
-    ).update(
-        status=Job.Status.FAILED,
-        error_code="timeout",
-        error_message="The job stopped responding and was canceled.",
-        finished_at=now,
-    )
+    ))
+    for job in stalled:
+        # One row at a time, through `mark_failed`, rather than a queryset
+        # `.update()`: a killed worker never ran the terminal transition, so
+        # this is the *only* place password material on that row is ever
+        # dropped (`Job.SENSITIVE_PARAMS`, phase-07). An `.update()` left it in
+        # the database in plaintext, and nothing else would have removed it.
+        job.mark_failed("timeout", "The job stopped responding and was canceled.")
+    return len(stalled)

@@ -19,6 +19,7 @@ import {
   SearchHit,
   SourceAsset,
 } from '../models/models';
+import { DocumentPasswords } from './document-passwords';
 
 export interface DocListParams {
   q?: string;
@@ -31,6 +32,7 @@ export interface DocListParams {
 @Injectable({ providedIn: 'root' })
 export class DocumentsService {
   private http = inject(HttpClient);
+  private passwords = inject(DocumentPasswords);
   private base = environment.apiUrl;
 
   list(params: DocListParams = {}): Observable<Paginated<DocumentModel>> {
@@ -172,8 +174,26 @@ export class DocumentsService {
     return this.http.post<ImageAsset>(`${this.base}/uploads/image/`, form);
   }
 
-  operation(id: string, body: { type: string; params: unknown; base_version_seq?: number | null }): Observable<Job> {
-    return this.http.post<Job>(`${this.base}/documents/${id}/operations/`, body);
+  operation(
+    id: string,
+    body: {
+      type: string;
+      params: unknown;
+      base_version_seq?: number | null;
+      /** The session password for an encrypted document (phase-07) — a sibling
+       *  of `params`, because it belongs to the document, not to the op. */
+      document_password?: string;
+    },
+  ): Observable<Job> {
+    // Attached here rather than at each call site: an encrypted document
+    // refuses *every* operation without it, so rotating a page needs it as
+    // much as re-encrypting does, and one forgetful facade would put the
+    // password prompt back in front of the user (phase-07).
+    const password = body.document_password ?? this.passwords.passwordFor(id);
+    return this.http.post<Job>(`${this.base}/documents/${id}/operations/`, {
+      ...body,
+      ...(password ? { document_password: password } : {}),
+    });
   }
 
   crossOperation(body: { type: string; params: unknown }): Observable<Job> {

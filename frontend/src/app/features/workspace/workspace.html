@@ -50,14 +50,30 @@
                 [class.text-indigo-600]="mode() !== 'compare'" data-test="compare-toggle">
           {{ mode() === 'compare' ? 'Done' : 'Compare' }}
         </button>
+        <button (click)="mode.set(mode() === 'protect' ? 'view' : 'protect')"
+                class="rounded px-3 py-1 font-medium"
+                [class.bg-indigo-600]="mode() === 'protect'" [class.text-white]="mode() === 'protect'"
+                [class.text-indigo-600]="mode() !== 'protect'" data-test="protect-toggle">
+          {{ mode() === 'protect' ? 'Done' : 'Protect' }}
+        </button>
         <button (click)="dialog.set('split')" class="rounded px-2 py-1 text-slate-600 hover:bg-slate-100" data-test="tool-split">Split</button>
         <button (click)="dialog.set('compress')" class="rounded px-2 py-1 text-slate-600 hover:bg-slate-100" data-test="tool-compress">Compress</button>
       </div>
     </div>
 
     @if (doc.is_encrypted) {
-      <div class="bg-amber-50 px-4 py-2 text-sm text-amber-700" data-test="encrypted-banner">
-        🔒 Locked document — unlocking to edit arrives with Security tools (Phase 7).
+      <div class="flex items-center gap-3 bg-amber-50 px-4 py-2 text-sm text-amber-700"
+           data-test="encrypted-banner">
+        @if (security.isUnlocked(doc.id)) {
+          🔓 Unlocked for this session. Editing it removes the password — add one
+          again afterwards if you still want it.
+        } @else {
+          🔒 This document is password-protected. Unlock it to keep working on it.
+        }
+        <button class="rounded border border-amber-300 px-2 py-0.5 text-xs"
+                (click)="openProtect('protect')" data-test="banner-unlock">
+          {{ security.isUnlocked(doc.id) ? 'Protection settings' : 'Unlock' }}
+        </button>
       </div>
     }
 
@@ -98,6 +114,18 @@
       />
     } @else if (mode() === 'compare') {
       <app-compare [docId]="doc.id" [currentSeq]="viewer.currentSeq()" />
+    } @else if (mode() === 'protect') {
+      <app-protect
+        [docId]="doc.id"
+        [docTitle]="doc.title"
+        [pageCount]="viewer.pageCount()"
+        [currentSeq]="viewer.currentSeq()"
+        [isEncrypted]="doc.is_encrypted"
+        [initialTab]="protectTab()"
+        (saved)="onProtectSaved()"
+        (forked)="onRedactedCopy($event)"
+        (conflict)="onAnnotationConflict()"
+      />
     } @else if (mode() === 'forms') {
       <app-forms
         [docId]="doc.id"
@@ -280,7 +308,8 @@
         <input #pw type="password" placeholder="Password" class="mb-4 w-full rounded border border-slate-300 px-3 py-2" data-test="pdf-password" />
         <div class="flex justify-end gap-3">
           <button (click)="passwordPrompt.set(false)" class="rounded-lg px-4 py-2 text-slate-600">Skip</button>
-          <button (click)="submitPassword(pw.value)" class="rounded-lg bg-indigo-600 px-4 py-2 text-white">Unlock</button>
+          <button (click)="submitPassword(pw.value)" class="rounded-lg bg-indigo-600 px-4 py-2 text-white"
+                  data-test="pdf-password-submit">Unlock</button>
         </div>
       </div>
     </div>

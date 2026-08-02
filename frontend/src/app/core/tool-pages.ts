@@ -26,7 +26,10 @@ export type ToolKind =
   | 'pdf-to-jpg'
   | 'html-to-pdf'
   | 'compare'
-  | 'repair';
+  | 'repair'
+  | 'protect'
+  | 'unlock'
+  | 'redact';
 
 export interface ToolFaq {
   q: string;
@@ -754,6 +757,114 @@ export const TOOL_PAGES: ToolPageDef[] = [
     minFiles: 1,
     multiple: false,
     cta: 'Repair PDF',
+  },
+  {
+    slug: 'protect-pdf',
+    kind: 'protect',
+    title: 'Protect PDF — add a password and restrictions free | ZenPDF',
+    metaDescription:
+      'Put a password on a PDF and set what readers may print, copy or change. AES-256 encryption, free, no account. Files auto-delete within 24 hours.',
+    h1: 'Password-protect a PDF',
+    intro: [
+      'Add a password to a PDF so that only the people you give it to can open it. The document is encrypted with AES-256, the strongest scheme the PDF format defines, and the encryption travels with the file: it stays protected wherever it is sent, opened or stored.',
+      'There are two different passwords, and the difference matters. The open password is the one a reader needs to see the document at all — without it, the file is unreadable, and that is real cryptography rather than a request. The owner password is the one that lifts the restrictions afterwards. We require an owner password and leave the open password optional, so you can choose between "nobody may read this" and "anyone may read it, but only I may change it".',
+      'The restrictions are the second half. You can allow full printing, allow only low-resolution printing, or forbid it; you can allow free editing, comments and form-filling, form-filling alone, or no changes at all; and you can allow or refuse copying text and images out. These are flags a reader\'s software is asked to respect. Well-behaved viewers do respect them, and a determined person with the right tool can ignore them — so treat them as a clear statement of intent, not as a lock. The open password is the lock.',
+      'One permission is never restricted: accessibility. A PDF a screen reader cannot open excludes its reader for no security gain, so we always leave that on, whatever else you choose.',
+      'Keep the owner password somewhere safe. It is not stored anywhere on our side — that is the point — and without it, nobody, including us, can lift the restrictions again.',
+      'Free, no account, and no watermark. Guest files are deleted automatically within 24 hours.',
+    ],
+    faq: [
+      {
+        q: 'What encryption do you use?',
+        a: 'AES-256 with revision 6, the strongest the PDF specification defines. It is applied by qpdf, the same open-source library the industry uses.',
+      },
+      {
+        q: 'What is the difference between the two passwords?',
+        a: 'The open password is needed to read the document at all. The owner password is needed to change the restrictions. You must set an owner password; the open password is optional.',
+      },
+      {
+        q: 'Can the restrictions really stop someone printing?',
+        a: 'They stop ordinary readers using ordinary software. They are flags that viewers are asked to honour, and a determined person can bypass them. If a document must not be read, give it an open password.',
+      },
+      {
+        q: 'Do you keep my password?',
+        a: 'No. It is used to encrypt the file and then dropped — it is never written to your document record, and it is removed from the job as soon as the job finishes.',
+      },
+    ],
+    minFiles: 1,
+    multiple: false,
+    cta: 'Protect PDF',
+  },
+  {
+    slug: 'unlock-pdf',
+    kind: 'unlock',
+    title: 'Unlock PDF — remove a password from a PDF you own | ZenPDF',
+    metaDescription:
+      'Remove the password from a PDF you can already open, so it opens without one. Free, no account. Files auto-delete within 24 hours.',
+    h1: 'Remove a password from a PDF',
+    intro: [
+      'If you have a PDF that asks for a password every time you open it, and you know that password, this removes it. Upload the file, type the password once, and you get back the same document with the encryption stripped off.',
+      'This is not password recovery, and it is worth being plain about that: you have to know the password. There is no way to open an AES-256 encrypted PDF without it — that is what the encryption is for — and any site claiming otherwise is either guessing common passwords or lying. We do not attempt to guess, and after five wrong attempts on the same document in a minute we stop accepting them for a while.',
+      'The usual reason to do this is that the protection has outlived its purpose. A bank statement arrives encrypted with your date of birth, a payslip with your employee number, a contract with a password the sender emailed you separately. Once the file is in your own storage the password is friction rather than security, and typing it every time is the friction.',
+      'A document with an owner password but no open password is a different case: it opens for anyone but refuses printing or copying. That, too, is removed here, and the same rule applies — you need the owner password to lift the restrictions.',
+      'Removing the password saves a new, unprotected version. The earlier, encrypted version is still in the document\'s history, so nothing is lost if you change your mind. If you want to put a password back, use the protect tool.',
+      'Free, no account, and no watermark. Guest files are deleted automatically within 24 hours.',
+    ],
+    faq: [
+      {
+        q: 'Can you unlock a PDF if I have forgotten the password?',
+        a: 'No. AES-256 encryption cannot be undone without the password, and we do not try to guess it. If you have lost it, ask whoever sent you the file.',
+      },
+      {
+        q: 'Is it legal to remove a password?',
+        a: 'From a document you own or are entitled to use, yes — you are removing your own protection. Do not use it on a document you are not entitled to.',
+      },
+      {
+        q: 'What happens to the password I type?',
+        a: 'It is used to open the file and then discarded. It is never saved on the document, and it is stripped from the job record as soon as the job finishes.',
+      },
+    ],
+    minFiles: 1,
+    multiple: false,
+    cta: 'Unlock PDF',
+  },
+  {
+    slug: 'redact-pdf',
+    kind: 'redact',
+    title: 'Redact PDF — permanently remove text and images free | ZenPDF',
+    metaDescription:
+      'Black out text, images and personal data in a PDF so the content is deleted, not merely covered. Free, no account. Files auto-delete within 24 hours.',
+    h1: 'Redact a PDF',
+    intro: [
+      'Redaction removes content from a PDF. That sounds obvious, and it is the single most misunderstood thing about PDFs: drawing a black rectangle over a paragraph does not delete the paragraph. It is still in the file, underneath, and anyone can select it, copy it out, or extract it with a script. Documents have been published that way by governments, law firms and newspapers.',
+      'This tool deletes it. The glyphs are removed from the page\'s content stream, and any image the rectangle touches has those pixels destroyed rather than covered. When it is done, the document is re-read and searched again to confirm that what you asked to remove is genuinely no longer findable, and the result of that check is reported back to you.',
+      'There are two ways to say what goes. You can draw areas directly on the page, which is the only approach that works on a scan or on text that has been converted to outlines. Or you can search: pick a preset for email addresses, phone numbers, social security numbers, card numbers or IBANs, type words to remove, or write your own pattern. A search always shows you what it found first, with every match listed and individually removable from the list, before anything is touched.',
+      'Pattern search finds text. Anything scanned, photographed or drawn as an outline has no text to find — run OCR on it first, or cover it with an area. The tool tells you when it still finds something after redacting, which is the honest answer to a problem that cannot be fully solved automatically.',
+      'By default the result goes into a new document rather than a new version of this one, and that default is deliberate. Version history keeps every earlier version — and those earlier versions still contain exactly what you have just removed. A new document has no history to leak.',
+      'Redaction cannot be undone. That is the point of it, and it is why the tool asks you to confirm by name.',
+      'Free, no account, and no watermark. Guest files are deleted automatically within 24 hours.',
+    ],
+    faq: [
+      {
+        q: 'Is this different from drawing a black box?',
+        a: 'Completely. A black box covers text that is still in the file and still copyable. Redaction deletes the text and the image pixels underneath, and then checks that they are gone.',
+      },
+      {
+        q: 'Can I redact a scanned document?',
+        a: 'Yes, by drawing areas over the parts to remove — the image pixels are destroyed. Searching will not work on a scan until you OCR it, because there is no text to search.',
+      },
+      {
+        q: 'Why does it want to make a new document?',
+        a: 'Because this document\'s earlier versions still contain what you removed. A new document starts with no history, which is the only way to say the content is really gone.',
+      },
+      {
+        q: 'Can I undo a redaction?',
+        a: 'No. The content is deleted. If you kept the result in the same document you can revert to an earlier version, which is exactly the leak the new-document default avoids.',
+      },
+    ],
+    minFiles: 1,
+    multiple: false,
+    cta: 'Redact PDF',
   },
 ];
 

@@ -16,6 +16,16 @@ class Job(models.Model):
 
     TERMINAL = {Status.SUCCEEDED, Status.FAILED, Status.CANCELED}
 
+    # Params that must never be readable after the job is created (phase-07).
+    # Passwords have to travel *somewhere* for the worker to open an encrypted
+    # document, and `params` is where every op's inputs live — so they are
+    # redacted from every API response and dropped from the row the moment the
+    # job finishes. A proper secrets channel is backlog; this is the documented
+    # tradeoff, and it is enforced here rather than at each call site.
+    SENSITIVE_PARAMS = frozenset({
+        "password", "owner_password", "user_password", "document_password",
+    })
+
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     # Exactly one of user/guest_session is set (§21.2). The worker must resolve
     # ownership via apps.core.principals.principal_of(job) — reading `job.user`
@@ -85,12 +95,29 @@ class Job(models.Model):
         self.progress = max(0, min(100, int(pct)))
         self.save(update_fields=["progress"])
 
+    def redacted_params(self) -> dict:
+        """`params` with every secret replaced — what the API is allowed to show."""
+        return {
+            key: ("••••••" if key in self.SENSITIVE_PARAMS and value else value)
+            for key, value in (self.params or {}).items()
+        }
+
+    def forget_secrets(self) -> None:
+        """Drop password material from the row. Called on every terminal state."""
+        params = self.params or {}
+        if not any(key in params for key in self.SENSITIVE_PARAMS):
+            return
+        self.params = {k: v for k, v in params.items()
+                       if k not in self.SENSITIVE_PARAMS}
+        self.save(update_fields=["params"])
+
     def mark_succeeded(self, result: dict | None = None) -> None:
         self.status = self.Status.SUCCEEDED
         self.progress = 100
         self.result = result or {}
         self.finished_at = timezone.now()
         self.save(update_fields=["status", "progress", "result", "finished_at"])
+        self.forget_secrets()
 
     def mark_failed(self, code: str, message: str, details: dict | None = None) -> None:
         self.status = self.Status.FAILED
@@ -100,11 +127,13 @@ class Job(models.Model):
         self.finished_at = timezone.now()
         self.save(update_fields=["status", "error_code", "error_message",
                                  "error_details", "finished_at"])
+        self.forget_secrets()
 
     def mark_canceled(self) -> None:
         self.status = self.Status.CANCELED
         self.finished_at = timezone.now()
         self.save(update_fields=["status", "finished_at"])
+        self.forget_secrets()
 
     @property
     def is_terminal(self) -> bool:

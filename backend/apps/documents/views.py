@@ -38,7 +38,7 @@ from apps.pdf_engine.engine import render as engine_render
 from apps.pdf_engine.engine import search_text
 from apps.pdf_engine.engine import text as engine_text
 from apps.pdf_engine.engine.inspect import inspect as inspect_pdf
-from apps.pdf_engine.exceptions import EngineError
+from apps.pdf_engine.exceptions import DocumentEncryptedError, EngineError
 from apps.pdf_engine.storage import get_storage
 
 from .filters import DocumentFilter
@@ -357,6 +357,11 @@ class ThumbnailView(APIView):
                 blob = storage.get_bytes(version.storage_key)
                 png = engine_render.render_thumbnail(blob, n, width, annots=with_annots)
                 storage.put_bytes(key, png, content_type="image/png")
+            except DocumentEncryptedError as exc:
+                # 423, not 400: "unlock it" is a thing the client can do, and
+                # the thumbnail strip of a protected document asks for one of
+                # these per page (phase-07).
+                raise DocumentEncrypted(exc.message) from exc
             except EngineError as exc:
                 raise ValidationFailed(exc.message) from exc
         resp = HttpResponse(png, content_type="image/png")
@@ -607,25 +612,45 @@ class DocumentOperationView(APIView):
         op_type = serializer.validated_data["type"]
         params = serializer.validated_data.get("params", {})
         base_seq = serializer.validated_data.get("base_version_seq")
+        document_password = serializer.validated_data.get("document_password", "")
 
         op = registry.OPERATIONS.get(op_type)
         if op is None or op.is_cross_document:
             raise ValidationFailed(
                 f"'{op_type}' is not a valid single-document operation."
             )
-        if document.is_encrypted:
+        # Phase 1 refused every operation on an encrypted document, which was
+        # right when nothing could unlock one. Phase 7 can: the three ops whose
+        # subject *is* the lock carry their own credentials, and any other op
+        # may carry the session password the UI holds in memory (§17).
+        from apps.documents.tasks import SELF_UNLOCKING
+
+        if document.is_encrypted and op_type not in SELF_UNLOCKING \
+                and not document_password:
             raise DocumentEncrypted()
         try:
             registry.validate_params(op_type, params)
         except EngineError as exc:
             raise ValidationFailed(exc.message) from exc
         _guard_operation(request, op_type, principal)
+        if document_password or any(key in params for key in Job.SENSITIVE_PARAMS):
+            # Five wrong passwords a minute for this document and the next
+            # attempt is refused, whoever is asking — the thing being guessed
+            # at belongs to the document, not to the session (phase-07).
+            L.enforce_password_attempts(document.id)
         if op_type == "ocr":
             # Before the hourly window is charged: OCR is the most expensive
             # thing we do, and a document past the monthly page quota should be
             # refused rather than started and abandoned (§16, phase-06 risks).
             L.enforce_ocr_pages(principal, document.page_count)
         L.enforce_metered_op(principal, op_type)
+
+        if document_password:
+            # Carried on the job so the worker can unlock, redacted from every
+            # response and dropped from the row when the job finishes
+            # (`Job.SENSITIVE_PARAMS`). Validated *after* the op schema, so no
+            # schema has to allow it.
+            params = {**params, "document_password": document_password}
 
         job = Job.objects.create(
             **job_owner_kwargs(principal), document=document, type=op_type,

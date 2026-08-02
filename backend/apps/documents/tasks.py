@@ -30,13 +30,19 @@ from apps.pdf_engine.engine import convert as CV
 from apps.pdf_engine.engine import forms as F
 from apps.pdf_engine.engine import ocr as O
 from apps.pdf_engine.engine import pages as P
+from apps.pdf_engine.engine import redact as RD
 from apps.pdf_engine.engine import render as R
+from apps.pdf_engine.engine import security as SEC
 from apps.pdf_engine.exceptions import EngineError
 from apps.pdf_engine.storage import get_storage
 
 from .models import Document, DocumentVersion
 
 logger = logging.getLogger(__name__)
+
+# The ops that manage encryption themselves: unlocking them centrally first
+# would mean decrypting a document in order to encrypt it.
+SELF_UNLOCKING = frozenset({"encrypt", "decrypt", "set_permissions"})
 
 THUMB_PAGES = 20
 THUMB_WIDTH = 240
@@ -169,6 +175,11 @@ def _save_export(job: Job, payload: dict) -> dict:
     }
 
 
+def _clean_copy_title(job) -> str:
+    base = getattr(getattr(job, "document", None), "title", "") or "Document"
+    return f"{base} (redacted)"[:255]
+
+
 def _author_of(job: Job) -> str:
     """The annotation author to embed in the file (phase-03 §3).
 
@@ -217,6 +228,13 @@ def _apply_single(op, primary_bytes, params, source_bytes, *, job=None):
     find & replace dry run changes no bytes, so it must not mint a version.
     """
     t = op.type
+    if "document_password" in params and t not in SELF_UNLOCKING:
+        # The session password is a credential for the *document*; the ops below
+        # take operation parameters. Four of them splat `params` straight into
+        # the engine (`watermark`, `page_numbers`, `header_footer`, `bates`), so
+        # leaving it in turned "watermark a document I have unlocked" into a
+        # TypeError. The three self-unlocking ops read it deliberately.
+        params = {k: v for k, v in params.items() if k != "document_password"}
     if t == "rotate_pages":
         data = P.rotate_pages(primary_bytes, pages=params["pages"], degrees=params["degrees"])
         return "version", data, f"Rotated {len(params['pages'])} page(s)", None
@@ -410,6 +428,65 @@ def _apply_single(op, primary_bytes, params, source_bytes, *, job=None):
         )
         return "export", {"data": blob, "filename": filename,
                           "content_type": content_type}, f"Exported {params['format']}", report
+
+    # --- Phase 7: security & redaction ---------------------------------- #
+    if t == "encrypt":
+        data = SEC.encrypt(
+            primary_bytes,
+            owner_password=params["owner_password"],
+            user_password=params.get("user_password", ""),
+            permissions=params.get("permissions"),
+            password=params.get("document_password", ""),
+        )
+        return "version", data, "Protected", {"encrypted": True}
+    if t == "decrypt":
+        data = SEC.decrypt(primary_bytes,
+                           password=params.get("password")
+                           or params.get("document_password", ""))
+        return "version", data, "Unlocked", {"encrypted": False}
+    if t == "set_permissions":
+        data = SEC.set_permissions(
+            primary_bytes,
+            permissions=params["permissions"],
+            owner_password=params["owner_password"],
+            user_password=params.get("user_password", ""),
+            password=params.get("document_password", ""),
+        )
+        return "version", data, "Permissions updated", {"encrypted": True}
+    if t == "sanitize":
+        data, report = SEC.sanitize(primary_bytes, **{
+            k: v for k, v in params.items() if k in SEC.SANITIZE_ITEMS
+        })
+        return "version", data, f"Sanitized ({report['total']} item(s))", report
+    if t == "redact":
+        if params.get("dry_run"):
+            # Inspection only, like find & replace: a search must not put
+            # "Redacted 0 items" in the history.
+            report = RD.find_matches(
+                primary_bytes,
+                patterns=params.get("patterns"),
+                search_text=params.get("search_text", ""),
+                match_case=params.get("match_case", True),
+                scope=params.get("scope"),
+            )
+            return "report", report, "Reviewed", report
+        data, report = RD.redact(
+            primary_bytes,
+            areas=params.get("areas"),
+            patterns=params.get("patterns"),
+            search_text=params.get("search_text", ""),
+            match_case=params.get("match_case", True),
+            scope=params.get("scope"),
+            fill=params.get("fill"),
+            only=params.get("only"),
+        )
+        if params.get("fork_clean_copy"):
+            # A redacted document whose *earlier version* still contains the
+            # content is not redacted. The clean copy has no history at all,
+            # which is the only way to say that truthfully (phase-07).
+            title = _clean_copy_title(job)
+            return "documents", [{"title": title, "data": data}], "Redacted", report
+        return "version", data, "Redacted", report
     raise EngineError(f"Unsupported single-document op '{t}'")
 
 
@@ -446,6 +523,16 @@ def run_operation(self, job_id: str):
                 return
 
             primary_bytes = _version_bytes(current)
+            # Every engine module below assumes a readable PDF. Rather than
+            # teach fifteen of them about passwords, the document is unlocked
+            # here, once — except for the three ops whose whole subject *is*
+            # the lock, which take their own credentials.
+            unlocked_here = False
+            if op.type not in SELF_UNLOCKING:
+                unlocked_here = document.is_encrypted
+                primary_bytes = SEC.open_with_password(
+                    primary_bytes, job.params.get("document_password", "")
+                )
             source_bytes = []
             for key in op.source_id_params:
                 src_id = job.params.get(key)
@@ -484,8 +571,30 @@ def run_operation(self, job_id: str):
                 return
 
             if kind == "version":
+                if unlocked_here:
+                    # Editing a protected document takes the protection off it.
+                    #
+                    # The engine works on decrypted bytes and returns a new
+                    # file; the original's encryption cannot be put back
+                    # faithfully, because neither password is recoverable from
+                    # the other — opening with the open password does not
+                    # reveal the owner password, and re-encrypting with the one
+                    # we were given would quietly make it both. So the
+                    # protection comes off, and the *label says so*: a document
+                    # that stopped being protected without anyone being told is
+                    # the version of this that actually hurts someone.
+                    label = f"{label} (password removed)"
                 version = _save_new_version(document=document, data=payload, label=label,
                                             created_by=created_by_user(job), job=job)
+                # `encrypt` and `decrypt` change what the *document* is, not
+                # just what this version contains — the viewer prompts for a
+                # password off this flag.
+                if report and "encrypted" in report:
+                    document.is_encrypted = bool(report["encrypted"])
+                    document.save(update_fields=["is_encrypted"])
+                elif unlocked_here:
+                    document.is_encrypted = False
+                    document.save(update_fields=["is_encrypted"])
                 job.mark_succeeded({
                     "document_id": str(document.id),
                     "version_id": str(version.id),
@@ -499,12 +608,27 @@ def run_operation(self, job_id: str):
                         principal=principal_of(job), folder=document.folder,
                         title=item["title"], data=item["data"],
                         created_by=created_by_user(job), job=job,
+                        # Same disclosure as the version branch: a copy taken
+                        # from an unlocked document is not protected, and the
+                        # user must not have to discover that by sending it.
+                        label="Original (password removed)" if unlocked_here
+                        else "Original",
                     )
                     created.append(str(new_doc.id))
-                job.mark_succeeded({"documents": created})
+                # The report travels with this kind too. Redaction's clean copy
+                # is the *default* path in the UI, and dropping the report here
+                # made the verification pass — the phase's own answer to the
+                # text-as-outlines risk — unreachable exactly where it matters.
+                job.mark_succeeded({"documents": created,
+                                    **({"report": report} if report else {})})
     except EngineError as exc:
         # `details` carries the structured half of the §6 error shape — e.g.
         # `text_overflow`'s `fits_at_size`, which the editor turns into an offer.
+        if exc.code == "invalid_password":
+            # The guess is only known to be wrong here, in the worker — so this
+            # is where the per-document attempt window is charged; the next
+            # request is what gets refused (phase-07).
+            L.record_password_failure(document.id)
         job.mark_failed(exc.code, exc.message, exc.details)
     except Document.DoesNotExist:
         job.mark_failed("not_found", "A referenced document was not found.")
@@ -638,6 +762,15 @@ def revert_version(self, job_id: str):
                 document=document, data=data,
                 label=f"Reverted to v{target_seq}", created_by=created_by_user(job), job=job,
             )
+            # Reverting *to* a protected version makes the document protected
+            # again — and reverting past one makes it not. Phase 7 is the first
+            # phase where a version's encryption can differ from the
+            # document's, and leaving the flag alone left the viewer showing no
+            # padlock, no prompt, and a document whose every page was a 423.
+            encrypted = SEC.is_encrypted(data)
+            if document.is_encrypted != encrypted:
+                document.is_encrypted = encrypted
+                document.save(update_fields=["is_encrypted"])
             job.mark_succeeded({
                 "document_id": str(document.id),
                 "version_id": str(version.id),

@@ -69,6 +69,10 @@ ALLOWED: dict[str, set[str]] = {
     # The claim endpoint passes `request.user` to claim_session() as the *target*
     # account; it filters nothing by it.
     "core/views.py": {"request.user"},
+    # `pikepdf.Encryption(owner=…)` is a PDF *owner password* — the credential
+    # that lifts a document's restrictions. Nothing to do with row ownership,
+    # and the engine has no database access at all (phase-07).
+    "pdf_engine/engine/security.py": {"owner="},
 }
 
 

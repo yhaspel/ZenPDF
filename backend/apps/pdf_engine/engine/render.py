@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import fitz
 
-from ..exceptions import PageOutOfRange, UnsupportedFileError
+from ..exceptions import DocumentEncryptedError, PageOutOfRange, UnsupportedFileError
 
 
 def _open(data: bytes) -> fitz.Document:
@@ -23,6 +23,13 @@ def render_page(data: bytes, page: int, width: int = 1024, *, annots: bool = Tru
     """
     doc = _open(data)
     try:
+        if doc.needs_pass:
+            # A locked document has no pages to draw. Saying so is a 423 the
+            # client can act on; letting PyMuPDF raise on `doc[page]` was a 500
+            # in every thumbnail strip of a protected document (phase-07).
+            raise DocumentEncryptedError(
+                "This document is password-protected. Unlock it to see its pages."
+            )
         if page < 0 or page >= doc.page_count:
             raise PageOutOfRange(f"page {page} out of range (0..{doc.page_count - 1})")
         p = doc[page]
