@@ -240,9 +240,11 @@ Worker algorithm (every mutation op): acquire Redis lock `zen:doc:{id}` (blockin
 
 | Queue | Ops | Concurrency | Soft/hard time limit |
 |---|---|---|---|
-| default | page ops (incl. split), annotate, forms, text/image edits, stamps, security (encrypt/decrypt/redact/sanitize), self_sign, revert_version | 4 | 60 s / 120 s |
-| heavy | ocr, convert_*, compress, compare, merge, alternate_mix, repair, finalize_sign_request | 2 | 600 s / 900 s |
+| default | page ops (incl. split), annotate, forms, text/image edits, stamps, security (encrypt/decrypt/sanitize), self_sign, revert_version | 4 | 60 s / 120 s |
+| heavy | ocr, convert_*, compress, compare, merge, alternate_mix, repair, **redact**, finalize_sign_request | 2 | 600 s / 900 s |
 | render | generate_thumbnails, page renders | 4 | 30 s / 60 s |
+
+*(amended 2026-08-02, P7: `redact` moved default→heavy. Redacting a long scan re-encodes every image the boxes touch and then re-extracts every page to verify, which does not fit a 60 s soft limit — and a legal disclosure bundle is the use case redaction exists for. The other three security ops are cheap and stay on `default`.)*
 
 Workers: prefork, `max_memory_per_child=1.5 GB`, non-root, open PDFs per-task (never share fitz objects across tasks/threads). Celery `task_acks_late=True` + idempotent tasks (version creation is guarded by unique (document, seq)).
 
