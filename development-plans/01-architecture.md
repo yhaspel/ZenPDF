@@ -219,20 +219,20 @@ All document mutations/derivations run as Jobs with `type` from this registry. P
 | encrypt | 7 | pikepdf | user_password?, owner_password, permissions{} (AES-256) |
 | decrypt | 7 | pikepdf | password |
 | set_permissions | 7 | pikepdf | owner_password, permissions{} |
-| redact | 7 | PyMuPDF | areas[] (§8), patterns[] {preset\|regex}, search_text?, match_case, scope, fill, dry_run bool, fork_clean_copy bool |
-| sanitize | 7 | PyMuPDF+pikepdf | strip ∈ {metadata, javascript, attachments, hidden_layers…} |
+| redact | 7 | PyMuPDF | areas[] (§8), patterns[] {preset\|regex}, search_text?, match_case, scope, fill, dry_run bool, fork_clean_copy bool, **only[]** (amended 2026-08-02, P7: the ids the dry run returned that the user left ticked — the phase's own "per-match include toggle" cannot be implemented without it. An **empty** list means "none of them", distinct from the key being absent) |
+| sanitize | 7 | PyMuPDF+pikepdf | one boolean per item — metadata, xmp, javascript, embedded_files, hidden_layers_flatten, links_external, comments *(amended 2026-08-02, P7: a flat checklist rather than a nested `strip` set, because that is what the panel is and what phase-07 lists; `attachments` is spelled `embedded_files`, which is what the PDF calls them)* |
 | self_sign | 8 | PyMuPDF | placements[]: {**signature_id \| signature_upload_ref**, page, rect §8}, include_date bool (always flattens). `signature_id` → `esign.SavedSignature` (account-only); **`signature_upload_ref` → an ephemeral uploaded/drawn PNG, which is how a guest signs** (§21.3) |
 | finalize_sign_request | 8 (internal) | PyMuPDF+pyHanko+reportlab | sign_request_id (burn fields → seal → certificate) |
 | generate_thumbnails (internal) | 1 | PyMuPDF | version, pages, width |
 | revert_version | 1 | storage copy (no engine) | seq → new head version copied from v{seq} (§14) |
 
-Version-producing ops → `result: {document_id, version_id, seq}` (split/merge/extract-as-new/convert_from → `{documents: [...]}`). Export ops → `result: {export_key, filename, content_type, size}` + `GET /api/jobs/{id}/download`. **Inspection ops** → `result: {report: {…}}` and **no version**: `find_replace` with `dry_run: true` is the only one today, and minting a version for a search would put "Replaced 0 matches" in the history every time somebody looked (added phase 4).
+Version-producing ops → `result: {document_id, version_id, seq}` (split/merge/extract-as-new/convert_from → `{documents: [...]}`). Export ops → `result: {export_key, filename, content_type, size}` + `GET /api/jobs/{id}/download`. **Inspection ops** → `result: {report: {…}}` and **no version**: `find_replace` and `redact` with `dry_run: true` (amended 2026-08-02, P7), and `compare`. Minting a version for a search would put "Replaced 0 matches" in the history every time somebody looked (added phase 4).
 
 Failures carry the §6 error shape's structured half in `Job.error_details` — `text_overflow`'s `fits_at_size` is the reason it exists, since the UI has to offer "shrink to N pt" and N is computed by the engine.
 
 ## 11. Job pipeline
 
-`POST /api/documents/{id}/operations/ {type, params, base_version_seq}` → validate schema + tier limits (§16) + **principal ownership** (§21.2) → create Job(queued) → dispatch to queue by type → **202** `{job}`. Cross-document ops use `POST /api/operations/`. Poll `GET /api/jobs/{id}/`. Cancel: `POST /api/jobs/{id}/cancel/` (revokes if still queued).
+`POST /api/documents/{id}/operations/ {type, params, base_version_seq, document_password?}` → validate schema + tier limits (§16) + **principal ownership** (§21.2) → create Job(queued) → dispatch to queue by type → **202** `{job}`. *(amended 2026-08-02, P7: `document_password` is the session password for an encrypted document — a **write-only sibling** of `params`, not a member of it, because it is a credential for the document rather than an input to the operation. Inside `params` it would have to be added to all forty op schemas, each of which would then have to remember to ignore it, and `Job.SENSITIVE_PARAMS` could not redact it generically. It is merged into the job's params for the worker, redacted from every API response, and dropped from the row when the job reaches a terminal state.)*  Cross-document ops use `POST /api/operations/`. Poll `GET /api/jobs/{id}/`. Cancel: `POST /api/jobs/{id}/cancel/` (revokes if still queued).
 
 Worker algorithm (every mutation op): acquire Redis lock `zen:doc:{id}` (blocking, 120 s timeout) → refetch document → if `base_version_seq` ≠ `current_version.seq` → fail `version_conflict` → download blob → run engine fn (pure: bytes+params→bytes) → sha256, page count → upload `docs/{doc}/v{seq+1}.pdf` → create DocumentVersion → update Document (current_version, counts, sizes, status) → release lock → job succeeded. On any exception: job failed with sanitized error, document untouched (versions are immutable → no partial states, ever).
 

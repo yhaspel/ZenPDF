@@ -193,6 +193,51 @@ def test_editing_an_unlocked_document_says_the_password_came_off(api, uploaded_d
     assert S.is_encrypted(_content(api, uploaded_doc["id"])) is False
 
 
+@pytest.mark.parametrize("op_type,params", [
+    ("watermark", {"text": "DRAFT"}),
+    ("page_numbers", {"position": "bottom-center"}),
+    ("header_footer", {"segments": {"top-center": "Confidential"}}),
+    ("bates", {"prefix": "ZEN-"}),
+])
+def test_the_session_password_does_not_reach_the_engine(api, uploaded_doc,
+                                                        op_type, params):
+    """The four ops that splat `params` straight into their engine function.
+
+    The password is a credential for the *document*, not a parameter of the
+    operation — leaving it in `params` turned "watermark a document I have
+    unlocked" into `TypeError: unexpected keyword argument`.
+    """
+    _op(api, uploaded_doc["id"], "encrypt",
+        {"owner_password": "owner", "user_password": "user"})
+    resp = api.post(f"/api/documents/{uploaded_doc['id']}/operations/",
+                    {"type": op_type, "params": params,
+                     "document_password": "user", "base_version_seq": 2},
+                    format="json")
+    assert resp.status_code == 202, resp.content
+    job = api.get(f"/api/jobs/{resp.json()['id']}/").json()
+    assert job["status"] == "succeeded", job
+
+
+def test_reverting_to_a_protected_version_makes_it_protected_again(api, uploaded_doc):
+    """Phase 7 is the first phase where a *version* can be encrypted and the
+    document not. Leaving the flag alone left the viewer showing no padlock, no
+    prompt, and a document whose every page answered 423."""
+    _op(api, uploaded_doc["id"], "encrypt",
+        {"owner_password": "owner", "user_password": "user"})
+    _op(api, uploaded_doc["id"], "decrypt", {"password": "user"}, base_seq=2)
+    assert api.get(f"/api/documents/{uploaded_doc['id']}/").json()["is_encrypted"] is False
+
+    resp = api.post(f"/api/documents/{uploaded_doc['id']}/versions/2/revert/", format="json")
+    assert resp.status_code == 202, resp.content
+    assert api.get(f"/api/jobs/{resp.json()['id']}/").json()["status"] == "succeeded"
+    assert api.get(f"/api/documents/{uploaded_doc['id']}/").json()["is_encrypted"] is True
+
+    # …and back again, which is the same bug in the other direction.
+    resp = api.post(f"/api/documents/{uploaded_doc['id']}/versions/3/revert/", format="json")
+    assert api.get(f"/api/jobs/{resp.json()['id']}/").json()["status"] == "succeeded"
+    assert api.get(f"/api/documents/{uploaded_doc['id']}/").json()["is_encrypted"] is False
+
+
 def test_permissions_can_be_changed(api, uploaded_doc):
     _op(api, uploaded_doc["id"], "encrypt",
         {"owner_password": "owner", "permissions": {"print": "none"}})
@@ -307,6 +352,35 @@ def test_the_clean_copy_has_no_history_to_leak(api, pii_doc):
 
     # …and the original is untouched, which is what makes it a *copy*.
     assert b"dana.cohen" in _drawn(api, pii_doc["id"])
+
+
+def test_the_clean_copy_still_reports_its_verification(api, pii_doc):
+    """The verification pass is the phase's answer to text-as-outlines, and the
+    clean copy is the *default* path — dropping the report there made the
+    warning unreachable exactly where it matters."""
+    job = _op(api, pii_doc["id"], "redact",
+              {"patterns": [{"kind": "preset", "value": "email"}],
+               "fork_clean_copy": True})
+    assert job["result"]["report"]["verification"] == {
+        "rechecked": True, "residual_matches": 0,
+    }
+
+
+def test_a_copy_taken_from_an_unlocked_document_says_it_is_not_protected(
+        api, uploaded_doc):
+    _op(api, uploaded_doc["id"], "encrypt",
+        {"owner_password": "owner", "user_password": "user"})
+    resp = api.post(f"/api/documents/{uploaded_doc['id']}/operations/",
+                    {"type": "extract_pages",
+                     "params": {"pages": [0], "as_new_document": True},
+                     "document_password": "user", "base_version_seq": 2},
+                    format="json")
+    job = api.get(f"/api/jobs/{resp.json()['id']}/").json()
+    assert job["status"] == "succeeded", job
+
+    new_id = job["result"]["documents"][0]
+    versions = api.get(f"/api/documents/{new_id}/versions/").json()
+    assert "password removed" in versions[0]["label"], versions[0]
 
 
 def test_only_the_kept_matches_are_applied(api, pii_doc):

@@ -17,8 +17,11 @@ class Op:
     queue: str
     schema: dict
     # "version" | "documents" | "report" | "export" | "version_or_report".
-    # `version_or_report` is `find_replace`, whose dry run inspects the document
-    # and changes nothing, so it must not mint a version (§10, amended).
+    # `version_or_report` is `find_replace` and `redact`, whose dry runs inspect
+    # the document and change nothing, so they must not mint a version (§10,
+    # amended). `redact` also produces `documents` when `fork_clean_copy` is
+    # set — a redaction whose earlier versions still hold the content is not a
+    # redaction, so the clean copy is a new document with no history.
     # `export` is a downloadable artefact rather than a new version of the
     # document — Word, images, text (§15, phase-06).
     produces: str

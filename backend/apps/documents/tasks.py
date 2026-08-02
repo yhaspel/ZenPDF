@@ -228,6 +228,13 @@ def _apply_single(op, primary_bytes, params, source_bytes, *, job=None):
     find & replace dry run changes no bytes, so it must not mint a version.
     """
     t = op.type
+    if "document_password" in params and t not in SELF_UNLOCKING:
+        # The session password is a credential for the *document*; the ops below
+        # take operation parameters. Four of them splat `params` straight into
+        # the engine (`watermark`, `page_numbers`, `header_footer`, `bates`), so
+        # leaving it in turned "watermark a document I have unlocked" into a
+        # TypeError. The three self-unlocking ops read it deliberately.
+        params = {k: v for k, v in params.items() if k != "document_password"}
     if t == "rotate_pages":
         data = P.rotate_pages(primary_bytes, pages=params["pages"], degrees=params["degrees"])
         return "version", data, f"Rotated {len(params['pages'])} page(s)", None
@@ -601,9 +608,19 @@ def run_operation(self, job_id: str):
                         principal=principal_of(job), folder=document.folder,
                         title=item["title"], data=item["data"],
                         created_by=created_by_user(job), job=job,
+                        # Same disclosure as the version branch: a copy taken
+                        # from an unlocked document is not protected, and the
+                        # user must not have to discover that by sending it.
+                        label="Original (password removed)" if unlocked_here
+                        else "Original",
                     )
                     created.append(str(new_doc.id))
-                job.mark_succeeded({"documents": created})
+                # The report travels with this kind too. Redaction's clean copy
+                # is the *default* path in the UI, and dropping the report here
+                # made the verification pass — the phase's own answer to the
+                # text-as-outlines risk — unreachable exactly where it matters.
+                job.mark_succeeded({"documents": created,
+                                    **({"report": report} if report else {})})
     except EngineError as exc:
         # `details` carries the structured half of the §6 error shape — e.g.
         # `text_overflow`'s `fits_at_size`, which the editor turns into an offer.
@@ -745,6 +762,15 @@ def revert_version(self, job_id: str):
                 document=document, data=data,
                 label=f"Reverted to v{target_seq}", created_by=created_by_user(job), job=job,
             )
+            # Reverting *to* a protected version makes the document protected
+            # again — and reverting past one makes it not. Phase 7 is the first
+            # phase where a version's encryption can differ from the
+            # document's, and leaving the flag alone left the viewer showing no
+            # padlock, no prompt, and a document whose every page was a 423.
+            encrypted = SEC.is_encrypted(data)
+            if document.is_encrypted != encrypted:
+                document.is_encrypted = encrypted
+                document.save(update_fields=["is_encrypted"])
             job.mark_succeeded({
                 "document_id": str(document.id),
                 "version_id": str(version.id),

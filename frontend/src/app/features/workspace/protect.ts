@@ -84,11 +84,20 @@ export class Protect {
   constructor() {
     effect(() => this.tab.set(this.initialTab()));
     // Once the session knows the password — from the prompt, or because the
-    // user chose it here — the panel stops asking for it again.
+    // user chose it here — the panel stops asking for it again. It is cleared
+    // for a document the session does *not* know, or the previous document's
+    // password would be sent and burn one of this one's five attempts.
     effect(() => {
       this.security.unlockedIds();
-      const known = this.security.passwordFor(this.docId());
-      if (known) this.unlockPassword.set(known);
+      this.unlockPassword.set(this.security.passwordFor(this.docId()));
+    });
+    // The workspace component is reused across /app/doc/:id navigations, so
+    // without this the areas drawn on one document are drawn — and applied —
+    // on the next one.
+    effect(() => {
+      this.docId();
+      this.security.clear();
+      this.page.set(0);
     });
   }
 
@@ -178,9 +187,13 @@ export class Protect {
       },
     }).subscribe({
       next: (job) => {
-        if (job.status === 'succeeded' && this.userPassword()) {
-          // The user just chose it, so there is no reason to ask again.
-          this.security.remember(this.docId(), this.userPassword());
+        if (job.status === 'succeeded') {
+          // The user just chose it, so there is no reason to ask again. With no
+          // open password the *owner* password is the session credential: the
+          // document opens for anyone, and that is the password that lets its
+          // owner keep working on it.
+          this.security.remember(this.docId(),
+                                 this.userPassword() || this.ownerPassword());
         }
         this.onJob(job, 'Document protected');
       },
@@ -230,6 +243,16 @@ export class Protect {
     this.chosenPresets.update((chosen) =>
       chosen.includes(value) ? chosen.filter((c) => c !== value) : [...chosen, value],
     );
+    this.searchChanged();
+  }
+
+  /**
+   * The review list describes *one* search. Change what is being looked for
+   * and it stops describing anything — and its ids, which are positions in the
+   * result, would then point at different matches on apply.
+   */
+  protected searchChanged(): void {
+    if (this.security.report()) this.security.clearReview();
   }
 
   protected isPreset(value: string): boolean {
@@ -254,9 +277,26 @@ export class Protect {
     if (id) this.security.removeArea(id);
   }
 
+  /** The user's own regex, checked here so the answer is immediate rather than
+   *  a failed job thirty seconds later. */
+  protected patternError(): string {
+    const source = this.customPattern().trim();
+    if (!source) return '';
+    try {
+      new RegExp(source);
+      return '';
+    } catch (err) {
+      return (err as Error).message;
+    }
+  }
+
   protected preview(): void {
     if (!this.patterns().length && !this.searchText().trim()) {
       this.toast.info('Choose what to look for first');
+      return;
+    }
+    if (this.patternError()) {
+      this.toast.error('That pattern is not valid — check the highlighted box.');
       return;
     }
     this.security.preview(this.docId(), this.currentSeq(), this.patterns(),
@@ -280,6 +320,10 @@ export class Protect {
   protected async applyRedaction(): Promise<void> {
     if (!this.security.hasWork()) {
       this.toast.info('Nothing selected to remove');
+      return;
+    }
+    if (this.patternError()) {
+      this.toast.error('That pattern is not valid — check the highlighted box.');
       return;
     }
     const kept = this.security.keptIds().length;

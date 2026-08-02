@@ -108,9 +108,13 @@ export class SecurityFacade {
   // ------------------------------------------------------------------ //
   // Redact
   // ------------------------------------------------------------------ //
+  /** Monotonic, so an id is never reused after a removal — reusing one made
+   *  deleting the newest area delete an older one with it. */
+  private nextAreaId = 0;
+
   addArea(page: number, rect: Rect): void {
     this._areas.update((areas) => [
-      ...areas, { id: `a${areas.length}-${page}`, page, rect },
+      ...areas, { id: `a${this.nextAreaId++}`, page, rect },
     ]);
   }
 
@@ -120,6 +124,13 @@ export class SecurityFacade {
 
   clear(): void {
     this._areas.set([]);
+    this.clearReview();
+  }
+
+  /** The review list only describes the search that produced it. Changing what
+   *  is being searched for invalidates it — and applying against a stale one
+   *  sends ids that now identify *different* matches. */
+  clearReview(): void {
     this._report.set(null);
     this._excluded.set(new Set());
   }
@@ -157,13 +168,17 @@ export class SecurityFacade {
   }): Observable<Job> {
     const areas = this._areas().map((a) => ({ page: a.page, rect: a.rect }));
     const hasPatterns = options.patterns.length > 0 || !!options.searchText;
+    // An empty `only` means "the user unticked every match", which the engine
+    // now distinguishes from "no review list at all" — so it is sent as an
+    // empty array rather than omitted.
     return this.run(docId, baseSeq, 'redact', {
       ...(areas.length ? { areas } : {}),
       ...(options.patterns.length ? { patterns: options.patterns } : {}),
       ...(options.searchText ? { search_text: options.searchText } : {}),
       match_case: options.matchCase,
-      // Only send `only` when there is a review list to filter; sending an
-      // empty list with an area-only redaction would apply nothing.
+      // Sent whenever a review list exists — including when it is empty, which
+      // is the user saying "none of these". Omitted when there is nothing to
+      // filter, so an area-only redaction is not turned into a no-op.
       ...(hasPatterns && this._report() ? { only: this.keptIds() } : {}),
       ...(options.label ? { fill: { color: '#000000', label: options.label } } : {}),
       fork_clean_copy: options.cleanCopy,

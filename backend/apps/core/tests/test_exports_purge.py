@@ -173,3 +173,38 @@ def test_a_conversion_source_is_freed_once_it_has_been_converted(api):
                  if asset["ref"] in k]
     assert leftovers == [], f"the parked source was not freed: {leftovers}"
     assert L.storage_used(user) >= 0
+
+
+# --------------------------------------------------------------------------- #
+# Redaction previews (phase-07, self-review)
+# --------------------------------------------------------------------------- #
+def test_a_redaction_preview_stops_holding_the_secrets_it_found(api, fixture_bytes):
+    """A dry run answers with the text of every match so the user can choose.
+
+    That answer is stored on the job, and a job outlives the document it came
+    from (`Job.document` is SET_NULL). An hour later the review list is worth
+    nothing and the copy of the social security numbers is worth something to
+    whoever reads the database next.
+    """
+    from apps.core.tasks import redaction_previews_purge
+
+    upload = SimpleUploadedFile("pii.pdf", fixture_bytes("pii.pdf"),
+                                content_type="application/pdf")
+    doc = api.post("/api/documents/", {"file": upload}, format="multipart").json()
+    resp = api.post(f"/api/documents/{doc['id']}/operations/",
+                    {"type": "redact",
+                     "params": {"patterns": [{"kind": "preset", "value": "ssn"}],
+                                "dry_run": True},
+                     "base_version_seq": 1}, format="json")
+    job = Job.objects.get(id=resp.json()["id"])
+    assert any("123-45-6789" in m["text"] for m in job.result["report"]["matches"])
+
+    assert redaction_previews_purge() == 0, "a fresh preview is still useful"
+
+    _age(job, 2)
+    assert redaction_previews_purge() == 1
+    job.refresh_from_db()
+    matches = job.result["report"]["matches"]
+    assert matches and all(m["text"] == "" for m in matches)
+    # The shape survives — the history still records what happened.
+    assert all("rect" in m and "page" in m for m in matches)

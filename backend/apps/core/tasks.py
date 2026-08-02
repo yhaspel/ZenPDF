@@ -158,4 +158,42 @@ def exports_purge() -> dict:
 
     if stats["jobs"]:
         logger.info("exports_purge: removed %(blobs)s blob(s) from %(jobs)s job(s)", stats)
+    stats["previews"] = redaction_previews_purge()
     return stats
+
+
+def redaction_previews_purge(hours: int = 1) -> int:
+    """Blank the matched text kept by redaction previews (phase-07, §17).
+
+    A dry run answers with the text of every match so the user can decide which
+    ones to remove — social security numbers, card numbers, whatever they were
+    looking for. That answer is stored on the job, and a job outlives the
+    document it came from (`Job.document` is `SET_NULL`, so deleting the
+    document does not take the preview with it). The review list is worth
+    nothing an hour later; the copy of the secrets is worth something to
+    whoever reads the database next.
+
+    The rects and the count stay, so the history still records what happened.
+    """
+    from datetime import timedelta
+
+    from apps.jobs.models import Job
+
+    cutoff = timezone.now() - timedelta(hours=hours)
+    cleaned = 0
+    stale = Job.objects.filter(
+        type="redact", finished_at__lt=cutoff, result__has_key="report",
+    )
+    for job in stale.iterator():
+        report = (job.result or {}).get("report") or {}
+        matches = report.get("matches") or []
+        if not any(m.get("text") for m in matches):
+            continue
+        for match in matches:
+            match["text"] = ""
+        job.result = {**job.result, "report": {**report, "matches": matches}}
+        job.save(update_fields=["result"])
+        cleaned += 1
+    if cleaned:
+        logger.info("redaction_previews_purge: cleared text on %s job(s)", cleaned)
+    return cleaned

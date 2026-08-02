@@ -231,10 +231,15 @@ def make_redact_image():
 
 def make_booby_trapped():
     """Everything `sanitize` is supposed to find: document JavaScript, an
-    OpenAction, an embedded file, metadata, XMP and an outbound link."""
+    OpenAction, an embedded file, metadata, XMP, an outbound link — and a layer
+    that is switched *off*, carrying text the reader never sees."""
     doc = fitz.open()
     page = doc.new_page(width=595, height=842)
     page.insert_text((60, 100), "Looks like an ordinary invoice", fontsize=16)
+    # An optional-content group, default OFF: the classic "redacted" document
+    # that still contains what was supposedly taken out.
+    hidden = doc.add_ocg("Draft notes", on=False)
+    page.insert_text((60, 160), "HIDDENLAYERSECRET", fontsize=14, oc=hidden)
     page.insert_link({"kind": fitz.LINK_URI, "from": fitz.Rect(60, 120, 300, 140),
                       "uri": "https://tracker.example.com/beacon"})
     doc.set_metadata({"title": "Quarterly", "author": "Dana Cohen",

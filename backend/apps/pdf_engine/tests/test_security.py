@@ -257,3 +257,46 @@ def test_sanitize_only_removes_what_was_asked_for(fixture_bytes):
         assert pdf.docinfo and len(pdf.docinfo.keys()), "metadata was taken uninvited"
     finally:
         pdf.close()
+
+
+# --------------------------------------------------------------------------- #
+# Hidden layers (self-review, security lens)
+# --------------------------------------------------------------------------- #
+def _drawable(data: bytes) -> bytes:
+    """Everything the file's content streams would draw, decompressed."""
+    from apps.pdf_engine.tests.test_redact import raw_text_bytes
+
+    return raw_text_bytes(data)
+
+
+def test_hidden_layer_content_is_removed_not_revealed(fixture_bytes):
+    """The one sanitize item that could do the opposite of what it says.
+
+    Dropping `/OCProperties` makes every layer render — so a checklist item
+    labelled "Hidden layers: content you cannot see and the file still
+    contains" would have *printed* that content on the page and reported it as
+    removed. The user's next act is to send the file.
+    """
+    data = fixture_bytes("booby-trapped.pdf")
+    assert b"HIDDENLAYERSECRET" in _drawable(data), "the fixture never hid anything"
+
+    out, report = S.sanitize(data, hidden_layers_flatten=True)
+    assert report["hidden_layers_flatten"] == 1
+
+    doc = fitz.open(stream=out, filetype="pdf")
+    try:
+        assert "HIDDENLAYERSECRET" not in doc[0].get_text(), "the layer was revealed"
+        assert doc[0].get_text().strip(), "the visible content went with it"
+    finally:
+        doc.close()
+    assert b"HIDDENLAYERSECRET" not in _drawable(out)
+
+
+def test_flattening_leaves_no_layer_machinery(fixture_bytes):
+    out, _report = S.sanitize(fixture_bytes("booby-trapped.pdf"),
+                              hidden_layers_flatten=True)
+    pdf = pikepdf.open(io.BytesIO(out))
+    try:
+        assert "/OCProperties" not in pdf.Root
+    finally:
+        pdf.close()

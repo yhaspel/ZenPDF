@@ -154,6 +154,28 @@ test('phase 7: redact every email but one, and prove the text is gone', async ({
   expect((await download).suggestedFilename()).toContain('.pdf');
 });
 
+test('phase 7: changing the search throws away the review list', async ({ page }) => {
+  test.setTimeout(120_000);
+  await registerAndLogin(page, 'p7review');
+  await uploadFiles(page, ['pii.pdf']);
+  await openDoc(page);
+  await openProtect(page);
+  await page.click('[data-test=tab-redact]');
+
+  await page.click('[data-test=preset-email]');
+  await page.click('[data-test=redact-preview]');
+  await expect(page.locator('[data-test=redact-review]')).toBeVisible({ timeout: 60_000 });
+
+  // The list's ids are positions in *that* result. Against a different search
+  // they identify different matches, so it goes rather than misleading.
+  await page.click('[data-test=preset-ssn]');
+  await expect(page.locator('[data-test=redact-review]')).toHaveCount(0);
+
+  // An invalid pattern is answered here, not by a failed job half a minute later.
+  await page.fill('[data-test=redact-regex]', '([unclosed');
+  await expect(page.locator('[data-test=regex-error]')).toBeVisible();
+});
+
 test('phase 7: sanitize reports what it actually removed', async ({ page }) => {
   test.setTimeout(120_000);
   await registerAndLogin(page, 'p7clean');

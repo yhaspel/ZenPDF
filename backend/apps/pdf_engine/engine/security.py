@@ -17,6 +17,7 @@ advisory anyway.
 """
 from __future__ import annotations
 
+import contextlib
 import io
 
 import fitz
@@ -226,8 +227,6 @@ def _strip_javascript(pdf) -> int:
     Three separate hiding places, and a file that only had one cleaned is a
     file that still runs on open.
     """
-    import pikepdf
-
     removed = 0
     root = pdf.Root
 
@@ -257,9 +256,6 @@ def _strip_javascript(pdf) -> int:
             if "/AA" in annot:
                 del annot["/AA"]
                 removed += 1
-    if not isinstance(removed, int):  # pragma: no cover - defensive
-        removed = 0
-    _ = pikepdf
     return removed
 
 
@@ -284,23 +280,115 @@ def _strip_embedded_files(pdf) -> int:
 
 
 def _flatten_layers(pdf) -> int:
-    """Make every optional-content group visible, then drop the machinery.
+    """**Delete** the content of layers that are switched off, then drop the
+    layer machinery.
 
     A hidden layer is content the reader cannot see and the file still carries —
-    the most common way a "redacted" document turns out not to be.
+    the most common way a "redacted" document turns out not to be. The obvious
+    implementation (drop `/OCProperties` and let everything render) does the
+    opposite of what the checklist promises: it takes the content the user
+    asked to have *removed* and prints it on the page. So the off layers'
+    marked-content sections are cut out of the page streams first, and only
+    then is the machinery dropped from what is left.
     """
     root = pdf.Root
     ocproperties = root.get("/OCProperties")
     if ocproperties is None:
         return 0
-    groups = ocproperties.get("/OCGs")
-    count = len(groups) if groups is not None else 0
+    groups = ocproperties.get("/OCGs") or []
+    default = ocproperties.get("/D")
+    off = {_ident(g) for g in ((default or {}).get("/OFF") or [])}
+
+    removed = 0
+    if off:
+        for page in pdf.pages:
+            removed += _cut_hidden_content(pdf, page, off)
+
     del root["/OCProperties"]
     for page in pdf.pages:
         resources = page.get("/Resources")
         if resources is not None and "/Properties" in resources:
             del resources["/Properties"]
-    return count
+        for annot in list(page.get("/Annots") or []):
+            if "/OC" in annot:
+                del annot["/OC"]
+    # Report the groups that were actually *hidden*; a visible layer being
+    # flattened is not something removed from the document.
+    return removed if off else 0 if groups else 0
+
+
+def _cut_hidden_content(pdf, page, off: set) -> int:
+    """Remove `/OC …BDC … EMC` sections belonging to an off group."""
+    import pikepdf
+
+    resources = page.get("/Resources")
+    properties = (resources or {}).get("/Properties") or {}
+    hidden_tags = {
+        str(name) for name, value in properties.items() if _is_off(value, off)
+    }
+    xobjects = (resources or {}).get("/XObject") or {}
+    hidden_xobjects = {
+        str(name) for name, value in xobjects.items()
+        if "/OC" in value and _is_off(value.get("/OC"), off)
+    }
+    if not hidden_tags and not hidden_xobjects:
+        return 0
+
+    try:
+        instructions = pikepdf.parse_content_stream(page)
+    except Exception:  # noqa: BLE001 - a stream we cannot parse is left alone
+        return 0
+
+    kept: list = []
+    depth = 0
+    dropping_at = 0
+    removed = 0
+    for operands, operator in instructions:
+        op = str(operator)
+        if op in {"BDC", "BMC"}:
+            depth += 1
+            if not dropping_at and op == "BDC" and len(operands) >= 2 \
+                    and str(operands[0]) == "/OC" and str(operands[1]) in hidden_tags:
+                dropping_at = depth
+                removed += 1
+                continue
+        if dropping_at:
+            if op == "EMC":
+                closing = depth
+                depth -= 1
+                if closing == dropping_at:
+                    dropping_at = 0
+            continue
+        if op == "EMC":
+            depth -= 1
+        if op == "Do" and operands and str(operands[0]) in hidden_xobjects:
+            removed += 1
+            continue
+        kept.append((operands, operator))
+
+    page.Contents = pdf.make_stream(pikepdf.unparse_content_stream(kept))
+    for name in hidden_xobjects:
+        with contextlib.suppress(KeyError):
+            del xobjects[name]
+    return removed
+
+
+def _is_off(value, off: set) -> bool:
+    """True when this OC reference resolves to a group that is switched off."""
+    if value is None:
+        return False
+    if _ident(value) in off:
+        return True
+    # An /OCMD wraps one or more groups; hidden if any of them is.
+    members = value.get("/OCGs") if hasattr(value, "get") else None
+    if members is None:
+        return False
+    if _ident(members) in off:
+        return True
+    try:
+        return any(_ident(g) in off for g in members)
+    except TypeError:  # pragma: no cover - a single indirect group
+        return False
 
 
 def _strip_annotations(pdf, *, links: bool, comments: bool) -> tuple[int, int]:

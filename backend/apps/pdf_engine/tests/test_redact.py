@@ -11,7 +11,7 @@ import fitz
 import pytest
 
 from apps.pdf_engine.engine import redact as R
-from apps.pdf_engine.exceptions import InvalidParams
+from apps.pdf_engine.exceptions import EngineError, InvalidParams
 
 
 def _text(data: bytes) -> str:
@@ -76,16 +76,25 @@ def _doc_with(*lines: str) -> bytes:
     ("phone", "+44 20 7946 0958"),
     ("phone", "(020) 7946 0958"),
     ("phone", "555-123-4567"),
+    ("phone", "555 123 4567"),
+    ("phone", "+1 (415) 555 0132"),
     ("credit_card", "4111 1111 1111 1111"),
     ("credit_card", "5500-0000-0000-0004"),
+    # The card is found even when a row number runs into it: the greedy match
+    # starts too early, fails Luhn on eighteen digits, and the narrowing retry
+    # is what stops the whole card being skipped.
+    ("credit_card", "12 4111 1111 1111 1111"),
     ("iban", "GB33BUKB20201555555555"),
     ("iban", "DE89370400440532013000"),
+    # Printed the way banks print it, which is how it arrives in a document.
+    ("iban", "DE89 3704 0044 0532 0130 00"),
+    ("iban", "GB33 BUKB 2020 1555 5555 55"),
 ])
 def test_each_preset_catches_what_it_is_for(preset, hit):
     pattern = R.compile_pattern("preset", preset)
     match = pattern.search(hit)
     assert match, f"{preset} missed {hit!r}"
-    assert R._accepts(preset, match.group(0)), f"{preset} post-filter rejected {hit!r}"
+    assert R._accepted_span(preset, match), f"{preset} post-filter rejected {hit!r}"
 
 
 @pytest.mark.parametrize("preset,miss", [
@@ -101,14 +110,25 @@ def test_each_preset_catches_what_it_is_for(preset, hit):
     ("credit_card", "1234 5678 9012 3456"),
     ("credit_card", "1234 5678 9012 3456 7"),
     ("iban", "HELLO WORLD"),
+    # The reason the phone pattern is shaped the way it is. Every one of these
+    # was matched by the first version, which made every separator optional and
+    # so meant "any eight digits" — it ate three lines off the fixture's own
+    # "must survive" list.
+    ("phone", "Invoice 2026-000-1234"),
+    ("phone", "Order number 1234 5678 9012 3456 7"),
+    ("phone", "Part no. 40213599"),
+    ("phone", "Account 12345678"),
+    ("phone", "ISBN 978-3-16-148410-0"),
+    ("phone", "IBAN: GB33BUKB20201555555555"),
+    ("phone", "Card on file: 4111 1111 1111 1111"),
 ])
 def test_each_preset_leaves_the_near_misses_alone(preset, miss):
     """A pattern that also matches ordinary prose redacts a document into
     uselessness, and the user cannot see what it took until afterwards."""
     pattern = R.compile_pattern("preset", miss and preset)
     match = pattern.search(miss)
-    assert not (match and R._accepts(preset, match.group(0))), \
-        f"{preset} wrongly matched {miss!r}"
+    assert not (match and R._accepted_span(preset, match)), \
+        f"{preset} wrongly matched {miss!r}: {match.group(0) if match else None!r}"
 
 
 def test_an_unknown_preset_is_named(fixture_bytes):
@@ -355,3 +375,95 @@ def test_a_regex_pattern_works_end_to_end():
                                             "value": r"[A-Z]{3}-\d{4}"}])
     assert report["applied"] == 1
     assert not re.search(r"[A-Z]{3}-\d{4}", _text(out))
+
+
+# --------------------------------------------------------------------------- #
+# What the review list means (self-review, four lenses)
+# --------------------------------------------------------------------------- #
+def test_unticking_every_match_removes_nothing(fixture_bytes):
+    """`only: []` is the user saying "none of these".
+
+    It read as "no filter at all", so unticking every row in the review list
+    redacted every row instead — the exact inversion of what the user asked
+    for, on an operation that cannot be undone.
+    """
+    out, report = R.redact(fixture_bytes("pii.pdf"),
+                           patterns=[{"kind": "preset", "value": "email"}],
+                           only=[])
+    assert report["applied"] == 0
+    assert "dana.cohen@example.com" in _text(out)
+
+
+def test_an_unticked_match_is_not_reported_as_residue(fixture_bytes):
+    """The phase's own flow: find three, untick one, apply two.
+
+    The recheck used to re-run every pattern over every page and count what it
+    found, so the match the user deliberately kept came back as "still
+    findable" — which the UI shows as a red failure on a correct redaction.
+    """
+    found = R.find_matches(fixture_bytes("pii.pdf"),
+                           patterns=[{"kind": "preset", "value": "email"}])
+    keep = [m["id"] for m in found["matches"][:2]]
+
+    out, report = R.redact(fixture_bytes("pii.pdf"),
+                           patterns=[{"kind": "preset", "value": "email"}],
+                           only=keep)
+    assert report["applied"] == 2
+    assert report["verification"] == {"rechecked": True, "residual_matches": 0}
+    # …and the third one really is still there, which is what was asked for.
+    assert "sam.parker@example.org" in _text(out)
+
+
+def test_a_page_outside_the_scope_is_not_residue():
+    data = _doc_with("dana@example.com")
+    doc = fitz.open(stream=data, filetype="pdf")
+    page = doc.new_page(width=595, height=842)
+    page.insert_text((60, 100), "other@example.com", fontsize=12)
+    data = doc.tobytes()
+    doc.close()
+
+    _out, report = R.redact(data, patterns=[{"kind": "preset", "value": "email"}],
+                            scope=[0])
+    assert report["applied"] == 1
+    assert report["verification"]["residual_matches"] == 0
+
+
+def test_a_scope_that_names_no_real_page_is_an_error():
+    """Silently falling back to "every page" turned a one-page redaction into a
+    whole-document one, irreversibly."""
+    data = _doc_with("dana@example.com")
+    with pytest.raises(InvalidParams, match="out of range"):
+        R.redact(data, patterns=[{"kind": "preset", "value": "email"}], scope=[9])
+
+
+def test_a_comment_carrying_the_same_secret_goes_too():
+    """`get_text("words")` never sees annotation text, so a note containing the
+    address survived the redaction *and* the recheck said zero."""
+    doc = fitz.open()
+    page = doc.new_page(width=595, height=842)
+    page.insert_text((60, 100), "Contact dana@example.com", fontsize=12)
+    annot = page.add_text_annot((300, 300), "chase dana@example.com about it")
+    annot.update()
+    data = doc.tobytes()
+    doc.close()
+
+    out, report = R.redact(data, patterns=[{"kind": "preset", "value": "email"}])
+    assert report["annotations"] == 1
+    assert b"dana@example.com" not in raw_text_bytes(out)
+
+    after = fitz.open(stream=out, filetype="pdf")
+    try:
+        assert not list(after[0].annots()), "the note survived"
+    finally:
+        after.close()
+
+
+def test_a_runaway_pattern_is_stopped_rather_than_running_for_ever(monkeypatch):
+    """`(a+)+#` is minutes of CPU on forty characters, on a queue with two
+    workers. `re` has no timeout, so the match phase runs under an alarm."""
+    # One second rather than the production twenty — the point is that the
+    # alarm fires, and a test that takes 20 s to prove it is its own problem.
+    monkeypatch.setattr(R, "PATTERN_DEADLINE_SECONDS", 1)
+    data = _doc_with("a" * 46)
+    with pytest.raises(EngineError, match="took too long"):
+        R.find_matches(data, patterns=[{"kind": "regex", "value": "(a+)+#"}])

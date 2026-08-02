@@ -143,6 +143,51 @@ describe('SecurityFacade', () => {
     finish({ result: { documents: ['doc-2'] } }, 'j2');
   });
 
+  it('sends an empty `only` when the user unticks everything', () => {
+    // "None of these" is not "no filter". Omitting the key here meant the
+    // engine redacted every match the user had just unticked.
+    facade.preview('doc-1', 1, [{ kind: 'preset', value: 'email' }], '', false).subscribe();
+    op().flush({ id: 'j', status: 'succeeded' });
+    finish({ result: { report: REPORT } });
+    for (const match of REPORT.matches) facade.toggleMatch(match.id);
+    expect(facade.keptIds()).toEqual([]);
+
+    facade.addArea(0, RECT);
+    facade.apply('doc-1', 1, {
+      patterns: [{ kind: 'preset', value: 'email' }], searchText: '',
+      matchCase: false, cleanCopy: true,
+    }).subscribe();
+    const req = op();
+    expect(req.request.body.params.only).toEqual([]);
+    req.flush({ id: 'j2', status: 'succeeded' });
+    finish({}, 'j2');
+  });
+
+  it('drops the review list when the search that produced it changes', () => {
+    // Its ids are positions in one result set; against a different search they
+    // identify different matches.
+    facade.preview('doc-1', 1, [{ kind: 'preset', value: 'email' }], '', false).subscribe();
+    op().flush({ id: 'j', status: 'succeeded' });
+    finish({ result: { report: REPORT } });
+    expect(facade.report()).not.toBeNull();
+
+    facade.clearReview();
+    expect(facade.report()).toBeNull();
+    expect(facade.keptIds()).toEqual([]);
+  });
+
+  it('never reuses an area id after a removal', () => {
+    // Reusing the index made deleting the newest area delete an older one too.
+    facade.addArea(0, RECT);
+    facade.addArea(0, RECT);
+    const [first, second] = facade.areas();
+    facade.removeArea(first.id);
+    facade.addArea(0, RECT);
+    const ids = facade.areas().map((a) => a.id);
+    expect(new Set(ids).size).toBe(ids.length);
+    expect(ids).toContain(second.id);
+  });
+
   it('never sends an empty `only` for an area-only redaction', () => {
     // `only: []` would filter out every pattern match — and with no review list
     // there is nothing to filter, so the key must be absent, not empty.

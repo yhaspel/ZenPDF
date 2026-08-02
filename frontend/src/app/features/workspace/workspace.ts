@@ -184,9 +184,12 @@ export class Workspace {
       const doc = this.viewer.doc();
       // Not when the session already knows the password — including the case
       // where the user has just *chosen* it, which is no time to ask for it.
-      if (doc?.is_encrypted && !this.security.isUnlocked(doc.id)) {
-        this.passwordPrompt.set(true);
-      }
+      // It closes as well as opens: removing the password forgets it, and a
+      // prompt that only ever opened left one hanging over an unlocked
+      // document with nothing left to unlock.
+      this.passwordPrompt.set(
+        !!doc?.is_encrypted && !this.security.isUnlocked(doc.id),
+      );
     });
   }
 

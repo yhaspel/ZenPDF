@@ -206,18 +206,28 @@
           <label class="mt-2 block text-[11px] text-slate-500">
             Words to remove
             <input class="mt-0.5 w-full rounded border border-slate-300 px-2 py-1 text-[11px]"
-                   [ngModel]="searchText()" (ngModelChange)="searchText.set($event)"
+                   [ngModel]="searchText()"
+                   (ngModelChange)="searchText.set($event); searchChanged()"
                    data-test="redact-search" />
           </label>
           <label class="mt-2 block text-[11px] text-slate-500">
             Or a pattern (regular expression)
-            <input class="mt-0.5 w-full rounded border border-slate-300 px-2 py-1 font-mono text-[11px]"
-                   [ngModel]="customPattern()" (ngModelChange)="customPattern.set($event)"
+            <input class="mt-0.5 w-full rounded border px-2 py-1 font-mono text-[11px]"
+                   [class.border-rose-400]="patternError()"
+                   [class.border-slate-300]="!patternError()"
+                   [ngModel]="customPattern()"
+                   (ngModelChange)="customPattern.set($event); searchChanged()"
                    data-test="redact-regex" />
           </label>
+          @if (patternError(); as error) {
+            <p class="text-[10px] text-rose-600" data-test="regex-error">
+              Not a valid pattern: {{ error }}
+            </p>
+          }
           <label class="mt-1 flex items-center gap-2 text-[11px] text-slate-600">
             <input type="checkbox" [ngModel]="matchCase()"
-                   (ngModelChange)="matchCase.set($event)" data-test="redact-case" />
+                   (ngModelChange)="matchCase.set($event); searchChanged()"
+                   data-test="redact-case" />
             Match capitals exactly
           </label>
           <button class="mt-2 w-full rounded border border-slate-300 px-2 py-1 text-[11px] disabled:opacity-40"
