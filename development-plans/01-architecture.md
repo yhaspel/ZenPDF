@@ -165,16 +165,17 @@ So on a `/Rotate 90` page the two spaces differ by a quarter turn. The rule is t
 **users.User**(AbstractUser): email unique (login), display_name, email_verified bool, accepted_tos_at datetime null, storage_bytes_used bigint (denormalized).
 **core.GuestSession** (new — §21): id UUIDv4, token_hash (sha256 of a 256-bit urlsafe token; the raw token is never stored), created_at, last_seen_at, expires_at (sliding: last_seen + `GUEST_TTL_HOURS`, capped at created_at + `GUEST_TTL_MAX_HOURS`), ip_hash (salted — abuse correlation only, not analytics), user_agent, storage_bytes_used bigint, ops_count int, claimed_by FK→User null, claimed_at null. Indexed on token_hash (unique) and expires_at.
 **core.UsageCounter**: **principal** — user FK null + guest_session FK null (exactly one non-null), period "YYYY-MM", sign_requests int, ocr_pages int, conversions int, heavy_ops int; unique(user, period) and unique(guest_session, period).
-**core.EmailSuppression**: email unique, reason ∈ {complaint, unsubscribe, bounce, manual}, created_at — honored by all outbound mail (phase 9).
+**core.EmailSuppression**: **email_hash unique** (HMAC-SHA256 of the lowercased address under `SECRET_KEY`), email (kept only when we already knew it — a staff entry or a bounce; blank for a one-click unsubscribe), reason ∈ {complaint, unsubscribe, bounce, manual}, created_at — honored by all outbound mail (phase 9). *Amended 2026-08-02, P9: keyed on the hash rather than the address, because the unsubscribe link has to carry the key and a URL carrying somebody's email ends up in browser history, proxy logs and `Referer` headers — the same reason `users/verification.py` signs a user id. Suppression is reversible (admin, and the page the link lands on): the link is printed in every footer and travels with a forwarded message, so it can be triggered by somebody who is not the addressee.*
 **documents.Folder**: id, owner FK, parent FK null, name; unique(owner, parent, name). **Account-only** — guests have a flat session workspace, no folders.
 **documents.Document**: id, **owner FK null**, **guest_session FK null** (exactly one of owner/guest_session non-null — enforced by a DB `CheckConstraint`, §21.2), **expires_at null** (set for guest documents; null once owned by a user), folder FK null, title, status ∈ {ready, processing, error}, page_count, size_bytes, is_encrypted bool, starred bool, metadata JSON (author/subject/keywords/dates, populated at ingest — amended 2026-07-19, P1), current_version FK→DocumentVersion null, error_message, last_opened_at, trashed_at null, created_at, updated_at.
 **documents.DocumentVersion**: id, document FK (`versions`), seq int (unique per document, starts 1), storage_key, size_bytes, page_count, sha256, label (e.g. "Original", "OCR", "Signed"), created_by FK user null, job FK null, created_at. Immutable.
 **jobs.Job**: id, **user FK null**, **guest_session FK null** (same one-of constraint), document FK null, type (operation type, §10), params JSON, base_version_seq int null, status ∈ {queued, running, succeeded, failed, canceled}, progress 0–100, error_code, error_message, **error_details JSON** (structured half of the §6 error shape — added phase 4), result JSON null, celery_task_id, created_at, started_at, finished_at.
 **esign.SavedSignature**: id, user FK (**account-only**; guests draw an ephemeral signature held client-side for the session), kind ∈ {signature, initials}, method ∈ {draw, type, upload}, storage_key (PNG, alpha), typed_text, font, is_default, created_at.
-**esign.SignRequest**: id, owner FK, document FK, source_version FK *(`on_delete=PROTECT`, and a document with a sign request refuses permanent deletion — the signed record has to keep pointing at what was signed)*, title, message, status ∈ {draft, sent, completed, declined, expired, canceled}, envelope_code (human-short, stamped on pages, e.g. `ZEN-8F3KQ2`), expires_at, reminder_every_days int=3, sent_at, completed_at, final_key, certificate_key, final_sha256, created_at, updated_at.
+**esign.SignRequest**: id, owner FK, document FK, source_version FK *(`on_delete=PROTECT`, and a document with a sign request refuses permanent deletion — the signed record has to keep pointing at what was signed)*, title, message, status ∈ {draft, sent, completed, declined, expired, canceled, **canceled_by_abuse**}, envelope_code (human-short, stamped on pages, e.g. `ZEN-8F3KQ2`), expires_at, reminder_every_days int=3, sent_at, completed_at, final_key, certificate_key, final_sha256, created_at, updated_at.
 **esign.Recipient**: id, sign_request FK (`recipients`), email, name, role ∈ {signer, approver, viewer, cc}, order int=1 (same order ⇒ parallel group; groups proceed in ascending order), status ∈ {pending, notified, viewed, consented, completed, declined}, token (urlsafe 43ch, unique), consent_at/ip/user_agent, decline_reason, last_notified_at, completed_at.
 **esign.SignField**: id, sign_request FK, recipient FK, page int, x/y/w/h floats (§8), type ∈ {signature, initials, date_signed, text, checkbox}, required bool=true, label, value, **image_key** *(amended 2026-08-02, P8: a signature/initials field's value is a PNG, which belongs in object storage rather than in a text column)*, filled_at, created_at.
 **esign.AuditEvent**: id, sign_request FK (`audit_events`), recipient FK null, type (created|sent|opened|consented|field_filled|signed|approved|declined|reminder_sent|expired|canceled|completed|seal_applied|downloaded), created_at, ip, user_agent, metadata JSON, prev_hash, event_hash = **hmac-sha256**(SECRET_KEY, prev_hash + canonical_json({type, created_at, recipient_id, ip, user_agent, metadata})) *(amended 2026-08-02, P8: keyed, not a bare digest — a plain chain is only self-consistent, and anyone able to write to the database could edit an event and recompute every hash after it while every check still reported "verifies")*. Append-only (no update/delete paths; enforced in model + DB permissions in prod).
+**esign.AbuseReport** *(added 2026-08-02, P9)*: id, sign_request FK (`abuse_reports`), recipient FK, reason text, ip, user_agent, created_at; unique(sign_request, recipient) — a recipient's "I did not ask for this" from the ceremony footer. `ABUSE_REPORTS_TO_PAUSE` (3) **distinct** recipients pauses the request (`canceled_by_abuse`) and mails the owner. The pause event is written **without the reporter's request**, so the reporter's IP never reaches the owner-readable audit trail; the report row keeps it for staff.
 
 ## 10. Operation registry
 
@@ -338,6 +339,18 @@ SIGN_REQUESTS_PER_MONTH=30  OCR_PAGES_PER_MONTH=2000
 GUEST_ACCESS_ENABLED=true   GUEST_TTL_HOURS=24        GUEST_TTL_MAX_HOURS=72
 GUEST_STORAGE_QUOTA_MB=200  GUEST_MAX_UPLOAD_MB=25    GUEST_MAX_PAGES=300
 CAPTCHA_ENABLED=false       TURNSTILE_SITE_KEY=       TURNSTILE_SECRET_KEY=
+# Ads (phase 9) — false is the shipped default; with it, no third-party code loads
+ADS_ENABLED=false           ADS_PROVIDER=adsense      ADSENSE_CLIENT_ID=
+ADS_SLOT_DASHBOARD_RAIL=    ADS_SLOT_DASHBOARD_INLINE=
+ADS_SLOT_TOOL_RESULT=       ADS_SLOT_LANDING=
+CONSENT_REQUIRED_REGIONS=AT,BE,…,GB,CH   # browser reports its IANA timezone
+# Abuse controls (phase 9, §9B)
+ABUSE_CONTACT_EMAIL=abuse@zenpdf.local   ABUSE_REPORTS_TO_PAUSE=3
+MAX_RECIPIENTS_PER_REQUEST=10            MAX_DISTINCT_RECIPIENTS_PER_DAY=50
+EMAIL_VERIFICATION_TTL_HOURS=48          TRASH_RETENTION_DAYS=30
+THROTTLE_UPLOAD=20/hour                  THROTTLE_VERIFY=10/min
+THROTTLE_VERIFY_HOUR=60/hour             THROTTLE_PUBLIC_SIGN=20/min
+THROTTLE_PUBLIC_SIGN_TOKEN=200/day
 GUEST_IP_HASH_SALT=dev-rotate-me
 # Ads (phase 9)
 ADS_ENABLED=false  ADSENSE_CLIENT_ID=
