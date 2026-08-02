@@ -17,7 +17,7 @@ This file is the **single source of truth for execution status**. Every agent se
 | 7 — Security & redaction | [phase-07-security-redaction.md](phase-07-security-redaction.md) | ✅ Complete | 2026-08-02 | 2026-08-02 | AES-256 + graded permissions, true redaction (area + pattern, with a verification pass), sanitize; 3 tool pages |
 | 8 — E-signatures | [phase-08-esignatures.md](phase-08-esignatures.md) | ✅ Complete | 2026-08-02 | 2026-08-02 | Self-sign (guest), multi-party requests, hash-chained audit, PAdES seal, certificate, `/verify`. **2B GATE cleared.** Owner items: legal review + production certificate |
 | 9 — Ads & abuse controls | [phase-09-ads-and-abuse-controls.md](phase-09-ads-and-abuse-controls.md) | ✅ Complete | 2026-08-02 | 2026-08-02 | Ads off by default and launchable; consent gate, legal pages, verification, suppression, abuse reports. Owner: AdSense account + CMP + legal review |
-| 10 — Hardening & release | [phase-10-hardening-release.md](phase-10-hardening-release.md) | ⬜ Not started | — | — | Human-owned: domain/DNS/TLS, deploy creds, sign-offs |
+| 10 — Hardening & release | [phase-10-hardening-release.md](phase-10-hardening-release.md) | 🔵 In progress | 2026-08-02 | — | Human-owned: domain/DNS/TLS, deploy creds, sign-offs |
 
 Status values: ⬜ Not started · 🔵 In progress · 🟡 Blocked · 🟠 Awaiting human review · ✅ Complete (all acceptance criteria + DoD evidenced below)
 
@@ -46,6 +46,17 @@ Status values: ⬜ Not started · 🔵 In progress · 🟡 Blocked · 🟠 Await
 ## Phase sections
 
 _(Created by the executing agent per protocol step 2. Keep newest phase at top.)_
+
+### Phase 10 — Hardening & Release · 🔵 In progress (2026-08-02)
+
+**Acceptance criteria** (copied verbatim from phase-10-hardening-release.md):
+- [ ] Hostile-corpus suite: zero worker crashes that don't recycle cleanly; zero cross-user leaks; all documented limits enforced.
+- [ ] Lighthouse (landing + dashboard) ≥90 perf/a11y/best-practices/SEO on prod build.
+- [ ] axe-core zero serious/critical across routes; keyboard-only ceremony pass recorded.
+- [ ] `@full` suite green 3 consecutive nightly runs on the prod-shaped stack.
+- [ ] Clean-VM prod compose deploy documented + performed; restore drill performed.
+- [ ] p95 budgets met; queue-starvation test passes.
+- [ ] Launch checklist 100% with owner sign-offs (legal content, ads readiness, domain).
 
 ### Phase 9 — Ads & Abuse Controls · ✅ Complete (2026-08-02)
 
