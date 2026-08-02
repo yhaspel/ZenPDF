@@ -83,6 +83,13 @@ export class Protect {
 
   constructor() {
     effect(() => this.tab.set(this.initialTab()));
+    // Once the session knows the password — from the prompt, or because the
+    // user chose it here — the panel stops asking for it again.
+    effect(() => {
+      this.security.unlockedIds();
+      const known = this.security.passwordFor(this.docId());
+      if (known) this.unlockPassword.set(known);
+    });
   }
 
   // protect

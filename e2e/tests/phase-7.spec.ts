@@ -194,6 +194,34 @@ test('phase 7: a guest protects a PDF from /protect-pdf with no login prompt', a
   await expect(page.locator('[data-test=login-form]')).toHaveCount(0);
 });
 
+test('phase 7: a guest unlocks an already-protected PDF from /unlock-pdf', async ({ page }) => {
+  test.setTimeout(120_000);
+  await page.context().clearCookies();
+  await page.goto('/unlock-pdf');
+  await expect(page.locator('[data-test=tool-h1]')).toHaveText('Remove a password from a PDF');
+
+  // The file is encrypted *before* it arrives — the case this page exists for.
+  await page
+    .locator('[data-test=file-input]')
+    .setInputFiles(path.join(FIXTURES, 'encrypted.pdf'));
+  await page.click('[data-test=tool-run]');
+  await expect(page).toHaveURL(/\/app\/doc\/.*mode=protect/, { timeout: 60_000 });
+
+  // The document is locked, so the workspace asks for the password first — and
+  // the Protect panel then has it, rather than asking a second time.
+  await expect(page.locator('[data-test=pdf-password]')).toBeVisible({ timeout: 60_000 });
+  await page.fill('[data-test=pdf-password]', 'secret');
+  await page.click('[data-test=pdf-password-submit]');
+  await expect(page.locator('[data-test=encrypted-notice]')).toBeVisible();
+  await expect(page.locator('[data-test=unlock-password]')).toHaveValue('secret');
+  await page.click('[data-test=remove-password]');
+  await expect(successToast(page, 'Password removed')).toBeVisible({ timeout: 60_000 });
+  // Ingest could not count the pages of a locked file; unlocking puts that right.
+  await expect(page.locator('[data-test=doc-title]')).toBeVisible();
+  await expect(page.locator('[data-test=encrypted-banner]')).toHaveCount(0);
+  await expect(page.locator('[data-test=login-form]')).toHaveCount(0);
+});
+
 test('phase 7: a guest redacts from /redact-pdf, landing on the redact tab', async ({
   page,
 }) => {

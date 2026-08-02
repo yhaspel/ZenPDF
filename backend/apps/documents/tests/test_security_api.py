@@ -77,6 +77,23 @@ def test_unlocking_puts_it_back(api, uploaded_doc):
     ).json()[0]["label"] == "Unlocked"
 
 
+def test_a_document_that_arrives_encrypted_unlocks_and_gets_its_pages_back(api, fixture_bytes):
+    """`/unlock-pdf`'s whole reason to exist: a file that was already protected
+    when it arrived. Ingest cannot count the pages of a locked document, so it
+    stores 0 — and unlocking has to put that right, or the workspace opens on a
+    document that claims to have nothing in it."""
+    doc = _upload(api, "encrypted.pdf", fixture_bytes("encrypted.pdf"))
+    assert doc["is_encrypted"] is True
+    assert doc["page_count"] == 0
+
+    job = _op(api, doc["id"], "decrypt", {"password": "secret"})
+    assert job["status"] == "succeeded", job
+
+    detail = api.get(f"/api/documents/{doc['id']}/").json()
+    assert detail["is_encrypted"] is False
+    assert detail["page_count"] == 2
+
+
 def test_the_wrong_password_fails_the_job_with_its_own_code(api, uploaded_doc):
     _op(api, uploaded_doc["id"], "encrypt",
         {"owner_password": "owner", "user_password": "user"})
