@@ -16,7 +16,7 @@ This file is the **single source of truth for execution status**. Every agent se
 | 6 — OCR, conversion & compare | [phase-06-ocr-conversion-compare.md](phase-06-ocr-conversion-compare.md) | ✅ Complete | 2026-08-02 | 2026-08-02 | OCR (5 languages incl. Hebrew), 6 exports, 4 imports, compare, repair; 8 tool pages |
 | 7 — Security & redaction | [phase-07-security-redaction.md](phase-07-security-redaction.md) | ✅ Complete | 2026-08-02 | 2026-08-02 | AES-256 + graded permissions, true redaction (area + pattern, with a verification pass), sanitize; 3 tool pages |
 | 8 — E-signatures | [phase-08-esignatures.md](phase-08-esignatures.md) | ✅ Complete | 2026-08-02 | 2026-08-02 | Self-sign (guest), multi-party requests, hash-chained audit, PAdES seal, certificate, `/verify`. **2B GATE cleared.** Owner items: legal review + production certificate |
-| 9 — Ads & abuse controls | [phase-09-ads-and-abuse-controls.md](phase-09-ads-and-abuse-controls.md) | ⬜ Not started | — | — | Human-owned: AdSense/CMP accounts, legal pages |
+| 9 — Ads & abuse controls | [phase-09-ads-and-abuse-controls.md](phase-09-ads-and-abuse-controls.md) | 🔵 In progress | 2026-08-02 | — | Human-owned: AdSense/CMP accounts, legal review |
 | 10 — Hardening & release | [phase-10-hardening-release.md](phase-10-hardening-release.md) | ⬜ Not started | — | — | Human-owned: domain/DNS/TLS, deploy creds, sign-offs |
 
 Status values: ⬜ Not started · 🔵 In progress · 🟡 Blocked · 🟠 Awaiting human review · ✅ Complete (all acceptance criteria + DoD evidenced below)
@@ -46,6 +46,17 @@ Status values: ⬜ Not started · 🔵 In progress · 🟡 Blocked · 🟠 Await
 ## Phase sections
 
 _(Created by the executing agent per protocol step 2. Keep newest phase at top.)_
+
+### Phase 9 — Ads & Abuse Controls · 🔵 In progress (started 2026-08-02)
+
+**Acceptance criteria** (copied verbatim from phase-09-ads-and-abuse-controls.md):
+- [ ] With `ADS_ENABLED=false` (default): zero ad code loaded, product fully functional — launchable state.
+- [ ] With ads on + consent granted: slots render in the three allowed surfaces only; ceremony/editor/verify provably ad-free.
+- [ ] Consent banner appears for EEA-simulated visitors; declining yields non-personalized ads; choice persisted.
+- [ ] Legal pages live, linked, and matching real system behavior (retention numbers cross-checked against beat config in a test).
+- [ ] Unverified accounts cannot send sign requests (uploading stays open — guests can upload, so accounts must too); verified flow smooth (<1 min via Mailpit locally).
+- [ ] Ads render for a guest with consent granted, and the CMP consent flow completes with no account.
+- [ ] All throttle/quota limits return the standard error shape with human-readable messaging in the UI.
 
 ### Phase 8 — E-Signatures · ✅ Complete (2026-08-02)
 
