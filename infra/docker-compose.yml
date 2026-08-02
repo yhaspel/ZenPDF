@@ -7,6 +7,13 @@ x-api-env: &api-env
 services:
   db:
     image: postgres:18-alpine
+    # §10.2's EXPLAIN audit needs a list of what actually ran, not a guess at
+    # what does. The module ships in the image but is not loaded, and it can
+    # only be loaded at startup — hence a command override rather than an
+    # `ALTER SYSTEM`. `up.sh` does the `CREATE EXTENSION` half, because
+    # /docker-entrypoint-initdb.d only fires on a *fresh* volume and every
+    # existing dev box already has one.
+    command: ["postgres", "-c", "shared_preload_libraries=pg_stat_statements"]
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-zen}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-zen}
@@ -204,6 +211,46 @@ services:
     depends_on:
       api:
         condition: service_started
+
+  # §10.2 load smoke. Off by default; a measuring tool rather than a service:
+  #   docker compose -f infra/docker-compose.yml --profile perf run --rm perf
+  # Targets `api:8000` from inside the network on purpose — through Docker
+  # Desktop's port forward the same endpoint measures 10–100x slower, and you
+  # would spend a day optimising Django to fix the proxy.
+  perf:
+    image: locustio/locust:2.46.3
+    profiles: ["perf"]
+    volumes:
+      - ./perf:/mnt/locust
+    command: >
+      -f /mnt/locust/locustfile.py --host http://api:8000
+      --headless --users 200 --spawn-rate 20 --run-time 3m
+      --csv /mnt/locust/results/smoke
+    depends_on:
+      api:
+        condition: service_healthy
+
+  # §10.4 — optional queue inspector, off by default:
+  #   docker compose -f infra/docker-compose.yml --profile flower up -d flower
+  # Bound to loopback, and deliberately absent from docker-compose.prod.yml:
+  # the UI has no login, it lists task names and arguments (document and job
+  # ids), and with the API unlocked below it can revoke tasks and shut workers
+  # down. That is a laptop tool. Production answers the same question through
+  # `/api/health/`, whose queue depths and per-lane heartbeats are gated on
+  # staff-or-allowlist (§17).
+  flower:
+    image: mher/flower:2.0.1
+    profiles: ["flower"]
+    command: celery --broker=${REDIS_URL:-redis://redis:6379/0} flower --port=5555
+    environment:
+      # 2.0.1 401s its own REST API without this, which leaves every table in
+      # the UI empty. It is also why the port below is 127.0.0.1-only.
+      FLOWER_UNAUTHENTICATED_API: "true"
+    ports:
+      - "127.0.0.1:${FLOWER_PORT:-5555}:5555"
+    depends_on:
+      redis:
+        condition: service_healthy
 
 volumes:
   pgdata:

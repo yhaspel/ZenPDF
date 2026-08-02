@@ -7,6 +7,8 @@
 | `@smoke` | `cd e2e && npx playwright test --grep @smoke` | every deploy, against the deployed host | ~40 s |
 | Full e2e ("@full") | `./infra/test.sh --e2e` | every commit to `main` | ~4 min |
 | Cross-browser | `cd e2e && BROWSERS=all npx playwright test` | nightly | ~15 min |
+| Query plans | `./infra/test.sh --pg` | before a release | ~10 s |
+| Load smoke | `infra/perf/README.md` | before a release, and on the deployed host | ~3 min |
 
 ## The flake policy
 
@@ -25,4 +27,9 @@ bug nobody owns.
 - [ ] `@smoke` green against the deployed host.
 - [ ] `pip-audit` and `npm audit` reviewed — the monthly pass is
       `docs/ops/dependencies.md`.
+- [ ] `./infra/test.sh --pg` green (the index assertions are vacuous on the
+      hermetic suite's SQLite).
+- [ ] Anything started under a compose profile is gone: `./infra/down.sh` then
+      `docker compose ps -a` empty. A profiled container that survives teardown
+      blocks the network removal.
 - [ ] `PROGRESS.md` updated, and the launch checklist has no unticked owner item.

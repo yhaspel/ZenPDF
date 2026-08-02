@@ -26,6 +26,12 @@ Three distinct failures wear the same face:
    `reap_stalled_jobs` marks anything running past its limit as failed with a
    message, every 5 minutes, so users get an error rather than silence.
 
+Optional second look, dev only: `docker compose -f infra/docker-compose.yml
+--profile flower up -d flower` gives a task-by-task view at
+http://127.0.0.1:5555. It has no login and can revoke tasks, which is why it is
+loopback-only and absent from the production compose — production answers the
+same question through `/api/health/`.
+
 ## Fix
 
 ```bash

@@ -50,3 +50,16 @@ REST_FRAMEWORK["DEFAULT_THROTTLE_RATES"].update({  # noqa: F405
 # A wall of JSON in `logs.sh` helps nobody; the correlation ids are still on
 # every line, in brackets (§10.4).
 LOGGING["handlers"]["console"]["formatter"] = "structured"  # noqa: F405
+
+
+# §10.2 load runs only. The guest throttles key on a salted IP hash and the
+# stricter of (token, ip) wins (§16), so 200 locust users arriving from one
+# container share one bucket and the run measures 429s. Turning them off beats
+# raising them: DRF keeps the full timestamp history per key and rewrites it on
+# every request, so a 100000/min bucket puts a 100000-element list in Redis on
+# the hot path — you would be measuring the throttle. Dev settings only;
+# `prod.py` imports `base`, never this module, so the switch does not exist
+# there. The throttles themselves are covered by unit tests with overridden
+# rates, which this cannot weaken.
+if config("THROTTLES_DISABLED", default=False, cast=bool):  # noqa: F405
+    REST_FRAMEWORK["DEFAULT_THROTTLE_CLASSES"] = ()  # noqa: F405
