@@ -99,6 +99,12 @@ services:
       start_period: 30s
 
   worker-default:
+    # Without a container ceiling the OOM killer chooses its victim across
+    # the whole VM, so a runaway operation can take Postgres down instead of
+    # its own child. `--max-memory-per-child` retires a child *after* a task;
+    # this is what bounds one that allocates during it.
+    # lane memory ceiling (default)
+    mem_limit: 2g
     build:
       context: ../backend
       dockerfile: ../infra/docker/api.Dockerfile
@@ -117,6 +123,12 @@ services:
         condition: service_started
 
   worker-heavy:
+    # Without a container ceiling the OOM killer chooses its victim across
+    # the whole VM, so a runaway operation can take Postgres down instead of
+    # its own child. `--max-memory-per-child` retires a child *after* a task;
+    # this is what bounds one that allocates during it.
+    # lane memory ceiling (heavy)
+    mem_limit: 2g
     build:
       context: ../backend
       dockerfile: ../infra/docker/api.Dockerfile
@@ -135,6 +147,12 @@ services:
         condition: service_started
 
   worker-render:
+    # Without a container ceiling the OOM killer chooses its victim across
+    # the whole VM, so a runaway operation can take Postgres down instead of
+    # its own child. `--max-memory-per-child` retires a child *after* a task;
+    # this is what bounds one that allocates during it.
+    # lane memory ceiling (render)
+    mem_limit: 2g
     build:
       context: ../backend
       dockerfile: ../infra/docker/api.Dockerfile

@@ -5,8 +5,10 @@ set -euo pipefail
 cd "$(dirname "$0")"
 
 E2E=0
+PG=0
 for arg in "$@"; do
   [ "$arg" = "--e2e" ] && E2E=1
+  [ "$arg" = "--pg" ] && PG=1
 done
 
 echo "======================================================"
@@ -35,6 +37,17 @@ echo "======================================================"
 echo " Frontend unit tests (vitest via ng test)"
 echo "======================================================"
 docker compose run --rm -T --no-deps web npx ng test --watch=false
+
+if [ "$PG" -eq 1 ]; then
+  echo "======================================================"
+  echo " Query plans (pytest against Postgres, config.settings.dev)"
+  echo "======================================================"
+  # The hermetic suite runs on SQLite, where "no Seq Scan" is vacuous. These
+  # assertions are the §10.2 index audit, so they need the real planner —
+  # `--pg` is what makes them more than documentation.
+  docker compose run --rm -T -e DJANGO_SETTINGS_MODULE=config.settings.dev api \
+    pytest -q apps/core/tests/test_performance.py
+fi
 
 if [ "$E2E" -eq 1 ]; then
   echo "======================================================"

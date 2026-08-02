@@ -13,6 +13,12 @@ from django.utils import timezone
 
 from .models import Job
 
+#: What both kill paths say. A soft limit is reported by the task itself; a
+#: hard limit or an OOM kill is reported by the sweep below, because no handler
+#: ran. `error_message` is rendered verbatim in a toast, so neither may be
+#: `SoftTimeLimitExceeded(60,)`.
+TIMEOUT_MESSAGE = "The job stopped responding and was canceled."
+
 
 @shared_task(name="apps.jobs.tasks.noop_sleep", bind=True)
 def noop_sleep(self, job_id: str, seconds: float = 1.0):
@@ -59,5 +65,5 @@ def reap_stalled_jobs() -> int:
         # this is the *only* place password material on that row is ever
         # dropped (`Job.SENSITIVE_PARAMS`, phase-07). An `.update()` left it in
         # the database in plaintext, and nothing else would have removed it.
-        job.mark_failed("timeout", "The job stopped responding and was canceled.")
+        job.mark_failed("timeout", TIMEOUT_MESSAGE)
     return len(stalled)

@@ -66,6 +66,15 @@ class Job(models.Model):
             models.Index(fields=["user", "status"]),
             models.Index(fields=["document"]),
             models.Index(fields=["guest_session", "status"]),
+            # The settings job list is `owned_by(...)` + newest-first.
+            # `(user, status)` covers the owner and not the ORDER BY, so one
+            # page of 50 read the account's entire job history and top-N
+            # heapsorted it — and nothing purges `jobs_job`, so that history
+            # only grows. Plain composite rather than partial: `user_id = ?` is
+            # an equality, so `created_at` stays out of the sort key, unlike
+            # documents' `trashed_at IS NULL`. Measured at 200k rows: 83
+            # buffers with a Sort → 6 without (§10.2).
+            models.Index(fields=["user", "-created_at"], name="job_user_recent"),
         ]
         constraints = [
             models.CheckConstraint(
