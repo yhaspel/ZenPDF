@@ -205,7 +205,16 @@ test('phase 8: two signers in order, sealed, certified and verifiable', async ({
 
   await expect(ceremonyOne.locator('[data-test=sign-screen]')).toBeVisible();
   await expect(ceremonyOne.locator('[data-test=finish]')).toBeDisabled();
-  await ceremonyOne.locator('[data-test=ceremony-field] button').first().click();
+
+  // The document, with this signer's box drawn on it — signing without seeing
+  // where the mark lands is signing blind.
+  await expect(ceremonyOne.locator('[data-test=ceremony-page-image]')).toBeVisible({
+    timeout: 60_000,
+  });
+  await expect(ceremonyOne.locator('[data-test=ceremony-viewer] button[data-test^=box-]'))
+    .toHaveCount(1);
+
+  await ceremonyOne.getByRole('button', { name: 'Sign here' }).click();
   await drawSignature(ceremonyOne);
   await expect(ceremonyOne.locator('[data-test=field-done]')).toBeVisible({
     timeout: 30_000,
@@ -223,7 +232,7 @@ test('phase 8: two signers in order, sealed, certified and verifiable', async ({
   await ceremonyTwo.goto(signLink(second.body));
   await ceremonyTwo.check('[data-test=agree]');
   await ceremonyTwo.click('[data-test=consent-continue]');
-  await ceremonyTwo.locator('[data-test=ceremony-field] button').first().click();
+  await ceremonyTwo.getByRole('button', { name: 'Sign here' }).click();
 
   // …typing the signature this time, which is the other path through the pad.
   await ceremonyTwo.click('[data-test=sig-tab-type]');
@@ -337,6 +346,15 @@ test('phase 8: a signer who declines stops the request', async ({ page, browser 
   });
   await expect(page.locator('[data-test=recipient-status]')).toContainText(
     'The dates are wrong');
+});
+
+test('phase 8: the disclosure has a stable address of its own', async ({ page }) => {
+  await page.context().clearCookies();
+  await page.goto('/legal/esign-disclosure');
+  await expect(page.locator('[data-test=disclosure-h1]')).toContainText(
+    'Consent to use electronic records');
+  await expect(page.locator('[data-test=disclosure-text]')).toContainText('ESIGN');
+  await expect(page.locator('[data-test=login-form]')).toHaveCount(0);
 });
 
 test('phase 8: /verify says plainly when a PDF is not signed', async ({ page }) => {

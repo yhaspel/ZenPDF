@@ -80,11 +80,6 @@ ALLOWED: dict[str, set[str]] = {
     # into guest-capable data — the document being sent — goes through
     # `owned_by()` like everything else (phase-08).
     "esign/views.py": {"request.user", "owner="},
-    # `SignRequest.owner` is a plain FK to an account — a sign request cannot
-    # belong to a guest at all, so there is no `owner_id IS NULL` to fall into.
-    # These read it to address the sender, not to decide who owns a row.
-    "esign/emails.py": {"owner="},
-    "esign/certificate.py": {"owner="},
     # Model definitions declare the fields the patterns match.
     "esign/models.py": {"owner="},
 }

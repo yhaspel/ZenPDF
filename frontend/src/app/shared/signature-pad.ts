@@ -214,7 +214,16 @@ export class SignaturePad {
     this.refreshTyped();
   }
 
+  private typingTimer: ReturnType<typeof setTimeout> | null = null;
+
   private refreshTyped(): void {
+    // Debounced: this is a server render, and one request per keystroke is a
+    // request storm on the connection a signer is most likely to be using.
+    if (this.typingTimer) clearTimeout(this.typingTimer);
+    this.typingTimer = setTimeout(() => this.renderTyped(), 250);
+  }
+
+  private renderTyped(): void {
     const text = this.typed().trim();
     if (!text) {
       this.preview.set(null);

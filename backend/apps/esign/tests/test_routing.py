@@ -196,3 +196,17 @@ def test_two_requests_keep_separate_chains(request_of):
     assert first.audit_events.first().prev_hash == ""
     assert second.audit_events.first().prev_hash == ""
     assert verify_chain(first)["intact"] and verify_chain(second)["intact"]
+
+
+def test_the_chain_is_keyed_so_a_database_alone_cannot_rewrite_it(request_of, settings):
+    """A bare SHA-256 chain is only self-*consistent*: anyone who can write to
+    the database can edit an event and recompute every hash after it, and every
+    check we offer would still say it verifies. The key lives in the
+    environment, so the hashes change with it."""
+    sign_request = request_of(("signer", 1))
+    event = record(sign_request, "created")
+    original = event.event_hash
+
+    settings.SECRET_KEY = "a-different-secret"
+    assert event.compute_hash(event.prev_hash) != original
+    assert verify_chain(sign_request)["intact"] is False

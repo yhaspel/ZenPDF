@@ -24,8 +24,8 @@ def sign_url(recipient) -> str:
 
 
 def _sender_name(sign_request) -> str:
-    owner = sign_request.owner
-    return (getattr(owner, "display_name", "") or "").strip() or owner.email
+    sender = sign_request.owner
+    return (getattr(sender, "display_name", "") or "").strip() or sender.email
 
 
 def _send(subject: str, body: str, to: list[str]) -> None:
@@ -129,8 +129,9 @@ def notify_completed(sign_request, *, final_url: str, certificate_url: str) -> N
     ]
     for recipient in sign_request.recipients.all():
         body = "\n".join(lines + [
-            f"  Signed document: {final_url}/{recipient.token}",
-            f"  Certificate of completion: {certificate_url}/{recipient.token}",
+            f"  Signed document: {final_url.format(token=recipient.token)}",
+            f"  Certificate of completion: "
+            f"{certificate_url.format(token=recipient.token)}",
             "",
             "The certificate lists every action taken, with times and "
             "addresses, and the fingerprint above identifies the exact file.",

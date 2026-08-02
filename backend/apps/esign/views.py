@@ -25,11 +25,17 @@ from drf_spectacular.utils import extend_schema
 from rest_framework import generics, status
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
+from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 
 from apps.core import limits as L
 from apps.core.assets import ImageRejected, asset_key, store_image
-from apps.core.exceptions import TokenExpired, TokenInvalid, ValidationFailed
+from apps.core.exceptions import (
+    ConsentRequired,
+    TokenExpired,
+    TokenInvalid,
+    ValidationFailed,
+)
 from apps.core.permissions import IsAccount
 from apps.core.principals import owned_by
 from apps.core.throttling import PublicSignThrottle
@@ -120,12 +126,25 @@ def _signature_png(request, method: str, data) -> bytes:
         return SG.render_typed(str(data.get("text") or ""),
                                str(data.get("font") or "caveat"))
     upload = request.FILES.get("file")
+    if upload is not None:
+        # Checked *before* the bytes are decoded. `store_image` applies the
+        # tier cap on the way out, which is too late: `remove_background` runs
+        # a per-pixel pass in the API process, and a 1.5 MB 40000×40000 PNG is
+        # minutes of CPU and gigabytes of memory before any cap is consulted.
+        tier = L.for_principal(request.user)
+        if upload.size > tier.max_image_upload_bytes:
+            raise ValidationFailed(
+                f"A signature image must be "
+                f"{tier.max_image_upload_bytes // (1024 * 1024)} MB or smaller."
+            )
     raw = upload.read() if upload else _decode_data_url(data.get("image"))
     if not raw:
         raise ValidationFailed("No signature image was sent.")
-    if method == "upload":
-        return SG.remove_background(SG.to_png(raw))
-    return SG.trim_transparent(SG.to_png(raw))
+    if len(raw) > 12 * 1024 * 1024:
+        raise ValidationFailed("That signature image is too large.")
+    # One normalizer for every route in: a photograph has no alpha channel, so
+    # trimming alone left the *paper* to be stamped onto the document.
+    return SG.normalize_signature(raw)
 
 
 def _decode_data_url(value) -> bytes:
@@ -150,6 +169,24 @@ class SignatureDetailView(generics.RetrieveDestroyAPIView):
         if getattr(self, "swagger_fake_view", False):
             return SavedSignature.objects.none()
         return SavedSignature.objects.filter(user=self.request.user)
+
+    def perform_destroy(self, instance):
+        """Take the blob and the quota with it.
+
+        Deleting the row alone left the PNG in storage for ever and never
+        credited the bytes back — the user sees the signature gone and their
+        storage figure unchanged.
+        """
+        from apps.core import limits as L
+
+        storage = get_storage()
+        try:
+            size = len(storage.get_bytes(instance.storage_key))
+            storage.delete(instance.storage_key)
+            L.bump_storage(instance.user, -size)
+        except Exception:  # noqa: BLE001 - a missing blob must not block delete
+            pass
+        instance.delete()
 
 
 class SignatureImageView(APIView):
@@ -187,6 +224,17 @@ class SignatureRenderView(APIView):
         except EngineError as exc:
             raise ValidationFailed(exc.message) from exc
         return HttpResponse(png, content_type="image/png")
+
+    def get_throttles(self):
+        """The scoped rate **in addition to** the defaults.
+
+        `throttle_scope` on its own does nothing: the project's
+        `DEFAULT_THROTTLE_CLASSES` contains no `ScopedRateThrottle`, so the
+        declared 60/hour was inert and this endpoint ran on the 30/min anon
+        bucket instead (same fix, and the same reason, as `core/views.py`).
+        """
+        return [*super().get_throttles(), ScopedRateThrottle()]
+
 
 
 # --------------------------------------------------------------------------- #
@@ -280,10 +328,10 @@ class SignRequestDetailView(APIView):
                 setattr(sign_request, key, str(data[key])[:5000])
         if "expires_in_days" in data:
             sign_request.expires_at = timezone.now() + timezone.timedelta(
-                days=max(1, min(365, int(data["expires_in_days"]))))
+                days=_bounded(data["expires_in_days"], 1, 365, "expires_in_days"))
         if "reminder_every_days" in data:
-            sign_request.reminder_every_days = max(0, min(90, int(
-                data["reminder_every_days"])))
+            sign_request.reminder_every_days = _bounded(
+                data["reminder_every_days"], 0, 90, "reminder_every_days")
         sign_request.save()
 
         if "recipients" in data:
@@ -300,6 +348,14 @@ class SignRequestDetailView(APIView):
             raise ValidationFailed("Only a draft can be deleted. Cancel it instead.")
         sign_request.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+def _bounded(value, low: int, high: int, name: str) -> int:
+    """An int in range, or a 400 — `int("soon")` was a 500."""
+    try:
+        return max(low, min(high, int(value)))
+    except (TypeError, ValueError) as exc:
+        raise ValidationFailed(f"{name} must be a whole number.") from exc
 
 
 def _replace_recipients(sign_request, payload) -> None:
@@ -495,9 +551,10 @@ class PublicSignBase(APIView):
         if not routing.is_recipients_turn(recipient):
             raise TokenExpired("It is not your turn yet.")
         if recipient.needs_consent and recipient.consent_at is None:
-            raise ValidationFailed(
-                "Agree to sign electronically before filling anything in."
-            )
+            # 403, per §8B — this is a permission state, not a malformed
+            # request, and the ceremony branches on it to show the consent
+            # screen rather than an error.
+            raise ConsentRequired()
         return recipient
 
 
@@ -553,6 +610,44 @@ class PublicSignContentView(PublicSignBase):
         response = HttpResponse(data, content_type="application/pdf")
         response["Content-Disposition"] = 'inline; filename="document.pdf"'
         response["Accept-Ranges"] = "bytes"
+        return response
+
+
+class PublicSignPageView(PublicSignBase):
+    """One rendered page of the frozen document, for the ceremony's viewer.
+
+    An image rather than the PDF: the signer sees the page *and* the boxes they
+    are filling, positioned on it, and normalized §8 geometry maps onto the
+    rendered image as plain CSS percentages with no conversion. Streaming the
+    PDF into a viewer would mean shipping a PDF engine to a phone in order to
+    show one page.
+    """
+
+    @extend_schema(responses=OpenApiTypes.BINARY, tags=["esign-public"])
+    def get(self, request, token, page):
+        recipient = self.recipient(token)
+        version = recipient.sign_request.source_version
+        if version is None:
+            raise TokenExpired("This request has no document yet.")
+        if not 0 <= page < version.page_count:
+            raise ValidationFailed("That page is not in this document.")
+        try:
+            width = max(200, min(int(request.query_params.get("w", 900)), 1600))
+        except ValueError:
+            width = 900
+
+        storage = get_storage()
+        key = f"sign/{recipient.sign_request_id}/pages/p{page}@{width}.png"
+        if storage.exists(key):
+            png = storage.get_bytes(key)
+        else:
+            from apps.pdf_engine.engine import render as engine_render
+
+            png = engine_render.render_thumbnail(
+                storage.get_bytes(version.storage_key), page, width)
+            storage.put_bytes(key, png, content_type="image/png")
+        response = HttpResponse(png, content_type="image/png")
+        response["Cache-Control"] = "private, max-age=3600"
         return response
 
 
@@ -612,7 +707,7 @@ class PublicSignFieldView(PublicSignBase):
             if not raw:
                 raise ValidationFailed("Draw or type your signature first.")
             try:
-                png = SG.trim_transparent(SG.to_png(raw))
+                png = SG.normalize_signature(raw)
             except EngineError as exc:
                 raise ValidationFailed(exc.message) from exc
             key = f"sign/{recipient.sign_request_id}/fields/{field.id}.png"
@@ -647,7 +742,10 @@ class PublicSignCompleteView(PublicSignBase):
         routing.complete_recipient(recipient, request=request, event=event)
         outcome = routing.advance(recipient.sign_request, request=request)
         if outcome == "completed":
-            finalize_sign_request.delay(str(recipient.sign_request_id))
+            # §12 puts this on `heavy`: 60 s is not enough to burn every
+            # field, seal and render a certificate for a real envelope.
+            finalize_sign_request.apply_async(
+                args=[str(recipient.sign_request_id)], queue="heavy")
         return Response({"completed": True, "next": outcome})
 
 
@@ -711,17 +809,35 @@ class VerifyView(APIView):
             sign_request = SignRequest.objects.filter(envelope_code=code).first()
             if sign_request is not None:
                 envelope["known"] = True
-                envelope["sha256_match"] = (
-                    sign_request.final_sha256 == hashlib.sha256(data).hexdigest()
+                envelope["sha256_match"] = bool(
+                    sign_request.final_sha256
+                    and sign_request.final_sha256 == hashlib.sha256(data).hexdigest()
                 )
-                envelope["completed_at"] = sign_request.completed_at
-                envelope["signers"] = [
-                    {"name": r.name, "email": _mask_email(r.email),
-                     "role": r.role, "completed_at": r.completed_at}
-                    for r in sign_request.recipients.all() if r.acts
-                ]
+                # Who signed is told only to somebody holding the actual file.
+                # The code is printed on every page and appears in every email
+                # about the envelope, so a forwarded message or a photograph of
+                # one page would otherwise be enough to ask us who signed what,
+                # when, and at which employer.
+                if envelope["sha256_match"]:
+                    envelope["completed_at"] = sign_request.completed_at
+                    envelope["signers"] = [
+                        {"name": r.name, "email": _mask_email(r.email),
+                         "role": r.role, "completed_at": r.completed_at}
+                        for r in sign_request.recipients.all() if r.acts
+                    ]
         report["envelope_match"] = envelope
         return Response(report)
+
+    def get_throttles(self):
+        """The scoped rate **in addition to** the defaults.
+
+        `throttle_scope` on its own does nothing: the project's
+        `DEFAULT_THROTTLE_CLASSES` contains no `ScopedRateThrottle`, so the
+        declared 60/hour was inert and this endpoint ran on the 30/min anon
+        bucket instead (same fix, and the same reason, as `core/views.py`).
+        """
+        return [*super().get_throttles(), ScopedRateThrottle()]
+
 
 
 def _mask_email(email: str) -> str:

@@ -95,13 +95,13 @@ def build(sign_request) -> bytes:
         Spacer(1, 10),
     ]
 
-    owner = sign_request.owner
-    owner_name = (getattr(owner, "display_name", "") or "").strip() or owner.email
+    sender = sign_request.owner
+    owner_name = (getattr(sender, "display_name", "") or "").strip() or sender.email
     story += [
         Paragraph("Document", style["h2"]),
         _table([
             ["Title", sign_request.title],
-            ["Sent by", f"{owner_name} <{owner.email}>"],
+            ["Sent by", f"{owner_name} <{sender.email}>"],
             ["Sent", _fmt(sign_request.sent_at)],
             ["Completed", _fmt(sign_request.completed_at)],
             ["Fingerprint (SHA-256)", sign_request.final_sha256 or "—"],

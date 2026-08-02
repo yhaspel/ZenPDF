@@ -80,6 +80,13 @@ export const routes: Routes = [
     loadComponent: () => import('./features/sign/ceremony').then((m) => m.Ceremony),
   },
   {
+    // The consent text at a stable address, so a signer can read what they
+    // agreed to without a live signing link (§7).
+    path: 'legal/esign-disclosure',
+    loadComponent: () =>
+      import('./features/sign/disclosure-page').then((m) => m.DisclosurePage),
+  },
+  {
     path: 'verify',
     loadComponent: () => import('./features/sign/verify').then((m) => m.Verify),
   },

@@ -269,6 +269,18 @@ class DocumentDetailView(generics.RetrieveUpdateDestroyAPIView):
 
     @staticmethod
     def _purge(document: Document) -> None:
+        # Refused *before* a single blob is touched. A signature request holds
+        # its frozen `source_version` with `on_delete=PROTECT` (§9), so the
+        # delete would fail — but only after the storage was emptied and the
+        # quota credited, leaving the rows pointing at files that no longer
+        # exist and an in-flight ceremony that can never be completed
+        # (phase-08).
+        if document.sign_requests.exists():
+            raise ValidationFailed(
+                "This document has been sent for signature, so it cannot be "
+                "deleted — the signed record has to keep pointing at what was "
+                "signed. Cancel the request first if it is still open."
+            )
         storage = get_storage()
         freed = 0
         for version in document.versions.all():

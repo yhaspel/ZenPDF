@@ -173,8 +173,10 @@ def test_nothing_can_be_filled_before_consent(sent, anon):
     field_id = meta["fields"][0]["id"]
 
     resp = _fill_signature(anon, token, field_id)
-    assert resp.status_code == 400
-    assert "Agree to sign electronically" in resp.json()["error"]["message"]
+    # 403 `consent_required`, per §8B ("everything else 403s until consented") —
+    # a permission state the ceremony branches on, not a malformed request.
+    assert resp.status_code == 403
+    assert resp.json()["error"]["code"] == "consent_required"
 
     assert _consent(anon, token).status_code == 200
     assert _fill_signature(anon, token, field_id).status_code == 200
@@ -183,6 +185,9 @@ def test_nothing_can_be_filled_before_consent(sent, anon):
 def test_consent_records_the_exact_disclosure_it_agreed_to(sent, anon):
     from apps.esign.legal import disclosure_hash
 
+    # A real browser sends one, and the certificate prints it — so the test
+    # sends one too rather than asserting against an empty string.
+    anon.credentials(HTTP_USER_AGENT="Mozilla/5.0 (iPhone) Safari/605.1")
     token = _token(sent["id"], "first@example.com")
     _ceremony(anon, token)
     body = _consent(anon, token).json()
@@ -191,7 +196,11 @@ def test_consent_records_the_exact_disclosure_it_agreed_to(sent, anon):
     event = SignRequest.objects.get(id=sent["id"]).audit_events.filter(
         type="consented").first()
     assert event.metadata["disclosure_sha256"] == disclosure_hash()
-    assert event.ip and event.user_agent is not None
+    assert event.ip, "no address recorded against the consent"
+    assert "iPhone" in event.user_agent, "no user-agent recorded against the consent"
+    recipient = Recipient.objects.get(sign_request_id=sent["id"],
+                                      email="first@example.com")
+    assert recipient.consent_ip and "iPhone" in recipient.consent_user_agent
 
 
 def test_one_signer_cannot_fill_anothers_field(sent, anon):
@@ -636,3 +645,158 @@ def test_verify_needs_no_account_and_no_guest_session(anon, fixture_bytes):
     resp = _upload(anon, fixture_bytes("text.pdf"))
     assert resp.status_code == 200
     assert "X-Guest-Token" not in resp, "verification minted a session"
+
+
+# --------------------------------------------------------------------------- #
+# Self-review findings (four lenses)
+# --------------------------------------------------------------------------- #
+def test_a_document_sent_for_signature_cannot_be_deleted(api, sent):
+    """The delete would fail on the PROTECTed frozen version anyway — but only
+    *after* every blob had been removed from storage, leaving rows pointing at
+    files that no longer exist and a ceremony nobody can complete."""
+    from apps.esign.models import SignRequest
+    from apps.pdf_engine.storage import get_storage
+
+    document_id = SignRequest.objects.get(id=sent["id"]).document_id
+    api.delete(f"/api/documents/{document_id}/")  # to trash first
+    resp = api.delete(f"/api/documents/{document_id}/?permanent=true")
+    assert resp.status_code == 400
+    assert "sent for signature" in resp.json()["error"]["message"]
+
+    # …and the file the recipients are signing is still there.
+    version = SignRequest.objects.get(id=sent["id"]).source_version
+    assert get_storage().get_bytes(version.storage_key)
+
+
+def test_a_forwarded_link_does_not_cost_a_signer_their_email(sent, anon):
+    """Opening a link before your turn flips you to `viewed`; keying the
+    "it's your turn" email on status meant that signer was then never told."""
+    from apps.esign import routing
+    from apps.esign.models import Recipient, SignRequest
+
+    second_token = _token(sent["id"], "second@example.com")
+    _ceremony(anon, second_token)  # notified→viewed, out of turn
+
+    first = _token(sent["id"], "first@example.com")
+    meta = _ceremony(anon, first)
+    _consent(anon, first)
+    _fill_signature(anon, first, meta["fields"][0]["id"])
+    mail.outbox.clear()
+    anon.post(f"/api/public/sign/{first}/complete/", format="json")
+
+    assert [m.to for m in mail.outbox] == [["second@example.com"]]
+    sign_request = SignRequest.objects.get(id=sent["id"])
+    assert routing.current_group(sign_request) == 2
+    assert Recipient.objects.get(
+        sign_request=sign_request, email="second@example.com"
+    ).last_notified_at is not None
+
+
+def test_the_verify_roster_needs_the_actual_file(sent, anon):
+    """The envelope code is printed on every page and in every email about it.
+    On a code match alone, a forwarded message was enough to ask us who signed
+    what, when, and at which employer."""
+    import fitz
+
+    request_id = sent["id"]
+    for email in ("first@example.com", "second@example.com"):
+        token = _token(request_id, email)
+        meta = _ceremony(anon, token)
+        _consent(anon, token)
+        for field in meta["fields"]:
+            if field["type"] == "signature":
+                _fill_signature(anon, token, field["id"])
+        anon.post(f"/api/public/sign/{token}/complete/", format="json")
+
+    code = SignRequest.objects.get(id=request_id).envelope_code
+    doc = fitz.open()
+    doc.new_page().insert_text((72, 100), f"Envelope {code}")
+    decoy = doc.tobytes()
+    doc.close()
+
+    body = _upload(anon, decoy).json()
+    assert body["envelope_match"]["found_code"] == code
+    assert body["envelope_match"]["known"] is True
+    assert body["envelope_match"]["sha256_match"] is False
+    assert "signers" not in body["envelope_match"], "the roster leaked"
+    assert "completed_at" not in body["envelope_match"]
+
+
+def test_a_draft_patch_with_nonsense_numbers_is_a_400(api, sign_request):
+    resp = api.patch(f"/api/sign-requests/{sign_request['id']}/",
+                     {"expires_in_days": "soon"}, format="json")
+    assert resp.status_code == 400
+    assert "whole number" in resp.json()["error"]["message"]
+
+
+def test_the_public_endpoints_carry_their_declared_throttle(anon):
+    """`throttle_scope` alone does nothing — the project's defaults contain no
+    `ScopedRateThrottle`, so the declared rate was inert."""
+    from rest_framework.throttling import ScopedRateThrottle
+
+    from apps.esign.views import SignatureRenderView, VerifyView
+
+    for view in (VerifyView, SignatureRenderView):
+        classes = [type(t) for t in view().get_throttles()]
+        assert ScopedRateThrottle in classes, view.__name__
+
+
+def test_a_token_cannot_reach_another_request(api, anon, sent, uploaded_doc):
+    """Cross-*request* isolation, which the phase's test list names separately
+    from cross-recipient: a field id from one envelope must not be fillable
+    with a token from another."""
+    other = api.post("/api/sign-requests/", {"document": uploaded_doc["id"],
+                                             "title": "Second"},
+                     format="json").json()
+    people = _recipients(api, other["id"], [
+        {"email": "elsewhere@example.com", "role": "signer", "order": 1}])
+    fields = _fields(api, other["id"], [_sign_field(people[0]["id"])])
+    api.post(f"/api/sign-requests/{other['id']}/send/", format="json")
+
+    token = _token(sent["id"], "first@example.com")
+    _ceremony(anon, token)
+    _consent(anon, token)
+    resp = anon.post(f"/api/public/sign/{token}/fields/",
+                     {"field_id": fields[0]["id"], "signature_image": _draw_png()},
+                     format="json")
+    assert resp.status_code == 400
+    assert "not yours" in resp.json()["error"]["message"]
+
+
+def test_a_signing_token_is_32_random_bytes(sent):
+    """The property the phase names — 32 random bytes, urlsafe — asserted
+    rather than left as a constant nobody reads."""
+    import base64
+
+    tokens = [r.token for r in Recipient.objects.filter(sign_request_id=sent["id"])]
+    assert len(set(tokens)) == len(tokens)
+    for token in tokens:
+        assert len(token) == 43, token
+        assert len(base64.urlsafe_b64decode(token + "=")) == 32
+
+
+def test_the_ceremony_serves_the_page_it_asks_you_to_sign(sent, anon):
+    """The signer sees the document *and* their boxes on it — a ceremony that
+    only links out to a PDF is asking somebody to sign blind."""
+    token = _token(sent["id"], "first@example.com")
+    resp = anon.get(f"/api/public/sign/{token}/pages/0/?w=400")
+    assert resp.status_code == 200
+    assert resp["Content-Type"] == "image/png"
+    assert resp.content[:8] == b"\x89PNG\r\n\x1a\n"
+
+    assert anon.get(f"/api/public/sign/{token}/pages/9/").status_code == 400
+
+
+def test_deleting_a_saved_signature_takes_its_image_with_it(api):
+    from apps.esign.models import SavedSignature
+    from apps.pdf_engine.storage import get_storage
+
+    created = api.post("/api/signatures/",
+                       {"method": "type", "text": "Ada", "font": "caveat"},
+                       format="json").json()
+    key = SavedSignature.objects.get(id=created["id"]).storage_key
+    storage = get_storage()
+    assert storage.exists(key)
+
+    assert api.delete(f"/api/signatures/{created['id']}/").status_code == 204
+    assert not storage.exists(key), "the image outlived the row"

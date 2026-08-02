@@ -37,7 +37,7 @@ def _burn_fields(data: bytes, sign_request) -> bytes:
     """
     import fitz
 
-    from apps.pdf_engine.geometry import NormRect, norm_to_page_rect
+    from apps.pdf_engine.geometry import NormRect
 
     storage = get_storage()
     doc = fitz.open(stream=data, filetype="pdf")
@@ -46,27 +46,29 @@ def _burn_fields(data: bytes, sign_request) -> bytes:
             if field.page >= doc.page_count:
                 continue
             page = doc[field.page]
-            norm = NormRect.from_dict(field.rect())
-            x0, y0, x1, y1 = norm_to_page_rect(norm, page.rect.width,
-                                               page.rect.height)
-            rect = fitz.Rect(x0, y0, x1, y1)
+            # `_place_rect` de-rotates: `insert_image` and `insert_textbox`
+            # write in the page's unrotated space, so on a landscape page a
+            # field placed at the top-left was landing off the right edge.
+            rect = SG._place_rect(page, NormRect.from_dict(field.rect()))
 
             if field.type in SignField.IMAGE_TYPES:
                 if not field.image_key:
                     continue
                 page.insert_image(rect, stream=storage.get_bytes(field.image_key),
-                                  overlay=True)
+                                  overlay=True,
+                                  rotate=SG._counter_rotation(page))
             elif field.type == SignField.Type.DATE_SIGNED:
                 when = field.recipient.completed_at or timezone.now()
-                page.insert_textbox(rect, when.strftime("%Y-%m-%d %H:%M UTC"),
-                                    fontsize=9, fontname="helv", color=(0, 0, 0))
+                # `fit_text`, not `insert_textbox`: the latter returns a
+                # negative number and writes *nothing* when the text does not
+                # fit, so a date in a box somebody drew thin simply vanished
+                # from the finished document.
+                SG.fit_text(page, rect, when.strftime("%Y-%m-%d %H:%M UTC"))
             elif field.type == SignField.Type.CHECKBOX:
                 if field.value == "true":
-                    page.insert_textbox(rect, "X", fontsize=12, fontname="helv",
-                                        color=(0, 0, 0))
+                    SG.fit_text(page, rect, "X", max_size=12)
             elif field.value:
-                page.insert_textbox(rect, field.value, fontsize=9, fontname="helv",
-                                    color=(0, 0, 0))
+                SG.fit_text(page, rect, field.value)
         return doc.tobytes(garbage=3, deflate=True)
     finally:
         doc.close()
@@ -74,13 +76,26 @@ def _burn_fields(data: bytes, sign_request) -> bytes:
 
 @shared_task(name="apps.esign.tasks.finalize_sign_request")
 def finalize_sign_request(sign_request_id: str) -> dict:
-    """Burn → stamp → seal → certificate → store → notify (§8B step 3–6)."""
+    """Burn → stamp → seal → certificate → store → notify (§8B step 3–6).
+
+    The whole body runs under the §11 Redis lock. A status check on its own was
+    not enough: two recipients in a parallel group finishing in the same
+    instant both saw "everyone is done" and both dispatched, and because the
+    seal was written to storage *before* the status was claimed, the loser's
+    bytes could land on top of the winner's — leaving `final_sha256` describing
+    a file nobody has. The lock makes the second dispatch see a completed
+    request and return.
+    """
+    from apps.documents.tasks import doc_lock
+
+    with doc_lock(f"sign-{sign_request_id}"):
+        return _finalize(sign_request_id)
+
+
+def _finalize(sign_request_id: str) -> dict:
     sign_request = (SignRequest.objects
                     .select_related("owner", "document", "source_version")
                     .get(id=sign_request_id))
-    # Idempotency, first line: two recipients finishing in the same second both
-    # dispatch this, and a second seal would produce a second file that also
-    # claims to be *the* completed document.
     if sign_request.status == SignRequest.Status.COMPLETED:
         return {"already": True, "envelope": sign_request.envelope_code}
     if sign_request.status != SignRequest.Status.SENT:
@@ -104,13 +119,17 @@ def finalize_sign_request(sign_request_id: str) -> dict:
     final_sha = hashlib.sha256(sealed).hexdigest()
 
     final_key = f"sign/{sign_request.id}/final.pdf"
-    storage.put_bytes(final_key, sealed, content_type="application/pdf")
 
     with transaction.atomic():
         locked = (SignRequest.objects.select_for_update()
                   .get(id=sign_request.id))
         if locked.status == SignRequest.Status.COMPLETED:
+            # Belt and braces behind the Redis lock: a lock that expired under
+            # a very slow seal must not produce two files either.
             return {"already": True, "envelope": locked.envelope_code}
+        # Stored *inside* the claim, so the bytes and the fingerprint that
+        # describes them are committed together.
+        storage.put_bytes(final_key, sealed, content_type="application/pdf")
         locked.final_key = final_key
         locked.final_sha256 = final_sha
         locked.status = SignRequest.Status.COMPLETED
@@ -132,10 +151,13 @@ def finalize_sign_request(sign_request_id: str) -> dict:
 
     _append_to_source_document(sign_request, sealed)
 
-    base = f"{settings.FRONTEND_BASE_URL}/s"
+    # The API's own tokenized download, not a front-end route: `/s/final/{token}`
+    # matched nothing and fell through to the marketing page, which is where
+    # every recipient's copy of the signed document was pointing.
+    base = f"{settings.API_BASE_URL}/api/public/sign/{{token}}/download"
     emails.notify_completed(sign_request,
-                            final_url=f"{base}/final",
-                            certificate_url=f"{base}/certificate")
+                            final_url=f"{base}/final/",
+                            certificate_url=f"{base}/certificate/")
     return {"envelope": sign_request.envelope_code, "sha256": final_sha,
             **seal_report}
 
@@ -146,11 +168,18 @@ def _append_to_source_document(sign_request, sealed: bytes) -> None:
     Best-effort — the envelope is complete and stored either way, and a
     document the owner has since deleted must not fail the finalize.
     """
-    from apps.documents.tasks import _save_new_version
+    from apps.documents.tasks import _save_new_version, doc_lock
 
     try:
-        _save_new_version(document=sign_request.document, data=sealed,
-                          label="Signed", created_by=sign_request.owner, job=None)
+        # Under the document's own lock, like every other writer into the
+        # version pipeline (§11). Without it this is the one path that can race
+        # an ordinary operation and lose the unique (document, seq) constraint —
+        # failing the *user's* job with a generic engine error.
+        with doc_lock(str(sign_request.document_id)):
+            sign_request.document.refresh_from_db()
+            _save_new_version(document=sign_request.document, data=sealed,
+                              label="Signed", created_by=sign_request.owner,
+                              job=None)
     except Exception:  # noqa: BLE001
         logger.warning("finalize: could not append signed version to document %s",
                        sign_request.document_id, exc_info=True)

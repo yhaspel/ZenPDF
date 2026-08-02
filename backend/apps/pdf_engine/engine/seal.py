@@ -63,7 +63,11 @@ def seal(data: bytes, *, reason: str, location: str = "") -> tuple[bytes, dict]:
     """Apply an invisible PAdES signature. Returns (bytes, report)."""
     from pyhanko.pdf_utils.incremental_writer import IncrementalPdfFileWriter
     from pyhanko.sign import signers
-    from pyhanko.sign.fields import SigFieldSpec, append_signature_field
+    from pyhanko.sign.fields import (
+        SigFieldSpec,
+        SigSeedSubFilter,
+        append_signature_field,
+    )
 
     signer = _signer()
     timestamper = _timestamper()
@@ -78,7 +82,12 @@ def seal(data: bytes, *, reason: str, location: str = "") -> tuple[bytes, dict]:
         field_name=SEAL_FIELD_NAME,
         reason=reason,
         location=location or settings.FRONTEND_BASE_URL,
-        # `subfilter` left to pyHanko's PAdES default for the chosen level.
+        # **Named explicitly.** pyHanko's default subfilter is the legacy Adobe
+        # profile (`adbe.pkcs7.detached`), so leaving it alone produced a
+        # perfectly valid CMS signature that was *not* PAdES — while the report
+        # written into the audit chain called it "B-B". A level name recorded as
+        # evidence has to describe the file that was actually produced.
+        subfilter=SigSeedSubFilter.PADES,
     )
     out = io.BytesIO()
     try:
@@ -144,11 +153,19 @@ def verify(data: bytes) -> dict:
                 "reason": "", "error": str(exc)[:200],
             })
 
-    intact = all(r["intact"] for r in results)
+    # `intact` alone is **not** enough, and this is the whole point of the
+    # endpoint. It means only that the signed byte range still digests
+    # correctly — and a PDF incremental update appends a new revision, leaves
+    # that range untouched, and changes what the document says. pyHanko reports
+    # that as `coverage = ENTIRE_REVISION`; a verifier that called it intact
+    # would put a green tick on a forged contract.
+    intact = all(r["intact"] and r["whole_document"] for r in results)
+    appended = any(r["intact"] and not r["whole_document"] for r in results)
     return {
         "sealed": True,
         "signatures": results,
         "integrity": "intact" if intact else "modified",
+        "appended_after_signing": appended,
     }
 
 

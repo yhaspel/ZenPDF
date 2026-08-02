@@ -22,7 +22,7 @@ import os
 import fitz
 
 from ..exceptions import EngineError, InvalidParams
-from ..geometry import NormRect, norm_to_page_rect
+from ..geometry import NormRect, apply_matrix_rect, norm_to_page_rect
 
 # Vendored so the ceremony makes no third-party request (see module docstring).
 FONT_DIR = os.path.join(os.path.dirname(__file__), "..", "fonts")
@@ -119,9 +119,13 @@ def render_typed(text: str, font: str = "caveat", *, height: int = 120) -> bytes
     page.insert_font(fontname="sig", fontfile=path)
     page.insert_text((20, height * 0.72), text, fontname="sig", fontsize=fontsize,
                      color=(0.06, 0.09, 0.16))
+    # `alpha=True` already gives exactly what is wanted: ink opaque, the rest
+    # transparent. Running the paper-removal pass over it inverted that — the
+    # unpainted background is (0,0,0,0), whose *grey value* is 0, i.e. "as dark
+    # as ink", so every typed signature came out an opaque black rectangle.
     pixmap = page.get_pixmap(alpha=True, dpi=150)
     doc.close()
-    return _whiten_to_alpha(pixmap.tobytes("png"))
+    return trim_transparent(pixmap.tobytes("png"))
 
 
 def remove_background(data: bytes, *, threshold: int = 200) -> bytes:
@@ -153,6 +157,62 @@ def _whiten_to_alpha(data: bytes, *, threshold: int = 200) -> bytes:
         rgba[i * 4 + 3] = alpha
     out = fitz.Pixmap(fitz.csRGB, width, height, bytes(rgba), True)
     return out.tobytes("png")
+
+
+def normalize_signature(data: bytes) -> bytes:
+    """Whatever arrived → ink on transparency, trimmed to the ink.
+
+    One function because there are three ways in — the pad's canvas, a saved
+    signature, and the ceremony's own dialog — and they were normalizing
+    differently. A photograph has no alpha channel, so `trim_transparent` was a
+    no-op on it and the *paper* got stamped onto the contract.
+    """
+    png = to_png(data)
+    pixmap = _open_image(png)
+    if not pixmap.alpha:
+        png = remove_background(png)
+    return trim_transparent(png)
+
+
+def _counter_rotation(page) -> int:
+    """How far to turn placed content back so it reads upright on the page."""
+    return (360 - (page.rotation % 360)) % 360
+
+
+def _place_rect(page, norm: NormRect) -> fitz.Rect:
+    """A §8 normalized rect → where `insert_image`/`insert_textbox` want it.
+
+    Both write in the page's **unrotated** space, like annotations and unlike
+    `insert_htmlbox` (§8's per-API table; `content.py::_watermark_image` says
+    the same thing about the same call). Without the de-rotation a signature
+    placed at the top-left of a landscape page lands off the right edge.
+    """
+    x0, y0, x1, y1 = norm_to_page_rect(norm, page.rect.width, page.rect.height)
+    x0, y0, x1, y1 = apply_matrix_rect(x0, y0, x1, y1,
+                                       tuple(page.derotation_matrix))
+    return fitz.Rect(x0, y0, x1, y1)
+
+
+def fit_text(page, rect: fitz.Rect, text: str, *, max_size: float = 9,
+             color=(0, 0, 0)) -> float:
+    """Write `text` inside `rect`, shrinking until it fits. Returns the size used.
+
+    `insert_textbox` returns a negative number and **writes nothing** when the
+    text does not fit — so a date in a box a person drew thin, or a tick in a
+    small square, simply vanished from the finished document while the signer
+    was told it was filled in.
+    """
+    size = max_size
+    while size >= 4:
+        if page.insert_textbox(rect, text, fontsize=size, fontname="helv",
+                               color=color) >= 0:
+            return size
+        size -= 1
+    # Nothing fits the box. Draw it anyway, on the baseline, rather than
+    # silently dropping what somebody typed.
+    page.insert_text((rect.x0, rect.y1), text, fontsize=4, fontname="helv",
+                     color=color)
+    return 4
 
 
 def self_sign(data: bytes, *, placements, images: dict[str, bytes],
@@ -187,17 +247,20 @@ def self_sign(data: bytes, *, placements, images: dict[str, bytes],
                 norm = NormRect.from_dict(placement.get("rect"))
             except ValueError as exc:
                 raise InvalidParams(f"invalid rect: {exc}") from exc
-            x0, y0, x1, y1 = norm_to_page_rect(norm, page.rect.width, page.rect.height)
-            rect = fitz.Rect(x0, y0, x1, y1)
+            rect = _place_rect(page, norm)
             # `keep_proportion` is the default and is wanted: a signature
             # stretched to the box is not the signature that was drawn.
-            page.insert_image(rect, stream=image, overlay=True)
+            # `rotate` counters the page's own rotation — without it the
+            # signature lands in the right place on a landscape page and is
+            # drawn lying on its side (the same nuance the Phase-3 review queue
+            # noted for image stamps).
+            page.insert_image(rect, stream=image, overlay=True,
+                              rotate=_counter_rotation(page))
 
             if include_date and date_text:
-                below = fitz.Rect(rect.x0, rect.y1, rect.x1,
-                                  min(rect.y1 + 14, page.rect.height))
-                page.insert_textbox(below, date_text, fontsize=8,
-                                    fontname="helv", color=(0.25, 0.28, 0.33))
+                below = fitz.Rect(rect.x0, rect.y1, rect.x1, rect.y1 + 16)
+                fit_text(page, below, date_text, max_size=8,
+                         color=(0.25, 0.28, 0.33))
         return doc.tobytes(garbage=3, deflate=True)
     finally:
         doc.close()
@@ -214,8 +277,10 @@ def stamp_envelope_footer(data: bytes, *, code: str, verify_url: str) -> bytes:
     doc = fitz.open(stream=data, filetype="pdf")
     try:
         for page in doc:
-            rect = fitz.Rect(24, page.rect.height - 22, page.rect.width - 24,
-                             page.rect.height - 6)
+            # Along the foot of the page as *displayed*, which on a rotated
+            # page is not the foot of the unrotated one.
+            foot = NormRect(0.03, 0.972, 0.94, 0.02)
+            rect = _place_rect(page, foot)
             page.insert_textbox(rect, line, fontsize=7, fontname="helv",
                                 color=(0.42, 0.45, 0.5), align=fitz.TEXT_ALIGN_CENTER)
         return doc.tobytes(garbage=3, deflate=True)

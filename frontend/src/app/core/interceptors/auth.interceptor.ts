@@ -17,7 +17,13 @@ export const GUEST_HEADER = 'X-Guest-Token';
  * it — and mint a guest session for somebody who only came to sign a PDF.
  */
 function isCredentialFree(url: string): boolean {
-  return url.includes('/public/sign/') || url.includes('/verify/');
+  return (
+    url.includes('/public/sign/')
+    || url.includes('/verify/')
+    // The ceremony's "Type" tab renders through this, and a stale token on it
+    // navigated a *stranger* to our login page mid-signature.
+    || url.includes('/signatures/render/')
+  );
 }
 
 function isAuthEndpoint(url: string): boolean {

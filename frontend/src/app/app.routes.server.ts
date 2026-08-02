@@ -26,5 +26,6 @@ export const serverRoutes: ServerRoute[] = [
   // pages are worthless to a search engine.
   { path: 's/:token', renderMode: RenderMode.Client },
   { path: 'verify', renderMode: RenderMode.Client },
+  { path: 'legal/esign-disclosure', renderMode: RenderMode.Prerender },
   { path: '**', renderMode: RenderMode.Client },
 ];

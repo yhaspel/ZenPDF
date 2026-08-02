@@ -235,3 +235,36 @@ def test_only_one_default_per_kind(api):
     rows = {row["id"]: row for row in api.get("/api/signatures/").json()}
     assert rows[first["id"]]["is_default"] is False
     assert sum(row["is_default"] for row in rows.values()) == 1
+
+
+def test_a_signature_lands_where_it_was_put_on_a_rotated_page(fixture_bytes):
+    """§8's rule, and the one only a rendered-pixel assertion catches.
+
+    `insert_image` writes in the page's **unrotated** space while the rect
+    arrives in display space, so without de-rotation a signature placed at the
+    displayed top-left of a landscape page lands off the right-hand edge — or
+    off the page entirely.
+    """
+    data = fixture_bytes("rotated-90.pdf")
+    out = SG.self_sign(
+        data,
+        placements=[{"signature_upload_ref": "sig", "page": 0,
+                     "rect": {"x": 0.05, "y": 0.05, "w": 0.30, "h": 0.10}}],
+        images={"sig": _ink()},
+    )
+    doc = fitz.open(stream=out, filetype="pdf")
+    try:
+        page = doc[0]
+        # `get_image_bbox` answers in display space — where the user pointed.
+        box = page.get_image_bbox(page.get_images(full=True)[0])
+        assert page.rotation == 90, "the fixture stopped being rotated"
+
+        # Inside the box that was drawn, allowing for `keep_proportion`.
+        assert 42 <= box.x0 <= 295 and 42 <= box.x1 <= 295, box
+        assert abs(box.y0 - 0.05 * page.rect.height) < 2, box
+        assert abs(box.y1 - 0.15 * page.rect.height) < 2, box
+        # …and the right way up: a signature lying on its side is not a
+        # signature, and only a geometry assertion catches it.
+        assert box.width > box.height, f"the signature is sideways: {box}"
+    finally:
+        doc.close()

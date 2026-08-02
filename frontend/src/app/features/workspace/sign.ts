@@ -77,7 +77,11 @@ export class Sign {
     effect(() => {
       this.docId();
       this.esign.reset();
-      this.esign.loadSaved();
+      // Only for an account. A guest has no library, and *asking* raises the
+      // app-wide `account_required` prompt — which would greet a visitor with
+      // "create a free account" on a page whose own copy promises they do not
+      // need one.
+      if (this.guests.principal() === 'user') this.esign.loadSaved();
       // Nothing to pick from → the dialog *is* the first step, which is what
       // keeps the click count honest.
       this.padOpen.set(true);

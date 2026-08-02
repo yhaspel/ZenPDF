@@ -41,6 +41,13 @@
                  data-test="disclosure">{{ disclosure() }}</pre>
           </div>
 
+          <p class="-mt-2 text-[11px] text-slate-400">
+            This is version {{ m.disclosure_version }} of our disclosure. It also
+            lives at
+            <a href="/legal/esign-disclosure" target="_blank" rel="noopener"
+               class="underline" data-test="disclosure-link">/legal/esign-disclosure</a>,
+            and its fingerprint is recorded with your consent.
+          </p>
           <label class="flex items-start gap-2 text-sm text-slate-700">
             <input type="checkbox" class="mt-1" [ngModel]="agreed()"
                    (ngModelChange)="agreed.set($event)" data-test="agree" />
@@ -85,7 +92,9 @@
                      data-test="ceremony-field">
                   <p class="text-[11px] font-medium text-slate-500">
                     {{ label(field) }}
-                    <span class="text-slate-300">· page {{ field.page + 1 }}</span>
+                    <button class="text-slate-300 underline"
+                            (click)="goToField(field)"
+                            [attr.data-test]="'goto-' + field.id">· page {{ field.page + 1 }}</button>
                     @if (field.required) { <span class="text-rose-500">*</span> }
                   </p>
 
@@ -128,11 +137,49 @@
               }
             }
 
-            <a [href]="contentUrl()" target="_blank" rel="noopener"
-               class="rounded-lg border border-slate-300 bg-white px-3 py-2 text-center text-sm text-slate-600"
-               data-test="read-document">
-              Read the document
-            </a>
+            <!-- The document itself, with the boxes on it. A signer who
+                 cannot see where their mark lands is signing blind, and the
+                 §8 rects map onto the rendered page as plain percentages. -->
+            <div class="rounded-lg border border-slate-200 bg-white p-2"
+                 data-test="ceremony-viewer">
+              <div class="mb-2 flex items-center gap-2 text-xs text-slate-500">
+                <button (click)="prevPage()" [disabled]="page() === 0"
+                        class="rounded px-2 py-1 disabled:opacity-30"
+                        data-test="ceremony-prev">‹</button>
+                <span data-test="ceremony-page">
+                  Page {{ page() + 1 }} / {{ m.page_count }}
+                </span>
+                <button (click)="nextPage()" [disabled]="page() >= m.page_count - 1"
+                        class="rounded px-2 py-1 disabled:opacity-30"
+                        data-test="ceremony-next">›</button>
+                <a [href]="contentUrl()" target="_blank" rel="noopener"
+                   class="ml-auto underline" data-test="read-document">
+                  Open the PDF
+                </a>
+              </div>
+              <div class="relative">
+                <img [src]="pageUrl()" alt="Page {{ page() + 1 }} of the document"
+                     class="w-full rounded border border-slate-200"
+                     data-test="ceremony-page-image" />
+                @for (field of fieldsOnPage(); track field.id) {
+                  <button class="absolute rounded border-2 text-[10px] font-medium"
+                          [class.border-emerald-500]="isFilled(field)"
+                          [class.bg-emerald-500/15]="isFilled(field)"
+                          [class.text-emerald-800]="isFilled(field)"
+                          [class.border-indigo-500]="!isFilled(field)"
+                          [class.bg-indigo-500/15]="!isFilled(field)"
+                          [class.text-indigo-800]="!isFilled(field)"
+                          [style.left]="boxStyle(field)['left']"
+                          [style.top]="boxStyle(field)['top']"
+                          [style.width]="boxStyle(field)['width']"
+                          [style.height]="boxStyle(field)['height']"
+                          (click)="onBoxClick(field)"
+                          [attr.data-test]="'box-' + field.id">
+                    {{ isFilled(field) ? '✓' : label(field) }}
+                  </button>
+                }
+              </div>
+            </div>
 
             <button class="rounded-lg bg-emerald-600 px-4 py-3 font-medium text-white disabled:opacity-40"
                     [disabled]="!canFinish() || busy()" (click)="finish()"
@@ -175,6 +222,11 @@
                  class="rounded-lg border border-slate-300 px-4 py-2 text-center text-sm text-slate-600"
                  data-test="download-certificate">Download the certificate</a>
             </div>
+          } @else if (finalizing()) {
+            <p class="mt-2 text-sm text-slate-600" data-test="finalizing">
+              You were the last one — sealing the document now. This takes a few
+              seconds, and the download links appear here when it is done.
+            </p>
           } @else {
             <p class="mt-2 text-sm text-slate-600">
               We are waiting for the others. You will be emailed a copy of the

@@ -36,6 +36,7 @@ export class Ceremony {
   protected padFor = signal<SignFieldModel | null>(null);
   protected declining = signal(false);
   protected declineReason = signal('');
+  protected finalizing = signal(false);
   protected values = signal<Record<string, string>>({});
   protected filled = signal<Record<string, boolean>>({});
 
@@ -57,6 +58,54 @@ export class Ceremony {
     () => this.esign.ceremonyContentUrl(this.token()),
   );
 
+  /** Which page is on screen, and the fields that belong on it. */
+  protected page = signal(0);
+  protected readonly pageUrl = computed(
+    () => this.esign.ceremonyPageUrl(this.token(), this.page()),
+  );
+  protected readonly fieldsOnPage = computed(
+    () => this.fields().filter((f) => f.page === this.page()),
+  );
+
+  /** A field's box as a CSS percentage rectangle — §8 normalized geometry maps
+   *  straight onto the rendered page image, with no conversion at all. */
+  protected boxStyle(field: SignFieldModel): Record<string, string> {
+    return {
+      left: `${field.x * 100}%`,
+      top: `${field.y * 100}%`,
+      width: `${field.w * 100}%`,
+      height: `${field.h * 100}%`,
+    };
+  }
+
+  protected goToField(field: SignFieldModel): void {
+    this.page.set(field.page);
+  }
+
+  /** Tapping the box on the page is the same as tapping its card. */
+  protected onBoxClick(field: SignFieldModel): void {
+    if (field.type === 'date_signed') return;
+    if (field.type === 'signature' || field.type === 'initials') {
+      this.openPad(field);
+      return;
+    }
+    if (field.type === 'checkbox') {
+      this.saveValue(field, this.values()[field.id] !== 'true');
+      return;
+    }
+    document.querySelector<HTMLInputElement>(
+      `[data-test="field-${field.id}"]`)?.focus();
+  }
+
+  protected prevPage(): void {
+    this.page.update((p) => Math.max(0, p - 1));
+  }
+
+  protected nextPage(): void {
+    const last = (this.meta()?.page_count ?? 1) - 1;
+    this.page.update((p) => Math.min(last, p + 1));
+  }
+
   constructor() {
     this.token.set(this.route.snapshot.paramMap.get('token') ?? '');
     this.load();
@@ -76,6 +125,7 @@ export class Ceremony {
         this.values.set(Object.fromEntries(
           meta.fields.map((f) => [f.id, f.value ?? '']),
         ));
+        this.saved = Object.fromEntries(meta.fields.map((f) => [f.id, f.value ?? '']));
         this.screen.set(this.screenFor(meta));
       },
       error: (err) => {
@@ -136,9 +186,15 @@ export class Ceremony {
     this.values.update((map) => ({ ...map, [field.id]: value }));
   }
 
+  /** What the server last accepted, so a *cleared* field is still a change. */
+  private saved: Record<string, string> = {};
+
   protected commit(field: SignFieldModel): void {
     const value = this.values()[field.id] ?? '';
-    if (value === (field.value ?? '') && this.filled()[field.id]) return;
+    // Compared against what was last *saved*, not against the value the field
+    // had at load: clearing a filled box left both at '' and the deletion was
+    // never sent, so the ceremony showed empty and the signed PDF did not.
+    if (this.saved[field.id] === value) return;
     this.saveValue(field, value);
   }
 
@@ -146,7 +202,10 @@ export class Ceremony {
     this.values.update((map) => ({ ...map, [field.id]: String(value) }));
     this.esign.fillField(this.token(), { field_id: field.id, value })
       .subscribe({
-        next: (res) => this.filled.update((map) => ({ ...map, [field.id]: res.filled })),
+        next: (res) => {
+          this.saved[field.id] = String(value);
+          this.filled.update((map) => ({ ...map, [field.id]: res.filled }));
+        },
         error: () => this.error.set('That did not save — check your connection.'),
       });
   }
@@ -154,10 +213,16 @@ export class Ceremony {
   protected finish(): void {
     this.busy.set(true);
     this.esign.complete(this.token()).subscribe({
-      next: () => {
+      next: (res) => {
         this.busy.set(false);
         this.screen.set('done');
+        // Sealing happens on a worker, so the last signer's first refetch still
+        // says `sent` — and they were told "we are waiting for the others",
+        // which is exactly who they had just stopped being. Poll briefly for
+        // the completion instead.
+        this.finalizing.set(res.next === 'completed');
         this.load();
+        if (res.next === 'completed') this.awaitCompletion();
       },
       error: (err) => {
         this.busy.set(false);
@@ -180,6 +245,26 @@ export class Ceremony {
         this.error.set(err?.error?.error?.message || 'That did not work.');
       },
     });
+  }
+
+  private awaitCompletion(attempt = 0): void {
+    if (attempt > 12) {
+      this.finalizing.set(false);
+      return;
+    }
+    setTimeout(() => {
+      this.esign.ceremony(this.token()).subscribe({
+        next: (meta) => {
+          this.meta.set(meta);
+          if (meta.status === 'completed') {
+            this.finalizing.set(false);
+          } else {
+            this.awaitCompletion(attempt + 1);
+          }
+        },
+        error: () => this.finalizing.set(false),
+      });
+    }, 1500);
   }
 
   protected downloadUrl(what: 'final' | 'certificate'): string {

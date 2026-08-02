@@ -73,6 +73,10 @@ export class RequestBuilder {
   protected fields = signal<DraftField[]>([]);
   protected armedFor = signal<string | null>(null);
   protected armedType = signal<SignFieldType>('signature');
+  /** phase-08's "required toggle" — an optional field is a real thing:
+   *  a middle name, a second phone number, an initial box some people
+   *  use and others do not. */
+  protected armedRequired = signal(true);
   protected message = signal('');
   protected expiresInDays = signal(30);
   protected reminderDays = signal(3);
@@ -183,7 +187,7 @@ export class RequestBuilder {
       page: draft.page,
       x: draft.rect!.x, y: draft.rect!.y, w: draft.rect!.w, h: draft.rect!.h,
       type: this.armedType(),
-      required: true,
+      required: this.armedRequired(),
       label: '',
     }]);
   }

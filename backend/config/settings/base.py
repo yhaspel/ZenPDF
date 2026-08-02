@@ -19,6 +19,10 @@ DEBUG = config("DEBUG", default=False, cast=bool)
 ALLOWED_HOSTS = config("ALLOWED_HOSTS", default="*", cast=Csv())
 
 FRONTEND_BASE_URL = config("FRONTEND_BASE_URL", default="http://localhost:4200")
+# Where the API answers from the *outside*. Emails link straight at it for a
+# recipient's tokenized download, which is an API path and has no front-end
+# route (phase-08). In dev the SPA proxies /api, so the two are the same host.
+API_BASE_URL = config("API_BASE_URL", default=FRONTEND_BASE_URL)
 
 INSTALLED_APPS = [
     "django.contrib.admin",
@@ -300,7 +304,8 @@ TSA_URL = config("TSA_URL", default="")
 # The /verify upload cap. Deliberately smaller than a document upload: this
 # endpoint is public and unauthenticated, and nothing about checking a seal
 # needs a 100 MB file.
-VERIFY_MAX_UPLOAD_BYTES = config("VERIFY_MAX_UPLOAD_BYTES", default=30 * 1024 * 1024, cast=int)
+VERIFY_MAX_UPLOAD_BYTES = config("VERIFY_MAX_UPLOAD_BYTES",
+                                 default=30 * 1024 * 1024, cast=int)
 
 # --- Quotas & limits (§16) --------------------------------------------------
 MAX_UPLOAD_MB = config("MAX_UPLOAD_MB", default=100, cast=int)

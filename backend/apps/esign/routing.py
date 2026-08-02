@@ -55,12 +55,19 @@ def everyone_done(sign_request) -> bool:
 
 
 def next_to_notify(sign_request) -> list[Recipient]:
-    """Recipients in the current group who have not been emailed yet."""
+    """Recipients in the current group who have never been emailed.
+
+    Keyed on `last_notified_at`, not on status. Status was wrong: opening a
+    forwarded link flips a later signer to `viewed` before their turn, and they
+    then never received the "it's your turn" email at all — the wait screen
+    promises exactly that email.
+    """
     order = current_group(sign_request)
     if order is None:
         return []
     return [r for r in acting(sign_request)
-            if r.order == order and r.status == Recipient.Status.PENDING]
+            if r.order == order and r.last_notified_at is None
+            and r.status != Recipient.Status.COMPLETED]
 
 
 def advance(sign_request, *, request=None) -> str:

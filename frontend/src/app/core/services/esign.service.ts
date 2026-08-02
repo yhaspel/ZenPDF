@@ -115,6 +115,11 @@ export class EsignService {
     return `${this.base}/public/sign/${token}/content/`;
   }
 
+  /** A rendered page, for the read-only viewer in the ceremony. */
+  ceremonyPageUrl(token: string, page: number, width = 900): string {
+    return `${this.base}/public/sign/${token}/pages/${page}/?w=${width}`;
+  }
+
   disclosure(): Observable<{ version: string; text: string; disclosure_sha256: string }> {
     return this.http.get<{ version: string; text: string; disclosure_sha256: string }>(
       `${this.base}/public/sign/disclosure/`);

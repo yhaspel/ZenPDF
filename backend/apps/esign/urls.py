@@ -42,6 +42,8 @@ urlpatterns = [
          name="public-sign-detail"),
     path("public/sign/<str:token>/content/", views.PublicSignContentView.as_view(),
          name="public-sign-content"),
+    path("public/sign/<str:token>/pages/<int:page>/",
+         views.PublicSignPageView.as_view(), name="public-sign-page"),
     path("public/sign/<str:token>/consent/", views.PublicSignConsentView.as_view(),
          name="public-sign-consent"),
     path("public/sign/<str:token>/fields/", views.PublicSignFieldView.as_view(),

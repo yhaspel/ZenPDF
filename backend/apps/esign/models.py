@@ -14,11 +14,13 @@ DocuSeal do, and the product copy says exactly that (00-research §2).
 from __future__ import annotations
 
 import hashlib
+import hmac
 import json
 import secrets
 import uuid
 
-from django.db import models
+from django.conf import settings
+from django.db import models, transaction
 from django.utils import timezone
 
 # 32 random bytes, urlsafe-encoded — 43 characters, and the only thing standing
@@ -287,8 +289,19 @@ class AuditEvent(models.Model):
         }
 
     def compute_hash(self, prev_hash: str) -> str:
+        """HMAC-SHA256 under `SECRET_KEY`, not a bare digest.
+
+        A plain SHA-256 chain is only self-*consistent*: anybody who can write
+        to the database can edit an event and recompute every hash after it, and
+        every check we offer would still say "the chain verifies" — which is not
+        what the disclosure promises the signer. The key lives in the
+        environment, so rewriting history now takes the application's secret as
+        well as its database.
+        """
         canonical = json.dumps(self.payload(), sort_keys=True, separators=(",", ":"))
-        return hashlib.sha256((prev_hash + canonical).encode()).hexdigest()
+        return hmac.new(settings.SECRET_KEY.encode(),
+                        (prev_hash + canonical).encode(),
+                        hashlib.sha256).hexdigest()
 
     def save(self, *args, **kwargs):
         if not self._state.adding:
@@ -296,12 +309,21 @@ class AuditEvent(models.Model):
                 "Audit events are append-only — a trail that can be edited is a "
                 "claim, not evidence."
             )
-        previous = (AuditEvent.objects
-                    .filter(sign_request_id=self.sign_request_id)
-                    .order_by("created_at", "id").last())
-        self.prev_hash = previous.event_hash if previous else ""
-        self.event_hash = self.compute_hash(self.prev_hash)
-        return super().save(*args, **kwargs)
+        # The parent row is locked while the tail is read and the new hash
+        # computed. Without it two concurrent writers — two recipients in a
+        # parallel group, or two clicks on Download — read the same tail, both
+        # write the same `prev_hash`, and the chain **forks**. It is append-only,
+        # so there is no repair: `verify_chain` would report broken for ever on
+        # a request where nothing wrong actually happened.
+        with transaction.atomic():
+            SignRequest.objects.select_for_update().filter(
+                pk=self.sign_request_id).first()
+            previous = (AuditEvent.objects
+                        .filter(sign_request_id=self.sign_request_id)
+                        .order_by("created_at", "id").last())
+            self.prev_hash = previous.event_hash if previous else ""
+            self.event_hash = self.compute_hash(self.prev_hash)
+            return super().save(*args, **kwargs)
 
     def delete(self, *args, **kwargs):
         raise ValueError("Audit events are append-only.")
