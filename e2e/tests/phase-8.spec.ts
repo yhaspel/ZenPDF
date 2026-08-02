@@ -132,7 +132,7 @@ test('phase 8: a guest signs a PDF from /sign-pdf with no login anywhere', async
 // --------------------------------------------------------------------------- //
 // 8B — the full two-signer loop
 // --------------------------------------------------------------------------- //
-test('phase 8: two signers in order, sealed, certified and verifiable', async ({
+test('@smoke @mobile phase 8: two signers in order, sealed, certified and verifiable', async ({
   page,
   browser,
 }) => {
