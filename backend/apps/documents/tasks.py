@@ -143,6 +143,14 @@ def _create_document_from_bytes(*, principal, folder, title, data, created_by, j
                      "tier": limits.tier},
         )
 
+    # And the storage quota, for the same reason and at the same point. This is
+    # the door the version check does not cover: `split` on a 2 000-page
+    # document lands here 2 000 times from the *same* endpoint that refuses
+    # `rotate_pages` when the principal is over quota, and per-page output
+    # duplicates shared resources, so a split→merge cycle grows the account
+    # every round. Checked before the row exists, so a refusal leaves nothing.
+    L.enforce_storage(principal, size)
+
     doc = Document.objects.create(
         **owner_kwargs(principal),
         expires_at=guest_expiry() if is_guest(principal) else None,

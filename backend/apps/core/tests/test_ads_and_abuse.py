@@ -69,6 +69,7 @@ def test_the_retention_numbers_come_from_the_settings_the_sweepers_use(
     assert retention["guest_hours"] == settings.GUEST_TTL_HOURS
     assert retention["export_hours"] == settings.EXPORT_TTL_HOURS
     assert retention["job_days"] == settings.JOB_RETENTION_DAYS
+    assert retention["job_params_days"] == settings.JOB_PARAMS_RETENTION_DAYS
 
     # …and every one of those numbers has a task that enforces it, on the beat
     # schedule. A promise with no sweeper behind it is just a sentence.

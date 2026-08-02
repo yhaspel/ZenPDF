@@ -220,6 +220,13 @@
                 {{ viewer.versionCount() }}. Nothing is deleted — older versions
                 stay in the document.
               </p>
+              <button
+                class="mt-1 text-xs text-indigo-600 hover:underline"
+                (click)="viewer.loadMoreVersions()"
+                data-test="version-more"
+              >
+                Show older versions
+              </button>
             }
           }
         </div>

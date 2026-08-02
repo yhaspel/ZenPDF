@@ -174,6 +174,13 @@ def _append_to_source_document(sign_request, sealed: bytes) -> None:
 
     Best-effort — the envelope is complete and stored either way, and a
     document the owner has since deleted must not fail the finalize.
+
+    Since the storage quota moved onto the version write, an owner who is over
+    quota is one of the reasons this can decline. That is the right answer for
+    an unbounded write, and it costs the owner nothing they cannot recover: the
+    sealed file is in the envelope and downloadable from the request either
+    way. It is logged rather than surfaced because there is no job here to fail
+    — the ceremony belongs to the signer, who did nothing wrong.
     """
     from apps.documents.tasks import _save_new_version, doc_lock
 

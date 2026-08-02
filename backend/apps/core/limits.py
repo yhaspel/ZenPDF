@@ -247,11 +247,20 @@ def record_ocr_pages(principal, pages: int) -> None:
 def enforce_storage(principal, incoming_bytes: int) -> None:
     """Charge `incoming_bytes` against the storage quota, or raise (§16).
 
-    The version write path had **no check at all**: `_save_new_version` bumped
-    the counter and never read it, so a principal already past their quota kept
-    minting versions indefinitely — reproduced at a gigabyte over a two-gigabyte
-    quota. Upload, image assets and claim all check; this is the fourth door and
-    it was the open one.
+    Four paths already read the quota before writing: upload
+    (`documents/views.py`), image assets and conversion sources
+    (`core/assets.py`), and claim (`core/claim.py`). Two wrote without reading
+    it — `_save_new_version` and `_create_document_from_bytes` both called
+    `bump_storage` and never looked at the result, so a principal already past
+    their quota kept minting versions *and* whole documents. Both now call this;
+    `test_version_quota.py` covers each.
+
+    One path is still deliberately unmetered-at-the-door: `_save_export` charges
+    for the artefact but does not refuse. An export is the escape hatch — it is
+    how somebody over quota gets their work out before deleting something — and
+    it deletes itself in 24 h. Refusing it would strand the account. Written
+    down because "all the doors are shut" is the sentence that stops the next
+    reader looking.
 
     This is also what `version_retention` was reaching for and could not hold: a
     per-*document* cap does not bound a per-*principal* cost, because fifty

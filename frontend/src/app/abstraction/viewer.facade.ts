@@ -39,6 +39,26 @@ export class ViewerFacade {
     });
   }
 
+  /**
+   * Append the next page of history.
+   *
+   * Not optional polish: revert is driven off `versions()`, so without this the
+   * first page is the only history the UI can reach — and "you can revert to
+   * any of them" is the promise the tool pages make and the reason the history
+   * is not pruned in the first place. A window the user cannot open is a cap
+   * with extra steps.
+   */
+  loadMoreVersions(): void {
+    const d = this._doc();
+    if (!d) return;
+    this.docsSvc.versions(d.id, 50, this._versions().length).subscribe({
+      next: (page) => {
+        this._versions.update((v) => [...v, ...page.results]);
+        this._versionCount.set(page.count);
+      },
+    });
+  }
+
   loadOutline(id: string): void {
     this.docsSvc.outline(id).subscribe({
       next: (o) => this._outline.set(o.outline),

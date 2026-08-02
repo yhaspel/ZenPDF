@@ -78,7 +78,7 @@
         whether it worked — for {{ retention().job_days }} days, and then delete
         it. You can see that list yourself under Settings. The <em>inputs</em> to
         those operations, such as the words you searched for in a redaction, are
-        deleted after 30 days.
+        deleted after {{ retention().job_params_days }} days.
       </p>
       <p class="mt-2 text-xs text-slate-500">
         A test asserts these are the same numbers the sweepers that delete

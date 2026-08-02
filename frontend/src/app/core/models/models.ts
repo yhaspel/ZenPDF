@@ -143,6 +143,8 @@ export interface AppConfig {
      *  user can see that list in Settings, so its disappearance is
      *  observable. */
     job_days: number;
+    /** How long the *inputs* to those operations are kept. */
+    job_params_days: number;
   };
 }
 

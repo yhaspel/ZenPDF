@@ -230,14 +230,23 @@ def jobs_purge(days: int | None = None) -> dict:
         export = (job.result or {}).get("export") or {}
         if export.get("storage_key"):
             try:
-                stats["blobs"] += storage.delete_prefix(f"exports/{job.id}/")
+                removed = storage.delete_prefix(f"exports/{job.id}/")
             except Exception:  # noqa: BLE001
                 # Leave the row for tomorrow rather than deleting the blob's
                 # only pointer.
                 logger.warning("jobs_purge: could not delete exports/%s/", job.id)
                 stats["kept"] += 1
                 continue
-            L.bump_storage(job.principal, -int(export.get("size_bytes") or 0))
+            # Refund only what this call actually freed — the same guard
+            # `exports_purge` carries, and for a sharper reason here. That task
+            # refunds and *then* saves the stripped `result` in two steps with
+            # no transaction: a worker that dies between them leaves a row
+            # still advertising a `storage_key` whose blob is already gone and
+            # already credited. Refunding on the key rather than on the delete
+            # would charge that account twice, and `bump_storage` has no floor.
+            if removed:
+                stats["blobs"] += removed
+                L.bump_storage(job.principal, -int(export.get("size_bytes") or 0))
         job.delete()
         stats["jobs"] += 1
 

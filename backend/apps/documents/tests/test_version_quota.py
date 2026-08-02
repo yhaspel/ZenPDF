@@ -79,3 +79,33 @@ def test_version_retention_is_no_longer_advertised(anon):
     limits = anon.get("/api/config/").json()["limits"]
     assert "version_retention" not in limits
     assert not hasattr(settings, "VERSION_RETENTION")
+
+
+def test_a_new_document_is_refused_too_not_just_a_new_version(api, uploaded_doc,
+                                                              settings):
+    """The door next to the one that was found open.
+
+    `split` lands in `_create_document_from_bytes`, not `_save_new_version`,
+    from the *same* endpoint — so checking only the version write leaves an
+    over-quota principal writing 2 000 blobs with one request, and a
+    split→merge cycle grows the account every round.
+    """
+    import copy as _copy
+
+    from apps.documents.models import Document
+    from apps.jobs.models import Job
+
+    tiers = _copy.deepcopy(settings.TIERS)
+    tiers["free"]["storage_mb"] = 0
+    settings.TIERS = tiers
+
+    before = Document.objects.count()
+    resp = api.post(
+        f"/api/documents/{uploaded_doc['id']}/operations/",
+        {"type": "split", "params": {"mode": "every_n", "every_n": 1}},
+        format="json",
+    )
+    job = Job.objects.get(id=resp.json()["id"])
+    assert job.status == Job.Status.FAILED
+    assert job.error_code == "quota_exceeded"
+    assert Document.objects.count() == before, "no document may survive a refusal"

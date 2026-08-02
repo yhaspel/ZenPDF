@@ -193,6 +193,10 @@ class ConfigView(APIView):
                     # day it starts disappearing is the day the policy should
                     # already have said so.
                     "job_days": settings.JOB_RETENTION_DAYS,
+                    # Published for one reason only: the privacy policy
+                    # states it, and every number that page states is
+                    # pinned to the sweeper that enforces it.
+                    "job_params_days": settings.JOB_PARAMS_RETENTION_DAYS,
                 },
             }
         )

@@ -7,17 +7,22 @@ Uploads fail; the logs carry storage errors from `apps.pdf_engine.storage`;
 
 ## First, buy time
 
-The three sweepers exist for exactly this and can be run by hand:
+The sweepers exist for exactly this and can be run by hand:
 
 ```bash
 docker compose -f infra/docker-compose.yml exec api python manage.py shell -c "
-from apps.core.tasks import guest_purge, exports_purge, trash_purge
-print(guest_purge(), exports_purge(), trash_purge())"
+from apps.core.tasks import guest_purge, exports_purge, trash_purge, jobs_purge
+print(guest_purge(), exports_purge(), trash_purge(), jobs_purge())"
 ```
 
-That deletes expired guest sessions (24 h), exports past their TTL (24 h) and
-trash past 30 days — all three are promises already made to users, so running
-them early is not a policy change.
+That deletes expired guest sessions (24 h), exports past their TTL (24 h),
+trash past 30 days and finished job rows past a year — all four are promises
+already made to users, so running them early is not a policy change.
+
+`jobs_purge` will free the least of the four by a wide margin: it exists to
+bound row growth, not bytes, and it deletes an `exports/` prefix only in the
+rare case `exports_purge` has not already got there. Run it last, and do not
+expect it to be the answer.
 
 ## Then, find out who
 
