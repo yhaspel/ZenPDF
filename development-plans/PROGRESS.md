@@ -88,8 +88,8 @@ them.
 | DoD item | Result |
 |---|---|
 | 1. Acceptance criteria on a fresh stack | 🟠 2 ticked, 4 `[~]` (each needs the deployed host), 1 open GATE (the owner checklist) |
-| 2. Migrations idempotent from zero | ✅ fresh volumes → all applied; Phase 10 adds three (`esign.0003` sender snapshot + `SET_NULL`; `documents.0004` and `esign.0004` covering indexes) |
-| 3. Tests green; coverage gates | ✅ backend **949 passed** (was 905), frontend **178**, e2e **56 passed** (was 53). Coverage: `apps` **91%** (gate 85), `pdf_engine` **92%** (gate 90) |
+| 2. Migrations idempotent from zero | ✅ fresh volumes → all applied; Phase 10 adds four (`esign.0003` sender snapshot + `SET_NULL`; `esign.0004` audit index; `documents.0004` then `documents.0005`, which replaces the composite library index with a partial one after measuring that the composite did not remove the sort) |
+| 3. Tests green; coverage gates | ✅ backend **962 passed** (was 905), frontend **178**, e2e **56 passed** (was 53). Coverage: `apps` **91%** (gate 85), `pdf_engine` **92%** (gate 90) |
 | 4. Playwright happy path | ✅ plus a tagged `@smoke` suite (~30 s) that is the deploy gate |
 | 5. OpenAPI updated & accurate | ✅ `spectacular --fail-on-warn` → 0/0; export, deletion and the liveness probe documented |
 | 6. Lint clean | ✅ `ruff` + `manage.py check` + `check --deploy` clean. **`mypy` and `@angular/eslint` remain unmet** — the repo-wide debt this phase was meant to own; see the Blockers note |
@@ -753,9 +753,19 @@ wider index and no benefit, because a null test keeps the column in the sort
 key — measured on 500k rows before and after. And the a11y suite had a test
 named for the workspace that never opened it.
 
-All of those are fixed. What they have in common is that each one passes a test
-asking "does the code do what it says" and fails a test asking "is the sentence
-we published true" — which is the test worth writing.
+**And one that was not a promise but a hole.** The security lens built a
+padded zip bomb — 3 MB on the wire, 302 MB declared, two megabytes of
+incompressible padding to fix the ratio — uploaded it, and watched Gotenberg
+climb to 1.4 GB and stay dead for twenty-five minutes, because nothing
+restarts it. The guard was arithmetic on numbers the uploader chose. It now
+streams every entry through the decompressor against a hard cap and trusts
+nothing declared, and the service restarts itself. That one is worth
+remembering as the shape of the mistake: *a check whose inputs the attacker
+supplies is not a check.*
+
+All of those are fixed. What most of them have in common is that each one
+passes a test asking "does the code do what it says" and fails a test asking
+"is the sentence we published true" — which is the test worth writing.
 
 **Honest note on the run.** Two frontend specs timed out on the first full-gate
 run immediately after `up.sh`, and passed standalone in 4.8 s a minute later —
