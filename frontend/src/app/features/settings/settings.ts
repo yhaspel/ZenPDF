@@ -13,6 +13,7 @@ import { ConfigService } from '../../core/services/config.service';
 import { JobsService } from '../../core/services/jobs.service';
 import { ConsentService } from '../../core/services/consent.service';
 import { VerificationService } from '../../core/services/verification.service';
+import { saveBlob } from '../../shared/save-blob';
 import { ToastService } from '../../shared/toast.service';
 
 @Component({
@@ -170,10 +171,11 @@ import { ToastService } from '../../shared/toast.service';
           Take a copy of everything we hold, or close the account for good.
         </p>
         <div class="mt-3 flex flex-wrap gap-2">
-          <a class="rounded-lg border border-slate-300 px-3 py-1 text-sm"
-             [href]="exportUrl()" data-test="export-data">
-            Download my data
-          </a>
+          <button class="rounded-lg border border-slate-300 px-3 py-1 text-sm disabled:opacity-50"
+                  [disabled]="exporting()" (click)="exportData()"
+                  data-test="export-data">
+            {{ exporting() ? 'Preparing…' : 'Download my data' }}
+          </button>
           <button class="rounded-lg border border-rose-300 px-3 py-1 text-sm text-rose-700"
                   (click)="deleting.set(true)" data-test="delete-account">
             Delete my account
@@ -247,10 +249,29 @@ export class Settings {
   protected deleteError = signal('');
   protected deletePassword = '';
 
-  /** A plain link, not a fetch: the browser already knows how to save a file,
-   *  and the export can be tens of megabytes. */
-  protected exportUrl(): string {
-    return `${environment.apiUrl}/users/me/export/`;
+  protected exporting = signal(false);
+
+  /**
+   * Fetched, not linked.
+   *
+   * The obvious `<a href>` sends no `Authorization` header — the JWT lives in
+   * memory and travels on the interceptor — so the browser would navigate
+   * straight into a 401 and the person would conclude their data is gone.
+   */
+  protected exportData(): void {
+    this.exporting.set(true);
+    this.http
+      .get(`${environment.apiUrl}/users/me/export/`, { responseType: 'blob' })
+      .subscribe({
+        next: (blob) => {
+          this.exporting.set(false);
+          saveBlob(blob, `zenpdf-export-${new Date().toISOString().slice(0, 10)}.zip`);
+        },
+        error: () => {
+          this.exporting.set(false);
+          this.toast.error('Could not prepare that just now.');
+        },
+      });
   }
 
   protected confirmDelete(): void {

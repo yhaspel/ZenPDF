@@ -83,9 +83,40 @@ def test_no_route_answers_403_for_somebody_elses_object(other_api, uploaded_doc)
         f"/api/documents/{doc_id}/versions/",
         f"/api/documents/{doc_id}/content/",
         f"/api/documents/{doc_id}/pages/",
-        f"/api/documents/{doc_id}/thumbnail/1/",
+        f"/api/documents/{doc_id}/pages/1/thumbnail/",
     ):
         assert other_api.get(path).status_code == 404, path
+
+
+def test_every_read_route_added_since_phase_1_is_scoped(other_api, api,
+                                                        uploaded_doc, user):
+    """The per-phase suites each assert isolation for the routes they added.
+    This asks it once, for all of them, from the other account's side."""
+    from apps.esign.models import SavedSignature, SignRequest
+
+    user.email_verified = True
+    user.save(update_fields=["email_verified"])
+    request = SignRequest.objects.create(owner=user, title="Private",
+                                         document_id=uploaded_doc["id"])
+    signature = SavedSignature.objects.create(user=user, storage_key="x/y.png")
+    folder = api.post("/api/folders/", {"name": "Mine"}, format="json").json()
+    job = api.post(
+        f"/api/documents/{uploaded_doc['id']}/operations/",
+        {"type": "rotate_pages", "params": {"pages": [0], "degrees": 90}},
+        format="json",
+    ).json()
+
+    for path in (
+        f"/api/sign-requests/{request.id}/",
+        f"/api/sign-requests/{request.id}/audit/",
+        f"/api/signatures/{signature.id}/",
+        f"/api/folders/{folder['id']}/",
+        f"/api/jobs/{job['id']}/",
+        f"/api/jobs/{job['id']}/download/",
+        f"/api/documents/{uploaded_doc['id']}/pages/1/thumbnail/",
+    ):
+        code = other_api.get(path).status_code
+        assert code == 404, f"{path} answered {code} to another account"
 
 
 def test_jobs_are_scoped_too(api, other_api, guest, uploaded_doc):
@@ -138,39 +169,73 @@ def test_a_signing_token_belongs_to_one_recipient_only(api, uploaded_doc, anon,
 
     # The second signer's own field, submitted with the first signer's token.
     field_id = str(second.fields.first().id)
-    resp = anon.post(f"/api/public/sign/{first.token}/field/",
+    resp = anon.post(f"/api/public/sign/{first.token}/fields/",
                      {"field_id": field_id, "value": "x"}, format="json")
     assert resp.status_code in (400, 403, 404), resp.status_code
     assert SignRequest.objects.get(id=request["id"]).status == "sent"
 
 
-def test_the_public_token_state_machine_refuses_a_replay(api, uploaded_doc, anon,
-                                                         user):
-    """A canceled request's token stops working, and a completed recipient
-    cannot sign twice."""
+def _sent_token(api, uploaded_doc, user, email="solo@example.com"):
+    """A sent request with one text field, and the recipient's token.
+
+    A text field rather than a signature because these tests are about the
+    token state machine, and a signature needs an image the API has to store.
+    """
     from apps.esign.models import Recipient
 
     _verify(user)
-
     request = api.post("/api/sign-requests/", {"document": uploaded_doc["id"]},
                        format="json").json()
     api.patch(f"/api/sign-requests/{request['id']}/",
-              {"recipients": [{"email": "solo@example.com", "role": "signer",
-                               "order": 1}]}, format="json")
+              {"recipients": [{"email": email, "role": "signer", "order": 1}]},
+              format="json")
     recipient = Recipient.objects.get(sign_request_id=request["id"])
     api.patch(
         f"/api/sign-requests/{request['id']}/",
         {"fields": [{"recipient_id": str(recipient.id), "page": 0, "x": 0.1,
-                     "y": 0.1, "w": 0.2, "h": 0.05, "type": "signature",
+                     "y": 0.1, "w": 0.2, "h": 0.05, "type": "text",
                      "required": True}]},
         format="json",
     )
     api.post(f"/api/sign-requests/{request['id']}/send/", format="json")
     recipient.refresh_from_db()
-    token = recipient.token
+    return request["id"], recipient
 
+
+def test_a_completed_recipient_cannot_sign_twice(api, uploaded_doc, anon, user):
+    """Otherwise an envelope's history stops meaning anything."""
+    from apps.esign.models import AuditEvent
+
+    request_id, recipient = _sent_token(api, uploaded_doc, user)
+    token = recipient.token
     assert anon.get(f"/api/public/sign/{token}/").status_code == 200
-    api.post(f"/api/sign-requests/{request['id']}/cancel/", format="json")
+
+    field_id = str(recipient.fields.first().id)
+    anon.post(f"/api/public/sign/{token}/consent/", {"agree": True},
+              format="json")
+    anon.post(f"/api/public/sign/{token}/fields/",
+              {"field_id": field_id, "value": "x"}, format="json")
+    assert anon.post(f"/api/public/sign/{token}/complete/",
+                     format="json").status_code == 200
+
+    replay = anon.post(f"/api/public/sign/{token}/complete/", format="json")
+    assert replay.status_code >= 400, replay.status_code
+    signed = AuditEvent.objects.filter(sign_request_id=request_id,
+                                       type="signed").count()
+    assert signed == 1, f"{signed} signature events for one signer"
+
+    # …and the link still *opens*: a completed envelope has to stay reachable
+    # by the people who signed it (ESIGN retention).
+    assert anon.get(f"/api/public/sign/{token}/").status_code == 200
+
+
+def test_a_canceled_requests_token_stops_working(api, uploaded_doc, anon, user):
+    request_id, recipient = _sent_token(api, uploaded_doc, user,
+                                        email="cancelled@example.com")
+    token = recipient.token
+    assert anon.get(f"/api/public/sign/{token}/").status_code == 200
+
+    api.post(f"/api/sign-requests/{request_id}/cancel/", format="json")
     # 410 Gone: the link was real and is not any more, which is the honest
     # thing to tell somebody who was legitimately sent it.
     assert anon.get(f"/api/public/sign/{token}/").status_code == 410

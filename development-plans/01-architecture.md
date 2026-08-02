@@ -171,7 +171,7 @@ So on a `/Rotate 90` page the two spaces differ by a quarter turn. The rule is t
 **documents.DocumentVersion**: id, document FK (`versions`), seq int (unique per document, starts 1), storage_key, size_bytes, page_count, sha256, label (e.g. "Original", "OCR", "Signed"), created_by FK user null, job FK null, created_at. Immutable.
 **jobs.Job**: id, **user FK null**, **guest_session FK null** (same one-of constraint), document FK null, type (operation type, §10), params JSON, base_version_seq int null, status ∈ {queued, running, succeeded, failed, canceled}, progress 0–100, error_code, error_message, **error_details JSON** (structured half of the §6 error shape — added phase 4), result JSON null, celery_task_id, created_at, started_at, finished_at.
 **esign.SavedSignature**: id, user FK (**account-only**; guests draw an ephemeral signature held client-side for the session), kind ∈ {signature, initials}, method ∈ {draw, type, upload}, storage_key (PNG, alpha), typed_text, font, is_default, created_at.
-**esign.SignRequest**: id, owner FK, document FK, source_version FK *(`on_delete=PROTECT`, and a document with a sign request refuses permanent deletion — the signed record has to keep pointing at what was signed)*, title, message, status ∈ {draft, sent, completed, declined, expired, canceled, **canceled_by_abuse**}, envelope_code (human-short, stamped on pages, e.g. `ZEN-8F3KQ2`), expires_at, reminder_every_days int=3, sent_at, completed_at, final_key, certificate_key, final_sha256, created_at, updated_at.
+**esign.SignRequest**: id, **owner FK null (`SET_NULL`)**, **document FK null (`SET_NULL`)**, **sender_email**, **sender_name** *(amended 2026-08-02, P10: a completed envelope is the counterparty's evidence of an agreement and must survive the sender closing their account (§10.1), so neither FK cascades and the sender is snapshotted as text at send — the certificate and the ceremony read the snapshot, not the FK)*, source_version FK *(`on_delete=PROTECT`, and a document with a sign request refuses permanent deletion — the signed record has to keep pointing at what was signed)*, title, message, status ∈ {draft, sent, completed, declined, expired, canceled, **canceled_by_abuse**}, envelope_code (human-short, stamped on pages, e.g. `ZEN-8F3KQ2`), expires_at, reminder_every_days int=3, sent_at, completed_at, final_key, certificate_key, final_sha256, created_at, updated_at.
 **esign.Recipient**: id, sign_request FK (`recipients`), email, name, role ∈ {signer, approver, viewer, cc}, order int=1 (same order ⇒ parallel group; groups proceed in ascending order), status ∈ {pending, notified, viewed, consented, completed, declined}, token (urlsafe 43ch, unique), consent_at/ip/user_agent, decline_reason, last_notified_at, completed_at.
 **esign.SignField**: id, sign_request FK, recipient FK, page int, x/y/w/h floats (§8), type ∈ {signature, initials, date_signed, text, checkbox}, required bool=true, label, value, **image_key** *(amended 2026-08-02, P8: a signature/initials field's value is a PNG, which belongs in object storage rather than in a text column)*, filled_at, created_at.
 **esign.AuditEvent**: id, sign_request FK (`audit_events`), recipient FK null, type (created|sent|opened|consented|field_filled|signed|approved|declined|reminder_sent|expired|canceled|completed|seal_applied|downloaded), created_at, ip, user_agent, metadata JSON, prev_hash, event_hash = **hmac-sha256**(SECRET_KEY, prev_hash + canonical_json({type, created_at, recipient_id, ip, user_agent, metadata})) *(amended 2026-08-02, P8: keyed, not a bare digest — a plain chain is only self-consistent, and anyone able to write to the database could edit an event and recompute every hash after it while every check still reported "verifies")*. Append-only (no update/delete paths; enforced in model + DB permissions in prod).
@@ -351,6 +351,15 @@ EMAIL_VERIFICATION_TTL_HOURS=48          TRASH_RETENTION_DAYS=30
 THROTTLE_UPLOAD=20/hour                  THROTTLE_VERIFY=10/min
 THROTTLE_VERIFY_HOUR=60/hour             THROTTLE_PUBLIC_SIGN=20/min
 THROTTLE_PUBLIC_SIGN_TOKEN=200/day
+# Observability (phase 10) — all inert unless set
+SENTRY_DSN=                 SENTRY_ENVIRONMENT=production
+SENTRY_RELEASE=             SENTRY_TRACES_SAMPLE_RATE=0.0
+LOG_FORMAT=json             # `text` for a readable dev console
+# Admin (§17) — an empty allowlist DENIES, which is the safe default
+ADMIN_ENABLED=false         ADMIN_URL_PATH=admin/     ADMIN_IP_ALLOWLIST=
+# Transport (prod only)
+SECURE_SSL_REDIRECT=true    SECURE_HSTS_SECONDS=63072000
+SECURE_HSTS_PRELOAD=false   # a one-way door for the whole domain
 GUEST_IP_HASH_SALT=dev-rotate-me
 # Ads (phase 9)
 ADS_ENABLED=false  ADSENSE_CLIENT_ID=
