@@ -58,7 +58,7 @@ them.
 **Acceptance criteria** (copied verbatim from phase-10-hardening-release.md):
 - [~] Hostile-corpus suite: zero worker crashes that don't recycle cleanly; zero cross-user leaks; all documented limits enforced. → **The corpus and the isolation sweep are done; one clause is not.** `apps/pdf_engine/tests/test_hostile_corpus.py` ships five fixtures built by the committed generator — a self-referential page tree, a 10 000-deep outline, an 80 MB decompression bomb, a `.docx` declaring a gigabyte, a malformed TIFF — each asserting a **time and memory budget**, because a guard that answers after ten minutes is not a guard. The zip bomb found a real gap and closed it: `convert.check_archive` reads the central directory *before* LibreOffice is handed the file. Isolation: `apps/core/tests/test_isolation_sweep.py` walks the URL table rather than the routes somebody remembered — every id-bearing `AllowAny` route must be listed with a written reason; sign requests, audit, saved signatures, folders, job downloads and thumbnails all answer 404 (never 403) to another account; a completed recipient cannot sign twice and a canceled request's token is 410. **What is not proven:** that a worker *killed mid-attack* recycles cleanly and leaves the job `failed`. The fixtures run the engine in-process, so they demonstrate the guard, not the kill path — that is `reap_stalled_jobs`' territory and it has its own tests. Queued.
 - [~] Lighthouse (landing + dashboard) ≥90 perf/a11y/best-practices/SEO on prod build. → **Landing, measured: accessibility 100, best practices 100, SEO 100.** The two gaps are honest: the run was against the dev server (there is no deployed host yet), and this tooling does not score performance without a trace. Both are checklist items — the criterion says "on prod build", and a prod build needs somewhere to be. `ng build --configuration=production` succeeds and prerenders 29 routes.
-- [~] axe-core zero serious/critical across routes; keyboard-only ceremony pass recorded. → **axe is complete; the keyboard half is partial and the screen-reader half is not done.** `e2e/tests/phase-10-a11y.spec.ts` scans seven public routes, the dashboard empty and populated, the workspace viewer and its annotate/edit/protect/convert panels, settings, and both ceremony screens — zero serious or critical. It found real barriers, all fixed: `text-slate-400` body text at 2.85:1 across most of the product, white on `emerald-600` buttons and toasts at 3.1:1, unlabelled inputs on both auth screens, in settings, and on the colour/width/opacity/file controls in four workspace panels, an unlabelled per-document checkbox, links distinguishable by colour alone, body text at 4.1:1 on the convert panel, and a disclosure box a mouse could scroll and a keyboard could not — on the screen where somebody agrees to sign. Every dialog now traps focus (CDK), names itself and answers Escape; toasts are a polite live region; `prefers-reduced-motion` is honoured. **Not done:** the keyboard pass consents and reaches the fields but does not finish the signature (drawing on a canvas is not a keyboard gesture — the typed path needs its own flow), and §10.3's manual NVDA/VoiceOver script does not exist. PDF.js's own toolbar is excluded from the scan with the reason in the spec: it ships ARIA defects we cannot fix from here, and leaving them in would drown a real regression in vendor noise. Both queued.
+- [~] axe-core zero serious/critical across routes; keyboard-only ceremony pass recorded. → **axe is complete; the keyboard half is partial and the screen-reader half is not done.** `e2e/tests/phase-10-a11y.spec.ts` scans seven public routes, the dashboard empty and populated, the workspace viewer and its annotate/edit/protect/convert panels, settings, and both ceremony screens — zero serious or critical. It found real barriers, all fixed: `text-slate-400` body text at 2.85:1 across most of the product, white on `emerald-600` buttons and toasts at 3.65:1, unlabelled inputs on both auth screens, in settings, and on the colour/width/opacity/file controls in four workspace panels, an unlabelled per-document checkbox, links distinguishable by colour alone, body text at 4.1:1 on the convert panel, and a disclosure box a mouse could scroll and a keyboard could not — on the screen where somebody agrees to sign. Every dialog now traps focus (CDK), names itself and answers Escape; toasts are a polite live region; `prefers-reduced-motion` is honoured. **Not done:** the keyboard pass consents and reaches the fields but does not finish the signature (drawing on a canvas is not a keyboard gesture — the typed path needs its own flow), and §10.3's manual NVDA/VoiceOver script does not exist. PDF.js's own toolbar is excluded from the scan with the reason in the spec: it ships ARIA defects we cannot fix from here, and leaving them in would drown a real regression in vendor noise. Both queued.
 - [~] `@full` suite green 3 consecutive nightly runs on the prod-shaped stack. → **Green on the dev-shaped stack; not yet three nightly runs, and not yet on the prod-shaped one.** The suites and the cadence exist (`docs/ops/release.md`, `@smoke` ~30 s as the deploy gate, `BROWSERS=all` for the nightly cross-browser run), and the full suite is green on a fresh stack — but "three consecutive nightly runs" is a claim only time can make, and the prod-shaped stack needs the host from the checklist.
 - [~] Clean-VM prod compose deploy documented + performed; restore drill performed. → **Documented, not performed.** `docs/ops/deploy.md`, `rollback.md` and `restore-drill.md` are written to be followed at 3am by somebody who did not build this, and `manage.py check --deploy` is clean under `config.settings.prod` (the two remaining warnings are a throwaway `SECRET_KEY` in the check command and HSTS preload, which is deliberately owner-opt-in). Performing them needs a VM and credentials.
 - [~] p95 budgets met; queue-starvation test passes. → **Shape pinned, numbers not.** `apps/core/tests/test_performance.py` seeds 3 000 documents and asserts the library list uses the covering index rather than sorting everything (the EXPLAIN audit found `(owner, trashed_at)` did not cover `ORDER BY updated_at`; both principals now have `(owner, trashed_at, -updated_at)`, and the audit chain has `(sign_request, created_at)`), that listing stays paginated, and that the lanes stay separated so an hour of OCR cannot stop somebody rotating a page. A p95 figure from a laptop is not a p95 figure from production, so the `locust` run belongs with the deployed host.
@@ -495,7 +495,7 @@ them.
 | 2026-08-02 | Sentry ships **wired and inert**, with PII scrubbed in `before_send` rather than by the SDK's defaults. | `send_default_pii=False` is not enough: the default event still carries request headers (including `Authorization` and `X-Guest-Token`), the body, cookies and the query string. On this product that is somebody's contract in a crash report. Scrubbing at the boundary is a control; "we will remember not to look" is not. | No (implements §10.4) |
 | 2026-08-02 | Django **admin is enabled in production**, at a configurable path, behind a source-IP allowlist that **denies when unconfigured**, answering 404 rather than 403. | Phase 9 built ban and soft-delete actions that production could not reach at all, because admin was `DEBUG`-only. The inverse default is how staff tooling ends up on the public internet; and 403 confirms there is an admin here, which 404 does not. | No (implements §17) |
 | 2026-08-02 | A zip-based upload is checked against its **declared** uncompressed size before it is stored. | A `.docx` is a zip and its central directory states the unpacked size without unpacking anything — which is the only moment refusal is cheap. Past it, the file is LibreOffice's problem and LibreOffice will try. Found by the hostile-corpus fixture, not by reasoning. | No (implements §10.1's bomb list) |
-| 2026-08-02 | `text-slate-400` body text, and white on `emerald-600`, are **gone from the product**. | 2.85:1 and 3.1:1 against the 4.5:1 AA threshold — found by axe across every route, not by looking. They read as "subtle grey" to the person who chose them and as "unreadable" to a good number of the people using it. | No (implements §10.3) |
+| 2026-08-02 | `text-slate-400` body text, and white on `emerald-600`, are **gone from the product**. | 2.86:1 and 3.65:1 against the 4.5:1 AA threshold — found by axe across every route, not by looking. They read as "subtle grey" to the person who chose them and as "unreadable" to a good number of the people using it. | No (implements §10.3) |
 | 2026-08-02 | Playwright keeps **zero retries**, and cross-browser is opt-in. | A test that passes on the second attempt is telling you something about the product; a retry count is how that stops being heard. Cross-browser triples a suite that drives real PDFs through a real worker, and every failure this project has actually hit was logic rather than engine — so it runs nightly rather than on every commit. | No (§10.5 asks for quarantine-and-fix, which is what this is) |
 | 2026-08-02 | **Sentry covers the API and the workers, not Angular.** | §10.4 names all three. A browser SDK is a third-party script on every page of a product whose CSP is `script-src 'self'` and whose ad layer is deliberately gated — turning it on means widening the policy and shipping another vendor's code into the signing ceremony. Deferred deliberately, with the server half (where the data lives) done. Queued. | No — deviation recorded |
 | 2026-08-02 | **There is no `@full` tag**: "full" is the suite with no `--grep`. | A tag you must remember to add is a tag somebody forgets, and the failure mode is a spec that silently runs in neither suite. Running everything by default makes omission impossible. | No — deviation recorded |
@@ -517,7 +517,7 @@ be deleted and its envelope detached), `zen_details` attached ad hoc to
 exceptions rather than declared on the base class, and a dict indexed with a
 `str` where the key type is an enum.
 
-The other 72 are typing hygiene spread across nineteen files — narrowing
+The other 69 are typing hygiene spread across nineteen files — narrowing
 `Optional`, `HttpResponse` vs `StreamingHttpResponse`, `timezone.timedelta`
 re-exports. Working through them is a mechanical sweep with real regression
 risk, taken at the end of a phase that has already changed migrations, deletion
@@ -529,8 +529,6 @@ carries it.
 on a 28-spec, 60-component app is its own piece of work rather than a footnote
 to this one.
 
-
-_(None yet.)_
 
 ## Session log — Phase 2B (2026-08-01)
 
@@ -716,7 +714,7 @@ LibreOffice. That is the value of writing the attack down rather than reasoning
 about it.
 
 **What axe found.** Not edge cases: `text-slate-400` body text at 2.85:1 across
-most of the product, white-on-emerald buttons and toasts at 3.1:1, unlabelled
+most of the product, white-on-emerald buttons and toasts at 3.65:1, unlabelled
 inputs on both auth screens, and a scrollable disclosure box a keyboard could
 not reach — on the screen where somebody agrees to sign electronically. The
 keyboard-only ceremony pass is the assertion that matters, and it is written to
@@ -738,6 +736,26 @@ and all five need the same thing: a deployed host with a domain, credentials and
 somebody's signature. `v1.0.0` is deliberately **not** tagged. The phase doc
 says this phase ends amber unless the owner completes their items, and they have
 not, so it does.
+
+**What the four review lenses found, and why it is worth recording.** Twenty-six
+substantiated findings across security, correctness, plan conformance and UX —
+and the pattern is the same one Phase 9 had: *the code worked and the promises
+around it did not.* Deletion retained every envelope while four separate places
+in the copy said "envelopes other people have already signed", so a request
+nobody signed kept both sides' addresses and IP addresses to prove nothing. The
+export button was an `<a href>` to a bearer-token endpoint, so "Download my
+data" navigated into a 403 on the DRF browsable API — a promise the privacy
+page had just started making. The health probe read the cache *outside* the
+try, so a Redis outage produced a 500 with no payload rather than "the database
+is fine, keep serving". The admin allowlist read `X-Forwarded-For` on a path
+nginx does not proxy, so one header opened it. The composite index bought a
+wider index and no benefit, because a null test keeps the column in the sort
+key — measured on 500k rows before and after. And the a11y suite had a test
+named for the workspace that never opened it.
+
+All of those are fixed. What they have in common is that each one passes a test
+asking "does the code do what it says" and fails a test asking "is the sentence
+we published true" — which is the test worth writing.
 
 **Honest note on the run.** Two frontend specs timed out on the first full-gate
 run immediately after `up.sh`, and passed standalone in 4.8 s a minute later —
