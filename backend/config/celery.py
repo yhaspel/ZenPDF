@@ -56,8 +56,3 @@ def _clear_correlation(**_):
     zen_logging.request_id_var.set("")
     zen_logging.principal_var.set("")
     zen_logging.job_id_var.set("")
-
-
-@app.task(bind=True, ignore_result=True)
-def debug_task(self):
-    print(f"Request: {self.request!r}")
