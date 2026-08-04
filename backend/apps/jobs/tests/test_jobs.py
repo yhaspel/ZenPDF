@@ -72,9 +72,11 @@ def test_the_stall_reaper_drops_password_material(user):
         user=user, type="encrypt", status=Job.Status.RUNNING,
         params={"owner_password": "hunter2", "permissions": {"print": "none"}},
     )
-    Job.objects.filter(pk=job.pk).update(
-        created_at=timezone.now() - timedelta(seconds=settings.JOB_STALL_TIMEOUT + 60),
-    )
+    stale = timezone.now() - timedelta(seconds=settings.JOB_STALL_TIMEOUT + 60)
+    # `started_at`, not `created_at`: the sweep ages RUNNING work from when it
+    # started, so that a job which merely waited behind a backlog is not failed
+    # for it (M3).
+    Job.objects.filter(pk=job.pk).update(created_at=stale, started_at=stale)
 
     assert reap_stalled_jobs() == 1
     job.refresh_from_db()

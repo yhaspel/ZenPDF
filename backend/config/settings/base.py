@@ -316,7 +316,15 @@ CELERY_BEAT_SCHEDULE = {
     },
 }
 EXPORT_TTL_HOURS = config("EXPORT_TTL_HOURS", default=24, cast=int)
+# How long a job may be *running* before the sweep concludes its worker died.
+# Measured from `started_at`, not `created_at`: a job that merely waited behind
+# a backlog has not stopped responding, and telling its owner it did is a lie
+# the queue depth wrote.
 JOB_STALL_TIMEOUT = config("JOB_STALL_TIMEOUT", default=1800, cast=int)
+# …and how long one may sit *queued* before we conclude the broker lost it.
+# Deliberately much longer, because queue-wait is a capacity symptom rather than
+# a failure and the only thing it costs is a concurrency slot.
+JOB_QUEUE_STALL_TIMEOUT = config("JOB_QUEUE_STALL_TIMEOUT", default=7200, cast=int)
 
 # --- Cache (§16) ------------------------------------------------------------
 # Throttle buckets and the short-window metered-op counters live here. It must

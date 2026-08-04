@@ -85,12 +85,15 @@ def test_the_sweep_and_the_task_say_the_same_thing(api, uploaded_doc, settings):
         format="json",
     )
     job = Job.objects.get(id=resp.json()["id"])
-    # The sweep ages on `created_at` — a job killed before it ever started
-    # running has the same problem and no `started_at` to measure.
+    # The sweep ages RUNNING work on `started_at` (M3): aging on `created_at`
+    # failed healthy jobs for the sin of having waited behind a backlog. A job
+    # that never started is covered by a separate, deliberately generous
+    # queued cutoff — see `test_stall_reaper.py`.
     stale = timezone.now() - timezone.timedelta(
         seconds=settings.JOB_STALL_TIMEOUT + 60)
     Job.objects.filter(id=job.id).update(status=Job.Status.RUNNING,
-                                         created_at=stale, finished_at=None)
+                                         created_at=stale, started_at=stale,
+                                         finished_at=None)
 
     assert reap_stalled_jobs() == 1
     job.refresh_from_db()

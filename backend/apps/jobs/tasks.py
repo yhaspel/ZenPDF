@@ -9,6 +9,7 @@ from datetime import timedelta
 
 from celery import shared_task
 from django.conf import settings
+from django.db.models import Q
 from django.utils import timezone
 
 from .models import Job
@@ -53,11 +54,27 @@ def reap_stalled_jobs() -> int:
     A hard time limit or an OOM kill terminates the process outright, so the row
     stays queued/running forever and permanently consumes one of the owner's
     MAX_CONCURRENT_JOBS slots.
+
+    **Age is measured from `started_at`, not `created_at`.** Aging a RUNNING job
+    from when it was *created* fails healthy work for the sin of having waited:
+    a busy heavy lane with two workers and a queue of long OCR jobs hands the
+    thirty-first arrival a "stopped responding" it never earned, while it is
+    still running perfectly. A job that has not started yet is a different
+    question — nothing is executing, so nothing has stalled — and it gets a
+    deliberately generous cutoff of its own, because queue depth is a capacity
+    symptom rather than a fault.
     """
     now = timezone.now()
-    cutoff = now - timedelta(seconds=settings.JOB_STALL_TIMEOUT)
+    running_cutoff = now - timedelta(seconds=settings.JOB_STALL_TIMEOUT)
+    queued_cutoff = now - timedelta(seconds=settings.JOB_QUEUE_STALL_TIMEOUT)
     stalled = list(Job.objects.filter(
-        status__in=[Job.Status.QUEUED, Job.Status.RUNNING], created_at__lt=cutoff
+        # Running long past its limit: its worker is gone.
+        Q(status=Job.Status.RUNNING, started_at__lt=running_cutoff)
+        # Never started, and old enough that the broker has plainly lost it.
+        # `started_at` is null for every QUEUED row, and for the odd RUNNING one
+        # written by an older release, so both are covered here.
+        | Q(status__in=[Job.Status.QUEUED, Job.Status.RUNNING],
+            started_at__isnull=True, created_at__lt=queued_cutoff)
     ))
     for job in stalled:
         # One row at a time, through `mark_failed`, rather than a queryset

@@ -93,9 +93,21 @@ def doc_lock(document_id: str):
             lock.release()
 
 
-def _canceled(job: Job) -> bool:
-    """Cooperative-cancel checkpoint: re-read the row the API may have updated."""
-    return Job.objects.filter(pk=job.pk, status=Job.Status.CANCELED).exists()
+def _abandoned(job: Job) -> bool:
+    """Re-read the row somebody else may have moved on without us.
+
+    Two writers reach it. The API marks a job CANCELED when the user asks, and
+    this is the cooperative checkpoint that honours it. `reap_stalled_jobs` can
+    mark it FAILED while the worker is still alive — a lane slower than the
+    sweep expects, a clock skew, a heavy op behind a stalled one. Checking only
+    for CANCELED meant a reaped job could still write SUCCEEDED over the top:
+    the user was told it failed and then handed a result, `finished_at`
+    describes the wrong ending, and the concurrency accounting counts a job that
+    finished twice.
+
+    Anything other than RUNNING means this task no longer owns the row.
+    """
+    return not Job.objects.filter(pk=job.pk, status=Job.Status.RUNNING).exists()
 
 
 def _measure(data: bytes) -> tuple[str, int, int]:
@@ -669,7 +681,7 @@ def run_operation(self, job_id: str):
 
             # Last point before the result is committed — honour a cancel that
             # arrived while the engine was working.
-            if _canceled(job):
+            if _abandoned(job):
                 return
 
             if kind == "report":
@@ -870,7 +882,7 @@ def run_cross_document_operation(self, job_id: str):
             job.mark_failed("validation_error", f"Unsupported cross-doc op '{job.type}'.")
             return
 
-        if _canceled(job):
+        if _abandoned(job):
             return
 
         new_doc = _create_document_from_bytes(
@@ -931,7 +943,7 @@ def revert_version(self, job_id: str):
                 return
             target = document.versions.get(seq=target_seq)
             data = _version_bytes(target)
-            if _canceled(job):
+            if _abandoned(job):
                 return
             version = _save_new_version(
                 document=document, data=data,
