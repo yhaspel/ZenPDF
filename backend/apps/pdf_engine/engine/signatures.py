@@ -40,10 +40,32 @@ MAX_SIGNATURE_PIXELS = 8_000_000
 
 
 def _open_image(data: bytes) -> fitz.Pixmap:
+    """Decode an accepted image, refusing a decompression bomb on its header.
+
+    The pixel ceiling used to be checked on the `Pixmap`, which is checking
+    after the damage: `fitz.Pixmap(data)` allocates the full bitmap, so a 1.5 MB
+    PNG declaring 40000×40000 is ~2.9 GB claimed inside the API process before
+    anyone counts. On Linux the OOM killer takes the process and there is no
+    exception left to catch. `assets.header_dimensions` reads the size out of
+    the IHDR/SOFn without decoding — the same guard the image-asset path has
+    used since phase 3, which this path was simply missing.
+    """
+    # Function-local: `apps.core` imports the engine, so a module-level import
+    # here would close the cycle.
+    from apps.core.assets import header_dimensions
+
+    dims = header_dimensions(data)
+    if dims is None:
+        raise InvalidParams("That image could not be read.")
+    if dims[0] * dims[1] > MAX_SIGNATURE_PIXELS:
+        raise InvalidParams("That image is too large to use as a signature.")
+
     try:
         pixmap = fitz.Pixmap(data)
     except Exception as exc:  # noqa: BLE001
         raise InvalidParams(f"That image could not be read: {exc}") from exc
+    # Kept as well as the header check: the header is a claim, and a file whose
+    # real dimensions exceed what it declared must not slip through either.
     if pixmap.width * pixmap.height > MAX_SIGNATURE_PIXELS:
         raise InvalidParams("That image is too large to use as a signature.")
     return pixmap

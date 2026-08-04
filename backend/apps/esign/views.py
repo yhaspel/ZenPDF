@@ -78,6 +78,12 @@ from .tasks import finalize_sign_request
 
 MAX_FIELDS = 200
 
+# The hard byte ceiling on any signature image, whichever door it comes in by.
+# The account path resolves a tier cap first and this is the backstop behind it;
+# the public ceremony has no principal to resolve a tier from, so this is the
+# only cap it gets — which is why it has to be one constant and not two copies.
+MAX_SIGNATURE_IMAGE_BYTES = 12 * 1024 * 1024
+
 
 # --------------------------------------------------------------------------- #
 # 8A — saved signatures (account-only; a guest keeps one in the browser)
@@ -149,7 +155,7 @@ def _signature_png(request, method: str, data) -> bytes:
     raw = upload.read() if upload else _decode_data_url(data.get("image"))
     if not raw:
         raise ValidationFailed("No signature image was sent.")
-    if len(raw) > 12 * 1024 * 1024:
+    if len(raw) > MAX_SIGNATURE_IMAGE_BYTES:
         raise ValidationFailed("That signature image is too large.")
     # One normalizer for every route in: a photograph has no alpha channel, so
     # trimming alone left the *paper* to be stamped onto the document.
@@ -778,6 +784,13 @@ class PublicSignFieldView(PublicSignBase):
             raw = _decode_data_url(request.data.get("signature_image"))
             if not raw:
                 raise ValidationFailed("Draw or type your signature first.")
+            # The ceremony has no account behind it, so there is no tier cap to
+            # resolve first — this is the only byte ceiling on the way in, and
+            # it is the same one the account path uses. Without it an
+            # unauthenticated caller with a signing link hands the API process
+            # an arbitrarily large image to decode.
+            if len(raw) > MAX_SIGNATURE_IMAGE_BYTES:
+                raise ValidationFailed("That signature image is too large.")
             try:
                 png = SG.normalize_signature(raw)
             except EngineError as exc:
