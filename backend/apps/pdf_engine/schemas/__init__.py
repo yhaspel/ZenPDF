@@ -4,7 +4,13 @@ Used both to validate incoming operation params and (via drf-spectacular) to
 document them. Kept as plain dicts so they are import-cheap and language-neutral.
 """
 
-_PAGES = {"type": "array", "items": {"type": "integer", "minimum": 0}, "minItems": 1}
+# `maxItems` is a backstop, not the limit: the tier page cap is enforced at
+# runtime in `documents.tasks` against the *result*, which is the number that
+# actually matters. This only stops a million-element array from being decoded
+# and walked before anyone measures anything, and is set well above any document
+# a real user has (§10).
+_PAGES = {"type": "array", "items": {"type": "integer", "minimum": 0},
+          "minItems": 1, "maxItems": 10000}
 _NORM_RECT = {
     "type": "object",
     "required": ["x", "y", "w", "h"],

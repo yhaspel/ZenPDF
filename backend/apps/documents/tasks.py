@@ -171,6 +171,24 @@ def _create_document_from_bytes(*, principal, folder, title, data, created_by, j
 
 def _save_new_version(*, document, data, label, created_by, job):
     sha, pages, size = _measure(data)
+    # The same tier page cap the two creation paths enforce. It has to be here
+    # too, because the storage quota does not bound page count: duplicated pages
+    # share their content xrefs, so `duplicate_pages` grows the page count for
+    # almost no bytes. Without this a guest walks a 10-page document past the
+    # 300-page cap in a handful of jobs, and every operation afterwards costs
+    # more (§16, §17).
+    limits = L.for_principal(document.principal)
+    if pages > limits.max_pages:
+        raise EngineError(
+            f"That would produce a {pages}-page document; the limit is "
+            f"{limits.max_pages}."
+            + (" Create a free account to work with larger documents."
+               if is_guest(document.principal) else ""),
+            code="validation_error",
+            details={"pages": pages, "max_pages": limits.max_pages,
+                     "tier": limits.tier},
+        )
+
     # Before the blob is written, not after: a version that lands and then
     # fails a check has already cost the bytes. `QuotaExceeded` is a
     # `ZenAPIException`, so the worker's handler turns it into the §6 error
