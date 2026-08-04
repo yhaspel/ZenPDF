@@ -141,6 +141,16 @@ class SignRequest(models.Model):
     final_key = models.CharField(max_length=500, blank=True)
     certificate_key = models.CharField(max_length=500, blank=True)
     final_sha256 = models.CharField(max_length=64, blank=True)
+    # The two steps after the COMPLETED commit that are not self-describing.
+    #
+    # `finalize` runs on the `heavy` lane with `acks_late`, so a worker killed
+    # after the commit is redelivered — and the tail has to be able to work out
+    # what it already did. The certificate and the audit events can answer that
+    # from their own state (`certificate_key`, the event rows); sending an email
+    # and appending a version cannot, so they get a timestamp each. Without them
+    # a resumed finalize mails every recipient a second copy.
+    completed_notified_at = models.DateTimeField(null=True, blank=True)
+    source_appended_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

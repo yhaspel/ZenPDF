@@ -97,7 +97,12 @@ def _finalize(sign_request_id: str) -> dict:
                     .select_related("owner", "document", "source_version")
                     .get(id=sign_request_id))
     if sign_request.status == SignRequest.Status.COMPLETED:
-        return {"already": True, "envelope": sign_request.envelope_code}
+        # Not "already done, nothing to do". `acks_late` is on for the heavy
+        # lane, so this branch is exactly where a task redelivered after a kill
+        # lands — and the kill may have happened between the COMPLETED commit
+        # and the end of the tail, leaving no certificate, no completion events
+        # and no notification, permanently. Finish whatever is missing.
+        return {"already": True, **_finalize_tail(sign_request)}
     if sign_request.status != SignRequest.Status.SENT:
         return {"skipped": sign_request.status}
 
@@ -145,31 +150,65 @@ def _finalize(sign_request_id: str) -> dict:
                                    "completed_at"])
     sign_request.refresh_from_db()
 
-    record(sign_request, "seal_applied", **seal_report)
-    record(sign_request, "completed", sha256=final_sha)
+    return _finalize_tail(sign_request, seal_report=seal_report)
+
+
+def _finalize_tail(sign_request, *, seal_report: dict | None = None) -> dict:
+    """Everything after the COMPLETED commit, written so it can run twice.
+
+    This used to be the straight-line tail of `_finalize`, and it is the part a
+    kill destroys. The status is committed first — it has to be, or two workers
+    seal two different files — and `acks_late` on the `heavy` lane means a
+    worker killed in the next few seconds is redelivered. The redelivery then
+    saw COMPLETED, returned `{"already": True}`, and the certificate, the
+    completion events and the notification were gone for good: `certificate_key`
+    stayed empty, so the download answered "not ready" for ever, and nobody was
+    ever told the document was finished.
+
+    So each step asks whether it has already happened. Three of them can answer
+    from their own state; the email and the source-append cannot, and carry a
+    timestamp apiece.
+    """
+    storage = get_storage()
+    final_sha = sign_request.final_sha256
+
+    if not sign_request.audit_events.filter(type="seal_applied").exists():
+        # A resumed run no longer has the seal report in hand — it was produced
+        # before the commit that survived. Recording the event without it beats
+        # a gap in the chain the certificate prints, and it says which it is.
+        record(sign_request, "seal_applied",
+               **(seal_report if seal_report is not None else {"resumed": True}))
+    if not sign_request.audit_events.filter(type="completed").exists():
+        record(sign_request, "completed", sha256=final_sha)
 
     # The certificate is built *after* the completion events so that it can
     # print them — it is the record of the whole envelope, including its end.
-    cert = certificate.build(sign_request)
-    cert_key = f"sign/{sign_request.id}/certificate.pdf"
-    storage.put_bytes(cert_key, cert, content_type="application/pdf")
-    sign_request.certificate_key = cert_key
-    sign_request.save(update_fields=["certificate_key"])
+    if not sign_request.certificate_key:
+        cert = certificate.build(sign_request)
+        cert_key = f"sign/{sign_request.id}/certificate.pdf"
+        storage.put_bytes(cert_key, cert, content_type="application/pdf")
+        sign_request.certificate_key = cert_key
+        sign_request.save(update_fields=["certificate_key"])
 
-    _append_to_source_document(sign_request, sealed)
+    if sign_request.source_appended_at is None:
+        _append_to_source_document(sign_request)
 
-    # The API's own tokenized download, not a front-end route: `/s/final/{token}`
-    # matched nothing and fell through to the marketing page, which is where
-    # every recipient's copy of the signed document was pointing.
-    base = f"{settings.API_BASE_URL}/api/public/sign/{{token}}/download"
-    emails.notify_completed(sign_request,
-                            final_url=f"{base}/final/",
-                            certificate_url=f"{base}/certificate/")
+    if sign_request.completed_notified_at is None:
+        # The API's own tokenized download, not a front-end route:
+        # `/s/final/{token}` matched nothing and fell through to the marketing
+        # page, which is where every recipient's copy was pointing.
+        base = f"{settings.API_BASE_URL}/api/public/sign/{{token}}/download"
+        emails.notify_completed(sign_request,
+                                final_url=f"{base}/final/",
+                                certificate_url=f"{base}/certificate/")
+        sign_request.completed_notified_at = timezone.now()
+        sign_request.save(update_fields=["completed_notified_at"])
+
     return {"envelope": sign_request.envelope_code, "sha256": final_sha,
-            **seal_report}
+            **(seal_report or {})}
 
 
-def _append_to_source_document(sign_request, sealed: bytes) -> None:
+def _append_to_source_document(sign_request) -> None:
     """Owner convenience: the signed file lands as a new version of the source.
 
     Best-effort — the envelope is complete and stored either way, and a
@@ -181,10 +220,15 @@ def _append_to_source_document(sign_request, sealed: bytes) -> None:
     sealed file is in the envelope and downloadable from the request either
     way. It is logged rather than surfaced because there is no job here to fail
     — the ceremony belongs to the signer, who did nothing wrong.
+
+    The sealed bytes are read back from storage rather than passed in, because
+    a resumed finalize does not have them: the only thing it inherits from the
+    run that was killed is what that run committed.
     """
     from apps.documents.tasks import _save_new_version, doc_lock
 
     try:
+        sealed = get_storage().get_bytes(sign_request.final_key)
         # Under the document's own lock, like every other writer into the
         # version pipeline (§11). Without it this is the one path that can race
         # an ordinary operation and lose the unique (document, seq) constraint —
@@ -195,8 +239,13 @@ def _append_to_source_document(sign_request, sealed: bytes) -> None:
                               label="Signed", created_by=sign_request.owner,
                               job=None)
     except Exception:  # noqa: BLE001
+        # Deliberately *not* marked done: the next resume gets to try again,
+        # and a permanent reason (a deleted document) simply logs each time.
         logger.warning("finalize: could not append signed version to document %s",
                        sign_request.document_id, exc_info=True)
+        return
+    sign_request.source_appended_at = timezone.now()
+    sign_request.save(update_fields=["source_appended_at"])
 
 
 @shared_task(name="apps.esign.tasks.sign_reminders")

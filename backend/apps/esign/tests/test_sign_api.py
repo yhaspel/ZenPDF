@@ -443,11 +443,16 @@ def test_finalizing_twice_seals_once(sent, anon):
 
     # Two recipients finishing in the same second both dispatch this.
     result = finalize_sign_request(str(request_id))
-    assert result == {"already": True, "envelope": sign_request.envelope_code}
+    # `already` still says which branch answered; the rest of the shape is the
+    # tail's own report, because M4 made that branch *finish* the tail rather
+    # than return from the door — see `test_finalize_resume.py`.
+    assert result["already"] is True
+    assert result["envelope"] == sign_request.envelope_code
 
     sign_request.refresh_from_db()
     assert sign_request.final_sha256 == first_sha
     assert sign_request.audit_events.filter(type="seal_applied").count() == 1
+    assert sign_request.audit_events.filter(type="completed").count() == 1
 
 
 def test_a_recipient_downloads_their_own_copy(sent, anon):
