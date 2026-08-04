@@ -18,7 +18,12 @@ class UserSerializer(serializers.ModelSerializer):
             "storage_bytes_used",
             "date_joined",
         )
-        read_only_fields = ("id", "email", "email_verified", "storage_bytes_used", "date_joined")
+        # `accepted_tos_at` is evidence, not a preference: it is the record that
+        # this account agreed to the terms, and the whole point of recording a
+        # timestamp is that nobody can claim it was never given. `PATCH
+        # /api/users/me/ {"accepted_tos_at": null}` used to erase it (§9A).
+        read_only_fields = ("id", "email", "email_verified", "accepted_tos_at",
+                            "storage_bytes_used", "date_joined")
 
 
 class RegisterSerializer(serializers.ModelSerializer):

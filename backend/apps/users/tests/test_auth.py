@@ -54,6 +54,28 @@ def test_me_patch_display_name(api):
     assert r.json()["display_name"] == "Renamed"
 
 
+def test_the_tos_consent_timestamp_cannot_be_rewritten(api, user):
+    """L6 — it is evidence, and the point of a timestamp is that it stands.
+
+    `accepted_tos_at` was writable through the profile serializer, so the
+    account could clear its own record of having agreed to the terms (§9A).
+    """
+    from django.utils import timezone
+
+    user.accepted_tos_at = timezone.now()
+    user.save(update_fields=["accepted_tos_at"])
+    original = user.accepted_tos_at
+
+    for attempt in (None, "2000-01-01T00:00:00Z"):
+        r = api.patch("/api/users/me/", {"accepted_tos_at": attempt},
+                      format="json")
+        # Read-only fields are ignored rather than rejected, which is the DRF
+        # convention the rest of this serializer already follows.
+        assert r.status_code == 200, r.content
+        user.refresh_from_db()
+        assert user.accepted_tos_at == original
+
+
 def test_logout_blacklists_refresh(anon, user):
     tokens = anon.post("/api/auth/login/",
                        {"email": "alice@example.com", "password": "pass12345"},
