@@ -1,4 +1,5 @@
-import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, DestroyRef, inject, signal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 
@@ -61,6 +62,7 @@ export class Dashboard {
   private router = inject(Router);
   private toast = inject(ToastService);
   private confirm = inject(ConfirmService);
+  private destroyRef = inject(DestroyRef);
 
   protected menuId = signal<string | null>(null);
   protected editingId = signal<string | null>(null);
@@ -243,7 +245,9 @@ export class Dashboard {
   mergeSelected(): void {
     const ids = this.selected();
     if (ids.length < 2) return;
-    this.jobs.dispatch(this.docsSvc.crossOperation({ type: 'merge', params: { document_ids: ids } })).subscribe({
+    this.jobs.dispatch(this.docsSvc.crossOperation({ type: 'merge', params: { document_ids: ids } }))
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
       next: (job) => {
         if (job.status === 'succeeded') {
           const newId = (job.result?.['documents'] as string[])?.[0];

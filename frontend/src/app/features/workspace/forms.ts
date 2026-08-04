@@ -1,13 +1,5 @@
-import {
-  ChangeDetectionStrategy,
-  Component,
-  computed,
-  effect,
-  inject,
-  input,
-  output,
-  signal,
-} from '@angular/core';
+import { ChangeDetectionStrategy, Component, DestroyRef, computed, effect, inject, input, output, signal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
 import { FormDataType, NgxExtendedPdfViewerModule } from 'ngx-extended-pdf-viewer';
 
@@ -116,6 +108,7 @@ export class Forms {
   protected forms = inject(FormsFacade);
   private toast = inject(ToastService);
   private confirm = inject(ConfirmService);
+  private destroyRef = inject(DestroyRef);
 
   protected readonly types = TYPES;
   protected tab = signal<FormsTab>('fill');
@@ -447,6 +440,7 @@ export class Forms {
   // Shared job plumbing
   // ------------------------------------------------------------------ //
   private track(job$: ReturnType<FormsFacade['flatten']>, label: string): void {
+    job$ = job$.pipe(takeUntilDestroyed(this.destroyRef));
     this.busy.set(true);
     job$.subscribe({
       next: (job) => this.onJob(job, label),

@@ -1,11 +1,12 @@
 import { CdkDrag, CdkDragDrop, CdkDropList, moveItemInArray } from '@angular/cdk/drag-drop';
-import { ChangeDetectionStrategy, Component, computed, effect, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, DestroyRef, computed, effect, inject, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { NgxExtendedPdfViewerModule } from 'ngx-extended-pdf-viewer';
 
 import { AnnotationsFacade } from '../../abstraction/annotations.facade';
+import { AuthFacade } from '../../abstraction/auth.facade';
 import { CompareFacade } from '../../abstraction/compare.facade';
 import { GuestFacade } from '../../abstraction/guest.facade';
 import { JobsFacade } from '../../abstraction/jobs.facade';
@@ -58,6 +59,8 @@ export class Workspace {
   private router = inject(Router);
   private toast = inject(ToastService);
   private confirm = inject(ConfirmService);
+  private auth = inject(AuthFacade);
+  private destroyRef = inject(DestroyRef);
 
   protected leftTab = signal<'thumbs' | 'outline' | 'history'>('thumbs');
   protected mode = signal<
@@ -105,11 +108,24 @@ export class Workspace {
     return this.security.passwordFor(doc.id) || null;
   });
 
+  /**
+   * Bumped when a viewer fetch is retried after a token refresh (L10).
+   *
+   * `src` has to *change* for the viewer to fetch again, and after a refresh
+   * the URL is byte-for-byte what it was — only the header differs.
+   */
+  private viewerAttempt = signal(0);
+  /** One retry per document, so an actual 404 does not become a refresh loop. */
+  private viewerRetried = false;
+
   readonly contentUrl = computed(() => {
     const d = this.viewer.doc();
     // Pinning the URL to the version seq is what makes `src` change after an
     // operation — without it the viewer keeps rendering the old bytes.
-    return d?.current_version ? this.docsSvc.contentUrl(d.id, d.current_version.seq) : '';
+    if (!d?.current_version) return '';
+    const url = this.docsSvc.contentUrl(d.id, d.current_version.seq);
+    const attempt = this.viewerAttempt();
+    return attempt ? `${url}${url.includes('?') ? '&' : '?'}retry=${attempt}` : url;
   });
   /**
    * ngx-extended-pdf-viewer fetches the PDF **outside `HttpClient`**, so the
@@ -211,6 +227,29 @@ export class Workspace {
     if (id) this.viewer.load(id);
   }
 
+  /**
+   * The viewer could not fetch the document (L10).
+   *
+   * ngx-extended-pdf-viewer fetches outside `HttpClient`, so the auth
+   * interceptor's refresh-and-retry never runs for it: an access token that
+   * expired while the workspace was open gives a 401 and a blank pane, with a
+   * perfectly good refresh token in storage. Refresh once and re-assign `src`
+   * — `authHeaders()` recomputes off the token signal on its own.
+   *
+   * Once per document: a genuine 404 must not become a refresh loop, and a
+   * guest has no refresh token to spend.
+   */
+  protected onViewerLoadFailed(): void {
+    if (this.viewerRetried || this.guests.principal() !== 'user') return;
+    this.viewerRetried = true;
+    this.auth.refreshAccess()
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: () => this.viewerAttempt.update((n) => n + 1),
+        error: () => this.toast.error('Could not load the document — try reloading the page.'),
+      });
+  }
+
   // --- selection / thumbnails ---
   onThumbClick(page: number, event: Event): void {
     // Enter/Space arrive as a plain Event from Angular's key pseudo-bindings;
@@ -273,7 +312,9 @@ export class Workspace {
   revert(seq: number): void {
     this.busy.set(true);
     // Track the revert job to completion (viewer.revert only creates it).
-    this.jobs.dispatch(this.viewer.revert(seq)).subscribe({
+    this.jobs.dispatch(this.viewer.revert(seq))
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
       next: (job) => this.trackReload(job, `Reverted to v${seq}`),
       error: () => this.fail(),
     });
@@ -349,7 +390,9 @@ export class Workspace {
     const d = this.viewer.doc();
     if (!d) return;
     this.busy.set(true);
-    this.pages.dispatch(d.id, type, params, this.viewer.currentSeq()).subscribe({
+    this.pages.dispatch(d.id, type, params, this.viewer.currentSeq())
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
       next: (job) => this.trackReload(job, label),
       error: () => this.fail(),
     });
@@ -359,7 +402,9 @@ export class Workspace {
     const d = this.viewer.doc();
     if (!d) return;
     this.busy.set(true);
-    this.pages.dispatch(d.id, type, params, this.viewer.currentSeq()).subscribe({
+    this.pages.dispatch(d.id, type, params, this.viewer.currentSeq())
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
       next: (job) => {
         if (job.status === 'succeeded') {
           const docs = (job.result?.['documents'] as string[]) ?? [];

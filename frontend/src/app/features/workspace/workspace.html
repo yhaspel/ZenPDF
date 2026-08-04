@@ -255,6 +255,7 @@
                 [textLayer]="true"
                 [showBorders]="false"
                 height="100%"
+                (pdfLoadingFailed)="onViewerLoadFailed()"
                 data-test="pdf-viewer"
               />
             }

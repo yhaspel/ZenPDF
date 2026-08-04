@@ -4,13 +4,13 @@ import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 
 import { AuthFacade } from '../../abstraction/auth.facade';
 import { GuestFacade } from '../../abstraction/guest.facade';
+import { safeNext } from '../../core/safe-next';
 
 /**
+ * Why the account gate stopped you, in the words the register page shows.
+ *
  * An `accountGuard` rejection lands here with a `reason`, rendered as human
  * copy — never a bare wall (§7, §21.3).
- */
-/**
- * Why the account gate stopped you, in the words the register page shows.
  *
  * Exported so a spec can walk the route table's `accountReason` values against
  * it: they were drifting apart silently, and a route naming a key that is not
@@ -71,7 +71,7 @@ export const REASONS: Record<string, string> = {
           {{ loading() ? 'Creating…' : 'Create account' }}
         </button>
         <p class="mt-4 text-center text-sm text-slate-500">
-          Already have an account? <a routerLink="/auth/login" class="text-indigo-600 underline" data-test="to-login">Log in</a>
+          Already have an account? <a routerLink="/auth/login" [queryParams]="loginLinkParams()" class="text-indigo-600 underline" data-test="to-login">Log in</a>
         </p>
       </form>
     </div>
@@ -125,7 +125,31 @@ export class Register {
     });
   }
 
+  /**
+   * Where to land after signing up — validated, never trusted (L11).
+   *
+   * The account gate puts the URL you were heading for in the query string,
+   * and this used to be handed straight to `navigateByUrl`. `?next=//evil.example`
+   * is another origin, and it would have been reached seconds after the person
+   * typed a password into ours.
+   */
   private next(): string {
-    return this.route.snapshot.queryParamMap.get('next') || '/app/dashboard';
+    return safeNext(this.route.snapshot.queryParamMap.get('next'));
   }
+
+  /**
+   * `next` and `reason` follow the "Log in" link (L12).
+   *
+   * Somebody stopped on the way to signing, who turns out to already have an
+   * account, was being dropped on the dashboard after login — one click away
+   * from what they were doing, with nothing to say why.
+   */
+  protected readonly loginLinkParams = computed(() => {
+    const params: Record<string, string> = {};
+    const next = this.route.snapshot.queryParamMap.get('next');
+    const reason = this.route.snapshot.queryParamMap.get('reason');
+    if (next) params['next'] = safeNext(next);
+    if (reason) params['reason'] = reason;
+    return params;
+  });
 }

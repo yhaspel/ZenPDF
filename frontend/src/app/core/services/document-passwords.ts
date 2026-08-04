@@ -38,4 +38,18 @@ export class DocumentPasswords {
   isUnlocked(docId: string): boolean {
     return this._unlocked().includes(docId);
   }
+
+  /**
+   * Forget every password (L7).
+   *
+   * The map is scoped to the tab, not to the session, so signing out on a
+   * shared machine left the previous account's document passwords in memory
+   * for whoever signed in next — and `DocumentsService` attaches them by
+   * document id without asking who is asking. `AuthFacade.clearSession()`
+   * calls this; a token is not the only credential a session holds.
+   */
+  clearAll(): void {
+    this.passwords.clear();
+    this._unlocked.set([]);
+  }
 }

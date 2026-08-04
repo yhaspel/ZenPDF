@@ -19,8 +19,17 @@ import { DocumentsService } from '../core/services/documents.service';
   template: `
     @if (url(); as u) {
       <img [src]="u" [alt]="'page ' + (page() + 1)" class="h-full w-full object-contain" />
+    } @else if (failed()) {
+      <button type="button" (click)="retry()"
+              class="flex h-full w-full flex-col items-center justify-center gap-1 bg-slate-100 text-slate-500 hover:bg-slate-200"
+              [attr.aria-label]="'Preview of page ' + (page() + 1) + ' failed to load. Retry.'"
+              data-test="thumb-failed">
+        <span class="text-base" aria-hidden="true">↻</span>
+        <span class="text-[10px] leading-none">Retry</span>
+      </button>
     } @else {
-      <div class="flex h-full w-full items-center justify-center bg-slate-100 text-slate-500">
+      <div class="flex h-full w-full items-center justify-center bg-slate-100 text-slate-500"
+           data-test="thumb-loading">
         <span class="text-xs">…</span>
       </div>
     }
@@ -33,6 +42,15 @@ export class PdfThumbnail implements AfterViewInit, OnDestroy {
   readonly version = input<number | undefined>(undefined);
 
   protected url = signal<string | null>(null);
+  /**
+   * A failed tile looked exactly like a loading one (L9): both fell to the
+   * `…` placeholder, so a rail that had run into the 429 the lazy-loading
+   * comment below describes sat there apparently still working, for ever.
+   * A distinct state means the person can see what happened and ask again.
+   */
+  protected failed = signal(false);
+  /** Bumped by `retry()`; the fetch effect reads it, so it re-runs. */
+  private attempt = signal(0);
   private current: string | null = null;
   private docsSvc = inject(DocumentsService);
   private host = inject(ElementRef<HTMLElement>);
@@ -73,13 +91,18 @@ export class PdfThumbnail implements AfterViewInit, OnDestroy {
       const page = this.page();
       const w = this.width();
       const v = this.version();
+      this.attempt();  // the dependency that lets `retry()` re-run this
       const sub = this.docsSvc.thumbnailBlob(id, page, w, v).subscribe({
         next: (blob) => {
           this.revoke();
           this.current = URL.createObjectURL(blob);
           this.url.set(this.current);
+          this.failed.set(false);
         },
-        error: () => this.url.set(null),
+        error: () => {
+          this.url.set(null);
+          this.failed.set(true);
+        },
       });
       onCleanup(() => {
         sub.unsubscribe();
@@ -103,6 +126,12 @@ export class PdfThumbnail implements AfterViewInit, OnDestroy {
       { rootMargin: '400px' },
     );
     this.observer.observe(el.parentElement ?? el);
+  }
+
+  /** Ask again for a tile that failed — most often a 429 the rail earned. */
+  protected retry(): void {
+    this.failed.set(false);
+    this.attempt.update((n) => n + 1);
   }
 
   ngOnDestroy(): void {

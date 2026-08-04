@@ -1,12 +1,6 @@
 import { DOCUMENT } from '@angular/common';
-import {
-  ChangeDetectionStrategy,
-  Component,
-  computed,
-  inject,
-  input,
-  signal,
-} from '@angular/core';
+import { ChangeDetectionStrategy, Component, DestroyRef, computed, inject, input, signal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { Meta, Title } from '@angular/platform-browser';
 import { Router, RouterLink } from '@angular/router';
 
@@ -53,6 +47,7 @@ export class ToolPage {
   private meta = inject(Meta);
   private doc = inject(DOCUMENT);
   protected guests = inject(GuestFacade);
+  private destroyRef = inject(DestroyRef);
 
   protected phase = signal<Phase>('idle');
   protected error = signal('');
@@ -295,7 +290,9 @@ export class ToolPage {
   }
 
   private track(create$: ReturnType<DocumentsService['operation']>, fallback?: DocumentModel) {
-    this.jobs.dispatch(create$).subscribe({
+    this.jobs.dispatch(create$)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
       next: (job: Job) => {
         if (job.status === 'succeeded') {
           this.onSuccess(job, fallback);
@@ -339,7 +336,7 @@ export class ToolPage {
         params: { format, ...extra },
         base_version_seq: doc.current_version?.seq ?? null,
       }),
-    ).subscribe({
+    ).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (job) => {
         if (job.status === 'succeeded') {
           this.exportJob.set(job);

@@ -1,8 +1,9 @@
-import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { Router, RouterLink } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 
 import { AuthFacade } from '../../abstraction/auth.facade';
+import { safeNext } from '../../core/safe-next';
 
 @Component({
   selector: 'app-login',
@@ -27,7 +28,7 @@ import { AuthFacade } from '../../abstraction/auth.facade';
           {{ loading() ? 'Signing in…' : 'Sign in' }}
         </button>
         <p class="mt-4 text-center text-sm text-slate-500">
-          No account? <a routerLink="/auth/register" class="text-indigo-600 underline" data-test="to-register">Create one</a>
+          No account? <a routerLink="/auth/register" [queryParams]="registerLinkParams()" class="text-indigo-600 underline" data-test="to-register">Create one</a>
         </p>
       </form>
     </div>
@@ -41,13 +42,28 @@ export class Login {
 
   private auth = inject(AuthFacade);
   private router = inject(Router);
+  private route = inject(ActivatedRoute);
+
+  /** `next` and `reason` keep travelling if the person bounces back (L12). */
+  protected readonly registerLinkParams = computed(() => {
+    const params: Record<string, string> = {};
+    const next = this.route.snapshot.queryParamMap.get('next');
+    const reason = this.route.snapshot.queryParamMap.get('reason');
+    if (next) params['next'] = safeNext(next);
+    if (reason) params['reason'] = reason;
+    return params;
+  });
 
   submit(): void {
     if (!this.email || !this.password) return;
     this.loading.set(true);
     this.error.set('');
     this.auth.login(this.email, this.password).subscribe({
-      next: () => this.router.navigate(['/app/dashboard']),
+      // Read `next` the way Register does (L12): somebody sent here by the
+      // account gate was landing on the dashboard, one click away from what
+      // they had been doing and with nothing to say why. Validated, never
+      // trusted — see `safeNext`.
+      next: () => this.router.navigateByUrl(safeNext(this.route.snapshot.queryParamMap.get('next'))),
       error: (err) => {
         this.error.set(err.error?.error?.message ?? 'Invalid email or password.');
         this.loading.set(false);

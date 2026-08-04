@@ -1,13 +1,5 @@
-import {
-  ChangeDetectionStrategy,
-  Component,
-  computed,
-  effect,
-  inject,
-  input,
-  output,
-  signal,
-} from '@angular/core';
+import { ChangeDetectionStrategy, Component, DestroyRef, computed, effect, inject, input, output, signal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
 
 import { EditFacade } from '../../abstraction/edit.facade';
@@ -97,6 +89,7 @@ export class Edit {
   private docsSvc = inject(DocumentsService);
   private toast = inject(ToastService);
   private confirm = inject(ConfirmService);
+  private destroyRef = inject(DestroyRef);
 
   protected tab = signal<EditTab>('edit');
   protected mode = signal<EditMode>('text');
@@ -632,6 +625,7 @@ export class Edit {
   }
 
   private track(job$: ReturnType<EditFacade['run']>, label: string): void {
+    job$ = job$.pipe(takeUntilDestroyed(this.destroyRef));
     this.busy.set(true);
     job$.subscribe({
       next: (job) => this.onJob(job, label),
