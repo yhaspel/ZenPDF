@@ -77,24 +77,47 @@ def test_a_principal_at_their_limit_is_still_refused(api, uploaded_doc, user,
 # --------------------------------------------------------------------------- #
 def test_the_password_window_cannot_be_doubled_across_a_boundary():
     """The fixed calendar minute allowed five guesses at :59 and five more at
-    :00 — ten in one second, and the meter read five both times."""
+    :00 — ten in one second, and the meter read five both times.
+
+    The assertion that does the work is that guesses recorded in an *older but
+    still in-window* bucket keep counting. Filling only the newest bucket would
+    pass against an implementation that reads only the newest bucket, which is
+    the fixed window this finding is about.
+    """
     from apps.core import limits as L
     from apps.core.exceptions import QuotaExceeded
 
     cache.clear()
     doc_id = "11111111-1111-1111-1111-111111111111"
 
-    # Five failures land in the newest bucket…
-    for _ in range(L.PASSWORD_ATTEMPTS_PER_MINUTE):
-        L.record_password_failure(doc_id)
-    with pytest.raises(QuotaExceeded):
-        L.enforce_password_attempts(doc_id)
-
-    # …and are still counted from a bucket several steps later, which is
-    # exactly what a fixed window forgot at the boundary.
     keys = L._password_keys(doc_id)
-    assert len(keys) == (L.PASSWORD_ATTEMPT_WINDOW_SECONDS
-                         // L.PASSWORD_ATTEMPT_BUCKET_SECONDS)
+    span = L.PASSWORD_ATTEMPT_WINDOW_SECONDS // L.PASSWORD_ATTEMPT_BUCKET_SECONDS
+    assert len(keys) == span
+
+    # Three guesses 40 s ago — four buckets back, still inside the minute.
+    cache.set(keys[4], 3, timeout=300)
+    assert L.password_failures_in_window(doc_id) == 3
+    L.enforce_password_attempts(doc_id)  # under the cap, so far
+
+    # …and two more now. A fixed calendar window would have started counting
+    # again and let both through; the sliding one adds them up and refuses.
+    for _ in range(2):
+        L.record_password_failure(doc_id)
+    assert L.password_failures_in_window(doc_id) == L.PASSWORD_ATTEMPTS_PER_MINUTE
+    with pytest.raises(QuotaExceeded) as caught:
+        L.enforce_password_attempts(doc_id)
+    assert caught.value.zen_details["used"] == L.PASSWORD_ATTEMPTS_PER_MINUTE
+
+
+def test_the_oldest_in_window_bucket_still_counts():
+    """The far edge of the window, named on its own: a guess `span - 1` buckets
+    ago is the last one that must still be visible."""
+    from apps.core import limits as L
+
+    cache.clear()
+    doc_id = "44444444-4444-4444-4444-444444444444"
+    cache.set(L._password_keys(doc_id)[-1], L.PASSWORD_ATTEMPTS_PER_MINUTE,
+              timeout=300)
     assert L.password_failures_in_window(doc_id) == L.PASSWORD_ATTEMPTS_PER_MINUTE
 
 

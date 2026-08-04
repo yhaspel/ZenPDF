@@ -71,15 +71,28 @@ export class ViewerFacade {
   readonly pageCount = computed(() => this._doc()?.page_count ?? 0);
   readonly currentSeq = computed(() => this._doc()?.current_version?.seq ?? null);
 
+  /**
+   * Which `load()` is current.
+   *
+   * Split and extract navigate straight from one document to another, so two
+   * loads can be in flight at once — and now that a failure *clears* state,
+   * a slow 500 for the document you just left would wipe the one you are
+   * looking at. Every callback checks it still owns the request.
+   */
+  private generation = 0;
+
   load(id: string): void {
+    const mine = ++this.generation;
     this._loading.set(true);
     this._error.set(null);
     this.docsSvc.get(id).subscribe({
       next: (d) => {
+        if (mine !== this.generation) return;
         this._doc.set(d);
         this._loading.set(false);
       },
       error: (err) => {
+        if (mine !== this.generation) return;
         // The document is cleared as well as the error set: leaving the
         // previous one on screen under a failed reload would show the user a
         // document they are no longer looking at.
@@ -91,16 +104,17 @@ export class ViewerFacade {
         this._loading.set(false);
       },
     });
-    this.loadVersions(id);
-    this.loadOutline(id);
+    this.loadVersions(id, mine);
+    this.loadOutline(id, mine);
   }
 
-  loadVersions(id: string): void {
+  loadVersions(id: string, generation?: number): void {
     // One page. The panel is a scrolling list of the most recent work, and a
     // document with a long history used to send all of it — 1.4 MB at 5 000
     // versions — on every open and after every operation.
     this.docsSvc.versions(id).subscribe({
       next: (page) => {
+        if (generation !== undefined && generation !== this.generation) return;
         this._versions.set(page.results);
         this._versionCount.set(page.count);
       },
@@ -127,10 +141,11 @@ export class ViewerFacade {
     });
   }
 
-  loadOutline(id: string): void {
+  loadOutline(id: string, generation?: number): void {
+    const current = () => generation === undefined || generation === this.generation;
     this.docsSvc.outline(id).subscribe({
-      next: (o) => this._outline.set(o.outline),
-      error: () => this._outline.set([]),
+      next: (o) => { if (current()) this._outline.set(o.outline); },
+      error: () => { if (current()) this._outline.set([]); },
     });
   }
 

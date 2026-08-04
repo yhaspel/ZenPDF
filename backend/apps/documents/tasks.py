@@ -57,8 +57,30 @@ THUMB_WIDTH = 240
 # --------------------------------------------------------------------------- #
 # Helpers
 # --------------------------------------------------------------------------- #
+#: Per-lane hard time limits (§12; the `--time-limit` on each worker command in
+#: infra/docker-compose*.yml). A lock only has to outlast the op it is
+#: protecting, and the lock TTL is also how long a *killed* worker wedges the
+#: document — so giving a 60-second render the heavy lane's ceiling would mean
+#: a crash costs sixteen minutes of "that document is busy" for no reason.
+LANE_TIME_LIMITS = {"default": 120, "heavy": 900, "render": 60}
+
+
+def lock_ttl_for(queue: str | None = None) -> int:
+    """How long to hold the document lock for an op on `queue`.
+
+    Falls back to `DOC_LOCK_TTL` (the heaviest lane plus teardown), which is
+    what a caller with no lane in hand should assume.
+    """
+    ceiling = settings.DOC_LOCK_TTL
+    if queue and queue in LANE_TIME_LIMITS:
+        # The lane's hard limit plus the same teardown margin the default uses.
+        margin = ceiling - settings.CELERY_TASK_TIME_LIMIT
+        return min(ceiling, LANE_TIME_LIMITS[queue] + max(margin, 0))
+    return ceiling
+
+
 @contextlib.contextmanager
-def doc_lock(document_id: str):
+def doc_lock(document_id: str, *, queue: str | None = None):
     """Blocking Redis lock `zen:doc:{id}` (§11). No-op under eager tests.
 
     **Fails closed.** `acquire()` returning False used to fall through into the
@@ -68,7 +90,9 @@ def doc_lock(document_id: str):
     somebody can retry.
 
     The TTL and the wait are two different settings for a reason; see
-    `DOC_LOCK_TTL` in the settings.
+    `DOC_LOCK_TTL` in the settings. `queue` narrows the TTL to what the op can
+    actually run for, because the TTL is also the wedge a killed worker leaves
+    behind.
     """
     if getattr(settings, "CELERY_TASK_ALWAYS_EAGER", False):
         yield
@@ -78,7 +102,7 @@ def doc_lock(document_id: str):
     client = redis.from_url(settings.REDIS_URL)
     lock = client.lock(
         f"zen:doc:{document_id}",
-        timeout=settings.DOC_LOCK_TTL,
+        timeout=lock_ttl_for(queue),
         blocking_timeout=settings.DOC_LOCK_TIMEOUT,
     )
     if not lock.acquire():
@@ -646,7 +670,7 @@ def run_operation(self, job_id: str):
         # polls a job that will never reach a terminal state. That is exactly
         # what a worker holding a stale registry looked like.
         op = registry.get_op(job.type)
-        with doc_lock(str(document.id)):
+        with doc_lock(str(document.id), queue=op.queue):
             document.refresh_from_db()
             current = document.current_version
             if current is None:
@@ -932,7 +956,8 @@ def revert_version(self, job_id: str):
         return
     target_seq = job.params["seq"]
     try:
-        with doc_lock(str(document.id)):
+        # Revert is routed to `default` (§12) — a blob copy, not a re-encode.
+        with doc_lock(str(document.id), queue="default"):
             document.refresh_from_db()
             current = document.current_version
             if job.base_version_seq is not None and (
@@ -963,6 +988,14 @@ def revert_version(self, job_id: str):
                 "version_id": str(version.id),
                 "seq": version.seq,
             })
+    except EngineError as exc:
+        # The sibling tasks have always had this branch; revert did not, and it
+        # started to matter the moment two new `EngineError`s could reach it:
+        # `doc_lock`'s `locked` and the tier page cap on the version write.
+        # Without it they fall to the generic handler and arrive as
+        # `engine_error: Revert failed: …` — not the code the client switches
+        # on, and not a sentence anybody can act on.
+        job.mark_failed(exc.code, exc.message, exc.details)
     except ZenAPIException as exc:
         # A domain refusal raised *inside* the worker — today that is the
         # storage quota on the version write. Without this branch it falls to

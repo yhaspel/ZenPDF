@@ -74,8 +74,9 @@ def _burn_fields(data: bytes, sign_request) -> bytes:
         doc.close()
 
 
-@shared_task(name="apps.esign.tasks.finalize_sign_request")
-def finalize_sign_request(sign_request_id: str) -> dict:
+@shared_task(bind=True, max_retries=5,
+             name="apps.esign.tasks.finalize_sign_request")
+def finalize_sign_request(self, sign_request_id: str) -> dict:
     """Burn → stamp → seal → certificate → store → notify (§8B step 3–6).
 
     The whole body runs under the §11 Redis lock. A status check on its own was
@@ -87,9 +88,23 @@ def finalize_sign_request(sign_request_id: str) -> dict:
     request and return.
     """
     from apps.documents.tasks import doc_lock
+    from apps.pdf_engine.exceptions import EngineError
 
-    with doc_lock(f"sign-{sign_request_id}"):
-        return _finalize(sign_request_id)
+    try:
+        with doc_lock(f"sign-{sign_request_id}"):
+            return _finalize(sign_request_id)
+    except EngineError as exc:
+        if exc.code != "locked":
+            raise
+        # `doc_lock` fails closed now (M2), and this is the one caller with no
+        # job row to fail: letting the exception out would end the task, and
+        # nothing else ever finalizes an envelope. A fully-signed contract
+        # would sit at `sent` for ever with no certificate and nobody told.
+        #
+        # Retrying is safe precisely because M4 made the whole body re-runnable:
+        # whichever attempt gets the lock finishes whatever is missing.
+        logger.info("finalize %s: document busy, retrying", sign_request_id)
+        raise self.retry(countdown=60, exc=exc) from exc
 
 
 def _finalize(sign_request_id: str) -> dict:

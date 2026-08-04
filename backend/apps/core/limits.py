@@ -356,8 +356,13 @@ PASSWORD_ATTEMPT_WINDOW_SECONDS = 60
 #: How finely the window slides. Six ten-second buckets make a minute that
 #: *moves*, which is what a calendar minute did not: five wrong guesses at
 #: 12:00:59 and five more at 12:01:00 was ten in one second, and the meter said
-#: five each time. Ten seconds is a compromise — one key per bucket to read, and
-#: the effective window is 60–70 s rather than exactly 60 (L5, BUG-4).
+#: five each time.
+#:
+#: Ten seconds is the granularity cost: an attempt is counted until the current
+#: bucket is six ahead of the one it landed in, so it ages out somewhere between
+#: 50 and 60 seconds after it happened — slightly *stricter* than the nominal
+#: minute, never looser, which is the right direction for this particular meter
+#: (L5, BUG-4).
 PASSWORD_ATTEMPT_BUCKET_SECONDS = 10
 
 

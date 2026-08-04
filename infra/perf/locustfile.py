@@ -130,17 +130,21 @@ class GuestVisitor(HttpUser):
                        f"usually Postgres' connection ceiling — see "
                        f"infra/perf/README.md.")
                 return
-        # One real job so the poll below polls something. The endpoint is
-        # DEBUG-only (`jobs/views.py`), so on a deployed host this 404s and the
-        # user falls back to polling the list — which is what the dashboard
-        # does anyway.
-        with self.client.post(f"{API}/jobs/demo/", headers=self.headers,
-                              name="POST /api/jobs/demo/", catch_response=True) as r:
-            if r.status_code == 202:
-                self.job_id = r.json()["id"]
+        # One real job so the poll below polls something. `POST /api/jobs/demo/`
+        # used to serve this and is gone (L1 — it was DEBUG-gated, so on a
+        # deployed host it 404ed and this silently degraded to listing). The
+        # library's newest job is the honest substitute: it is a row the
+        # dashboard would really be polling, and when the account has none the
+        # poll falls back to the list, which is what the dashboard does anyway.
+        with self.client.get(f"{API}/jobs/?page=1", headers=self.headers,
+                             name="GET /api/jobs/ (seed)", catch_response=True) as r:
+            if r.status_code == 200:
+                results = r.json().get("results") or []
+                if results:
+                    self.job_id = results[0]["id"]
                 r.success()
-            elif r.status_code in (404, 429):
-                r.success()   # expected on a deployment / a throttled tier
+            elif r.status_code == 429:
+                r.success()   # expected on a throttled tier
             else:
                 r.failure(f"HTTP {r.status_code}")
 

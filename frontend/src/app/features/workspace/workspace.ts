@@ -115,8 +115,14 @@ export class Workspace {
    * the URL is byte-for-byte what it was — only the header differs.
    */
   private viewerAttempt = signal(0);
-  /** One retry per document, so an actual 404 does not become a refresh loop. */
-  private viewerRetried = false;
+  /**
+   * The document id the viewer's one refresh-retry has been spent on.
+   *
+   * One retry *per document*, not per component: the workspace is reused across
+   * `/app/doc/:id` navigations (split and extract land on a new one), so a
+   * boolean meant the second document in a session got no recovery at all.
+   */
+  private viewerRetriedFor: string | null = null;
 
   readonly contentUrl = computed(() => {
     const d = this.viewer.doc();
@@ -240,8 +246,10 @@ export class Workspace {
    * guest has no refresh token to spend.
    */
   protected onViewerLoadFailed(): void {
-    if (this.viewerRetried || this.guests.principal() !== 'user') return;
-    this.viewerRetried = true;
+    const docId = this.viewer.doc()?.id;
+    if (!docId || this.viewerRetriedFor === docId) return;
+    if (this.guests.principal() !== 'user') return;
+    this.viewerRetriedFor = docId;
     this.auth.refreshAccess()
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({

@@ -929,6 +929,60 @@ which loses its "Run demo job" click along with the button (L1). The assertion i
 loses — that the async pipeline works — is covered for real by the page-operation
 specs, and by `test_jobs.py`, where the pipeline smoke moved.
 
+**What the adversarial review found.** Five reviewers over the branch diff
+(regression, security, correctness, test-quality, contract), then one
+independent skeptic per finding whose brief was to *refute* it. 30 filed, 3
+survived — and the survival rate is the point: most of what a review of a fix
+branch turns up is either pre-existing, unreachable, or already true.
+
+The three that survived, all fixed here:
+
+* **M2 defeated M4.** `doc_lock` fails closed now, and `finalize_sign_request`
+  was the one caller with no job row to fail — the exception simply ended the
+  task, and nothing else ever finalizes an envelope. A worker SIGKILLed while
+  holding the `sign-{id}` lock leaves the key alive for the TTL, so the
+  `acks_late` redelivery waits 120 s, cannot acquire, and raises: a
+  fully-signed contract sits at `sent` with no certificate until
+  `sign_expirations` mails everyone that it expired. It retries now, which is
+  safe *because* M4 made the body re-runnable — the two findings are each
+  other's precondition.
+* **`revert_version` had no `except EngineError`.** It never needed one until
+  this branch gave it two new raise sites (the lock and the page cap); without
+  it both arrive as `engine_error: Revert failed: …`.
+* **L10's retry guard was per component, not per document.** The workspace is
+  reused across `/app/doc/:id`, so the second document in a session got no
+  recovery. The skeptic rejected the reviewer's reproduction and supplied a
+  better one — a mode toggle re-mounts the viewer with no preceding
+  `HttpClient` call — which is the review working as intended.
+
+**And one the review found that was not a code defect at all.** The first
+commit's `git add -A` swept in `_to_delete/zenpdf-stage.tgz` — 7.4 MB
+containing `infra/.env`, `key.pem` and `zenpdf-dev.p12`, i.e. precisely what
+`.gitignore` exists to keep out. Nothing had been pushed, so the branch was
+rewritten to drop the blob from all eighteen commits (verified per commit with
+`git ls-tree`), the file was restored to the working tree untracked, and
+`_to_delete/` is now ignored. Three of the five reviewers filed it
+independently; none of them was looking for it.
+
+**Fixed while the review was still running**, because two reviewers each named
+them and they were cheap: the metered-op charge moved *inside* the concurrency
+slot (a race loser was paying an hour-window quota for a job that is never
+created); `ViewerFacade.load()` gained a generation guard (the new error path
+clears state, so a slow failure for the document you just left would wipe the
+one you are looking at); the lock TTL narrowed to the op's actual lane (holding
+every lock for the heavy ceiling means a crashed 60-second render wedges its
+document for sixteen minutes); L5's window test rewritten to seed an *older
+in-window* bucket, because filling only the newest one passes against the fixed
+window it was supposed to refute; and `infra/perf/locustfile.py` stopped
+seeding its job poll from the route L1 deleted.
+
+**Refuted, and worth writing down.** L8's remaining five workspace panels are
+out of scope — the branch never touched them. The NAT64 alternative's
+non-canonical spellings are unreachable through layer 2. The password meter's
+window is 50–60 s rather than the 60–70 s its comment claimed: the arithmetic
+in the finding was right and the comment is corrected, but stricter-than-stated
+is the safe direction for that particular meter.
+
 **Every finding, what changed, and what proves it.**
 
 | Id | Change | Test |
@@ -941,7 +995,7 @@ specs, and by `test_jobs.py`, where the pipeline smoke moved.
 | **L6** | `accepted_tos_at` added to `UserSerializer.read_only_fields`. | `test_auth.py::test_the_tos_consent_timestamp_cannot_be_rewritten` |
 | **L15** | `debug_task` deleted from `config/celery.py`. | ruff + suite |
 | **M1** | `esign.models.client_ip` delegates to the `NUM_PROXIES`-aware core helper — fixes the audit chain, `consent_ip` and `AbuseReport.ip` at once. | `apps/esign/tests/test_evidence_ip.py` (5) |
-| **M2** | `doc_lock` raises `locked` when it cannot acquire; `DOC_LOCK_TTL` split from `DOC_LOCK_TIMEOUT` and defaulted above the heavy hard limit. | `apps/documents/tests/test_doc_lock.py` (6) |
+| **M2** | `doc_lock` raises `locked` when it cannot acquire; `DOC_LOCK_TTL` split from `DOC_LOCK_TIMEOUT`, then narrowed per lane after review. | `apps/documents/tests/test_doc_lock.py` (8) |
 | **M3** | RUNNING ages on `started_at`; never-started rows get `JOB_QUEUE_STALL_TIMEOUT`; `_canceled` → `_abandoned` (anything but RUNNING) at all three worker checkpoints. | `apps/jobs/tests/test_stall_reaper.py` (7) |
 | **M4** | `_finalize_tail` — certificate, both completion events, source-append and notification each idempotent; `completed_notified_at`/`source_appended_at` + migration `0006` with a backfill; the COMPLETED branch finishes the tail instead of returning. | `apps/esign/tests/test_finalize_resume.py` (6) |
 | **M5** | Four ranges added to the deny-list in all four copies; drift guards in pytest and `test.sh`; the DNS-rebinding overclaim corrected in three files. | `test_urlguard.py::test_gotenberg_denies_what_layer_one_denies` (extended), `::test_the_running_deny_list_matches_the_one_shipped_in_the_code` |
@@ -949,7 +1003,7 @@ specs, and by `test_jobs.py`, where the pipeline smoke moved.
 | **M7** | `ViewerFacade` gains `loading`/`error` (mapping the §6 envelope); the workspace template gets a loading branch and an `alert`-role error branch with retry + a way back. | `abstraction/viewer.facade.spec.ts` (6), `features/workspace/workspace-error.spec.ts` (3) |
 | **L3** | Slot count + job create inside one transaction holding the principal row. | `test_race_and_window_polish.py` (2) |
 | **L4** | `complete_recipient` claims by conditional UPDATE; the `signed` event only when it changed a row. | `apps/esign/tests/test_completion_race.py` (4) |
-| **L5** | Password-attempt meter slides in ten-second buckets. | `test_race_and_window_polish.py` (3) |
+| **L5** | Password-attempt meter slides in ten-second buckets. | `test_race_and_window_polish.py` (4) |
 | **L7** | `DocumentPasswords.clearAll()`, called from `AuthFacade.clearSession()`. | `core/services/document-passwords.spec.ts` (3), `auth.facade.spec.ts` |
 | **L8** | Job tracking piped through `takeUntilDestroyed` in workspace, tool-page, dashboard, edit and forms. | lint + suite |
 | **L9** | `pdf-thumbnail` gets a distinct `failed` state with a labelled retry. | `shared/pdf-thumbnail.spec.ts` (3) |
@@ -961,7 +1015,7 @@ specs, and by `test_jobs.py`, where the pipeline smoke moved.
 
 **Verification.** `ruff` clean; `mypy` clean across 166 files; `manage.py check`
 no issues; `makemigrations --check` no changes; `spectacular --fail-on-warn
---validate` exit 0. **1049 backend tests pass** (4 skipped — the pre-existing
+--validate` exit 0. **1052 backend tests pass** (4 skipped — the pre-existing
 query-plan tests that need Postgres), up from 988, and **209 frontend unit tests**,
 up from 178. Coverage `apps` 92 % (gate 85) and `pdf_engine` 92 % (gate 90).
 `ng lint` clean. E2E not run — see "What is not covered" above.
@@ -970,6 +1024,9 @@ up from 178. Coverage `apps` 92 % (gate 85) and `pdf_engine` 92 % (gate 90).
 
 | Added | Item | Phase | GATE? | Resolved |
 |---|---|---|---|---|
+| 2026-08-04 | **The five remaining workspace panels' job subscriptions are not `takeUntilDestroyed`-piped.** L8 covered workspace, tool-page, dashboard, edit and forms; `convert`, `annotate`, `compare`, `protect` and `sign` still subscribe bare — including the OCR path, which is the longest-running job in the product. The adversarial review filed it and then correctly ruled it out of scope (the branch never touched those files), so it is recorded rather than smuggled in. Same one-line change as the five that were done. | 4 | No | ⬜ |
+| 2026-08-04 | **L9 gives thumbnails a manual retry but no backoff.** The finding asked for "click-to-retry / backoff on transient statuses (esp. 429)"; the retry shipped and the backoff did not. A rail of 500 tiles that all fail on a 429 now shows 500 retry buttons a person can mash — better than 500 identical spinners, and still not a backoff. | 3 | No | ⬜ |
+| 2026-08-04 | **`record_password_failure`'s incr-then-set fallback can lose a count.** Two concurrent misses on a cold bucket both fall to `cache.set(key, 1)`, so the second overwrites rather than adds. Pre-existing, but the ten-second buckets L5 introduced make cold buckets six times more frequent. A Lua `INCR`+`EXPIRE` or `cache.add` then `incr` closes it. | 3 | No | ⬜ |
 | 2026-08-04 | **M6 — DNS rebinding defeats the URL→PDF guard, and no amount of regex closes it.** `apps/core/urlguard.py` resolves the name, checks the addresses, and then hands Gotenberg the **name**; Chromium resolves it again a moment later and connects to whatever it gets. Layer 2 does not cover this and the comments that said it did are now corrected: `--chromium-deny-list` matches on the URL string, so `report.example.com` passes it no matter what that name currently points at. The real fixes are all changes to *who does the fetching*: resolve once and hand the fetcher a pinned IP (with `Host:` preserved); or validate every hop's peer address at the socket; or put the converter behind an egress allowlist so the private space is unreachable whatever it is called. Layer 1 and the (now complete) layer-2 range list still stop the naive attempts, and JavaScript is off in the container, so this is a deliberate, bounded acceptance rather than an unknown. **Do not attempt a resolver rewrite as a side change.** | 6/10 | No | ⬜ |
 | 2026-08-04 | **`noop_sleep` is now enqueued by nothing.** L1 removed `DemoJobView`, which was its only dispatcher; the task, its `CELERY_TASK_ROUTES` entry and its use as a `type` string in tests all remain. It is still a usable liveness probe for the async stack from a shell, so it was left rather than deleted — flagged, not removed, because the finding scoped the removal to the endpoint. | 0 | No | ⬜ |
 | 2026-08-04 | **The `infra/` deny-list drift check lives in `test.sh`, not in pytest.** The api container mounts `backend/` and nothing else, so a pytest comparing the compose and `.env.example` copies can only skip — and a test that skips is not a test. If the container ever mounts the repo root, fold the check back into `test_urlguard.py` where the rest of the SSRF assertions are. | 0 | No | ⬜ |

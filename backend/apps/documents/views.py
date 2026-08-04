@@ -708,8 +708,6 @@ class DocumentOperationView(APIView):
             # thing we do, and a document past the monthly page quota should be
             # refused rather than started and abandoned (§16, phase-06 risks).
             L.enforce_ocr_pages(principal, document.page_count)
-        L.enforce_metered_op(principal, op_type)
-
         if document_password:
             # Carried on the job so the worker can unlock, redacted from every
             # response and dropped from the row when the job finishes
@@ -718,6 +716,12 @@ class DocumentOperationView(APIView):
             params = {**params, "document_password": document_password}
 
         with _concurrency_slot(principal):
+            # Charged *inside* the slot, after the authoritative concurrency
+            # re-check. Charged before it, the loser of a concurrent race paid
+            # an hour-window metered op for a job that was never created — a
+            # quota spent on nothing, which is the one kind of limit error
+            # nobody can act on.
+            L.enforce_metered_op(principal, op_type)
             job = Job.objects.create(
                 **job_owner_kwargs(principal), document=document, type=op_type,
                 params=params, base_version_seq=base_seq,
@@ -780,9 +784,11 @@ class CrossDocumentOperationView(APIView):
             if doc.is_encrypted:
                 raise DocumentEncrypted()
         _guard_operation(request, op_type, principal)
-        L.enforce_metered_op(principal, op_type)
 
         with _concurrency_slot(principal):
+            # See OperationView: charged after the authoritative re-check, so a
+            # race loser does not pay for a job that is never created.
+            L.enforce_metered_op(principal, op_type)
             job = Job.objects.create(**job_owner_kwargs(principal), type=op_type,
                                      params=params)
         from .tasks import run_cross_document_operation

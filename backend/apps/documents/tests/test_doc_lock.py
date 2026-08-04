@@ -123,6 +123,32 @@ def test_the_ttl_outlasts_the_heaviest_op_and_the_wait_does_not(redis_double):
     assert kwargs["blocking_timeout"] < kwargs["timeout"]
 
 
+def test_the_ttl_narrows_to_the_lane_the_op_actually_runs_on(redis_double):
+    """The TTL is also the wedge a *killed* worker leaves behind.
+
+    Holding every lock for the heavy lane's ceiling means a crashed 60-second
+    render costs sixteen minutes of "that document is busy" for an op that
+    could never have run that long.
+    """
+    from apps.documents.tasks import LANE_TIME_LIMITS, lock_ttl_for
+
+    for queue, limit in LANE_TIME_LIMITS.items():
+        ttl = lock_ttl_for(queue)
+        assert ttl >= limit, f"{queue}'s lock expires under its own op"
+        assert ttl <= settings.DOC_LOCK_TTL
+
+    assert lock_ttl_for("render") < lock_ttl_for("default") < lock_ttl_for("heavy")
+    # An unknown or absent lane assumes the worst, which is the safe direction.
+    assert lock_ttl_for(None) == settings.DOC_LOCK_TTL
+    assert lock_ttl_for("something-new") == settings.DOC_LOCK_TTL
+
+    fake = redis_double(grant=True)
+    with not_eager:
+        with doc_lock("doc-1", queue="render"):
+            pass
+    assert fake.last.kwargs["timeout"] == lock_ttl_for("render")
+
+
 def test_the_two_knobs_are_not_the_same_setting():
     """They were, and that is what let an op outlive its own lock."""
     assert settings.DOC_LOCK_TTL >= settings.CELERY_TASK_TIME_LIMIT
@@ -153,4 +179,33 @@ def test_a_locked_operation_fails_the_job_with_the_locked_code(user, uploaded_do
     assert job.error_code == "locked"
     assert "busy" in job.error_message
     # And the document is exactly where it was — one version, unrotated.
+    assert Document.objects.get(id=document.id).versions.count() == 1
+
+
+@pytest.mark.django_db
+def test_revert_reports_the_same_code_rather_than_engine_error(user, uploaded_doc,
+                                                               redis_double):
+    """`revert_version` had no `except EngineError` at all.
+
+    It did not matter while nothing in its path raised one. It matters now that
+    two things do — this lock, and the tier page cap on the version write — and
+    without the branch both arrive as `engine_error: Revert failed: …`, which is
+    neither a code the client can switch on nor a sentence anybody can act on.
+    """
+    from apps.documents.models import Document
+    from apps.documents.tasks import revert_version
+    from apps.jobs.models import Job
+
+    redis_double(grant=False)
+    document = Document.objects.get(id=uploaded_doc["id"])
+    job = Job.objects.create(user=user, document=document, type="revert_version",
+                             params={"seq": 1})
+
+    with not_eager:
+        revert_version.apply(args=[str(job.id)])
+
+    job.refresh_from_db()
+    assert job.status == Job.Status.FAILED
+    assert job.error_code == "locked", job.error_message
+    assert "Revert failed" not in job.error_message
     assert Document.objects.get(id=document.id).versions.count() == 1
