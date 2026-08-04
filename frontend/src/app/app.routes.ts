@@ -54,14 +54,14 @@ export const routes: Routes = [
         // outbound email path is a spam relay pointed at our own domain.
         path: 'sign/new/:docId',
         canActivate: [accountGuard],
-        data: { accountReason: 'signing' },
+        data: { accountReason: 'sign' },
         loadComponent: () =>
           import('./features/sign/request-builder').then((m) => m.RequestBuilder),
       },
       {
         path: 'sign/:id',
         canActivate: [accountGuard],
-        data: { accountReason: 'signing' },
+        data: { accountReason: 'sign' },
         loadComponent: () =>
           import('./features/sign/request-detail').then((m) => m.RequestDetail),
       },

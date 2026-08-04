@@ -9,7 +9,14 @@ import { GuestFacade } from '../../abstraction/guest.facade';
  * An `accountGuard` rejection lands here with a `reason`, rendered as human
  * copy — never a bare wall (§7, §21.3).
  */
-const REASONS: Record<string, string> = {
+/**
+ * Why the account gate stopped you, in the words the register page shows.
+ *
+ * Exported so a spec can walk the route table's `accountReason` values against
+ * it: they were drifting apart silently, and a route naming a key that is not
+ * here degrades to the generic sentence at the highest-intent moment we have.
+ */
+export const REASONS: Record<string, string> = {
   library: 'Create a free account to keep your files in a library that does not expire.',
   settings: 'Create a free account to manage your profile and settings.',
   sign: 'Create a free account to send documents for signature.',
