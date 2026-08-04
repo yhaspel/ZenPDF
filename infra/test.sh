@@ -12,6 +12,39 @@ for arg in "$@"; do
 done
 
 echo "======================================================"
+echo " Infra consistency (SSRF layer-2 deny-list copies)"
+echo "======================================================"
+# The Gotenberg deny-list literal is written out four times — settings default,
+# both compose files, and .env.example — because `${VAR}` with no fallback would
+# pass an *empty* deny-list on a machine whose .env predates the setting, which
+# turns layer 2 of the SSRF guard off silently (§17). Four copies is four
+# chances to update three of them, and the hermetic pytest suite cannot see this
+# directory (the api container mounts backend/ and nothing else), so the drift
+# check lives here. `$$` is an escaped `$`.
+python3 - <<'PY'
+import pathlib, sys
+
+marker = "--chromium-deny-list=${GOTENBERG_DENY_LIST:-"
+copies = {}
+for name in ("docker-compose.yml", "docker-compose.prod.yml"):
+    text = pathlib.Path(name).read_text()
+    assert marker in text, f"{name} no longer passes a deny-list to Gotenberg"
+    copies[name] = text.split(marker, 1)[1].split("}\n", 1)[0]
+for line in pathlib.Path(".env.example").read_text().splitlines():
+    if line.startswith("GOTENBERG_DENY_LIST="):
+        copies[".env.example"] = line.split("=", 1)[1]
+
+normalized = {k: v.replace("$$", "$") for k, v in copies.items()}
+if len(set(normalized.values())) != 1:
+    for name, value in sorted(normalized.items()):
+        print(f"  {name}: {value}", file=sys.stderr)
+    sys.exit("SSRF deny-list copies have drifted from each other")
+if "," in next(iter(normalized.values())):
+    sys.exit("deny-list contains a comma; gotenberg's flag parser splits on it")
+print(f"deny-list identical across {len(copies)} infra copies")
+PY
+
+echo "======================================================"
 echo " Backend lint + types (ruff, mypy)"
 echo "======================================================"
 # mypy reached zero in phase 10 and the gate is what keeps it there. It got to

@@ -11,10 +11,21 @@ request forgery with a UI, unless every hop is checked:
    first URL;
 3. size and time caps on the conversion itself.
 
-The residual risk is DNS rebinding — a name that resolves to a public address
-when we check it and to a private one when Chromium connects. Layer 2 is what
-covers that, because the deny-list is applied per navigation inside the browser
-rather than once, up front, out here. It is documented as accepted in §17.
+**The residual risk is DNS rebinding, and layer 2 does not close it.** A name
+that resolves to a public address when we check it here and to a private one a
+moment later, when Chromium connects, defeats this module by construction —
+we validate an address nobody subsequently uses. Layer 2 helps with *redirects*,
+because the deny-list is evaluated on every navigation, but it matches on the
+URL string: a hostname that looks perfectly ordinary passes it no matter what
+that name currently resolves to. This file used to claim layer 2 covered
+rebinding. It does not, and saying so was the more dangerous of the two.
+
+Closing it properly means resolving once and pinning — validating the address
+and handing the fetcher that address rather than the name, or checking every
+hop's address at the socket, or putting the converter behind an egress
+allowlist so a private destination is unreachable whatever it is called. None
+of that is a change to this function; it is a change to who does the fetching.
+Tracked in `development-plans/PROGRESS.md`'s Human review queue (M6).
 """
 from __future__ import annotations
 

@@ -139,6 +139,17 @@ def test_gotenberg_denies_what_layer_one_denies():
         "http://[0:0:0:0:0:ffff:127.0.0.1]/",
         "http://[fe80::1]/",
         "http://user@api:8000/",         # userinfo before the host
+        # The four ranges layer 1 blocks and layer 2 did not (M5). Each is a
+        # real route into somewhere private, and a redirect is all it takes.
+        "http://100.64.0.1/",            # RFC 6598 CGNAT, low end
+        "http://100.127.255.254/",       # …and high end
+        "http://198.18.0.1/",            # RFC 2544 benchmarking
+        "http://198.19.255.254/",
+        "http://192.88.99.1/",           # RFC 7526 6to4 relay anycast
+        # RFC 6052 NAT64: this one *is* 169.254.169.254, spelled for a network
+        # where v6 is the only transport.
+        "http://[64:ff9b::a9fe:a9fe]/latest/meta-data/",
+        "http://[64:ff9b::]/",
     ]:
         assert pattern.match(url), f"gotenberg would still fetch {url}"
 
@@ -153,8 +164,53 @@ def test_gotenberg_denies_what_layer_one_denies():
         "https://web.dev/",
         "https://storage.googleapis.com/x",
         "https://8.8.8.8/",
+        # The neighbours of the four ranges added above. A range written one
+        # digit too wide is a tool that refuses somebody's real website.
+        "https://100.63.255.254/",
+        "https://100.128.0.1/",
+        "https://100.6.4.1/",
+        "https://198.17.255.254/",
+        "https://198.20.0.1/",
+        "https://192.88.98.1/",
+        "https://192.89.99.1/",
     ]:
         assert not pattern.match(url), f"gotenberg would refuse {url}"
+
+
+def test_the_running_deny_list_matches_the_one_shipped_in_the_code():
+    """The pattern is written out four times, and the copies must not drift.
+
+    It is repeated on purpose: `${GOTENBERG_DENY_LIST}` with no fallback would
+    pass an *empty* deny-list on any machine whose `.env` predates the setting,
+    which turns layer 2 off silently on exactly the boxes that have been running
+    longest. The price is four chances to update three of them.
+
+    This asserts the dangerous half from inside the container: that the value
+    actually in force — the environment's, which is also what compose hands
+    Gotenberg — has not fallen behind the literal in `settings/base.py`. The
+    `infra/` copies are compared to each other by `infra/test.sh`, which is the
+    only place in the gate that can see them (the api container mounts
+    `backend/` and nothing else).
+    """
+    import pathlib
+
+    from django.conf import settings
+
+    source = (pathlib.Path(settings.BASE_DIR)
+              / "config" / "settings" / "base.py").read_text()
+    # `$$` is an escaped `$` in compose and in the env files it feeds.
+    running = settings.GOTENBERG_DENY_LIST.replace("$$", "$")
+    assert running in source, (
+        "the deny-list in force has drifted from the default in "
+        "config/settings/base.py — see infra/.env and infra/docker-compose*.yml")
+
+
+def test_the_deny_list_survives_gotenbergs_flag_parser():
+    """Its parser splits the flag value on commas, which would truncate the
+    pattern mid-expression and leave a regex that still compiles."""
+    from django.conf import settings
+
+    assert "," not in settings.GOTENBERG_DENY_LIST
 
 
 def test_a_trailing_dot_does_not_smuggle_an_internal_name():

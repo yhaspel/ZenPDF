@@ -376,16 +376,22 @@ PRESIGNED_DELIVERY = config("PRESIGNED_DELIVERY", default=False, cast=bool)
 # --- Engine / signing -------------------------------------------------------
 GOTENBERG_URL = config("GOTENBERG_URL", default="http://gotenberg:3000")
 # Layer 2 of the SSRF guard (§17, phase-06): the pattern Gotenberg's Chromium
-# refuses to navigate to, on *every* navigation — which is what covers the hops
-# `apps.core.urlguard` cannot see (a redirect, or a name that resolves publicly
-# when we check it and privately when Chromium connects). Compose passes this
-# same value to the container; the default here and there are deliberately
-# identical so the guard holds even if the env var goes missing.
+# refuses to navigate to, on *every* navigation — which is what covers the hop
+# `apps.core.urlguard` cannot see, namely a redirect into the private space.
+#
+# It does **not** cover DNS rebinding: this is a match on the URL string, so a
+# perfectly ordinary hostname passes it whatever that name currently resolves
+# to. That gap is real and tracked (M6 in PROGRESS.md's Human review queue);
+# it needs resolve-and-pin or an egress allowlist, not a longer regex.
+#
+# Compose and .env.example carry the same literal; they are deliberately
+# identical so the guard holds even if the env var goes missing, and
+# `infra/test.sh` fails if the copies drift apart.
 GOTENBERG_DENY_LIST = config(
     "GOTENBERG_DENY_LIST",
     # No commas: gotenberg's flag parser splits this value on them, which
     # silently truncates the pattern mid-expression.
-    default=r"^file:(?!//\/tmp/).*|^[a-z]+://(?:[^/@]*@)?(localhost|127\.\d+(\.\d+)?(\.\d+)?|0\.0\.0\.0|0x[0-9a-f]+|0\d+(\.\d+)?(\.\d+)?(\.\d+)?|\d\d\d\d\d\d\d\d\d?\d?|\[?::1\]?|\[?::ffff:.*|\[?0:0:0:0:0:(0|ffff):.*|\[?fd[0-9a-f][0-9a-f]:.*|\[?fe80:.*|169\.254\.\d+\.\d+|10\.\d+\.\d+\.\d+|172\.(1[6-9]|2\d|3[01])\.\d+\.\d+|192\.168\.\d+\.\d+|100\.100\.200\.200|metadata\.google\.internal|metadata\.goog|.*\.internal|api|web|db|redis|storage|mailpit|gotenberg|beat|worker-default|worker-heavy|worker-render)\.?([:/].*)?$",
+    default=r"^file:(?!//\/tmp/).*|^[a-z]+://(?:[^/@]*@)?(localhost|127\.\d+(\.\d+)?(\.\d+)?|0\.0\.0\.0|0x[0-9a-f]+|0\d+(\.\d+)?(\.\d+)?(\.\d+)?|\d\d\d\d\d\d\d\d\d?\d?|\[?::1\]?|\[?::ffff:.*|\[?0:0:0:0:0:(0|ffff):.*|\[?fd[0-9a-f][0-9a-f]:.*|\[?fe80:.*|169\.254\.\d+\.\d+|10\.\d+\.\d+\.\d+|172\.(1[6-9]|2\d|3[01])\.\d+\.\d+|192\.168\.\d+\.\d+|100\.(6[4-9]|7\d|8\d|9\d|1[01]\d|12[0-7])\.\d+\.\d+|198\.1[89]\.\d+\.\d+|192\.88\.99\.\d+|\[?64:ff9b:.*|100\.100\.200\.200|metadata\.google\.internal|metadata\.goog|.*\.internal|api|web|db|redis|storage|mailpit|gotenberg|beat|worker-default|worker-heavy|worker-render)\.?([:/].*)?$",
 )
 SIGNING_CERT_PATH = config("SIGNING_CERT_PATH", default="/certs/zenpdf-dev.p12")
 SIGNING_CERT_PASSWORD = config("SIGNING_CERT_PASSWORD", default="devpass")
