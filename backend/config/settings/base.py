@@ -333,7 +333,19 @@ CACHES = {
 }
 
 # --- Redis locks (§11) ------------------------------------------------------
-DOC_LOCK_TIMEOUT = 120
+# Two numbers that used to be one, and had to stop being one.
+#
+# `DOC_LOCK_TIMEOUT` is how long a worker will *wait* for a document that is
+# already being changed. `DOC_LOCK_TTL` is how long the lock it eventually gets
+# is *held* before Redis expires it on its own. Using 120 s for both meant the
+# heavy lane — 900 s hard limit (§12) — outlived its own lock after two
+# minutes, at which point a second writer could walk into the critical section
+# while the first was still inside it. The version chain is precisely the thing
+# that does not survive that. The TTL must therefore outlast the longest op
+# plus its teardown; the wait must not, because a caller that cannot have the
+# document should be told so rather than parked for a quarter of an hour.
+DOC_LOCK_TIMEOUT = config("DOC_LOCK_TIMEOUT", default=120, cast=int)
+DOC_LOCK_TTL = config("DOC_LOCK_TTL", default=CELERY_TASK_TIME_LIMIT + 60, cast=int)
 
 # --- Email (§15) ------------------------------------------------------------
 EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"

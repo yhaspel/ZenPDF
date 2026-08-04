@@ -59,7 +59,17 @@ THUMB_WIDTH = 240
 # --------------------------------------------------------------------------- #
 @contextlib.contextmanager
 def doc_lock(document_id: str):
-    """Blocking Redis lock `zen:doc:{id}` (§11). No-op under eager tests."""
+    """Blocking Redis lock `zen:doc:{id}` (§11). No-op under eager tests.
+
+    **Fails closed.** `acquire()` returning False used to fall through into the
+    body anyway — only the *release* was guarded by `acquired` — so a wait that
+    timed out produced two writers inside the critical section instead of one
+    refusal, which is a lost update on the version chain rather than an error
+    somebody can retry.
+
+    The TTL and the wait are two different settings for a reason; see
+    `DOC_LOCK_TTL` in the settings.
+    """
     if getattr(settings, "CELERY_TASK_ALWAYS_EAGER", False):
         yield
         return
@@ -68,16 +78,19 @@ def doc_lock(document_id: str):
     client = redis.from_url(settings.REDIS_URL)
     lock = client.lock(
         f"zen:doc:{document_id}",
-        timeout=settings.DOC_LOCK_TIMEOUT,
+        timeout=settings.DOC_LOCK_TTL,
         blocking_timeout=settings.DOC_LOCK_TIMEOUT,
     )
-    acquired = lock.acquire()
+    if not lock.acquire():
+        raise EngineError(
+            "That document is busy with another change. Try again in a moment.",
+            code="locked",
+        )
     try:
         yield
     finally:
-        if acquired:
-            with contextlib.suppress(Exception):
-                lock.release()
+        with contextlib.suppress(Exception):
+            lock.release()
 
 
 def _canceled(job: Job) -> bool:
