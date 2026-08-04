@@ -846,10 +846,132 @@ convert panel.
 `apps` 90.81 % (gate 85) and `pdf_engine` 91.88 % (gate 90); `spectacular
 --fail-on-warn` exit 0; `manage.py check` no issues; ruff and mypy clean.
 
+## Session log — QA findings (2026-08-04)
+
+**Branch** `main`. Scope is `docs/review/IMPLEMENT-FINDINGS-PROMPT.md`, verbatim
+and in order: three ship-blockers, seven mediums, fourteen polish items, one
+commit per finding id. No features.
+
+**The three ship-blockers, and what each actually was.**
+
+*H1 was a config value, not a bug.* `client_ip` and DRF's `get_ident` were both
+correct; `NUM_PROXIES=1` on a two-proxy deployment was not. One hop too few and
+every request resolves to the TLS terminator's constant address, which collapses
+`auth`, `verify`, `verify_hour`, `public_sign`, `image_upload`, `client_error`
+and the guest-IP leg into a single global bucket — one caller can lock the whole
+site out of login. The code is unchanged; the invariant is now written in all
+three places an operator looks and pinned by
+`apps/core/tests/test_client_ip_topology.py`, which also asserts the *failure*
+so a future edit has to argue with it.
+
+*H2 was a check the storage quota was standing in for and could not.* Duplicated
+pages share their content xrefs, so `duplicate_pages` multiplies the page count
+for almost no bytes. `test_version_page_cap.py` fails four ways without the fix,
+verified by reverting it.
+
+*H3 was measured, not reasoned about.* Under a 1 GiB `RLIMIT_AS` in the api
+container, `fitz.Pixmap` on the 1.5 MB 40000×40000 fixture asks for
+1 600 040 000 bytes; `header_dimensions` answers from the IHDR in six
+microseconds. The finding also named a second door — the public ceremony's
+field-fill had no byte cap at all — and both paths now share one constant.
+
+**What the findings did not know, and the work found.** The Gotenberg deny-list
+literal lives in **four** places, not the three M5 names: the fourth is
+`infra/.env.example`, and *that* copy is the one in force, because the
+environment wins over both the settings default and compose's `${VAR:-…}`
+fallback. It had already drifted. So M5 is two fixes: the four missing ranges,
+and a drift guard — a pytest asserting the running value has not fallen behind
+the code, plus a check in `infra/test.sh` comparing the infra copies to each
+other. The latter is in `test.sh` rather than in pytest because the api
+container mounts `backend/` and nothing else; a test that skips is not a test.
+
+**Where a test was allowed to change.** M3 contradicts two existing assertions
+by design. `test_worker_limits.py::test_the_sweep_and_the_task_say_the_same_thing`
+and `test_jobs.py::test_the_stall_reaper_drops_password_material` both aged their
+fixture on `created_at`, which is the behaviour the finding calls wrong: a job
+that merely waited behind a backlog was being told it "stopped responding". Both
+now set `started_at`, and what they were actually pinning — that both kill paths
+say the same sentence, and that the sweep drops password material — is unchanged.
+
+**Decisions taken, with reasons.**
+
+* **M2's `locked` is a new error code.** `version_conflict` means "the document
+  changed since you loaded it" and the client reloads on it; a busy lock is a
+  transient conflict with different advice, so reusing it would have been a lie
+  the UI acts on. §6's key-code list in the architecture doc is not extended
+  here — that is a design-doc edit, out of this scope.
+* **M4 ships a data migration, not just two columns.** Backfilling
+  `completed_notified_at`/`source_appended_at` from `completed_at` for existing
+  COMPLETED envelopes is what stops a future resume mailing every recipient a
+  second copy of something they signed weeks ago.
+* **L5 changes one meter, not all of them.** The fixed calendar windows in
+  `limits.py` all permit a 2× boundary burst. That is tolerable for an hourly
+  op budget and is not tolerable for the one meter standing between an attacker
+  and a document password, so only the password meter now slides (six ten-second
+  buckets; the effective window is 60–70 s). The others are left alone
+  deliberately, because changing a meter changes what every test of it means.
+* **L14 keeps account enumeration, and says so in the code.** Closing it means
+  answering every signup with a success shape and mailing the existing account
+  instead — which strands the person who is actually stuck, in a product whose
+  premise is that you get your file out without an argument. It buys less than
+  it looks (login already distinguishes the two cases) and the rate is bounded
+  by a per-IP throttle that H1 made real. Written at the decision, not here, so
+  the next person decides it again rather than discovering it.
+* **M6 is not attempted.** See the Human review queue row below. The three
+  comments that claimed layer 2 covered DNS rebinding are corrected — it matches
+  on the URL string, so an ordinary-looking hostname passes it whatever it
+  resolves to at the moment Chromium connects. An overclaim in a comment is
+  worse than the gap it describes.
+
+**What is not covered.** The e2e suite was not run for this change: it needs the
+full stack driven by Playwright and the only spec touched is `phase-0.spec.ts`,
+which loses its "Run demo job" click along with the button (L1). The assertion it
+loses — that the async pipeline works — is covered for real by the page-operation
+specs, and by `test_jobs.py`, where the pipeline smoke moved.
+
+**Every finding, what changed, and what proves it.**
+
+| Id | Change | Test |
+|---|---|---|
+| **H1** | `NUM_PROXIES=2` in `.env.prod.example`; the invariant written into `settings/base.py` and `frontend/nginx.conf` (with the `real_ip_from` alternative). Code unchanged — it was already right. | `apps/core/tests/test_client_ip_topology.py` (6) |
+| **H2** | `_save_new_version` enforces `limits.max_pages` before the blob is written; `_PAGES` gains `maxItems: 10000`. | `apps/documents/tests/test_version_page_cap.py` (5) |
+| **H3** | `signatures._open_image` refuses on `header_dimensions` before `fitz.Pixmap`; `PublicSignFieldView` gets the byte cap the account path had. | `apps/esign/tests/test_signature_bomb.py` (8) |
+| **L1** | "Run demo job" gone: button, `runDemoJob`, `JobsService.demo()`, `DemoJobView`, its route, the e2e click. Pipeline smoke moved into the test. | `test_jobs.py::test_the_noop_pipeline_runs_to_success`, `::test_there_is_no_demo_endpoint` |
+| **L2** | Both `/app/sign*` routes say `accountReason: 'sign'`; `REASONS` exported. | `features/auth/register-reasons.spec.ts` (3) |
+| **L6** | `accepted_tos_at` added to `UserSerializer.read_only_fields`. | `test_auth.py::test_the_tos_consent_timestamp_cannot_be_rewritten` |
+| **L15** | `debug_task` deleted from `config/celery.py`. | ruff + suite |
+| **M1** | `esign.models.client_ip` delegates to the `NUM_PROXIES`-aware core helper — fixes the audit chain, `consent_ip` and `AbuseReport.ip` at once. | `apps/esign/tests/test_evidence_ip.py` (5) |
+| **M2** | `doc_lock` raises `locked` when it cannot acquire; `DOC_LOCK_TTL` split from `DOC_LOCK_TIMEOUT` and defaulted above the heavy hard limit. | `apps/documents/tests/test_doc_lock.py` (6) |
+| **M3** | RUNNING ages on `started_at`; never-started rows get `JOB_QUEUE_STALL_TIMEOUT`; `_canceled` → `_abandoned` (anything but RUNNING) at all three worker checkpoints. | `apps/jobs/tests/test_stall_reaper.py` (7) |
+| **M4** | `_finalize_tail` — certificate, both completion events, source-append and notification each idempotent; `completed_notified_at`/`source_appended_at` + migration `0006` with a backfill; the COMPLETED branch finishes the tail instead of returning. | `apps/esign/tests/test_finalize_resume.py` (6) |
+| **M5** | Four ranges added to the deny-list in all four copies; drift guards in pytest and `test.sh`; the DNS-rebinding overclaim corrected in three files. | `test_urlguard.py::test_gotenberg_denies_what_layer_one_denies` (extended), `::test_the_running_deny_list_matches_the_one_shipped_in_the_code` |
+| **M6** | **Not fixed** — logged in the Human review queue with the three real options. Comments corrected. | n/a |
+| **M7** | `ViewerFacade` gains `loading`/`error` (mapping the §6 envelope); the workspace template gets a loading branch and an `alert`-role error branch with retry + a way back. | `abstraction/viewer.facade.spec.ts` (6), `features/workspace/workspace-error.spec.ts` (3) |
+| **L3** | Slot count + job create inside one transaction holding the principal row. | `test_race_and_window_polish.py` (2) |
+| **L4** | `complete_recipient` claims by conditional UPDATE; the `signed` event only when it changed a row. | `apps/esign/tests/test_completion_race.py` (4) |
+| **L5** | Password-attempt meter slides in ten-second buckets. | `test_race_and_window_polish.py` (3) |
+| **L7** | `DocumentPasswords.clearAll()`, called from `AuthFacade.clearSession()`. | `core/services/document-passwords.spec.ts` (3), `auth.facade.spec.ts` |
+| **L8** | Job tracking piped through `takeUntilDestroyed` in workspace, tool-page, dashboard, edit and forms. | lint + suite |
+| **L9** | `pdf-thumbnail` gets a distinct `failed` state with a labelled retry. | `shared/pdf-thumbnail.spec.ts` (3) |
+| **L10** | `AuthFacade.refreshAccess()` (single-flight); the viewer's `pdfLoadingFailed` refreshes once and re-assigns `src`. | `auth.facade.spec.ts` (2) |
+| **L11** | `core/safe-next.ts` — same-origin absolute paths only. | `core/safe-next.spec.ts` (6) |
+| **L12** | Login reads `next`; both auth pages forward `next`/`reason` to each other. | `features/auth/auth-next.spec.ts` (4) |
+| **L13** | `settings/prod.py` refuses `ALLOWED_HOSTS=*` or empty. | `test_race_and_window_polish.py` (4) |
+| **L14** | Kept, with the reasoning written at `RegisterSerializer.validate_email`. | n/a — decision |
+
+**Verification.** `ruff` clean, `mypy` clean across 166 files, `manage.py check`
+no issues, `makemigrations --check` no changes, `spectacular --fail-on-warn
+--validate` exit 0. Backend and frontend counts, coverage figures and the e2e
+note are recorded in the summary line below once the full gate ran.
+
 ## Human review queue
 
 | Added | Item | Phase | GATE? | Resolved |
 |---|---|---|---|---|
+| 2026-08-04 | **M6 — DNS rebinding defeats the URL→PDF guard, and no amount of regex closes it.** `apps/core/urlguard.py` resolves the name, checks the addresses, and then hands Gotenberg the **name**; Chromium resolves it again a moment later and connects to whatever it gets. Layer 2 does not cover this and the comments that said it did are now corrected: `--chromium-deny-list` matches on the URL string, so `report.example.com` passes it no matter what that name currently points at. The real fixes are all changes to *who does the fetching*: resolve once and hand the fetcher a pinned IP (with `Host:` preserved); or validate every hop's peer address at the socket; or put the converter behind an egress allowlist so the private space is unreachable whatever it is called. Layer 1 and the (now complete) layer-2 range list still stop the naive attempts, and JavaScript is off in the container, so this is a deliberate, bounded acceptance rather than an unknown. **Do not attempt a resolver rewrite as a side change.** | 6/10 | No | ⬜ |
+| 2026-08-04 | **`noop_sleep` is now enqueued by nothing.** L1 removed `DemoJobView`, which was its only dispatcher; the task, its `CELERY_TASK_ROUTES` entry and its use as a `type` string in tests all remain. It is still a usable liveness probe for the async stack from a shell, so it was left rather than deleted — flagged, not removed, because the finding scoped the removal to the endpoint. | 0 | No | ⬜ |
+| 2026-08-04 | **The `infra/` deny-list drift check lives in `test.sh`, not in pytest.** The api container mounts `backend/` and nothing else, so a pytest comparing the compose and `.env.example` copies can only skip — and a test that skips is not a test. If the container ever mounts the repo root, fold the check back into `test_urlguard.py` where the rest of the SSRF assertions are. | 0 | No | ⬜ |
+| 2026-08-04 | **The concurrency-slot race is closed on Postgres and unprovable on SQLite.** L3 wraps count+create in a transaction holding the principal row, but `has_select_for_update` is False on SQLite, so the hermetic suite exercises the *path* and not the *lock*. What the race actually does under load belongs in `test.sh --pg`, alongside the query plans, with two concurrent creates. | 3 | No | ⬜ |
 | 2026-07-19 | **Workspace & dashboard look-and-feel** — functional Tailwind UI, but visual polish (spacing, empty states, responsive breakpoints, brand) deserves a designer's eye. | 1–2 | No | ⬜ |
 | 2026-07-19 | **Crop UX** — implemented as a margin dialog (trim %), not the draggable overlay-rectangle from phase-02. The overlay-layer primitive (`PageOverlayComponent`) is properly built in Phase 3; revisit crop to use it then. | 2 | No | ✔ **Resolved 2026-08-01 (Phase 3)** — the margin dialog is gone; Crop now drags a rectangle on the overlay and applies to the Organize selection (or all pages). `e2e/phase-3.spec.ts::crop is drawn on the overlay, not typed into a dialog`. |
 | 2026-07-19 | **web dev-server memory** — `ng serve` (esbuild + pdf.js + Tailwind oxide) can OOM on an 8 GB Docker VM under concurrent load; mitigated by `restart: unless-stopped` + a web-ready wait in `test.sh`. Consider raising Docker Desktop RAM, or precompiling Tailwind to static CSS, for smoother local dev. | 0 | No | ⬜ |
