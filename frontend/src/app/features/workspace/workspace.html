@@ -378,12 +378,24 @@
       </p>
     }
     <div class="flex items-center gap-3">
-      <button type="button" (click)="retryLoad()"
-              class="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
-              data-test="workspace-retry">Try again</button>
-      <a routerLink="/app/dashboard"
+      <!-- Retrying an expired guest session can only fail the same way: the
+           session row, its documents and its blobs are hard-deleted together
+           (core/tasks.py `guest_purge`). Every other failure here — a 500, a
+           dropped connection — is worth one. -->
+      @if (viewer.error()?.code !== 'guest_expired') {
+        <button type="button" (click)="retryLoad()"
+                class="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                data-test="workspace-retry">Try again</button>
+      }
+      <!-- A guest has no dashboard: /app/dashboard is account-gated, so this
+           handed somebody who was *just* told "anything you do now starts a
+           fresh session" a signup wall instead — the exact wall §21.3 forbids.
+           For a guest, starting fresh means uploading again. -->
+      <a [routerLink]="auth.isAuthenticated() ? '/app/dashboard' : '/'"
          class="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700"
-         data-test="workspace-error-home">Back to dashboard</a>
+         data-test="workspace-error-home">
+        {{ auth.isAuthenticated() ? 'Back to dashboard' : 'Upload a file' }}
+      </a>
     </div>
   </div>
 }

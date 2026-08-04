@@ -59,7 +59,7 @@ export class Workspace {
   private router = inject(Router);
   private toast = inject(ToastService);
   private confirm = inject(ConfirmService);
-  private auth = inject(AuthFacade);
+  protected auth = inject(AuthFacade);
   private destroyRef = inject(DestroyRef);
 
   protected leftTab = signal<'thumbs' | 'outline' | 'history'>('thumbs');

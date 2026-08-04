@@ -6,6 +6,7 @@ import { Observable, of, throwError } from 'rxjs';
 
 import { DocumentModel } from '../../core/models/models';
 import { DocumentsService } from '../../core/services/documents.service';
+import { TokenService } from '../../core/services/token.service';
 import { Workspace } from './workspace';
 
 /**
@@ -86,6 +87,56 @@ describe('Workspace failure states', () => {
 
     expect(text).toContain('Your guest session ended.');
     expect(text).toContain('deleted automatically');
+  });
+
+  /**
+   * The way out of an expired session must not be a signup wall.
+   *
+   * `/app/dashboard` carries `accountGuard`, so the single CTA on this screen
+   * bounced a guest to `/auth/register` — one click after telling them
+   * "anything you do now starts a fresh session". Starting fresh means
+   * uploading again (§21.3, §21.5).
+   */
+  it('sends an expired guest somewhere they can actually go', () => {
+    configure(() =>
+      throwError(() => ({
+        status: 410,
+        error: {
+          error: { code: 'guest_expired', message: 'Your guest session ended.', details: {} },
+        },
+      })),
+    );
+
+    const fixture = TestBed.createComponent(Workspace);
+    fixture.detectChanges();
+    const html: HTMLElement = fixture.nativeElement;
+
+    const cta = html.querySelector('[data-test=workspace-error-home]');
+    expect(cta?.getAttribute('href')).toBe('/');
+    expect(cta?.textContent).toContain('Upload a file');
+    // The document was hard-deleted with the session; a retry can only fail
+    // the same way, so it is not offered.
+    expect(html.querySelector('[data-test=workspace-retry]')).toBeNull();
+  });
+
+  it('still sends an account holder to their dashboard', () => {
+    configure(() =>
+      throwError(() => ({
+        status: 404,
+        error: { error: { code: 'not_found', message: 'Not found.', details: {} } },
+      })),
+    );
+    const tokens = TestBed.inject(TokenService);
+    tokens.set('access-token', 'refresh-token');
+
+    const fixture = TestBed.createComponent(Workspace);
+    fixture.detectChanges();
+
+    const cta = fixture.nativeElement.querySelector('[data-test=workspace-error-home]');
+    expect(cta?.getAttribute('href')).toBe('/app/dashboard');
+    expect(cta?.textContent).toContain('Back to dashboard');
+
+    tokens.clear();
   });
 
   it('retries the id in the URL when asked', () => {
