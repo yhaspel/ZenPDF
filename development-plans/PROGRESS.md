@@ -959,10 +959,12 @@ specs, and by `test_jobs.py`, where the pipeline smoke moved.
 | **L13** | `settings/prod.py` refuses `ALLOWED_HOSTS=*` or empty. | `test_race_and_window_polish.py` (4) |
 | **L14** | Kept, with the reasoning written at `RegisterSerializer.validate_email`. | n/a — decision |
 
-**Verification.** `ruff` clean, `mypy` clean across 166 files, `manage.py check`
-no issues, `makemigrations --check` no changes, `spectacular --fail-on-warn
---validate` exit 0. Backend and frontend counts, coverage figures and the e2e
-note are recorded in the summary line below once the full gate ran.
+**Verification.** `ruff` clean; `mypy` clean across 166 files; `manage.py check`
+no issues; `makemigrations --check` no changes; `spectacular --fail-on-warn
+--validate` exit 0. **1049 backend tests pass** (4 skipped — the pre-existing
+query-plan tests that need Postgres), up from 988, and **209 frontend unit tests**,
+up from 178. Coverage `apps` 92 % (gate 85) and `pdf_engine` 92 % (gate 90).
+`ng lint` clean. E2E not run — see "What is not covered" above.
 
 ## Human review queue
 
