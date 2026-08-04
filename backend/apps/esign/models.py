@@ -419,10 +419,21 @@ def record(sign_request, event_type, *, recipient=None, request=None, **metadata
 
 
 def client_ip(request) -> str | None:
-    forwarded = request.META.get("HTTP_X_FORWARDED_FOR", "")
-    if forwarded:
-        return forwarded.split(",")[0].strip()
-    return request.META.get("REMOTE_ADDR")
+    """The address this signing evidence is allowed to attest to.
+
+    This used to take the *leftmost* X-Forwarded-For hop, which is the one the
+    client wrote — and it is written into the hash-chained audit trail, into
+    `recipient.consent_ip`, and printed on the certificate of completion. An
+    intact chain around a fabricated address is worse than no address: the
+    tamper-evidence makes the lie look checked.
+
+    `apps.core.authentication.client_ip` counts back `NUM_PROXIES` hops from
+    the end instead — the address our own proxy appended — and falls back to
+    `REMOTE_ADDR`. Delegating here fixes all three call sites at once.
+    """
+    from apps.core.authentication import client_ip as _core_client_ip
+
+    return _core_client_ip(request) or None
 
 
 def verify_chain(sign_request) -> dict:
