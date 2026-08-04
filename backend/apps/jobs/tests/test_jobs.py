@@ -5,27 +5,45 @@ from apps.jobs.models import Job
 pytestmark = pytest.mark.django_db
 
 
-def test_demo_job_runs_to_success(api):
-    r = api.post("/api/jobs/demo/")
-    assert r.status_code == 202
-    job_id = r.json()["id"]
+def _noop_job(user):
+    """Enqueue the phase-0 smoke task for `user` and return the row.
+
+    This is what `POST /api/jobs/demo/` used to do. The endpoint is gone (L1:
+    it was DEBUG-gated, so the dashboard button that called it 404ed for every
+    real user), but the pipeline smoke it gave us is worth keeping, so it lives
+    here instead of behind a route nobody could reach.
+    """
+    from apps.jobs.tasks import noop_sleep
+
+    job = Job.objects.create(user=user, type="noop_sleep", params={"seconds": 0.05})
+    noop_sleep.delay(str(job.id), 0.05)
+    return job
+
+
+def test_the_noop_pipeline_runs_to_success(api, user):
+    job = _noop_job(user)
     # eager execution → already terminal by the time we poll
-    r2 = api.get(f"/api/jobs/{job_id}/")
-    assert r2.status_code == 200
-    assert r2.json()["status"] == "succeeded"
-    assert r2.json()["progress"] == 100
+    r = api.get(f"/api/jobs/{job.id}/")
+    assert r.status_code == 200
+    assert r.json()["status"] == "succeeded"
+    assert r.json()["progress"] == 100
 
 
-def test_job_list_filters(api):
-    api.post("/api/jobs/demo/")
+def test_job_list_filters(api, user):
+    _noop_job(user)
     r = api.get("/api/jobs/?status=succeeded")
     assert r.status_code == 200
     assert r.json()["count"] >= 1
 
 
-def test_job_cross_user_isolation(api, other_api):
-    job_id = api.post("/api/jobs/demo/").json()["id"]
-    assert other_api.get(f"/api/jobs/{job_id}/").status_code == 404
+def test_job_cross_user_isolation(api, other_api, user):
+    job = _noop_job(user)
+    assert other_api.get(f"/api/jobs/{job.id}/").status_code == 404
+
+
+def test_there_is_no_demo_endpoint(api):
+    """It shipped a button to every user and answered 404 in production."""
+    assert api.post("/api/jobs/demo/").status_code == 404
 
 
 def test_cancel_queued_job(api, user):

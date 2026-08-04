@@ -1,4 +1,3 @@
-from django.conf import settings
 from django.http import HttpResponse
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import extend_schema
@@ -8,7 +7,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.core.authentication import require_principal
-from apps.core.principals import job_owner_kwargs, owned_by
+from apps.core.principals import owned_by
 from apps.pdf_engine.storage import get_storage
 
 from .models import Job
@@ -87,27 +86,3 @@ class JobDownloadView(APIView):
         filename = export["filename"].replace('"', "")
         response["Content-Disposition"] = f'attachment; filename="{filename}"'
         return response
-
-
-class DemoJobView(APIView):
-    """Enqueue a noop job — phase-0 pipeline smoke test / dashboard dev button."""
-
-    @extend_schema(request=None, responses=JobSerializer, tags=["jobs"])
-    def post(self, request):
-        # Dev/e2e/test only — never a public prod endpoint.
-        eager = getattr(settings, "CELERY_TASK_ALWAYS_EAGER", False)
-        if not (settings.DEBUG or eager):
-            return Response(
-                {"error": {"code": "not_found", "message": "Not available.", "details": {}}},
-                status=status.HTTP_404_NOT_FOUND,
-            )
-        principal = _principal(request, write=True)
-        job = Job.objects.create(
-            **job_owner_kwargs(principal), type="noop_sleep", params={"seconds": 1.0}
-        )
-        from .tasks import noop_sleep
-
-        async_result = noop_sleep.delay(str(job.id), 1.0)
-        job.celery_task_id = getattr(async_result, "id", "") or ""
-        job.save(update_fields=["celery_task_id"])
-        return Response(JobSerializer(job).data, status=status.HTTP_202_ACCEPTED)

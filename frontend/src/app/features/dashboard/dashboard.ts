@@ -10,7 +10,6 @@ import { JobsFacade } from '../../abstraction/jobs.facade';
 import { UploadFacade, UploadItem } from '../../abstraction/upload.facade';
 import { DocumentModel, Job } from '../../core/models/models';
 import { DocumentsService } from '../../core/services/documents.service';
-import { JobsService } from '../../core/services/jobs.service';
 import { AdSlot } from '../../shared/ad-slot';
 import { SiteFooter } from '../../shared/site-footer';
 import { ConfirmService } from '../../shared/confirm.service';
@@ -58,7 +57,6 @@ export class Dashboard {
   protected auth = inject(AuthFacade);
   private jobs = inject(JobsFacade);
   protected convert = inject(ConvertFacade);
-  private jobsSvc = inject(JobsService);
   private docsSvc = inject(DocumentsService);
   private router = inject(Router);
   private toast = inject(ToastService);
@@ -258,20 +256,6 @@ export class Dashboard {
         }
       },
       error: () => this.toast.error('Merge failed'),
-    });
-  }
-
-  runDemoJob(): void {
-    this.jobsSvc.demo().subscribe({
-      next: (job) => {
-        this.jobs.track(job.id).subscribe({
-          next: (j) => {
-            if (j.status === 'succeeded') this.toast.success('Demo job complete ✓');
-            if (j.status === 'failed') this.toast.error('Demo job failed');
-          },
-        });
-      },
-      error: () => this.toast.error('Could not start demo job'),
     });
   }
 

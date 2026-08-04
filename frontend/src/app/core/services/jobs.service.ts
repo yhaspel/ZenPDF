@@ -23,8 +23,4 @@ export class JobsService {
   cancel(id: string): Observable<Job> {
     return this.http.post<Job>(`${this.base}/jobs/${id}/cancel/`, {});
   }
-
-  demo(): Observable<Job> {
-    return this.http.post<Job>(`${this.base}/jobs/demo/`, {});
-  }
 }

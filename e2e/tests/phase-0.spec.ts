@@ -15,9 +15,10 @@ test('@smoke phase 0: register, login, session guard', async ({ page }) => {
   await page.click('[data-test=submit]');
   await expect(page).toHaveURL(/\/app\/dashboard/);
 
-  // Demo job → toast (proves async pipeline)
-  await page.click('[data-test=demo-job]');
-  await expect(page.locator('[data-test=toast-success]')).toBeVisible();
+  // The "Run demo job" button that used to be clicked here is gone: its
+  // endpoint was DEBUG-gated and 404ed in production, so the button was broken
+  // for every real user. The async pipeline is exercised for real by the
+  // page-operation specs.
 
   // Logout → login page.
   await page.click('[data-test=logout]');
