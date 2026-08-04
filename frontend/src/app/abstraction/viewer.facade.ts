@@ -1,8 +1,45 @@
+import { HttpErrorResponse } from '@angular/common/http';
 import { Injectable, computed, inject, signal } from '@angular/core';
 import { Observable } from 'rxjs';
 
 import { DocumentModel, DocumentVersion, Job, OutlineItem } from '../core/models/models';
 import { DocumentsService } from '../core/services/documents.service';
+
+/** What the workspace says when the document will not load. */
+export interface ViewerError {
+  /** The §6 machine code, where the server sent one. */
+  code: string;
+  message: string;
+}
+
+/**
+ * A §6 error envelope, or a sentence for the cases that never reach the API.
+ *
+ * The server's own message is preferred wherever there is one — it is written
+ * for a person and it knows things this layer does not (which quota, whose
+ * session). The fallbacks are for `status === 0`, which is offline or a
+ * cancelled request and has no body at all.
+ */
+function describe(error: unknown): ViewerError {
+  const response = error as HttpErrorResponse;
+  const envelope = response?.error?.error;
+  if (envelope?.message) {
+    return { code: String(envelope.code ?? ''), message: String(envelope.message) };
+  }
+  if (response?.status === 404) {
+    return { code: 'not_found', message: 'That document could not be found.' };
+  }
+  if (response?.status === 0) {
+    return {
+      code: 'offline',
+      message: 'We could not reach ZenPDF. Check your connection and try again.',
+    };
+  }
+  return {
+    code: 'engine_error',
+    message: 'Something went wrong opening that document.',
+  };
+}
 
 @Injectable({ providedIn: 'root' })
 export class ViewerFacade {
@@ -12,8 +49,21 @@ export class ViewerFacade {
   private _versions = signal<DocumentVersion[]>([]);
   private _versionCount = signal(0);
   private _outline = signal<OutlineItem[]>([]);
+  private _loading = signal(false);
+  private _error = signal<ViewerError | null>(null);
 
   readonly doc = this._doc.asReadonly();
+  /** True while the document itself is in flight — the template shows a state. */
+  readonly loading = this._loading.asReadonly();
+  /**
+   * Why there is no document.
+   *
+   * `load()` had no error handler at all, so a stale link, a document
+   * belonging to somebody else, a 500 or a dropped connection left `doc()`
+   * null and the template gating on it with no `@else` — a white screen with
+   * nothing on it and no way back.
+   */
+  readonly error = this._error.asReadonly();
   readonly versions = this._versions.asReadonly();
   /** How many exist, so the panel can say when it is showing a window. */
   readonly versionCount = this._versionCount.asReadonly();
@@ -22,7 +72,25 @@ export class ViewerFacade {
   readonly currentSeq = computed(() => this._doc()?.current_version?.seq ?? null);
 
   load(id: string): void {
-    this.docsSvc.get(id).subscribe({ next: (d) => this._doc.set(d) });
+    this._loading.set(true);
+    this._error.set(null);
+    this.docsSvc.get(id).subscribe({
+      next: (d) => {
+        this._doc.set(d);
+        this._loading.set(false);
+      },
+      error: (err) => {
+        // The document is cleared as well as the error set: leaving the
+        // previous one on screen under a failed reload would show the user a
+        // document they are no longer looking at.
+        this._doc.set(null);
+        this._versions.set([]);
+        this._versionCount.set(0);
+        this._outline.set([]);
+        this._error.set(describe(err));
+        this._loading.set(false);
+      },
+    });
     this.loadVersions(id);
     this.loadOutline(id);
   }

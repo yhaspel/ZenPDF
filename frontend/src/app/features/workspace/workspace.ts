@@ -20,6 +20,7 @@ import { ConfirmService } from '../../shared/confirm.service';
 import { ZenModal } from '../../shared/modal.directive';
 import { PdfThumbnail } from '../../shared/pdf-thumbnail';
 import { saveBlob } from '../../shared/save-blob';
+import { Spinner } from '../../shared/spinner';
 import { ToastService } from '../../shared/toast.service';
 import { Annotate, AnnotateTool } from './annotate';
 import { Compare } from './compare';
@@ -38,7 +39,7 @@ type Dialog = null | 'split' | 'scale' | 'nup' | 'compress' | 'insert';
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
     FormsModule, RouterLink, NgxExtendedPdfViewerModule, CdkDropList, CdkDrag, PdfThumbnail,
-    Annotate, Edit, Forms, Convert, Compare, Protect, Sign, ZenModal,
+    Annotate, Edit, Forms, Convert, Compare, Protect, Sign, ZenModal, Spinner,
   ],
   templateUrl: './workspace.html',
 })
@@ -195,6 +196,19 @@ export class Workspace {
         !!doc?.is_encrypted && !this.security.isUnlocked(doc.id),
       );
     });
+  }
+
+  /**
+   * The error state's "Try again".
+   *
+   * The id is still in the URL, so a transient failure — a dropped connection,
+   * a 500 — costs a click rather than a navigation. Nothing to recover from a
+   * 404, but offering the button there too beats deciding for the person which
+   * of their failures was permanent.
+   */
+  protected retryLoad(): void {
+    const id = this.route.snapshot.paramMap.get('id');
+    if (id) this.viewer.load(id);
   }
 
   // --- selection / thumbnails ---

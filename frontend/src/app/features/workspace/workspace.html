@@ -354,4 +354,35 @@
       </div>
     </div>
   }
+} @else if (viewer.loading()) {
+  <div class="flex h-full flex-col items-center justify-center gap-3" data-test="workspace-loading"
+       role="status" aria-live="polite">
+    <app-spinner />
+    <p class="text-sm text-slate-500">Opening your document…</p>
+  </div>
+} @else {
+  <!-- The branch that did not exist. A stale or foreign /app/doc/:id, a 500,
+       or a dropped connection used to leave a white screen with nothing on it
+       and no way back — at the moment the person is least able to guess what
+       happened. -->
+  <div class="flex h-full flex-col items-center justify-center gap-4 px-6 text-center"
+       data-test="workspace-error" role="alert">
+    <div class="text-4xl">📄</div>
+    <p class="text-lg font-medium text-slate-700" data-test="workspace-error-message">
+      {{ viewer.error()?.message || 'That document could not be opened.' }}
+    </p>
+    @if (viewer.error()?.code === 'guest_expired') {
+      <p class="max-w-md text-sm text-slate-500">
+        Guest files are deleted automatically. Anything you do now starts a fresh session.
+      </p>
+    }
+    <div class="flex items-center gap-3">
+      <button type="button" (click)="retryLoad()"
+              class="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+              data-test="workspace-retry">Try again</button>
+      <a routerLink="/app/dashboard"
+         class="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700"
+         data-test="workspace-error-home">Back to dashboard</a>
+    </div>
+  </div>
 }
