@@ -352,19 +352,35 @@ def enforce_ocr_pages(principal, pages: int) -> None:
 # Wrong-password attempts (phase-07, §17)
 # --------------------------------------------------------------------------- #
 PASSWORD_ATTEMPTS_PER_MINUTE = 5
+PASSWORD_ATTEMPT_WINDOW_SECONDS = 60
+#: How finely the window slides. Six ten-second buckets make a minute that
+#: *moves*, which is what a calendar minute did not: five wrong guesses at
+#: 12:00:59 and five more at 12:01:00 was ten in one second, and the meter said
+#: five each time. Ten seconds is a compromise — one key per bucket to read, and
+#: the effective window is 60–70 s rather than exactly 60 (L5, BUG-4).
+PASSWORD_ATTEMPT_BUCKET_SECONDS = 10
 
 
-def _password_key(document_id) -> str:
-    return f"zen:pwfail:{document_id}:{timezone.now().strftime('%Y%m%d%H%M')}"
+def _password_keys(document_id) -> list[str]:
+    """The sub-buckets covering the last minute, newest first."""
+    now = int(timezone.now().timestamp()) // PASSWORD_ATTEMPT_BUCKET_SECONDS
+    span = PASSWORD_ATTEMPT_WINDOW_SECONDS // PASSWORD_ATTEMPT_BUCKET_SECONDS
+    return [f"zen:pwfail:{document_id}:{now - offset}" for offset in range(span)]
 
 
 def record_password_failure(document_id) -> None:
-    """Count one wrong password against this document's minute window."""
-    key = _password_key(document_id)
+    """Count one wrong password against this document's sliding minute."""
+    key = _password_keys(document_id)[0]
     try:
         cache.incr(key)
     except ValueError:
-        cache.set(key, 1, timeout=180)
+        # Live long enough to still be counted from the far end of the window.
+        cache.set(key, 1, timeout=PASSWORD_ATTEMPT_WINDOW_SECONDS * 3)
+
+
+def password_failures_in_window(document_id) -> int:
+    keys = _password_keys(document_id)
+    return sum(int(value or 0) for value in cache.get_many(keys).values())
 
 
 def enforce_password_attempts(document_id) -> None:
@@ -374,10 +390,15 @@ def enforce_password_attempts(document_id) -> None:
     document's password, and an attacker who could open several sessions would
     otherwise get five tries each. The window is short — this is meant to make
     brute force pointless, not to lock out the owner who mistyped.
+
+    It also *slides*. The other meters in this module use fixed calendar
+    windows, which allow a 2× burst across the boundary; that is tolerable for
+    an hourly op budget and is not tolerable for the one meter standing between
+    an attacker and a document password.
     """
     from .exceptions import QuotaExceeded
 
-    used = int(cache.get(_password_key(document_id), 0))
+    used = password_failures_in_window(document_id)
     if used < PASSWORD_ATTEMPTS_PER_MINUTE:
         return
     exc = QuotaExceeded(

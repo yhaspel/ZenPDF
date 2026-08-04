@@ -10,6 +10,17 @@ DEBUG = False
 if not SECRET_KEY:  # noqa: F405
     raise ImproperlyConfigured("SECRET_KEY must be set in the environment.")
 
+# Same stance, same reason. `*` is a convenience for a dev container answering
+# on localhost; in production it accepts any Host header, and every absolute URL
+# built from the request — verification links, signing links, the unsubscribe
+# footer — then carries whatever hostname an attacker sent, into somebody's
+# inbox. A deployment that forgot to name itself must not boot (L13).
+if not ALLOWED_HOSTS or "*" in ALLOWED_HOSTS:  # noqa: F405
+    raise ImproperlyConfigured(
+        "ALLOWED_HOSTS must name this deployment's hostnames; '*' is not a "
+        "production value."
+    )
+
 STORAGE_BACKEND = "s3"
 
 # Django checks the Origin header against this for any unsafe method behind

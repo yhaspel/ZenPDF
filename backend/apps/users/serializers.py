@@ -39,6 +39,28 @@ class RegisterSerializer(serializers.ModelSerializer):
         read_only_fields = ("id",)
 
     def validate_email(self, value: str) -> str:
+        """Tell the caller their address is taken — a deliberate, bounded leak.
+
+        This is account enumeration: anyone can ask "is alice@example.com a
+        ZenPDF user?" and get a straight answer (L14/B-SEC-4). Closing it means
+        answering every signup with a success shape and mailing the existing
+        account instead, which is the textbook fix and the wrong trade here:
+
+        * The person who is actually stuck — one address, two attempts, a
+          forgotten account — is left staring at a page that says it worked
+          while nothing arrives, and the product's entire premise is that you
+          can get your file out without an argument.
+        * It buys less than it looks. The answer is already available: signing
+          in with the address distinguishes "wrong password" from "no such
+          account", and it would take a login flow that lies about *both* to
+          actually close the channel.
+        * The rate is bounded. `AuthThrottle` is 10/min **per IP**, and per-IP
+          now means what it says (H1) — a directory of any size is not
+          harvestable through this door.
+
+        Written down rather than left implicit, so the next person deciding
+        this is deciding it again rather than discovering it.
+        """
         value = value.lower().strip()
         if User.objects.filter(email__iexact=value).exists():
             raise serializers.ValidationError("An account with this email already exists.")

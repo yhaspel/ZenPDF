@@ -98,12 +98,25 @@ def complete_recipient(recipient, *, request=None, event="signed", **metadata):
     Idempotent on purpose: a double-tap on "Finish" in a flaky mobile network
     must not write two `signed` events into a chain that is meant to be
     evidence.
+
+    The claim is a **conditional UPDATE**, and the event is written only if it
+    changed a row. Read-then-write was idempotent only against a *serial*
+    double-tap: two requests arriving together both read `sent`, both wrote
+    COMPLETED, and both appended `signed` — two events, in a chain whose whole
+    value is that it says what happened once.
     """
-    if recipient.status == Recipient.Status.COMPLETED:
+    completed_at = timezone.now()
+    claimed = (Recipient.objects
+               .filter(pk=recipient.pk)
+               .exclude(status=Recipient.Status.COMPLETED)
+               .update(status=Recipient.Status.COMPLETED,
+                       completed_at=completed_at))
+    if not claimed:
         return False
+    # Keep the in-memory object in step with the row we just wrote — callers
+    # read `completed_at` off it (the certificate's date fields, for one).
     recipient.status = Recipient.Status.COMPLETED
-    recipient.completed_at = timezone.now()
-    recipient.save(update_fields=["status", "completed_at"])
+    recipient.completed_at = completed_at
     record(recipient.sign_request, event, recipient=recipient, request=request,
            role=recipient.role, **metadata)
     return True

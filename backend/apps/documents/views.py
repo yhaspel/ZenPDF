@@ -1,7 +1,10 @@
 """Documents API (01-architecture.md §6, §11, §13, §14; phase-01, phase-02)."""
 from __future__ import annotations
 
+import contextlib
+
 from django.conf import settings
+from django.db import connection, transaction
 from django.http import HttpResponse, HttpResponseNotModified, StreamingHttpResponse
 from django.http.response import HttpResponseBase
 from django.utils import timezone
@@ -98,6 +101,30 @@ def _check_concurrency(principal) -> None:
         )
         exc.zen_details = {"limit": limit, "tier": L.for_principal(principal).tier}
         raise exc
+
+
+@contextlib.contextmanager
+def _concurrency_slot(principal):
+    """Hold the principal's row while the job that fills a slot is created.
+
+    Count-then-create is not a check when two requests arrive together: both
+    count `limit - 1`, both create, and the tier ceiling turns out to be
+    advisory. The principal's own row is the natural mutex — every job belongs
+    to exactly one principal — so the second request waits for the first to
+    commit and then counts it.
+
+    `_check_concurrency` still runs earlier, outside this block, so an obvious
+    refusal is reported before OCR pages and metered ops are charged. This is
+    the one that is *true*.
+    """
+    with transaction.atomic():
+        if connection.features.has_select_for_update:
+            # Postgres, where the race is real. The hermetic suite runs on
+            # SQLite, which has no row locks and no concurrency to protect.
+            model = type(principal)
+            list(model.objects.select_for_update().filter(pk=principal.pk))
+        _check_concurrency(principal)
+        yield
 
 
 def _guard_operation(request, op_type: str, principal):
@@ -428,11 +455,12 @@ class RevertVersionView(APIView):
         principal = _principal(request)
         _guard_operation(request, "revert_version", principal)
         current = document.current_version
-        job = Job.objects.create(
-            **job_owner_kwargs(principal), document=document, type="revert_version",
-            params={"seq": int(seq)},
-            base_version_seq=current.seq if current else None,
-        )
+        with _concurrency_slot(principal):
+            job = Job.objects.create(
+                **job_owner_kwargs(principal), document=document, type="revert_version",
+                params={"seq": int(seq)},
+                base_version_seq=current.seq if current else None,
+            )
         from .tasks import revert_version
 
         result = revert_version.apply_async(args=[str(job.id)], queue="default",
@@ -689,10 +717,11 @@ class DocumentOperationView(APIView):
             # schema has to allow it.
             params = {**params, "document_password": document_password}
 
-        job = Job.objects.create(
-            **job_owner_kwargs(principal), document=document, type=op_type,
-            params=params, base_version_seq=base_seq,
-        )
+        with _concurrency_slot(principal):
+            job = Job.objects.create(
+                **job_owner_kwargs(principal), document=document, type=op_type,
+                params=params, base_version_seq=base_seq,
+            )
         from .tasks import run_operation
 
         result = run_operation.apply_async(args=[str(job.id)], queue=op.queue,
@@ -753,7 +782,9 @@ class CrossDocumentOperationView(APIView):
         _guard_operation(request, op_type, principal)
         L.enforce_metered_op(principal, op_type)
 
-        job = Job.objects.create(**job_owner_kwargs(principal), type=op_type, params=params)
+        with _concurrency_slot(principal):
+            job = Job.objects.create(**job_owner_kwargs(principal), type=op_type,
+                                     params=params)
         from .tasks import run_cross_document_operation
 
         result = run_cross_document_operation.apply_async(
