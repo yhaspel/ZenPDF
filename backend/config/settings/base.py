@@ -172,9 +172,18 @@ REST_FRAMEWORK = {
     },
     "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
     "TEST_REQUEST_DEFAULT_FORMAT": "json",
-    # Throttle identity = the last X-Forwarded-For hop, i.e. the address our own
-    # proxy appended. Without this DRF keys on the whole client-supplied chain,
-    # which makes every rate limit trivially bypassable.
+    # Throttle identity = the Nth X-Forwarded-For hop from the right, where N is
+    # this number. Without it DRF keys on the whole client-supplied chain, which
+    # makes every rate limit trivially bypassable.
+    #
+    # The default of 1 is right for dev/compose, where nginx is the only proxy.
+    # **Production must set the true count** — the reference topology is client →
+    # TLS terminator → nginx → gunicorn, and both of those append to
+    # X-Forwarded-For, so `NUM_PROXIES=2` (see infra/.env.prod.example). One too
+    # few and every client resolves to the terminator's constant address: all the
+    # per-IP throttles collapse into a single global bucket and one caller can
+    # lock everybody out of login and verification. One too many reaches into the
+    # client-supplied prefix, which is free to spoof.
     "NUM_PROXIES": config("NUM_PROXIES", default=1, cast=int),
 }
 
