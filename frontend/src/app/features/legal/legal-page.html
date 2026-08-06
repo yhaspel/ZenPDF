@@ -1,228 +1,239 @@
-<div class="mx-auto w-full max-w-3xl p-6" data-test="legal-page">
-  @switch (kind()) {
-    @case ('privacy') {
-      <h1 class="text-2xl font-semibold text-slate-800" data-test="legal-h1">
-        Privacy policy
-      </h1>
-      <p class="mt-2 text-sm text-slate-500">
-        The short version: your documents are yours, they are processed on our
-        own servers, and they are deleted on the schedule below.
-      </p>
+<div class="page-shell" data-test="legal-page">
+  <header class="hdr">
+    <a routerLink="/" class="brand" aria-label="ZenPDF"><app-brand /></a>
+    <nav>
+      <app-theme-toggle />
+    </nav>
+  </header>
 
-      <h2 class="mt-6 text-lg font-semibold text-slate-800">What we store</h2>
-      <ul class="mt-2 list-disc pl-5 text-sm text-slate-600">
-        <li>
-          <strong>The files you upload</strong>, and the versions our tools
-          produce from them. Nothing is sent to a third party for processing —
-          every conversion, OCR and signature runs on infrastructure we operate.
-        </li>
-        <li>
-          <strong>An account</strong>, if you make one: your email address, a
-          display name if you give one, and a hashed password.
-        </li>
-        <li>
-          <strong>A guest session</strong>, if you do not: a random token in
-          your browser. No name, no address, no email.
-        </li>
-        <li>
-          <strong>Signing records</strong>, if you send or sign a document:
-          who acted, when, from which IP address and with which browser. That
-          is the point of an electronic signature — it is printed on the
-          certificate of completion, and
-          <a routerLink="/legal/esign-disclosure" class="underline">the
-          disclosure</a> says so before anybody signs.
-        </li>
-      </ul>
+  <main class="wrap-reading w-full pb-16 pt-12">
+    @switch (kind()) {
+      @case ('privacy') {
+        <h1 data-test="legal-h1">
+          Privacy policy
+        </h1>
+        <p class="muted mt-3 text-base leading-[1.75]">
+          The short version: your documents are yours, they are processed on our
+          own servers, and they are deleted on the schedule below.
+        </p>
 
-      <h2 class="mt-6 text-lg font-semibold text-slate-800">How long</h2>
-      <table class="mt-2 w-full text-left text-sm" data-test="retention-table">
-        <tbody class="text-slate-600">
-          <tr class="border-b border-slate-100">
-            <td class="py-1">Files uploaded without an account</td>
-            <td data-test="retention-guest">
-              deleted within {{ retention().guest_hours }} hours
-            </td>
-          </tr>
-          <tr class="border-b border-slate-100">
-            <td class="py-1">Files in an account</td>
-            <td>kept until you delete them</td>
-          </tr>
-          <tr class="border-b border-slate-100">
-            <td class="py-1">Documents you move to the trash</td>
-            <td data-test="retention-trash">
-              deleted after {{ retention().trash_days }} days
-            </td>
-          </tr>
-          <tr class="border-b border-slate-100">
-            <td class="py-1">Exports (Word, images, text)</td>
-            <td data-test="retention-export">
-              deleted after {{ retention().export_hours }} hours
-            </td>
-          </tr>
-          <tr class="border-b border-slate-100">
-            <td class="py-1">Signed envelopes (the sealed PDF, the certificate
-              and the audit trail)</td>
-            <td data-test="retention-envelopes">
-              kept indefinitely, including after you delete your account —
-              they are the other signers' record of the agreement
-            </td>
-          </tr>
-          <tr>
-            <td class="py-1">Signature requests nobody signed</td>
-            <td>deleted with your account</td>
-          </tr>
-        </tbody>
-      </table>
-      <p class="mt-2 text-sm text-slate-600" data-test="retention-jobs">
-        We also keep a record of the operations you ran — which tool, when, and
-        whether it worked — for {{ retention().job_days }} days, and then delete
-        it. You can see that list yourself under Settings. The <em>inputs</em> to
-        those operations, such as the words you searched for in a redaction, are
-        deleted after {{ retention().job_params_days }} days.
-      </p>
-      <p class="mt-2 text-xs text-slate-500">
-        A test asserts these are the same numbers the sweepers that delete
-        things actually use — if one changed and this page did not, the build
-        fails.
-      </p>
+        <h2 class="mt-8">What we store</h2>
+        <ul class="mt-3 list-disc ps-5 text-base leading-[1.75]">
+          <li>
+            <strong>The files you upload</strong>, and the versions our tools
+            produce from them. Nothing is sent to a third party for processing —
+            every conversion, OCR and signature runs on infrastructure we operate.
+          </li>
+          <li>
+            <strong>An account</strong>, if you make one: your email address, a
+            display name if you give one, and a hashed password.
+          </li>
+          <li>
+            <strong>A guest session</strong>, if you do not: a random token in
+            your browser. No name, no address, no email.
+          </li>
+          <li>
+            <strong>Signing records</strong>, if you send or sign a document:
+            who acted, when, from which IP address and with which browser. That
+            is the point of an electronic signature — it is printed on the
+            certificate of completion, and
+            <a routerLink="/legal/esign-disclosure">the
+            disclosure</a> says so before anybody signs.
+          </li>
+        </ul>
 
-      <h2 class="mt-6 text-lg font-semibold text-slate-800">Advertising</h2>
-      <p class="mt-2 text-sm text-slate-600">
-        ZenPDF is free and paid for by advertising. Where consent is required we
-        ask before any ad code loads, and if you decline, none loads. Ads never
-        appear on a page showing your document: not in the editor, not in the
-        viewer, not in a signing ceremony, and not on the verification page.
-      </p>
+        <h2 class="mt-8">How long</h2>
+        <table class="tbl mt-3" data-test="retention-table">
+          <tbody>
+            <tr>
+              <td>Files uploaded without an account</td>
+              <td data-test="retention-guest">
+                deleted within {{ retention().guest_hours }} hours
+              </td>
+            </tr>
+            <tr>
+              <td>Files in an account</td>
+              <td>kept until you delete them</td>
+            </tr>
+            <tr>
+              <td>Documents you move to the trash</td>
+              <td data-test="retention-trash">
+                deleted after {{ retention().trash_days }} days
+              </td>
+            </tr>
+            <tr>
+              <td>Exports (Word, images, text)</td>
+              <td data-test="retention-export">
+                deleted after {{ retention().export_hours }} hours
+              </td>
+            </tr>
+            <tr>
+              <td>Signed envelopes (the sealed PDF, the certificate
+                and the audit trail)</td>
+              <td data-test="retention-envelopes">
+                kept indefinitely, including after you delete your account —
+                they are the other signers' record of the agreement
+              </td>
+            </tr>
+            <tr>
+              <td>Signature requests nobody signed</td>
+              <td>deleted with your account</td>
+            </tr>
+          </tbody>
+        </table>
+        <p class="mt-3 text-base leading-[1.75]" data-test="retention-jobs">
+          We also keep a record of the operations you ran — which tool, when, and
+          whether it worked — for {{ retention().job_days }} days, and then delete
+          it. You can see that list yourself under Settings. The <em>inputs</em> to
+          those operations, such as the words you searched for in a redaction, are
+          deleted after {{ retention().job_params_days }} days.
+        </p>
+        <p class="faint mt-3 text-[12.5px]">
+          A test asserts these are the same numbers the sweepers that delete
+          things actually use — if one changed and this page did not, the build
+          fails.
+        </p>
 
-      <h2 class="mt-6 text-lg font-semibold text-slate-800">Cookies and storage</h2>
-      <ul class="mt-2 list-disc pl-5 text-sm text-slate-600">
-        <li><code>zen_access</code> / <code>zen_refresh</code> — your login, in
-          browser storage. Only if you have an account.</li>
-        <li><code>zen_guest</code> — the random token that ties your files to
-          this browser when you have no account.</li>
-        <li><code>zen_ad_consent</code> — your answer to the banner, so we do
-          not ask again.</li>
-        <li>Advertising cookies, set by Google, <em>only</em> after you allow
-          them.</li>
-      </ul>
+        <h2 class="mt-8">Advertising</h2>
+        <p class="mt-3 text-base leading-[1.75]">
+          ZenPDF is free and paid for by advertising. Where consent is required we
+          ask before any ad code loads, and if you decline, none loads. Ads never
+          appear on a page showing your document: not in the editor, not in the
+          viewer, not in a signing ceremony, and not on the verification page.
+        </p>
 
-      <h2 class="mt-6 text-lg font-semibold text-slate-800">Getting in touch</h2>
-      <p class="mt-2 text-sm text-slate-600">
-        <strong>Settings → Your data</strong> has both: download everything we
-        hold as a zip, or delete your account. Deleting removes your documents
-        and their files. It does <em>not</em> remove signature envelopes other
-        people have already signed — that record is their evidence of an
-        agreement, so it is kept and detached from your account. To ask
-        anything else, or to report misuse, write to the address in the footer
-        of any email we send.
-      </p>
+        <h2 class="mt-8">Cookies and storage</h2>
+        <ul class="mt-3 list-disc ps-5 text-base leading-[1.75]">
+          <li><code>zen_access</code> / <code>zen_refresh</code> — your login, in
+            browser storage. Only if you have an account.</li>
+          <li><code>zen_guest</code> — the random token that ties your files to
+            this browser when you have no account.</li>
+          <li><code>zen_ad_consent</code> — your answer to the banner, so we do
+            not ask again.</li>
+          <li>Advertising cookies, set by Google, <em>only</em> after you allow
+            them.</li>
+        </ul>
+
+        <h2 class="mt-8">Getting in touch</h2>
+        <p class="mt-3 text-base leading-[1.75]">
+          <strong>Settings → Your data</strong> has both: download everything we
+          hold as a zip, or delete your account. Deleting removes your documents
+          and their files. It does <em>not</em> remove signature envelopes other
+          people have already signed — that record is their evidence of an
+          agreement, so it is kept and detached from your account. To ask
+          anything else, or to report misuse, write to the address in the footer
+          of any email we send.
+        </p>
+      }
+
+      @case ('terms') {
+        <h1 data-test="legal-h1">
+          Terms of service
+        </h1>
+        <p class="muted mt-3 text-base leading-[1.75]">
+          Plain terms for a free tool. Using ZenPDF means agreeing to them.
+        </p>
+
+        <h2 class="mt-8">What you may do</h2>
+        <p class="mt-3 text-base leading-[1.75]">
+          Use ZenPDF for documents you own or are entitled to work on, personally
+          or at work, free of charge. You keep every right you have in your files;
+          we claim none.
+        </p>
+
+        <h2 class="mt-8">What you may not do</h2>
+        <ul class="mt-3 list-disc ps-5 text-base leading-[1.75]">
+          <li>Upload material you have no right to, or that is unlawful.</li>
+          <li>Send signature requests to people who have not agreed to hear from
+            you. Recipients can report a request, and three reports pause it.</li>
+          <li>Attack the service, or work around its limits with scripts or many
+            accounts. The limits exist so the free tier stays free for everyone.</li>
+          <li>Use it to impersonate somebody, or to make a document look signed
+            by a person who did not sign it.</li>
+        </ul>
+
+        <h2 class="mt-8">Copyright complaints</h2>
+        <p class="mt-3 text-base leading-[1.75]">
+          If material here infringes your copyright, write to the abuse address in
+          any email footer with enough detail to identify the work and the
+          document. We remove what we should and tell the account holder.
+        </p>
+
+        <h2 class="mt-8">No warranty</h2>
+        <p class="mt-3 text-base leading-[1.75]">
+          The service is provided as it is. We work hard to keep documents safe
+          and correct, and we still cannot promise it will never lose or damage a
+          file — keep your own copy of anything that matters. To the extent the
+          law allows, we are not liable for loss arising from use of a free
+          service.
+        </p>
+
+        <h2 class="mt-8">Signatures</h2>
+        <p class="mt-3 text-base leading-[1.75]">
+          ZenPDF provides a simple electronic signature with a platform seal. It
+          is not a qualified electronic signature, and we make no such claim. Some
+          documents need paper or a notary; if it matters, ask a lawyer about
+          yours. See
+          <a routerLink="/legal/esign-disclosure">the e-sign
+          disclosure</a>.
+        </p>
+
+        <h2 class="mt-8">Ending</h2>
+        <p class="mt-3 text-base leading-[1.75]">
+          You can delete your account whenever you like, from Settings, and your
+          documents go with it — except signature envelopes other people signed,
+          which are kept as their record of the agreement. We can suspend an
+          account that breaks these terms, and will say why unless the law
+          prevents us.
+        </p>
+      }
+
+      @default {
+        <h1 data-test="legal-h1">
+          About ZenPDF
+        </h1>
+        <p class="mt-4 text-base leading-[1.75]">
+          ZenPDF is a PDF workspace that does not ask you to sign up before it
+          does anything. Drop a file on any tool page and it works: merge, split,
+          compress, rotate, annotate, edit text, fill forms, OCR, convert,
+          compare, protect, redact and sign — with no account, no watermark and no
+          “create a free account to download”.
+        </p>
+
+        <h2 class="mt-8">How it is paid for</h2>
+        <p class="mt-3 text-base leading-[1.75]">
+          Advertising, and nothing else. There is no subscription, no per-file
+          charge and no upsell in the middle of a job. Ads sit in three places —
+          the landing page, the dashboard, and the panel that appears when a job
+          has finished — and never on a page that is showing your document.
+        </p>
+
+        <h2 class="mt-8">What an account adds</h2>
+        <p class="mt-3 text-base leading-[1.75]">
+          A library that does not expire, larger files, more pages, a saved
+          signature, and the ability to send documents to other people for
+          signature. Everything else is the same either way.
+        </p>
+
+        <h2 class="mt-8">How it works</h2>
+        <p class="mt-3 text-base leading-[1.75]">
+          Every operation runs on our own servers using open-source PDF tooling —
+          PyMuPDF, qpdf, Ghostscript, Tesseract, pyHanko. Your files are not sent
+          to a third-party API to be processed, and they are deleted on the
+          schedule in the
+          <a routerLink="/legal/privacy">privacy policy</a>.
+        </p>
+      }
     }
 
-    @case ('terms') {
-      <h1 class="text-2xl font-semibold text-slate-800" data-test="legal-h1">
-        Terms of service
-      </h1>
-      <p class="mt-2 text-sm text-slate-500">
-        Plain terms for a free tool. Using ZenPDF means agreeing to them.
-      </p>
+    <p class="faint mt-12 text-[12.5px]">
+      <a routerLink="/">Home</a> ·
+      <a routerLink="/legal/privacy">Privacy</a> ·
+      <a routerLink="/legal/terms">Terms</a> ·
+      <a routerLink="/legal/esign-disclosure">E-sign disclosure</a> ·
+      <a routerLink="/about">About</a>
+    </p>
+  </main>
 
-      <h2 class="mt-6 text-lg font-semibold text-slate-800">What you may do</h2>
-      <p class="mt-2 text-sm text-slate-600">
-        Use ZenPDF for documents you own or are entitled to work on, personally
-        or at work, free of charge. You keep every right you have in your files;
-        we claim none.
-      </p>
-
-      <h2 class="mt-6 text-lg font-semibold text-slate-800">What you may not do</h2>
-      <ul class="mt-2 list-disc pl-5 text-sm text-slate-600">
-        <li>Upload material you have no right to, or that is unlawful.</li>
-        <li>Send signature requests to people who have not agreed to hear from
-          you. Recipients can report a request, and three reports pause it.</li>
-        <li>Attack the service, or work around its limits with scripts or many
-          accounts. The limits exist so the free tier stays free for everyone.</li>
-        <li>Use it to impersonate somebody, or to make a document look signed
-          by a person who did not sign it.</li>
-      </ul>
-
-      <h2 class="mt-6 text-lg font-semibold text-slate-800">Copyright complaints</h2>
-      <p class="mt-2 text-sm text-slate-600">
-        If material here infringes your copyright, write to the abuse address in
-        any email footer with enough detail to identify the work and the
-        document. We remove what we should and tell the account holder.
-      </p>
-
-      <h2 class="mt-6 text-lg font-semibold text-slate-800">No warranty</h2>
-      <p class="mt-2 text-sm text-slate-600">
-        The service is provided as it is. We work hard to keep documents safe
-        and correct, and we still cannot promise it will never lose or damage a
-        file — keep your own copy of anything that matters. To the extent the
-        law allows, we are not liable for loss arising from use of a free
-        service.
-      </p>
-
-      <h2 class="mt-6 text-lg font-semibold text-slate-800">Signatures</h2>
-      <p class="mt-2 text-sm text-slate-600">
-        ZenPDF provides a simple electronic signature with a platform seal. It
-        is not a qualified electronic signature, and we make no such claim. Some
-        documents need paper or a notary; if it matters, ask a lawyer about
-        yours. See
-        <a routerLink="/legal/esign-disclosure" class="underline">the e-sign
-        disclosure</a>.
-      </p>
-
-      <h2 class="mt-6 text-lg font-semibold text-slate-800">Ending</h2>
-      <p class="mt-2 text-sm text-slate-600">
-        You can delete your account whenever you like, from Settings, and your
-        documents go with it — except signature envelopes other people signed,
-        which are kept as their record of the agreement. We can suspend an
-        account that breaks these terms, and will say why unless the law
-        prevents us.
-      </p>
-    }
-
-    @default {
-      <h1 class="text-2xl font-semibold text-slate-800" data-test="legal-h1">
-        About ZenPDF
-      </h1>
-      <p class="mt-3 text-sm text-slate-600">
-        ZenPDF is a PDF workspace that does not ask you to sign up before it
-        does anything. Drop a file on any tool page and it works: merge, split,
-        compress, rotate, annotate, edit text, fill forms, OCR, convert,
-        compare, protect, redact and sign — with no account, no watermark and no
-        “create a free account to download”.
-      </p>
-
-      <h2 class="mt-6 text-lg font-semibold text-slate-800">How it is paid for</h2>
-      <p class="mt-2 text-sm text-slate-600">
-        Advertising, and nothing else. There is no subscription, no per-file
-        charge and no upsell in the middle of a job. Ads sit in three places —
-        the landing page, the dashboard, and the panel that appears when a job
-        has finished — and never on a page that is showing your document.
-      </p>
-
-      <h2 class="mt-6 text-lg font-semibold text-slate-800">What an account adds</h2>
-      <p class="mt-2 text-sm text-slate-600">
-        A library that does not expire, larger files, more pages, a saved
-        signature, and the ability to send documents to other people for
-        signature. Everything else is the same either way.
-      </p>
-
-      <h2 class="mt-6 text-lg font-semibold text-slate-800">How it works</h2>
-      <p class="mt-2 text-sm text-slate-600">
-        Every operation runs on our own servers using open-source PDF tooling —
-        PyMuPDF, qpdf, Ghostscript, Tesseract, pyHanko. Your files are not sent
-        to a third-party API to be processed, and they are deleted on the
-        schedule in the
-        <a routerLink="/legal/privacy" class="underline">privacy policy</a>.
-      </p>
-    }
-  }
-
-  <p class="mt-8 text-xs text-slate-500">
-    <a routerLink="/" class="underline">Home</a> ·
-    <a routerLink="/legal/privacy" class="underline">Privacy</a> ·
-    <a routerLink="/legal/terms" class="underline">Terms</a> ·
-    <a routerLink="/legal/esign-disclosure" class="underline">E-sign disclosure</a> ·
-    <a routerLink="/about" class="underline">About</a>
-  </p>
+  <app-site-footer />
 </div>

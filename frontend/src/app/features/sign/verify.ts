@@ -1,8 +1,12 @@
 import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
 import { Meta, Title } from '@angular/platform-browser';
+import { RouterLink } from '@angular/router';
 
 import { VerifyReport } from '../../core/models/models';
 import { EsignService } from '../../core/services/esign.service';
+import { Brand } from '../../shared/brand';
+import { SiteFooter } from '../../shared/site-footer';
+import { ThemeToggle } from '../../shared/theme-toggle';
 
 /**
  * `/verify` — public, ad-free (phase-08 §8C).
@@ -15,6 +19,7 @@ import { EsignService } from '../../core/services/esign.service';
 @Component({
   selector: 'app-verify',
   changeDetection: ChangeDetectionStrategy.OnPush,
+  imports: [RouterLink, Brand, SiteFooter, ThemeToggle],
   templateUrl: './verify.html',
 })
 export class Verify {

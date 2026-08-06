@@ -1,1 +1,771 @@
-/* You can add global styles to this file, and also import other style files */
+/* ZenPDF — "Zen ink & paper" global component layer.
+   Source of truth: docs/design/design-instructions.md (§1 motifs, §3 components).
+   Rules of this file: semantic tokens only (never a primitive, never raw hex —
+   the two exceptions are pure white for rendered PDF paper and the signature
+   ink stroke, both specified by the contract); logical properties only, so the
+   whole sheet flips cleanly under dir="rtl" (§8). */
+
+/* ---------- 0. Fonts — self-hosted latin subsets (OFL, Google Fonts) ---------- */
+@font-face {
+  font-family: "Shippori Mincho";
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("/fonts/shippori-mincho-latin-500-normal.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "Shippori Mincho";
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("/fonts/shippori-mincho-latin-600-normal.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "Shippori Mincho";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("/fonts/shippori-mincho-latin-700-normal.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "Zen Kaku Gothic New";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("/fonts/zen-kaku-gothic-new-latin-400-normal.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "Zen Kaku Gothic New";
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("/fonts/zen-kaku-gothic-new-latin-500-normal.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "Zen Kaku Gothic New";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("/fonts/zen-kaku-gothic-new-latin-700-normal.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+/* ---------- 1. Base ---------- */
+html {
+  height: 100%;
+}
+body {
+  min-height: 100%;
+  background: var(--color-bg);
+  color: var(--color-ink);
+  font: 400 15px/1.6 var(--font-ui);
+  -webkit-font-smoothing: antialiased;
+}
+h1, h2, h3, .display {
+  font-family: var(--font-display);
+  color: var(--color-ink-strong);
+  font-weight: 600;
+  line-height: 1.25;
+  text-wrap: pretty;
+}
+h1 { font-size: 34px; }
+h2 { font-size: 22px; }
+h3 { font-size: 17px; }
+a {
+  color: var(--color-ink);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  text-decoration-color: var(--color-border-strong);
+}
+a:hover {
+  color: var(--color-accent-hover);
+  text-decoration-color: currentColor;
+}
+:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+::selection {
+  background: var(--color-accent-surface);
+}
+small, .muted { color: var(--color-ink-muted); }
+.faint { color: var(--color-ink-faint); }
+.kicker {
+  font: 500 11px/1.4 var(--font-ui);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--color-ink-faint);
+}
+
+/* ---------- 2. Brand — the seal ---------- */
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  text-decoration: none;
+}
+.brand:hover { color: inherit; }
+.seal { width: 28px; height: 28px; flex: none; display: block; }
+.seal-sm { width: 20px; height: 20px; }
+.brand b {
+  font: 700 19px/1 var(--font-display);
+  color: var(--color-ink-strong);
+  letter-spacing: 0.01em;
+}
+.brand b i {
+  font-style: normal;
+  color: var(--color-ink-muted);
+  font-weight: 500;
+}
+
+/* ---------- 3. Headers ---------- */
+.hdr {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  padding: 14px 32px;
+  border-block-end: var(--border-hairline) solid var(--color-border);
+  background: var(--color-surface);
+}
+@media (max-width: 767px) {
+  .hdr { padding-inline: 16px; gap: 12px; }
+}
+.hdr nav {
+  margin-inline-start: auto;
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  font-size: 14px;
+}
+.hdr nav a { text-decoration: none; color: var(--color-ink-muted); white-space: nowrap; }
+.hdr nav a:hover { color: var(--color-ink-strong); }
+.hdr nav a[aria-current] { color: var(--color-ink-strong); font-weight: 500; }
+
+/* Theme toggle — 44px hit target, present on every header variant (§5). */
+.theme-toggle {
+  width: 44px;
+  height: 44px;
+  margin-block: -8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: none;
+  border-radius: var(--radius-2);
+  color: var(--color-ink-muted);
+  cursor: pointer;
+}
+.theme-toggle:hover { background: var(--color-bg); color: var(--color-ink-strong); }
+.theme-toggle svg { width: 20px; height: 20px; }
+
+/* ---------- 4. Buttons ---------- */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  white-space: nowrap;
+  min-height: 44px;
+  padding: 0 20px;
+  border-radius: var(--radius-2);
+  cursor: pointer;
+  font: 500 15px/1 var(--font-ui);
+  text-decoration: none;
+  border: var(--border-hairline) solid transparent;
+  transition: background var(--dur-1) var(--ease), border-color var(--dur-1) var(--ease), color var(--dur-1) var(--ease);
+}
+.btn-primary { background: var(--color-accent); color: var(--color-on-accent); }
+.btn-primary:hover { background: var(--color-accent-hover); color: var(--color-on-accent); }
+.btn-primary:active { background: var(--color-accent-active); }
+.btn-secondary {
+  background: var(--color-surface-raised);
+  border-color: var(--color-border-strong);
+  color: var(--color-ink);
+}
+.btn-secondary:hover {
+  border-color: var(--color-ink-faint);
+  background: var(--color-surface);
+  color: var(--color-ink-strong);
+}
+.btn-ghost { background: none; color: var(--color-ink-muted); }
+.btn-ghost:hover { background: var(--color-surface-raised); color: var(--color-ink-strong); }
+.dark .btn-ghost:hover { background: var(--color-surface); }
+.btn-danger { background: none; border-color: var(--color-danger); color: var(--color-danger); }
+.btn-danger:hover { background: var(--color-danger-surface); color: var(--color-danger); }
+.btn-danger-filled { background: var(--color-danger); border-color: var(--color-danger); color: var(--color-surface-raised); }
+.dark .btn-danger-filled { color: var(--color-bg); }
+/* One disabled treatment for every variant — dashed hairline, ≥3:1 text (D5). */
+.btn[disabled], .btn-disabled {
+  background: transparent !important;
+  border: var(--border-hairline) dashed var(--color-border-strong) !important;
+  color: var(--color-ink-muted) !important;
+  cursor: not-allowed;
+}
+.btn-sm { min-height: 36px; padding: 0 14px; font-size: 14px; }
+.btn-block { width: 100%; }
+.btn .spin {
+  width: 14px;
+  height: 14px;
+  border: 2px solid currentColor;
+  border-inline-end-color: transparent;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+@keyframes spin { to { transform: rotate(1turn); } }
+
+/* ---------- 5. Cards, panels, sheets ---------- */
+.card {
+  background: var(--color-surface);
+  border: var(--border-hairline) solid var(--color-border);
+  border-radius: var(--radius-3);
+  box-shadow: var(--shadow-1);
+}
+.card-raised { background: var(--color-surface-raised); box-shadow: var(--shadow-2); }
+.pad-5 { padding: var(--space-5); }
+.pad-6 { padding: var(--space-6); }
+
+/* Folded-corner sheet — trust notices and empty states, at most one per screen. */
+.sheet {
+  position: relative;
+  background: var(--color-surface-raised);
+  border: var(--border-hairline) solid var(--color-border);
+  border-radius: var(--radius-1);
+}
+.sheet::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  inset-inline-end: 0;
+  width: 0;
+  height: 0;
+  border-block-start: 16px solid var(--color-bg);
+  border-inline-start: 16px solid var(--color-border);
+  border-end-start-radius: 3px;
+}
+
+/* ---------- 6. The hanko stamp — completions only (§1) ---------- */
+.stamp {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 5px 14px;
+  border: var(--border-emphasis) solid var(--color-accent);
+  border-radius: var(--radius-2);
+  box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--color-accent) 45%, transparent);
+  color: var(--color-accent);
+  background: color-mix(in srgb, var(--color-accent) 7%, transparent);
+  font: 700 13px/1.5 var(--font-display);
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  transform: rotate(-4deg);
+  white-space: nowrap;
+  animation: stamp-in var(--dur-2) var(--ease);
+}
+.stamp-sm { padding: 2px 9px; font-size: 10px; letter-spacing: 0.18em; border-width: 1.5px; }
+@keyframes stamp-in {
+  from { transform: rotate(-4deg) scale(1.08); }
+  to { transform: rotate(-4deg) scale(1); }
+}
+
+/* ---------- 7. Forms ---------- */
+label {
+  display: block;
+  font: 500 13px/1.5 var(--font-ui);
+  color: var(--color-ink-muted);
+  margin-block-end: 6px;
+}
+.input {
+  width: 100%;
+  min-height: 44px;
+  padding: 0 14px;
+  font: 400 15px/1.4 var(--font-ui);
+  color: var(--color-ink);
+  background: var(--color-surface-raised);
+  border: var(--border-hairline) solid var(--color-border-strong);
+  border-radius: var(--radius-2);
+}
+textarea.input { padding-block: 10px; min-height: 88px; line-height: 1.5; resize: vertical; }
+select.input { cursor: pointer; }
+.input::placeholder { color: var(--color-ink-faint); }
+.input:hover { border-color: var(--color-ink-faint); }
+.input:focus { outline: 2px solid var(--color-focus); outline-offset: 0; border-color: transparent; }
+.input[disabled] { background: var(--color-bg); color: var(--color-ink-muted); border-style: dashed; }
+.input-invalid, .input.ng-invalid.ng-touched { border-color: var(--color-danger); }
+.field-hint { font-size: 12.5px; color: var(--color-ink-faint); margin-block-start: 5px; }
+.field-error { font-size: 13px; color: var(--color-danger); margin-block-start: 5px; }
+.input-wrap { position: relative; }
+.input-wrap .input { padding-inline-end: 48px; }
+.input-eye {
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline-end: 0;
+  width: 44px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  color: var(--color-ink-faint);
+  cursor: pointer;
+  border-radius: var(--radius-2);
+}
+.input-eye:hover { color: var(--color-ink); }
+.input-eye svg { width: 20px; height: 20px; }
+input[type="checkbox"] { width: 17px; height: 17px; accent-color: var(--color-accent); }
+input[type="range"] { accent-color: var(--color-accent); }
+input[type="color"] {
+  border: var(--border-hairline) solid var(--color-border-strong);
+  border-radius: var(--radius-1);
+  background: none;
+}
+
+/* ---------- 8. Dropzone — paper laid on a desk ---------- */
+.dropzone {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  text-align: center;
+  padding: var(--space-7) var(--space-5);
+  cursor: pointer;
+  background: var(--color-surface-raised);
+  border: var(--border-hairline) dashed var(--color-border-strong);
+  border-radius: var(--radius-1);
+  transition: border-color var(--dur-2) var(--ease), background var(--dur-2) var(--ease);
+}
+.dropzone-compact { padding: var(--space-5); }
+.dropzone:hover { border-color: var(--color-ink-faint); }
+.dropzone.dragging {
+  border-color: var(--color-accent);
+  border-style: solid;
+  background: var(--color-accent-surface);
+}
+.dropzone svg { width: 36px; height: 36px; color: var(--color-ink-faint); }
+.dropzone .dz-prompt { font: 500 15px/1.5 var(--font-ui); color: var(--color-ink); }
+.dropzone .dz-hint { font-size: 12.5px; color: var(--color-ink-faint); }
+
+/* ---------- 9. Progress — the breath, and the meter ---------- */
+.breath { display: flex; align-items: center; gap: 14px; }
+.breath-dot {
+  width: 34px;
+  height: 34px;
+  flex: none;
+  border-radius: 50%;
+  border: var(--border-emphasis) solid var(--color-accent);
+  animation: breathe 2.6s var(--ease) infinite;
+}
+@keyframes breathe {
+  0%, 100% { transform: scale(0.82); opacity: 0.55; }
+  50% { transform: scale(1); opacity: 1; }
+}
+/* Under reduced motion the circle rests at full scale; the counting copy alone
+   carries progress (§3). The global collapse would freeze it mid-breath. */
+@media (prefers-reduced-motion: reduce) {
+  .breath-dot, .btn .spin { animation: none; }
+}
+.breath p { font: 400 15px/1.5 var(--font-ui); color: var(--color-ink-muted); }
+.meter {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--color-bg);
+  border: var(--border-hairline) solid var(--color-border);
+  overflow: hidden;
+}
+.meter > i { display: block; height: 100%; background: var(--color-accent); border-radius: 3px; }
+
+/* ---------- 10. Ad container — honest, bounded (§7) ---------- */
+.ad-frame {
+  border: var(--border-hairline) dashed var(--color-border-strong);
+  border-radius: var(--radius-2);
+  background: var(--color-ad-frame);
+  padding: 10px 12px 12px;
+}
+.ad-frame .ad-label {
+  font: 500 10px/1 var(--font-ui);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--color-ink-faint);
+  margin-block-end: 8px;
+}
+.ad-frame .ad-unit {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-1);
+  background: color-mix(in srgb, var(--color-ink) 4%, transparent);
+  color: var(--color-ink-faint);
+  font-size: 12px;
+}
+
+/* ---------- 11. Toasts, banners, badges ---------- */
+.toast {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  border-radius: var(--radius-2);
+  background: var(--color-surface-raised);
+  border: var(--border-hairline) solid var(--color-border);
+  border-inline-start: 3px solid var(--color-ink-faint);
+  box-shadow: var(--shadow-3);
+  font-size: 14px;
+  max-width: 360px;
+  color: var(--color-ink);
+}
+.toast-success { border-inline-start-color: var(--color-success); }
+.toast-error { border-inline-start-color: var(--color-danger); }
+.banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  padding: 9px 32px;
+  font-size: 13.5px;
+  border-block-end: var(--border-hairline) solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-ink-muted);
+}
+@media (max-width: 767px) {
+  .banner { padding-inline: 16px; }
+}
+.banner-info { background: var(--color-info-surface); color: var(--color-ink); }
+.banner-warning { background: var(--color-warning-surface); color: var(--color-ink); }
+.banner-success { background: var(--color-success-surface); color: var(--color-ink); }
+.badge {
+  display: inline-flex;
+  align-items: center;
+  white-space: nowrap;
+  padding: 2px 10px;
+  border-radius: 999px;
+  font: 500 12px/1.6 var(--font-ui);
+  border: var(--border-hairline) solid var(--color-border-strong);
+  color: var(--color-ink-muted);
+}
+.badge-success { border-color: transparent; background: var(--color-success-surface); color: var(--color-success); }
+.badge-danger { border-color: transparent; background: var(--color-danger-surface); color: var(--color-danger); }
+.badge-warning { border-color: transparent; background: var(--color-warning-surface); color: var(--color-warning); }
+.badge-info { border-color: transparent; background: var(--color-info-surface); color: var(--color-info); }
+
+/* ---------- 12. Tabs / segmented nav — selected is an ink stamp, not accent ---------- */
+.seg { display: flex; align-items: center; gap: 2px; }
+.seg button, .seg a {
+  min-height: 36px;
+  padding: 0 13px;
+  display: inline-flex;
+  align-items: center;
+  white-space: nowrap;
+  border: none;
+  background: none;
+  border-radius: var(--radius-2);
+  font: 400 13.5px/1 var(--font-ui);
+  color: var(--color-ink-muted);
+  cursor: pointer;
+  text-decoration: none;
+}
+.seg button:hover, .seg a:hover { color: var(--color-ink-strong); background: var(--color-bg); }
+.seg [aria-selected="true"], .seg .seg-active {
+  background: var(--color-ink-strong);
+  color: var(--color-bg);
+  font-weight: 500;
+}
+
+/* ---------- 13. Tables ---------- */
+.tbl { width: 100%; border-collapse: collapse; font-size: 14px; }
+.tbl th {
+  font: 500 11.5px/1.4 var(--font-ui);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--color-ink-faint);
+  text-align: start;
+  padding: 8px 0;
+}
+.tbl td {
+  padding: 9px 0;
+  border-block-start: var(--border-hairline) solid var(--color-border);
+  color: var(--color-ink-muted);
+}
+.tbl td:first-child { color: var(--color-ink); }
+
+/* ---------- 14. Menus, modals ---------- */
+.menu {
+  background: var(--color-surface-raised);
+  border: var(--border-hairline) solid var(--color-border);
+  border-radius: var(--radius-2);
+  box-shadow: var(--shadow-3);
+  padding: 4px;
+  min-width: 160px;
+  z-index: 20;
+}
+.menu button, .menu a {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border: none;
+  background: none;
+  border-radius: var(--radius-1);
+  font: 400 14px/1.4 var(--font-ui);
+  color: var(--color-ink);
+  cursor: pointer;
+  text-align: start;
+  text-decoration: none;
+}
+.menu button:hover, .menu a:hover { background: var(--color-surface); color: var(--color-ink-strong); }
+.menu .menu-danger { color: var(--color-danger); }
+.menu .menu-danger:hover { background: var(--color-danger-surface); }
+
+.scrim {
+  position: fixed;
+  inset: 0;
+  background: var(--color-scrim);
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-4);
+}
+.modal {
+  background: var(--color-surface-raised);
+  border: var(--border-hairline) solid var(--color-border);
+  border-radius: var(--radius-3);
+  box-shadow: var(--shadow-3);
+  padding: var(--space-5);
+  width: 100%;
+  max-width: 28rem;
+  max-height: calc(100vh - 32px);
+  overflow: auto;
+}
+.modal-wide { max-width: 32rem; }
+.modal h2, .modal h3 { font: 600 17px/1.3 var(--font-display); margin-block-end: 12px; }
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-block-start: var(--space-5);
+}
+
+/* ---------- 15. Footer ---------- */
+.ftr {
+  border-block-start: var(--border-hairline) solid var(--color-border);
+  padding: var(--space-5) 32px;
+  text-align: center;
+  font-size: 12.5px;
+  color: var(--color-ink-faint);
+  margin-block-start: auto;
+}
+.ftr a { color: var(--color-ink-muted); margin: 0 10px; }
+.ftr .ftr-fact { margin-block-start: 10px; }
+
+/* An unstyled button that reads as a nav link (header logout, banner dismiss). */
+.linklike {
+  border: none;
+  background: none;
+  padding: 0;
+  font: inherit;
+  color: var(--color-ink-muted);
+  cursor: pointer;
+}
+.linklike:hover { color: var(--color-ink-strong); }
+
+/* Empty-state title: display 500 16px (§3). */
+.empty-title {
+  font: 500 16px/1.4 var(--font-display);
+  color: var(--color-ink-strong);
+}
+
+/* ---------- 16. Icons — 24px grid, 1.5 stroke (§2) ---------- */
+.ti {
+  width: 24px;
+  height: 24px;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  flex: none;
+}
+.ti-sm { width: 20px; height: 20px; }
+
+/* ---------- 16b. Landing directory (§4) ---------- */
+.hero-h1 { font-size: 42px; }
+@media (max-width: 767px) {
+  .hero-h1 { font-size: 30px; }
+}
+.tool-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  margin-block-start: 14px;
+}
+.tool-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 16px 18px;
+  text-decoration: none;
+  background: var(--color-surface);
+  border: var(--border-hairline) solid var(--color-border);
+  border-radius: var(--radius-3);
+  color: var(--color-ink);
+  font: 500 15px/1.4 var(--font-ui);
+  transition: border-color var(--dur-1) var(--ease);
+}
+.tool-card .ti { color: var(--color-ink-muted); }
+.tool-card:hover { border-color: var(--color-ink-faint); color: var(--color-ink-strong); }
+@media (max-width: 767px) {
+  .tool-grid { grid-template-columns: 1fr 1fr; gap: 10px; margin-block-start: 12px; }
+  .tool-card { gap: 11px; min-height: 56px; padding: 10px 12px; font: 500 13.5px/1.3 var(--font-ui); }
+  .tool-card .ti { width: 20px; height: 20px; }
+}
+
+/* ---------- 17. Layout helpers ---------- */
+.wrap { max-width: 1120px; margin-inline: auto; padding-inline: 32px; }
+.wrap-narrow { max-width: 720px; margin-inline: auto; padding-inline: 32px; }
+.wrap-reading { max-width: 640px; margin-inline: auto; padding-inline: 32px; }
+@media (max-width: 767px) {
+  .wrap, .wrap-narrow, .wrap-reading { padding-inline: 16px; }
+}
+.page-shell { min-height: 100dvh; display: flex; flex-direction: column; }
+.page-shell > main { flex: 1; }
+
+/* ---------- 16c. Ceremony (§4) ---------- */
+.cfield {
+  border: var(--border-hairline) solid var(--color-border);
+  border-radius: var(--radius-2);
+  background: var(--color-surface-raised);
+  padding: 12px 14px;
+}
+.cfield.on { border-color: var(--color-accent); }
+.cfield-label {
+  font: 500 12px/1.5 var(--font-ui);
+  color: var(--color-ink-muted);
+  margin-block-end: 4px;
+}
+/* Overlay boxes on the rendered page: pending = accent, done = success (§4). */
+.cbox {
+  border: 1.5px solid var(--color-accent);
+  background: color-mix(in srgb, var(--color-accent) 10%, transparent);
+  color: var(--color-accent);
+  border-radius: 3px;
+  font: 500 10px/1.2 var(--font-ui);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  cursor: pointer;
+  padding: 0 2px;
+}
+.cbox-done {
+  border-color: var(--color-success);
+  background: color-mix(in srgb, var(--color-success) 10%, transparent);
+  color: var(--color-success);
+}
+
+/* ---------- 17b. Workspace (§4) ---------- */
+.ws-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 16px;
+  min-height: 52px;
+  background: var(--color-surface);
+  border-block-end: var(--border-hairline) solid var(--color-border);
+}
+.ws-back {
+  color: var(--color-ink-muted);
+  text-decoration: none;
+  font-size: 18px;
+  line-height: 1;
+  padding: 8px;
+  border-radius: var(--radius-2);
+}
+.ws-back:hover { color: var(--color-ink-strong); background: var(--color-bg); }
+
+/* Thumbnail tiles (rail + organize grid). Selection is a 2px accent outline
+   with a corner seal tick (§4) — accent as selection is sanctioned (§1). */
+.thumb-tile {
+  display: block;
+  width: 100%;
+  border: none;
+  background: none;
+  padding: 2px;
+  border-radius: var(--radius-1);
+  cursor: pointer;
+}
+.organize-tile {
+  position: relative;
+  padding: 4px;
+  border-radius: var(--radius-1);
+  cursor: move;
+  background: none;
+}
+.thumb-tile.thumb-selected,
+.organize-tile.thumb-selected {
+  outline: var(--border-emphasis) solid var(--color-accent);
+  outline-offset: 1px;
+  border-radius: var(--radius-1);
+}
+.tile-tick {
+  position: absolute;
+  inset-block-start: -7px;
+  inset-inline-end: -7px;
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--color-accent);
+  color: var(--color-on-accent);
+  border-radius: 5px;
+  z-index: 1;
+}
+.tile-tick svg { width: 13px; height: 13px; }
+.cdk-drag-preview.organize-tile { box-shadow: var(--shadow-3); background: var(--color-surface-raised); }
+.cdk-drag-placeholder { opacity: 0.35; }
+
+/* The pdf.js shell (ngx-extended-pdf-viewer) re-papered via its CSS custom
+   properties — shell and visibility only, no pixel re-skin of internals (§5). */
+ngx-extended-pdf-viewer {
+  --body-bg-color: var(--color-canvas-backdrop);
+  --main-color: var(--color-ink);
+  --field-color: var(--color-ink);
+  --field-bg-color: var(--color-surface-raised);
+  --field-border-color: var(--color-border-strong);
+  --toolbar-bg-color: var(--color-surface);
+  --toolbar-border-color: var(--color-border);
+  --toolbar-icon-bg-color: var(--color-ink-muted);
+  --toolbar-icon-hover-bg-color: var(--color-ink-strong);
+  --button-hover-color: var(--color-bg);
+  --toggled-btn-color: var(--color-ink-strong);
+  --toggled-btn-bg-color: var(--color-bg);
+  --dropdown-btn-bg-color: var(--color-surface-raised);
+  --separator-color: var(--color-border);
+  --progressBar-color: var(--color-accent);
+  --progressBar-bg-color: var(--color-border);
+  --scrollbar-color: var(--color-border-strong);
+  --scrollbar-bg-color: transparent;
+}
+
+/* ---------- 18. Rendered PDF paper (§3) ---------- */
+/* Rendered pages are pure white by contract — they must read as paper on the
+   desk, in both modes. The dark-mode hairline makes the white page read as
+   intentional, floating paper. */
+.page-thumb {
+  aspect-ratio: 3 / 4;
+  background: #fff;
+  border: var(--border-hairline) solid var(--color-border);
+  border-radius: 2px;
+  box-shadow: 0 1px 3px var(--color-page-shadow);
+  position: relative;
+  overflow: hidden;
+}
+.dark .page-thumb { border-color: var(--color-border-strong); }
+.canvas-backdrop { background: var(--color-canvas-backdrop); }

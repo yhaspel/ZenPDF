@@ -67,3 +67,6 @@ Thumbs.db
 
 # Load-test output (§10.2)
 infra/perf/results/
+
+# Cleanup staging from the Cowork session — review and delete this folder
+_to_delete/

@@ -1,67 +1,72 @@
-<div class="mx-auto flex min-h-dvh w-full max-w-2xl flex-col bg-slate-50" data-test="ceremony">
-  <header class="border-b border-slate-200 bg-white px-4 py-3">
-    <div class="flex items-baseline gap-2">
-      <span class="text-lg">🧘‍♀️</span>
-      <span class="font-semibold text-slate-800">ZenPDF</span>
+<div class="bg-bg mx-auto flex min-h-dvh w-full max-w-[42rem] flex-col" data-test="ceremony">
+  <!-- Minimal header (design contract §3): seal, wordmark, envelope code,
+       theme toggle. Nothing else — zero ads, zero playfulness. -->
+  <header class="hdr !px-5 !py-3">
+    <span class="brand"><app-brand /></span>
+    <nav class="!gap-3">
       @if (meta(); as m) {
-        <span class="ml-auto text-[11px] text-slate-500" data-test="envelope-code">
+        <span class="faint text-[11.5px]" data-test="envelope-code">
           {{ m.envelope_code }}
         </span>
       }
-    </div>
+      <app-theme-toggle />
+    </nav>
   </header>
 
   <!-- The region has to exist before the message does: a live region created
        *with* its content is one a screen reader never announces. -->
   <div role="alert">
     @if (error(); as message) {
-      <p class="m-4 rounded border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700"
+      <p class="border-danger bg-danger-surface text-danger rounded-2 m-4 border p-3 text-sm"
          data-test="ceremony-error">{{ message }}</p>
     }
   </div>
   <div role="status">
     @if (notice(); as message) {
-      <p class="m-4 rounded border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800"
+      <p class="border-success bg-success-surface text-success rounded-2 m-4 border p-3 text-sm"
          data-test="ceremony-notice">{{ message }}</p>
     }
   </div>
 
   @switch (screen()) {
     @case ('loading') {
-      <p class="p-6 text-sm text-slate-500" data-test="ceremony-loading">Opening…</p>
+      <div class="breath p-6" data-test="ceremony-loading">
+        <div class="breath-dot" aria-hidden="true"></div>
+        <p>Opening…</p>
+      </div>
     }
 
     @case ('consent') {
       @if (meta(); as m) {
-        <section class="flex flex-col gap-4 p-4" data-test="consent-screen">
+        <section class="flex flex-col gap-4 p-5" data-test="consent-screen">
           <div>
-            <h1 class="text-xl font-semibold text-slate-800">{{ m.title }}</h1>
-            <p class="mt-1 text-sm text-slate-500">
+            <h1 class="!text-[22px]">{{ m.title }}</h1>
+            <p class="muted mt-1 text-sm">
               {{ m.sender.name || m.sender.email }} has asked you to
               {{ m.me.role === 'approver' ? 'approve' : 'sign' }} this document.
             </p>
             @if (m.message) {
-              <p class="mt-2 rounded border border-slate-200 bg-white p-3 text-sm text-slate-600"
+              <p class="border-border bg-surface-raised rounded-2 text-ink-muted mt-2.5 border p-3.5 text-sm"
                  data-test="sender-message">“{{ m.message }}”</p>
             }
           </div>
 
           <!-- Focusable and labelled: a scrollable box that only a mouse can
                reach hides the text somebody is being asked to agree to (§10.3). -->
-          <div class="max-h-72 overflow-y-auto rounded border border-slate-200 bg-white p-3"
+          <div class="border-border bg-surface-raised rounded-2 max-h-72 overflow-y-auto border p-3.5"
                tabindex="0" role="region" aria-label="Electronic signature disclosure">
-            <pre class="whitespace-pre-wrap font-sans text-[12px] leading-5 text-slate-600"
+            <pre class="text-ink-muted whitespace-pre-wrap font-ui text-[12.5px] leading-relaxed"
                  data-test="disclosure">{{ disclosure() }}</pre>
           </div>
 
-          <p class="-mt-2 text-[11px] text-slate-500">
+          <p class="faint -mt-2 text-[11.5px]">
             This is version {{ m.disclosure_version }} of our disclosure. It also
             lives at
             <a href="/legal/esign-disclosure" target="_blank" rel="noopener"
-               class="underline" data-test="disclosure-link">/legal/esign-disclosure</a>,
+               data-test="disclosure-link">/legal/esign-disclosure</a>,
             and its fingerprint is recorded with your consent.
           </p>
-          <label class="flex items-start gap-2 text-sm text-slate-700">
+          <label class="text-ink !flex items-start gap-2.5 !text-sm !font-normal">
             <input type="checkbox" class="mt-1" [ngModel]="agreed()"
                    (ngModelChange)="agreed.set($event)" data-test="agree" />
             <span>
@@ -70,12 +75,13 @@
             </span>
           </label>
 
-          <button class="rounded-lg bg-indigo-600 px-4 py-3 font-medium text-white disabled:opacity-40"
+          <!-- One primary treatment everywhere, the ceremony included (D1). -->
+          <button class="btn btn-primary btn-block"
                   [disabled]="!agreed() || busy()" (click)="consent()"
                   data-test="consent-continue">
             Agree and continue
           </button>
-          <button class="text-xs text-slate-500 underline" (click)="declining.set(true)"
+          <button class="btn btn-ghost btn-sm self-center" (click)="declining.set(true)"
                   data-test="decline-open">
             I do not want to sign this
           </button>
@@ -86,13 +92,13 @@
     @case ('sign') {
       @if (meta(); as m) {
         <section class="flex flex-1 flex-col" data-test="sign-screen">
-          <div class="sticky top-0 z-10 border-b border-slate-200 bg-white px-4 py-2">
+          <div class="border-border bg-surface sticky top-0 z-10 border-b px-5 py-2.5">
             <!-- A heading, and focusable: consent moves focus here, so a
                  screen reader announces what the person is now signing rather
                  than starting again from the top of the page. -->
-            <h1 class="text-sm font-medium text-slate-800" tabindex="-1"
+            <h1 class="!font-ui text-ink-strong !text-sm !font-medium" tabindex="-1"
                 data-test="sign-heading">{{ m.title }}</h1>
-            <p class="text-[11px] text-slate-500" role="status" data-test="progress">
+            <p class="faint text-xs" role="status" data-test="progress">
               {{ doneCount() }} of {{ required().length }} field(s) done
               @if (nextField(); as next) {
                 · next: {{ label(next) }} on page {{ next.page + 1 }}
@@ -100,20 +106,20 @@
             </p>
           </div>
 
-          <div class="flex flex-col gap-3 p-4">
+          <div class="flex flex-col gap-3 p-5">
             @for (field of fields(); track field.id) {
               @if (field.type !== 'date_signed') {
-                <div class="rounded-lg border bg-white p-3"
-                     [class.border-indigo-300]="nextField()?.id === field.id"
-                     [class.border-slate-200]="nextField()?.id !== field.id"
+                <!-- Field cards: the active one wears the accent border (§4). -->
+                <div class="cfield"
+                     [class.on]="nextField()?.id === field.id"
                      data-test="ceremony-field">
-                  <p class="text-[11px] font-medium text-slate-500">
+                  <p class="cfield-label">
                     {{ label(field) }}
-                    <button class="text-indigo-700 underline"
+                    <button class="linklike text-[11px] underline"
                             [attr.aria-label]="'Go to ' + label(field) + ' on page ' + (field.page + 1)"
                             (click)="goToField(field)"
                             [attr.data-test]="'goto-' + field.id">· page {{ field.page + 1 }}</button>
-                    @if (field.required) { <span class="text-rose-500">*</span> }
+                    @if (field.required) { <span class="text-danger">*</span> }
                   </p>
 
                   @switch (field.type) {
@@ -121,7 +127,7 @@
                       <!-- Saved on blur, not per keystroke: a POST per
                            character is a request storm on a phone connection
                            *and* an audit event per letter typed. -->
-                      <input class="mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm"
+                      <input class="input mt-1 !min-h-10 text-sm"
                              [ngModel]="values()[field.id]"
                              (ngModelChange)="stage(field, $event)"
                              (blur)="commit(field)"
@@ -129,7 +135,7 @@
                              [attr.data-test]="'field-' + field.id" />
                     }
                     @case ('checkbox') {
-                      <label class="mt-1 flex items-center gap-2 text-sm text-slate-600">
+                      <label class="text-ink-muted mt-1 !flex items-center gap-2 !text-sm !font-normal">
                         <input type="checkbox" [ngModel]="values()[field.id] === 'true'"
                                (ngModelChange)="saveValue(field, $event)"
                                [attr.data-test]="'field-' + field.id" />
@@ -138,15 +144,15 @@
                     }
                     @default {
                       @if (isFilled(field)) {
-                        <p class="mt-1 text-sm text-emerald-700" data-test="field-done">
+                        <p class="text-success mt-1 text-sm" data-test="field-done">
                           ✓ Signed
-                          <button class="ml-2 text-[11px] text-indigo-600 underline"
+                          <button class="linklike ms-2 text-[11px] underline"
                                   [attr.aria-label]="'Change ' + label(field)"
                                   [attr.data-test]="'change-' + field.id"
                                   (click)="openPad(field)">Change</button>
                         </p>
                       } @else {
-                        <button class="mt-1 w-full rounded-lg bg-indigo-600 px-3 py-2 text-sm font-medium text-white"
+                        <button class="btn btn-secondary btn-block mt-1.5"
                                 (click)="openPad(field)"
                                 [attr.data-test]="'sign-' + field.id">
                           {{ field.type === 'initials' ? 'Add initials' : 'Sign here' }}
@@ -161,35 +167,34 @@
             <!-- The document itself, with the boxes on it. A signer who
                  cannot see where their mark lands is signing blind, and the
                  §8 rects map onto the rendered page as plain percentages. -->
-            <div class="rounded-lg border border-slate-200 bg-white p-2"
+            <div class="border-border bg-surface-raised rounded-2 border p-2.5"
                  data-test="ceremony-viewer">
-              <div class="mb-2 flex items-center gap-2 text-xs text-slate-500">
+              <div class="faint mb-2 flex items-center gap-2 text-xs">
                 <button (click)="prevPage()" [disabled]="page() === 0"
-                        class="rounded px-2 py-1 disabled:opacity-30"
+                        class="btn btn-ghost btn-sm !min-h-8 !px-2.5"
+                        aria-label="Previous page"
                         data-test="ceremony-prev">‹</button>
                 <span data-test="ceremony-page">
                   Page {{ page() + 1 }} / {{ m.page_count }}
                 </span>
                 <button (click)="nextPage()" [disabled]="page() >= m.page_count - 1"
-                        class="rounded px-2 py-1 disabled:opacity-30"
+                        class="btn btn-ghost btn-sm !min-h-8 !px-2.5"
+                        aria-label="Next page"
                         data-test="ceremony-next">›</button>
                 <a [href]="contentUrl()" target="_blank" rel="noopener"
-                   class="ml-auto underline" data-test="read-document">
+                   class="ms-auto underline" data-test="read-document">
                   Open the PDF
                 </a>
               </div>
               <div class="relative">
+                <!-- The page is paper: pure white, whatever the mode (§3). -->
                 <img [src]="pageUrl()" alt="Page {{ page() + 1 }} of the document"
-                     class="w-full rounded border border-slate-200"
+                     class="border-border w-full rounded-[2px] border bg-white"
                      data-test="ceremony-page-image" />
                 @for (field of fieldsOnPage(); track field.id) {
-                  <button class="absolute rounded border-2 text-[10px] font-medium"
-                          [class.border-emerald-500]="isFilled(field)"
-                          [class.bg-emerald-500/15]="isFilled(field)"
-                          [class.text-emerald-800]="isFilled(field)"
-                          [class.border-indigo-500]="!isFilled(field)"
-                          [class.bg-indigo-500/15]="!isFilled(field)"
-                          [class.text-indigo-800]="!isFilled(field)"
+                  <!-- Overlay boxes: pending accent-tinted, done success-tinted (§4). -->
+                  <button class="cbox absolute"
+                          [class.cbox-done]="isFilled(field)"
                           [style.left]="boxStyle(field)['left']"
                           [style.top]="boxStyle(field)['top']"
                           [style.width]="boxStyle(field)['width']"
@@ -202,12 +207,13 @@
               </div>
             </div>
 
-            <button class="rounded-lg bg-emerald-700 px-4 py-3 font-medium text-white disabled:opacity-40"
+            <!-- The green variant is retired (D1): finishing is THE primary. -->
+            <button class="btn btn-primary btn-block"
                     [disabled]="!canFinish() || busy()" (click)="finish()"
                     data-test="finish">
               {{ m.me.role === 'approver' ? 'Approve' : 'Finish signing' }}
             </button>
-            <button class="text-xs text-slate-500 underline" (click)="declining.set(true)"
+            <button class="btn btn-ghost btn-sm self-center" (click)="declining.set(true)"
                     data-test="decline-open">
               Decline to sign
             </button>
@@ -218,8 +224,8 @@
 
     @case ('wait') {
       <section class="p-6" data-test="wait-screen">
-        <h1 class="text-lg font-semibold text-slate-800">Not your turn yet</h1>
-        <p class="mt-2 text-sm text-slate-600">
+        <h1 class="!text-lg">Not your turn yet</h1>
+        <p class="muted mt-2 text-sm">
           This document goes to people in order, and somebody before you has
           not finished. You will get an email the moment it is your turn — this
           same link will work then.
@@ -230,26 +236,30 @@
     @case ('done') {
       @if (meta(); as m) {
         <section class="p-6" data-test="done-screen">
-          <h1 class="text-lg font-semibold text-slate-800">All done — thank you</h1>
+          <!-- The hanko marks the completion (§1): the person's part is done. -->
+          <div class="flex items-center gap-4">
+            <span class="stamp">Signed</span>
+            <h1 class="!text-lg">All done — thank you</h1>
+          </div>
           @if (m.status === 'completed') {
-            <p class="mt-2 text-sm text-slate-600">
+            <p class="muted mt-3 text-sm">
               Everyone has signed. Keep a copy for your records:
             </p>
             <div class="mt-3 flex flex-col gap-2">
               <a [href]="downloadUrl('final')"
-                 class="rounded-lg bg-indigo-600 px-4 py-2 text-center text-sm font-medium text-white"
+                 class="btn btn-primary btn-block"
                  data-test="download-final">Download the signed document</a>
               <a [href]="downloadUrl('certificate')"
-                 class="rounded-lg border border-slate-300 px-4 py-2 text-center text-sm text-slate-600"
+                 class="btn btn-secondary btn-block"
                  data-test="download-certificate">Download the certificate</a>
             </div>
           } @else if (finalizing()) {
-            <p class="mt-2 text-sm text-slate-600" data-test="finalizing">
+            <p class="muted mt-3 text-sm" data-test="finalizing">
               You were the last one — sealing the document now. This takes a few
               seconds, and the download links appear here when it is done.
             </p>
           } @else {
-            <p class="mt-2 text-sm text-slate-600">
+            <p class="muted mt-3 text-sm">
               We are waiting for the others. You will be emailed a copy of the
               finished document when everyone has signed.
             </p>
@@ -260,8 +270,8 @@
 
     @case ('closed') {
       <section class="p-6" data-test="closed-screen">
-        <h1 class="text-lg font-semibold text-slate-800">This request is closed</h1>
-        <p class="mt-2 text-sm text-slate-600">
+        <h1 class="!text-lg">This request is closed</h1>
+        <p class="muted mt-2 text-sm">
           Nothing more can be signed here. If you think that is wrong, ask
           whoever sent it to you.
         </p>
@@ -270,8 +280,8 @@
 
     @default {
       <section class="p-6" data-test="error-screen">
-        <h1 class="text-lg font-semibold text-slate-800">This link does not work</h1>
-        <p class="mt-2 text-sm text-slate-600">
+        <h1 class="!text-lg">This link does not work</h1>
+        <p class="muted mt-2 text-sm">
           Check that you copied the whole address from the email. Links are
           personal — one per signer — and cannot be shared.
         </p>
@@ -279,35 +289,35 @@
     }
   }
 
-  <footer class="mt-auto border-t border-slate-200 px-4 py-3 text-[11px] text-slate-500">
+  <!-- The ceremony's own footer set, verbatim, incl. the not-a-QES sentence (§10). -->
+  <footer class="border-border text-ink-faint mt-auto border-t px-5 py-3 text-[11px] leading-relaxed">
     <p>
       Signed electronically through ZenPDF. This is a simple electronic
       signature with a platform seal — not a qualified electronic signature.
     </p>
-    <p class="mt-1">
-      <a routerLink="/about" class="underline" data-test="footer-about">About</a> ·
-      <a routerLink="/legal/privacy" class="underline" data-test="footer-privacy">Privacy</a> ·
-      <a routerLink="/legal/terms" class="underline" data-test="footer-terms">Terms</a> ·
-      <a routerLink="/legal/esign-disclosure" class="underline" data-test="footer-esign">E-sign disclosure</a> ·
-      <button class="underline" (click)="reporting.set(true)"
+    <p class="mt-1.5">
+      <a routerLink="/about" class="text-ink-muted" data-test="footer-about">About</a> ·
+      <a routerLink="/legal/privacy" class="text-ink-muted" data-test="footer-privacy">Privacy</a> ·
+      <a routerLink="/legal/terms" class="text-ink-muted" data-test="footer-terms">Terms</a> ·
+      <a routerLink="/legal/esign-disclosure" class="text-ink-muted" data-test="footer-esign">E-sign disclosure</a> ·
+      <button class="linklike text-ink-muted underline" (click)="reporting.set(true)"
               data-test="report-open">Report this request</button>
     </p>
   </footer>
 </div>
 
 @if (padFor(); as field) {
-  <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
-       data-test="ceremony-pad">
-    <div class="w-full max-w-lg rounded-xl bg-white p-5 shadow-xl"
+  <div class="scrim" data-test="ceremony-pad">
+    <div class="modal modal-wide"
          zenModal role="dialog" aria-modal="true"
          [attr.aria-label]="field.type === 'initials' ? 'Your initials' : 'Your signature'"
          (zenModalEscape)="padFor.set(null)">
-      <h3 class="mb-3 text-lg font-semibold text-slate-800">
+      <h3>
         {{ field.type === 'initials' ? 'Your initials' : 'Your signature' }}
       </h3>
       <app-signature-pad [useLabel]="'Use this'" (chosen)="onSignature($event)" />
       <div class="mt-3 flex justify-end">
-        <button class="rounded-lg px-4 py-2 text-sm text-slate-500"
+        <button class="btn btn-ghost btn-sm"
                 (click)="padFor.set(null)" data-test="pad-cancel">Cancel</button>
       </div>
     </div>
@@ -315,30 +325,29 @@
 }
 
 @if (reporting()) {
-  <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
-       data-test="report-dialog">
-    <div class="w-full max-w-sm rounded-xl bg-white p-5 shadow-xl"
+  <div class="scrim" data-test="report-dialog">
+    <div class="modal"
          zenModal role="dialog" aria-modal="true" aria-label="Report this request"
          (zenModalEscape)="reporting.set(false)">
-      <h3 class="text-lg font-semibold text-slate-800">Report this request</h3>
-      <p class="mt-1 text-sm text-slate-500">
+      <h3>Report this request</h3>
+      <p class="muted mt-1 text-sm">
         Tell us if you did not expect this document. Enough reports pause it,
         and the sender is told why.
       </p>
-      <label class="mt-3 block text-xs text-slate-500">
+      <label class="mt-3">
         What is wrong? (optional)
-        <textarea rows="3" class="mt-1 w-full rounded border border-slate-300 p-2 text-sm"
+        <textarea rows="3" class="input mt-1 text-sm"
                   [ngModel]="reportReason()" (ngModelChange)="reportReason.set($event)"
                   data-test="report-reason"></textarea>
       </label>
       @if (reportError(); as message) {
-        <p class="mt-2 rounded bg-rose-50 p-2 text-sm text-rose-700"
+        <p class="bg-danger-surface text-danger rounded-2 mt-2 p-2 text-sm"
            data-test="report-error">{{ message }}</p>
       }
-      <div class="mt-4 flex justify-end gap-2">
-        <button class="rounded-lg px-4 py-2 text-sm text-slate-500"
+      <div class="modal-actions">
+        <button class="btn btn-ghost"
                 (click)="reporting.set(false)">Cancel</button>
-        <button class="rounded-lg bg-rose-700 px-4 py-2 text-sm font-medium text-white"
+        <button class="btn btn-danger"
                 [disabled]="busy()" (click)="report()" data-test="report-send">
           Report
         </button>
@@ -348,26 +357,25 @@
 }
 
 @if (declining()) {
-  <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
-       data-test="decline-dialog">
-    <div class="w-full max-w-sm rounded-xl bg-white p-5 shadow-xl"
+  <div class="scrim" data-test="decline-dialog">
+    <div class="modal"
          zenModal role="dialog" aria-modal="true" aria-label="Decline to sign"
          (zenModalEscape)="declining.set(false)">
-      <h3 class="text-lg font-semibold text-slate-800">Decline to sign</h3>
-      <p class="mt-1 text-sm text-slate-500">
+      <h3>Decline to sign</h3>
+      <p class="muted mt-1 text-sm">
         This stops the whole request. Everyone who has already signed is told,
         and no completed document is produced.
       </p>
-      <label class="mt-3 block text-xs text-slate-500">
+      <label class="mt-3">
         Why? (the sender sees this)
-        <textarea rows="3" class="mt-1 w-full rounded border border-slate-300 p-2 text-sm"
+        <textarea rows="3" class="input mt-1 text-sm"
                   [ngModel]="declineReason()" (ngModelChange)="declineReason.set($event)"
                   data-test="decline-reason"></textarea>
       </label>
-      <div class="mt-4 flex justify-end gap-2">
-        <button class="rounded-lg px-4 py-2 text-sm text-slate-500"
+      <div class="modal-actions">
+        <button class="btn btn-ghost"
                 (click)="declining.set(false)">Cancel</button>
-        <button class="rounded-lg bg-rose-700 px-4 py-2 text-sm font-medium text-white"
+        <button class="btn btn-danger-filled"
                 [disabled]="busy()" (click)="decline()" data-test="decline-confirm">
           Decline
         </button>

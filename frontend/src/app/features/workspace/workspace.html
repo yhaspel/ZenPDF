@@ -1,84 +1,77 @@
 @if (viewer.doc(); as doc) {
-  <div class="flex h-full flex-col">
-    <!-- Top bar -->
-    <div class="flex items-center gap-3 border-b border-slate-200 bg-white px-4 py-2">
-      <a routerLink="/app/dashboard" class="text-slate-500 hover:text-slate-600" data-test="back">←</a>
+  <div class="flex h-full min-h-0 flex-1 flex-col">
+    <!-- The workspace bar (design contract §3): the single owner of every
+         editing affordance (D3). It replaces the app header on /app/doc/:id. -->
+    <div class="ws-bar" data-test="workspace-bar">
+      <a routerLink="/app/dashboard" class="ws-back" data-test="back" aria-label="Back">←</a>
+      <app-brand [size]="20" [wordmark]="false" />
       @if (renaming()) {
         <!-- eslint-disable-next-line @angular-eslint/template/no-autofocus --
              the field only exists once the person clicked the title. -->
         <input autofocus [ngModel]="titleDraft()" (ngModelChange)="titleDraft.set($event)" (keyup.enter)="commitRename()" (blur)="commitRename()"
-               class="rounded border border-indigo-300 px-2 py-1 text-sm font-medium" data-test="title-input" />
+               class="input !min-h-8 w-56 py-0 text-sm" data-test="title-input" />
       } @else {
-        <button class="font-medium text-slate-800" (click)="startRename()" data-test="doc-title">{{ doc.title }}</button>
+        <button class="linklike text-ink-strong max-w-[26ch] truncate font-medium" (click)="startRename()" data-test="doc-title">{{ doc.title }}</button>
       }
-      <span class="text-xs text-slate-500">v{{ viewer.currentSeq() }} · {{ doc.page_count }} pages</span>
-      @if (busy()) { <span class="text-xs text-indigo-500" data-test="busy">working…</span> }
+      <span class="faint whitespace-nowrap text-xs">v{{ viewer.currentSeq() }} · {{ doc.page_count }} pages</span>
+      @if (busy()) { <span class="text-accent text-xs" data-test="busy">working…</span> }
 
-      <div class="ml-auto flex items-center gap-2 text-sm">
-        <button (click)="download()" class="rounded px-2 py-1 text-slate-600 hover:bg-slate-100" data-test="download">Download</button>
+      <nav class="seg ms-auto overflow-x-auto" aria-label="Workspace mode">
+        <button (click)="mode.set('view')" [class.seg-active]="mode() === 'view'"
+                [attr.aria-selected]="mode() === 'view'" data-test="view-toggle">View</button>
         <button (click)="mode.set(mode() === 'organize' ? 'view' : 'organize')"
-                class="rounded px-3 py-1 font-medium"
-                [class.bg-indigo-600]="mode() === 'organize'" [class.text-white]="mode() === 'organize'"
-                [class.text-indigo-600]="mode() !== 'organize'" data-test="organize-toggle">
-          {{ mode() === 'organize' ? 'Done' : 'Organize' }}
-        </button>
+                [class.seg-active]="mode() === 'organize'" [attr.aria-selected]="mode() === 'organize'"
+                data-test="organize-toggle">Organize</button>
         <button (click)="mode.set(mode() === 'edit' ? 'view' : 'edit')"
-                class="rounded px-3 py-1 font-medium"
-                [class.bg-indigo-600]="mode() === 'edit'" [class.text-white]="mode() === 'edit'"
-                [class.text-indigo-600]="mode() !== 'edit'" data-test="edit-toggle">
-          {{ mode() === 'edit' ? 'Done' : 'Edit' }}
-        </button>
+                [class.seg-active]="mode() === 'edit'" [attr.aria-selected]="mode() === 'edit'"
+                data-test="edit-toggle">Edit</button>
         <button (click)="mode.set(mode() === 'annotate' ? 'view' : 'annotate')"
-                class="rounded px-3 py-1 font-medium"
-                [class.bg-indigo-600]="mode() === 'annotate'" [class.text-white]="mode() === 'annotate'"
-                [class.text-indigo-600]="mode() !== 'annotate'" data-test="annotate-toggle">
-          {{ mode() === 'annotate' ? 'Done' : 'Annotate' }}
-        </button>
+                [class.seg-active]="mode() === 'annotate'" [attr.aria-selected]="mode() === 'annotate'"
+                data-test="annotate-toggle">Annotate</button>
         <button (click)="mode.set(mode() === 'forms' ? 'view' : 'forms')"
-                class="rounded px-3 py-1 font-medium"
-                [class.bg-indigo-600]="mode() === 'forms'" [class.text-white]="mode() === 'forms'"
-                [class.text-indigo-600]="mode() !== 'forms'" data-test="forms-toggle">
-          {{ mode() === 'forms' ? 'Done' : 'Forms' }}
-        </button>
+                [class.seg-active]="mode() === 'forms'" [attr.aria-selected]="mode() === 'forms'"
+                data-test="forms-toggle">Forms</button>
         <button (click)="mode.set(mode() === 'convert' ? 'view' : 'convert')"
-                class="rounded px-3 py-1 font-medium"
-                [class.bg-indigo-600]="mode() === 'convert'" [class.text-white]="mode() === 'convert'"
-                [class.text-indigo-600]="mode() !== 'convert'" data-test="convert-toggle">
-          {{ mode() === 'convert' ? 'Done' : 'Convert' }}
-        </button>
+                [class.seg-active]="mode() === 'convert'" [attr.aria-selected]="mode() === 'convert'"
+                data-test="convert-toggle">Convert</button>
         <button (click)="mode.set(mode() === 'compare' ? 'view' : 'compare')"
-                class="rounded px-3 py-1 font-medium"
-                [class.bg-indigo-600]="mode() === 'compare'" [class.text-white]="mode() === 'compare'"
-                [class.text-indigo-600]="mode() !== 'compare'" data-test="compare-toggle">
-          {{ mode() === 'compare' ? 'Done' : 'Compare' }}
-        </button>
+                [class.seg-active]="mode() === 'compare'" [attr.aria-selected]="mode() === 'compare'"
+                data-test="compare-toggle">Compare</button>
         <button (click)="mode.set(mode() === 'sign' ? 'view' : 'sign')"
-                class="rounded px-3 py-1 font-medium"
-                [class.bg-indigo-600]="mode() === 'sign'" [class.text-white]="mode() === 'sign'"
-                [class.text-indigo-600]="mode() !== 'sign'" data-test="sign-toggle">
-          {{ mode() === 'sign' ? 'Done' : 'Sign' }}
-        </button>
+                [class.seg-active]="mode() === 'sign'" [attr.aria-selected]="mode() === 'sign'"
+                data-test="sign-toggle">Sign</button>
         <button (click)="mode.set(mode() === 'protect' ? 'view' : 'protect')"
-                class="rounded px-3 py-1 font-medium"
-                [class.bg-indigo-600]="mode() === 'protect'" [class.text-white]="mode() === 'protect'"
-                [class.text-indigo-600]="mode() !== 'protect'" data-test="protect-toggle">
-          {{ mode() === 'protect' ? 'Done' : 'Protect' }}
-        </button>
-        <button (click)="dialog.set('split')" class="rounded px-2 py-1 text-slate-600 hover:bg-slate-100" data-test="tool-split">Split</button>
-        <button (click)="dialog.set('compress')" class="rounded px-2 py-1 text-slate-600 hover:bg-slate-100" data-test="tool-compress">Compress</button>
-      </div>
+                [class.seg-active]="mode() === 'protect'" [attr.aria-selected]="mode() === 'protect'"
+                data-test="protect-toggle">Protect</button>
+      </nav>
+      <span class="border-border h-5 shrink-0 border-s" aria-hidden="true"></span>
+      <button (click)="dialog.set('split')" class="btn btn-ghost btn-sm" data-test="tool-split">Split</button>
+      <button (click)="dialog.set('compress')" class="btn btn-ghost btn-sm" data-test="tool-compress">Compress</button>
+      <button (click)="download()" class="btn btn-secondary btn-sm" data-test="download">Download</button>
+      <app-theme-toggle />
     </div>
+    <app-guest-banner />
 
     @if (doc.is_encrypted) {
-      <div class="flex items-center gap-3 bg-amber-50 px-4 py-2 text-sm text-amber-700"
-           data-test="encrypted-banner">
-        @if (security.isUnlocked(doc.id)) {
-          🔓 Unlocked for this session. Editing it removes the password — add one
-          again afterwards if you still want it.
-        } @else {
-          🔒 This document is password-protected. Unlock it to keep working on it.
-        }
-        <button class="rounded border border-amber-300 px-2 py-0.5 text-xs"
+      <div class="banner banner-warning" data-test="encrypted-banner">
+        <svg class="ti ti-sm shrink-0" viewBox="0 0 24 24" aria-hidden="true">
+          <rect x="5.5" y="10.5" width="13" height="9.5" rx="1.5" />
+          @if (security.isUnlocked(doc.id)) {
+            <path d="M8.5 10.5V8a3.5 3.5 0 0 1 6.8-1.1" />
+          } @else {
+            <path d="M8.5 10.5V8a3.5 3.5 0 0 1 7 0v2.5" />
+          }
+          <path d="M12 14.2v2.3" />
+        </svg>
+        <span class="grow">
+          @if (security.isUnlocked(doc.id)) {
+            Unlocked for this session. Editing it removes the password — add one
+            again afterwards if you still want it.
+          } @else {
+            This document is password-protected. Unlock it to keep working on it.
+          }
+        </span>
+        <button class="btn btn-secondary btn-sm"
                 (click)="openProtect('protect')" data-test="banner-unlock">
           {{ security.isUnlocked(doc.id) ? 'Protection settings' : 'Unlock' }}
         </button>
@@ -87,17 +80,17 @@
 
     <!-- Organize toolbar -->
     @if (mode() === 'organize') {
-      <div class="flex flex-wrap items-center gap-2 border-b border-slate-200 bg-slate-50 px-4 py-2 text-sm" data-test="organize-toolbar">
-        <span class="text-slate-500">{{ pages.selection().size }} selected</span>
-        <button (click)="rotate()" class="rounded bg-white px-3 py-1 shadow-sm hover:bg-slate-100" data-test="op-rotate">⟳ Rotate</button>
-        <button (click)="remove()" class="rounded bg-white px-3 py-1 shadow-sm hover:bg-slate-100" data-test="op-delete">🗑 Delete</button>
-        <button (click)="duplicate()" class="rounded bg-white px-3 py-1 shadow-sm hover:bg-slate-100" data-test="op-duplicate">⧉ Duplicate</button>
-        <button (click)="extract()" class="rounded bg-white px-3 py-1 shadow-sm hover:bg-slate-100" data-test="op-extract">⇥ Extract</button>
-        <button (click)="dialog.set('insert')" class="rounded bg-white px-3 py-1 shadow-sm hover:bg-slate-100" data-test="op-insert">＋ Insert blank</button>
-        <button (click)="startCrop()" class="rounded bg-white px-3 py-1 shadow-sm hover:bg-slate-100" data-test="op-crop">◱ Crop</button>
-        <button (click)="dialog.set('scale')" class="rounded bg-white px-3 py-1 shadow-sm hover:bg-slate-100" data-test="op-scale">⤢ Scale</button>
-        <button (click)="dialog.set('nup')" class="rounded bg-white px-3 py-1 shadow-sm hover:bg-slate-100" data-test="op-nup">▦ N-up</button>
-        <span class="text-xs text-slate-500">Drag thumbnails to reorder</span>
+      <div class="border-border bg-surface flex flex-wrap items-center gap-2 border-b px-4 py-2 text-sm" data-test="organize-toolbar">
+        <span class="muted">{{ pages.selection().size }} selected</span>
+        <button (click)="rotate()" class="btn btn-ghost btn-sm" data-test="op-rotate">Rotate</button>
+        <button (click)="remove()" class="btn btn-ghost btn-sm" data-test="op-delete">Delete</button>
+        <button (click)="duplicate()" class="btn btn-ghost btn-sm" data-test="op-duplicate">Duplicate</button>
+        <button (click)="extract()" class="btn btn-ghost btn-sm" data-test="op-extract">Extract</button>
+        <button (click)="dialog.set('insert')" class="btn btn-ghost btn-sm" data-test="op-insert">Insert blank</button>
+        <button (click)="startCrop()" class="btn btn-ghost btn-sm" data-test="op-crop">Crop</button>
+        <button (click)="dialog.set('scale')" class="btn btn-ghost btn-sm" data-test="op-scale">Scale</button>
+        <button (click)="dialog.set('nup')" class="btn btn-ghost btn-sm" data-test="op-nup">N-up</button>
+        <span class="faint text-xs">Drag pages to reorder</span>
       </div>
     }
 
@@ -166,48 +159,50 @@
       />
     } @else {
     <div class="flex min-h-0 flex-1">
-      <!-- Left rail -->
-      <aside class="flex w-56 shrink-0 flex-col border-r border-slate-200 bg-white">
-        <div class="flex border-b border-slate-200 text-xs">
-          <button class="flex-1 py-2" [class.font-semibold]="leftTab() === 'thumbs'" [class.text-indigo-600]="leftTab() === 'thumbs'"
+      <!-- Left rail: Pages / Outline / History (§4 view mode) -->
+      <aside class="border-border bg-surface flex w-56 shrink-0 flex-col border-e">
+        <div class="seg border-border gap-0 border-b px-1 py-1">
+          <button class="flex-1 justify-center" [class.seg-active]="leftTab() === 'thumbs'"
+                  [attr.aria-selected]="leftTab() === 'thumbs'"
                   (click)="leftTab.set('thumbs')" data-test="tab-thumbs">Pages</button>
-          <button class="flex-1 py-2" [class.font-semibold]="leftTab() === 'outline'" [class.text-indigo-600]="leftTab() === 'outline'"
+          <button class="flex-1 justify-center" [class.seg-active]="leftTab() === 'outline'"
+                  [attr.aria-selected]="leftTab() === 'outline'"
                   (click)="leftTab.set('outline')" data-test="tab-outline">Outline</button>
-          <button class="flex-1 py-2" [class.font-semibold]="leftTab() === 'history'" [class.text-indigo-600]="leftTab() === 'history'"
+          <button class="flex-1 justify-center" [class.seg-active]="leftTab() === 'history'"
+                  [attr.aria-selected]="leftTab() === 'history'"
                   (click)="leftTab.set('history')" data-test="tab-history">History</button>
         </div>
         <div class="min-h-0 flex-1 overflow-y-auto p-2">
           @if (leftTab() === 'thumbs') {
-            <div class="grid grid-cols-2 gap-2">
+            <div class="grid grid-cols-2 gap-2.5">
               @for (p of order(); track p) {
-                <button class="overflow-hidden rounded border bg-white"
-                        [class.ring-2]="pages.isSelected(p)" [class.ring-indigo-500]="pages.isSelected(p)"
+                <button class="thumb-tile" [class.thumb-selected]="pages.isSelected(p)"
                         (click)="onThumbClick(p, $event)" data-test="rail-thumb">
-                  <div class="aspect-[3/4]">
+                  <div class="page-thumb">
                     <app-pdf-thumbnail [docId]="doc.id" [page]="p" [width]="240" [version]="viewer.currentSeq() ?? undefined" />
                   </div>
-                  <span class="block py-0.5 text-center text-[10px] text-slate-500">{{ p + 1 }}</span>
+                  <span class="faint block py-0.5 text-center text-[10px]">{{ p + 1 }}</span>
                 </button>
               }
             </div>
           } @else if (leftTab() === 'outline') {
             @if (viewer.outline().length) {
               @for (item of viewer.outline(); track $index) {
-                <button class="block w-full truncate py-1 text-left text-xs text-slate-600 hover:text-indigo-600"
-                        [style.padding-left.px]="item.level * 8" (click)="page.set(item.page)" data-test="outline-item">
+                <button class="linklike hover:text-ink-strong block w-full truncate py-1 text-start text-xs"
+                        [style.padding-inline-start.px]="item.level * 8" (click)="page.set(item.page)" data-test="outline-item">
                   {{ item.title }}
                 </button>
               }
             } @else {
-              <p class="p-2 text-xs text-slate-500">No outline in this document.</p>
+              <p class="faint p-2 text-xs">No outline in this document.</p>
             }
           } @else {
             @for (v of viewer.versions(); track v.id) {
-              <div class="mb-1 rounded border border-slate-100 p-2 text-xs" data-test="version-row">
-                <div class="font-medium text-slate-700">v{{ v.seq }} · {{ v.label }}</div>
-                <div class="text-slate-500">{{ (v.size_bytes / 1024).toFixed(0) }} KB</div>
+              <div class="border-border rounded-1 mb-1 border p-2 text-xs" data-test="version-row">
+                <div class="text-ink font-medium">v{{ v.seq }} · {{ v.label }}</div>
+                <div class="faint">{{ (v.size_bytes / 1024).toFixed(0) }} KB</div>
                 @if (v.seq !== viewer.currentSeq()) {
-                  <button class="mt-1 text-indigo-600 hover:underline" (click)="confirmRevert(v.seq)" data-test="revert">Revert to this</button>
+                  <button class="linklike mt-1 text-xs underline" (click)="confirmRevert(v.seq)" data-test="revert">Revert to this</button>
                 }
               </div>
             }
@@ -215,13 +210,13 @@
                  shows a window now, and a user with a long history should know
                  the older ones exist rather than assume they were pruned. -->
             @if (viewer.versionCount() > viewer.versions().length) {
-              <p class="mt-2 text-[11px] text-slate-500" data-test="version-window">
+              <p class="faint mt-2 text-[11px]" data-test="version-window">
                 Showing the {{ viewer.versions().length }} most recent of
                 {{ viewer.versionCount() }}. Nothing is deleted — older versions
                 stay in the document.
               </p>
               <button
-                class="mt-1 text-xs text-indigo-600 hover:underline"
+                class="linklike mt-1 text-xs underline"
                 (click)="viewer.loadMoreVersions()"
                 data-test="version-more"
               >
@@ -232,20 +227,24 @@
         </div>
       </aside>
 
-      <!-- Center -->
-      <main class="flex min-h-0 flex-1 flex-col bg-slate-100">
+      <!-- Center: the desk. Pages are white paper on the backdrop (§3). -->
+      <main class="canvas-backdrop flex min-h-0 flex-1 flex-col">
         @if (mode() === 'view') {
-          <div class="flex items-center gap-2 border-b border-slate-200 bg-white px-4 py-2">
+          <div class="border-border bg-surface flex items-center gap-2 border-b px-4 py-2">
             <input [ngModel]="searchQuery()" (ngModelChange)="searchQuery.set($event)" (keyup.enter)="doSearch()"
                    placeholder="Find in document…" name="s"
-                   class="w-64 rounded-lg border border-slate-300 px-3 py-1 text-sm" data-test="find-input" />
-            <button (click)="doSearch()" class="rounded bg-slate-100 px-3 py-1 text-sm" data-test="find-btn">Find</button>
+                   class="input !min-h-9 w-64 text-sm" data-test="find-input" />
+            <button (click)="doSearch()" class="btn btn-secondary btn-sm" data-test="find-btn">Find</button>
             @if (searched()) {
-              <span class="text-sm text-slate-500" data-test="find-count">{{ searchHits().length }} result(s)</span>
+              <span class="muted text-sm" data-test="find-count">{{ searchHits().length }} result(s)</span>
             }
           </div>
           <div class="min-h-0 flex-1">
             @if (contentUrl()) {
+              <!-- D3: the pdf.js toolbar is reduced to exactly zoom and paging
+                   (find lives in our bar above, once). Rotate lives in Organize,
+                   download in the workspace bar, annotation in Annotate.
+                   D7: first paint is fit-to-width, centered, on the backdrop. -->
               <ngx-extended-pdf-viewer
                 [src]="contentUrl()"
                 [httpHeaders]="authHeaders()"
@@ -254,6 +253,32 @@
                 [password]="password() ?? undefined"
                 [textLayer]="true"
                 [showBorders]="false"
+                [zoom]="'page-width'"
+                [theme]="themes.resolved()"
+                [showSidebarButton]="false"
+                [showFindButton]="false"
+                [showPagingButtons]="true"
+                [showZoomButtons]="true"
+                [showZoomDropdown]="true"
+                [showPresentationModeButton]="false"
+                [showOpenFileButton]="false"
+                [showPrintButton]="false"
+                [showDownloadButton]="false"
+                [showSecondaryToolbarButton]="false"
+                [showRotateButton]="false"
+                [showRotateCwButton]="false"
+                [showRotateCcwButton]="false"
+                [showHandToolButton]="false"
+                [showScrollingButtons]="false"
+                [showSpreadButton]="false"
+                [showPropertiesButton]="false"
+                [showEditorButtons]="false"
+                [showTextEditor]="false"
+                [showDrawEditor]="false"
+                [showStampEditor]="false"
+                [showHighlightEditor]="false"
+                [showSignatureEditor]="false"
+                [showCommentEditor]="false"
                 height="100%"
                 (pdfLoadingFailed)="onViewerLoadFailed()"
                 data-test="pdf-viewer"
@@ -261,22 +286,28 @@
             }
           </div>
         } @else {
-          <!-- Organize grid -->
-          <div class="min-h-0 flex-1 overflow-y-auto p-4">
+          <!-- Organize grid: 6-up thumbnails on the backdrop; selection is a
+               2px accent outline with a corner seal tick (§4). -->
+          <div class="min-h-0 flex-1 overflow-y-auto p-5">
             <div cdkDropList cdkDropListOrientation="mixed" (cdkDropListDropped)="drop($event)"
-                 class="grid grid-cols-4 gap-3 sm:grid-cols-5 lg:grid-cols-6" data-test="organize-grid">
+                 class="grid grid-cols-4 gap-5 sm:grid-cols-5 lg:grid-cols-6" data-test="organize-grid">
               @for (p of order(); track p) {
-                <div cdkDrag class="cursor-move rounded-lg border bg-white p-1 shadow-sm"
-                     [class.ring-2]="pages.isSelected(p)" [class.ring-indigo-500]="pages.isSelected(p)"
+                <div cdkDrag class="organize-tile"
+                     [class.thumb-selected]="pages.isSelected(p)"
                      role="button" tabindex="0" [attr.aria-pressed]="pages.isSelected(p)"
                      [attr.aria-label]="'Page ' + (p + 1)"
                      (click)="onThumbClick(p, $event)"
                      (keydown.enter)="onThumbClick(p, $event)" (keydown.space)="onThumbClick(p, $event); $event.preventDefault()"
                      data-test="organize-page">
-                  <div class="aspect-[3/4] overflow-hidden">
+                  @if (pages.isSelected(p)) {
+                    <span class="tile-tick" aria-hidden="true">
+                      <svg viewBox="0 0 24 24"><path d="m6.5 12.5 3.6 3.6 7.4-8.2" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                    </span>
+                  }
+                  <div class="page-thumb">
                     <app-pdf-thumbnail [docId]="doc.id" [page]="p" [width]="240" [version]="viewer.currentSeq() ?? undefined" />
                   </div>
-                  <span class="block py-0.5 text-center text-xs text-slate-500">{{ p + 1 }}</span>
+                  <span class="faint block py-1 text-center text-xs">{{ p + 1 }}</span>
                 </div>
               }
             </div>
@@ -287,69 +318,69 @@
     }
   </div>
 
-  <!-- Dialogs -->
+  <!-- Dialogs (§3 modals) -->
   @if (dialog(); as d) {
-    <div class="fixed inset-0 z-40 flex items-center justify-center bg-black/40" data-test="tool-dialog"
+    <div class="scrim" data-test="tool-dialog"
          zenModal role="dialog" aria-modal="true" aria-label="Tool options"
          (zenModalEscape)="dialog.set(null)">
-      <div class="w-full max-w-md rounded-xl bg-white p-6 shadow-xl">
+      <div class="modal">
         @if (d === 'split') {
-          <h3 class="mb-4 text-lg font-semibold">Split document</h3>
-          <div class="mb-3 flex gap-2 text-sm">
-            <button (click)="splitMode.set('ranges')" class="rounded px-3 py-1" [class.bg-indigo-100]="splitMode()==='ranges'" data-test="split-ranges">Ranges</button>
-            <button (click)="splitMode.set('every_n')" class="rounded px-3 py-1" [class.bg-indigo-100]="splitMode()==='every_n'" data-test="split-everyn">Every N</button>
-            <button (click)="splitMode.set('by_bookmarks')" class="rounded px-3 py-1" [class.bg-indigo-100]="splitMode()==='by_bookmarks'" data-test="split-bookmarks">Bookmarks</button>
+          <h3>Split document</h3>
+          <div class="seg mb-3">
+            <button (click)="splitMode.set('ranges')" [class.seg-active]="splitMode()==='ranges'" [attr.aria-selected]="splitMode()==='ranges'" data-test="split-ranges">Ranges</button>
+            <button (click)="splitMode.set('every_n')" [class.seg-active]="splitMode()==='every_n'" [attr.aria-selected]="splitMode()==='every_n'" data-test="split-everyn">Every N</button>
+            <button (click)="splitMode.set('by_bookmarks')" [class.seg-active]="splitMode()==='by_bookmarks'" [attr.aria-selected]="splitMode()==='by_bookmarks'" data-test="split-bookmarks">Bookmarks</button>
           </div>
           @if (splitMode() === 'ranges') {
             <input [ngModel]="splitRanges()" (ngModelChange)="splitRanges.set($event)" placeholder="e.g. 1-3,5,7-9"
-                   class="w-full rounded border border-slate-300 px-3 py-2" data-test="split-ranges-input" />
+                   class="input" data-test="split-ranges-input" />
           } @else if (splitMode() === 'every_n') {
             <input type="number" min="1" [ngModel]="splitEveryN()" (ngModelChange)="splitEveryN.set(+$event)"
-                   class="w-full rounded border border-slate-300 px-3 py-2" data-test="split-everyn-input" />
+                   class="input" data-test="split-everyn-input" />
           } @else {
-            <p class="text-sm text-slate-500">Splits at each top-level bookmark.</p>
+            <p class="muted text-sm">Splits at each top-level bookmark.</p>
           }
         } @else if (d === 'compress') {
-          <h3 class="mb-4 text-lg font-semibold">Compress</h3>
+          <h3>Compress</h3>
           <select [ngModel]="compressPreset()" (ngModelChange)="compressPreset.set($event)"
-                  class="w-full rounded border border-slate-300 px-3 py-2" data-test="compress-preset">
+                  class="input" data-test="compress-preset">
             <option value="light">Light (lossless)</option>
             <option value="balanced">Balanced</option>
             <option value="strong">Strong (grayscale)</option>
           </select>
         } @else if (d === 'scale') {
-          <h3 class="mb-4 text-lg font-semibold">Scale pages</h3>
-          <select [ngModel]="scaleSize()" (ngModelChange)="scaleSize.set($event)" class="w-full rounded border border-slate-300 px-3 py-2" data-test="scale-size">
+          <h3>Scale pages</h3>
+          <select [ngModel]="scaleSize()" (ngModelChange)="scaleSize.set($event)" class="input" data-test="scale-size">
             <option value="a4">A4</option><option value="letter">Letter</option><option value="legal">Legal</option>
           </select>
         } @else if (d === 'nup') {
-          <h3 class="mb-4 text-lg font-semibold">N-up layout</h3>
-          <select [ngModel]="nupPer()" (ngModelChange)="nupPer.set(+$event)" class="w-full rounded border border-slate-300 px-3 py-2" data-test="nup-per">
+          <h3>N-up layout</h3>
+          <select [ngModel]="nupPer()" (ngModelChange)="nupPer.set(+$event)" class="input" data-test="nup-per">
             <option [value]="2">2 per sheet</option><option [value]="4">4 per sheet</option>
           </select>
         } @else if (d === 'insert') {
-          <h3 class="mb-4 text-lg font-semibold">Insert blank pages</h3>
-          <label for="insert-at" class="text-sm text-slate-500">At index</label>
-          <input id="insert-at" type="number" min="0" [ngModel]="insertAt()" (ngModelChange)="insertAt.set(+$event)" class="mb-2 w-full rounded border border-slate-300 px-3 py-2" data-test="insert-at" />
-          <label for="insert-count" class="text-sm text-slate-500">Count</label>
-          <input id="insert-count" type="number" min="1" [ngModel]="insertCount()" (ngModelChange)="insertCount.set(+$event)" class="w-full rounded border border-slate-300 px-3 py-2" data-test="insert-count" />
+          <h3>Insert blank pages</h3>
+          <label for="insert-at">At index</label>
+          <input id="insert-at" type="number" min="0" [ngModel]="insertAt()" (ngModelChange)="insertAt.set(+$event)" class="input mb-2" data-test="insert-at" />
+          <label for="insert-count">Count</label>
+          <input id="insert-count" type="number" min="1" [ngModel]="insertCount()" (ngModelChange)="insertCount.set(+$event)" class="input" data-test="insert-count" />
         }
-        <div class="mt-6 flex justify-end gap-3">
-          <button (click)="dialog.set(null)" class="rounded-lg px-4 py-2 text-slate-600 hover:bg-slate-100" data-test="dialog-cancel">Cancel</button>
-          <button (click)="applyDialog()" class="rounded-lg bg-indigo-600 px-4 py-2 text-white hover:bg-indigo-700" data-test="dialog-apply">Apply</button>
+        <div class="modal-actions">
+          <button (click)="dialog.set(null)" class="btn btn-ghost" data-test="dialog-cancel">Cancel</button>
+          <button (click)="applyDialog()" class="btn btn-primary" data-test="dialog-apply">Apply</button>
         </div>
       </div>
     </div>
   }
 
   @if (passwordPrompt()) {
-    <div class="fixed inset-0 z-40 flex items-center justify-center bg-black/40">
-      <div class="w-full max-w-sm rounded-xl bg-white p-6 shadow-xl">
-        <h3 class="mb-4 text-lg font-semibold">This document is protected</h3>
-        <input #pw type="password" placeholder="Password" class="mb-4 w-full rounded border border-slate-300 px-3 py-2" data-test="pdf-password" />
-        <div class="flex justify-end gap-3">
-          <button (click)="passwordPrompt.set(false)" class="rounded-lg px-4 py-2 text-slate-600">Skip</button>
-          <button (click)="submitPassword(pw.value)" class="rounded-lg bg-indigo-600 px-4 py-2 text-white"
+    <div class="scrim">
+      <div class="modal">
+        <h3>This document is protected</h3>
+        <input #pw type="password" placeholder="Password" class="input mb-4" data-test="pdf-password" />
+        <div class="modal-actions">
+          <button (click)="passwordPrompt.set(false)" class="btn btn-ghost">Skip</button>
+          <button (click)="submitPassword(pw.value)" class="btn btn-primary"
                   data-test="pdf-password-submit">Unlock</button>
         </div>
       </div>
@@ -359,7 +390,7 @@
   <div class="flex h-full flex-col items-center justify-center gap-3" data-test="workspace-loading"
        role="status" aria-live="polite">
     <app-spinner />
-    <p class="text-sm text-slate-500">Opening your document…</p>
+    <p class="muted text-sm">Opening your document…</p>
   </div>
 } @else {
   <!-- The branch that did not exist. A stale or foreign /app/doc/:id, a 500,
@@ -368,12 +399,15 @@
        happened. -->
   <div class="flex h-full flex-col items-center justify-center gap-4 px-6 text-center"
        data-test="workspace-error" role="alert">
-    <div class="text-4xl">📄</div>
-    <p class="text-lg font-medium text-slate-700" data-test="workspace-error-message">
+    <svg class="ti text-ink-faint" viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M6.5 3.5h7l4 4v13h-11z" />
+      <path d="M13.5 3.5v4h4" />
+    </svg>
+    <p class="text-ink text-lg font-medium" data-test="workspace-error-message">
       {{ viewer.error()?.message || 'That document could not be opened.' }}
     </p>
     @if (viewer.error()?.code === 'guest_expired') {
-      <p class="max-w-md text-sm text-slate-500">
+      <p class="muted max-w-md text-sm">
         Guest files are deleted automatically. Anything you do now starts a fresh session.
       </p>
     }
@@ -384,7 +418,7 @@
            dropped connection — is worth one. -->
       @if (viewer.error()?.code !== 'guest_expired') {
         <button type="button" (click)="retryLoad()"
-                class="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                class="btn btn-secondary"
                 data-test="workspace-retry">Try again</button>
       }
       <!-- A guest has no dashboard: /app/dashboard is account-gated, so this
@@ -392,7 +426,7 @@
            fresh session" a signup wall instead — the exact wall §21.3 forbids.
            For a guest, starting fresh means uploading again. -->
       <a [routerLink]="auth.isAuthenticated() ? '/app/dashboard' : '/'"
-         class="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700"
+         class="btn btn-primary"
          data-test="workspace-error-home">
         {{ auth.isAuthenticated() ? 'Back to dashboard' : 'Upload a file' }}
       </a>

@@ -196,7 +196,7 @@ export class Annotate {
       page: a.page,
       shape: 'rect',
       rect: a.rect,
-      stroke: a.color ?? '#0f172a',
+      stroke: a.color ?? '#332D24',
       fill: a.fill ?? null,
       opacity: a.opacity ?? 1,
       width: a.width || 2,
@@ -236,7 +236,7 @@ export class Annotate {
       case 'circle':
         return { ...base, shape: 'ellipse' };
       case 'note':
-        return { ...base, fill: a.color ?? '#fbbf24', label: '💬' };
+        return { ...base, fill: a.color ?? '#D8B25E', label: '❝' };
       case 'free_text':
         return { ...base, label: (a.contents || 'Text').slice(0, 24) };
       case 'stamp':

@@ -16,35 +16,44 @@ import { environment } from '../../../environments/environment';
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [RouterLink],
   template: `
-    <div class="mx-auto w-full max-w-lg p-8" data-test="verify-email-page">
-      @switch (state()) {
-        @case ('done') {
-          <h1 class="text-xl font-semibold text-slate-800" data-test="verified">
-            Address confirmed
-          </h1>
-          <p class="mt-2 text-sm text-slate-600">
-            {{ email() }} is verified. You can now send documents to other
-            people for signature.
-          </p>
-          <a routerLink="/app/dashboard"
-             class="mt-4 inline-block rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white">
-            Back to your documents
-          </a>
+    <main class="flex min-h-dvh items-center justify-center p-6"
+          data-test="verify-email-page">
+      <div class="card pad-6 w-full max-w-sm">
+        @switch (state()) {
+          @case ('done') {
+            <!-- The hanko marks the completion (§1): the address is proven. -->
+            <div class="flex items-center gap-3">
+              <span class="stamp">Done</span>
+              <h1 class="!text-lg" data-test="verified">
+                Address confirmed
+              </h1>
+            </div>
+            <p class="muted mt-3 text-sm">
+              {{ email() }} is verified. You can now send documents to other
+              people for signature.
+            </p>
+            <a routerLink="/app/dashboard" class="btn btn-secondary mt-5">
+              Back to your documents
+            </a>
+          }
+          @case ('error') {
+            <h1 class="!text-lg" data-test="verify-failed">
+              That link has expired
+            </h1>
+            <p class="muted mt-2 text-sm">
+              Verification links last a couple of days. Sign in and ask for a new
+              one from your settings.
+            </p>
+          }
+          @default {
+            <div class="breath">
+              <div class="breath-dot" aria-hidden="true"></div>
+              <p>One moment…</p>
+            </div>
+          }
         }
-        @case ('error') {
-          <h1 class="text-xl font-semibold text-slate-800" data-test="verify-failed">
-            That link has expired
-          </h1>
-          <p class="mt-2 text-sm text-slate-600">
-            Verification links last a couple of days. Sign in and ask for a new
-            one from your settings.
-          </p>
-        }
-        @default {
-          <p class="text-sm text-slate-500">One moment…</p>
-        }
-      }
-    </div>
+      </div>
+    </main>
   `,
 })
 export class VerifyEmailPage {

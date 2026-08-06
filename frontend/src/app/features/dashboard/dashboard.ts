@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, DestroyRef, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, DestroyRef, computed, effect, inject, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
@@ -74,9 +74,56 @@ export class Dashboard {
   protected importUrl = signal('');
   protected readonly importable = IMPORTABLE;
 
+  /** Upload rows may show only what is in flight or failed — a completed
+   *  upload appears exactly once, as its grid card wearing the stamp (D2). */
+  protected activeUploads = computed(() =>
+    this.upload.uploads().filter((u) => u.status !== 'done'));
+
+  /** Documents wearing the transient "Just uploaded" stamp (D2, ~6 s each). */
+  protected recentlyUploaded = signal<Set<string>>(new Set());
+  /** Ids already on screen, so the effect below can tell a fresh arrival from a reload. */
+  private seenDocIds = new Set<string>();
+  /** Armed by an upload completion; the next grid refresh consumes it. */
+  private uploadLandedAt = 0;
+  private stampTimers = new Set<ReturnType<typeof setTimeout>>();
+
   constructor() {
     this.docs.load();
     this.folders.load();
+
+    // D2 — the upload facade reports completion without handing back the
+    // created document, so recency is computed here: right after an upload
+    // completes (`uploadLandedAt` is armed in `onFilesPicked`/`retryRepair`),
+    // ids that appear in the grid for the first time — and were created in the
+    // last few seconds — are the fresh uploads. Each wears the stamp for ~6 s.
+    effect(() => {
+      const docs = this.docs.documents();
+      const now = Date.now();
+      const fresh = now - this.uploadLandedAt < 5000
+        ? docs
+            .filter((d) => !this.seenDocIds.has(d.id)
+              && now - new Date(d.created_at).getTime() < 30_000)
+            .map((d) => d.id)
+        : [];
+      if (fresh.length) {
+        // Consumed: a folder or search change seconds later must not stamp.
+        this.uploadLandedAt = 0;
+        this.recentlyUploaded.update((ids) => new Set([...ids, ...fresh]));
+        const timer = setTimeout(() => {
+          this.stampTimers.delete(timer);
+          this.recentlyUploaded.update((ids) => {
+            const next = new Set(ids);
+            for (const id of fresh) next.delete(id);
+            return next;
+          });
+        }, 6000);
+        this.stampTimers.add(timer);
+      }
+      this.seenDocIds = new Set(docs.map((d) => d.id));
+    });
+    this.destroyRef.onDestroy(() => {
+      for (const timer of this.stampTimers) clearTimeout(timer);
+    });
   }
 
   onSearch(): void {
@@ -118,6 +165,7 @@ export class Dashboard {
     const others = files.filter((f) => !isPdf(f));
     if (pdfs.length) {
       this.upload.uploadFiles(pdfs, this.docs.folder(), () => {
+        this.uploadLandedAt = Date.now();
         this.docs.load();
         this.toast.success('Uploaded');
       });
@@ -176,6 +224,7 @@ export class Dashboard {
 
   retryRepair(item: UploadItem): void {
     this.upload.retryWithRepair(item, this.docs.folder(), () => {
+      this.uploadLandedAt = Date.now();
       this.docs.load();
       this.toast.success('Repaired & uploaded');
     });

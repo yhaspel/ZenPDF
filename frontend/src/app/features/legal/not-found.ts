@@ -3,7 +3,9 @@ import { Meta, Title } from '@angular/platform-browser';
 import { RouterLink } from '@angular/router';
 
 import { TOOL_PAGES } from '../../core/tool-pages';
+import { Brand } from '../../shared/brand';
 import { SiteFooter } from '../../shared/site-footer';
+import { ThemeToggle } from '../../shared/theme-toggle';
 
 /**
  * 404 (phase-10 §10.5).
@@ -17,36 +19,46 @@ import { SiteFooter } from '../../shared/site-footer';
 @Component({
   selector: 'app-not-found',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [RouterLink, SiteFooter],
+  imports: [RouterLink, Brand, SiteFooter, ThemeToggle],
   template: `
-    <div class="flex min-h-screen flex-col bg-slate-50">
-      <main class="mx-auto w-full max-w-2xl flex-1 px-6 py-20 text-center">
-        <p class="text-3xl">🧘‍♀️</p>
-        <h1 class="mt-4 text-2xl font-bold text-slate-800" data-test="not-found">
-          That page is not here
-        </h1>
-        <p class="mt-2 text-slate-500">
-          The address may be mistyped, or the page may have moved. Nothing you
-          uploaded is affected.
-        </p>
-        <p class="mt-6">
-          <a routerLink="/" class="text-indigo-600 underline" data-test="not-found-home">
-            Back to ZenPDF
-          </a>
-        </p>
+    <div class="page-shell">
+      <header class="hdr">
+        <a routerLink="/" class="brand" aria-label="ZenPDF"><app-brand /></a>
+        <nav>
+          <app-theme-toggle />
+        </nav>
+      </header>
 
-        <h2 class="mt-10 text-sm font-semibold text-slate-600">Popular tools</h2>
-        <ul class="mt-3 flex flex-wrap justify-center gap-2 text-sm">
+      <main class="wrap-narrow w-full pb-16 pt-20 text-center">
+        <!-- The folded sheet (§1): the screen's one sheet, no illustration. -->
+        <div class="sheet mx-auto max-w-[26rem] px-8 py-10">
+          <h1 class="!text-[22px]" data-test="not-found">
+            That page is not here
+          </h1>
+          <p class="muted mt-2.5 text-sm">
+            The address may be mistyped, or the page may have moved. Nothing you
+            uploaded is affected.
+          </p>
+          <p class="mt-6">
+            <a routerLink="/" data-test="not-found-home">
+              Back to ZenPDF
+            </a>
+          </p>
+        </div>
+
+        <h2 class="kicker mt-12">Popular tools</h2>
+        <ul class="mt-4 flex flex-wrap justify-center gap-2.5 text-[13.5px]">
           @for (tool of popular; track tool.slug) {
             <li>
               <a [routerLink]="'/' + tool.slug"
-                 class="rounded-full border border-slate-200 bg-white px-3 py-1 text-slate-600 underline">
+                 class="border-border bg-surface-raised text-ink-muted inline-block rounded-full border px-3.5 py-1.5">
                 {{ tool.h1 }}
               </a>
             </li>
           }
         </ul>
       </main>
+
       <app-site-footer />
     </div>
   `,

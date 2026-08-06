@@ -21,14 +21,14 @@ import { DocumentsService } from '../core/services/documents.service';
       <img [src]="u" [alt]="'page ' + (page() + 1)" class="h-full w-full object-contain" />
     } @else if (failed()) {
       <button type="button" (click)="retry()"
-              class="flex h-full w-full flex-col items-center justify-center gap-1 bg-slate-100 text-slate-500 hover:bg-slate-200"
+              class="bg-surface text-ink-muted hover:bg-bg flex h-full w-full flex-col items-center justify-center gap-1"
               [attr.aria-label]="'Preview of page ' + (page() + 1) + ' failed to load. Retry.'"
               data-test="thumb-failed">
         <span class="text-base" aria-hidden="true">↻</span>
         <span class="text-[10px] leading-none">Retry</span>
       </button>
     } @else {
-      <div class="flex h-full w-full items-center justify-center bg-slate-100 text-slate-500"
+      <div class="bg-surface text-ink-faint flex h-full w-full items-center justify-center"
            data-test="thumb-loading">
         <span class="text-xs">…</span>
       </div>

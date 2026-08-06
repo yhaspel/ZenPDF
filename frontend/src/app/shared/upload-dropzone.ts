@@ -1,22 +1,30 @@
 import { ChangeDetectionStrategy, Component, input, output, signal } from '@angular/core';
 
+/**
+ * "Paper laid on a desk" (design contract §3): a raised sheet with a dashed
+ * hairline that receives the paper — on drag-over the border turns solid
+ * vermilion and the sheet takes an accent wash. The whole zone is the click
+ * target and a labelled file input.
+ */
 @Component({
   selector: 'app-upload-dropzone',
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <label
-      class="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed p-8 text-center transition"
-      [class.border-indigo-400]="dragging()"
-      [class.bg-indigo-50]="dragging()"
-      [class.border-slate-300]="!dragging()"
+      class="dropzone"
+      [class.dragging]="dragging()"
       (dragover)="onDragOver($event)"
       (dragleave)="dragging.set(false)"
       (drop)="onDrop($event)"
       data-test="dropzone"
     >
-      <span class="text-3xl">⬆️</span>
-      <span class="font-medium text-slate-600">{{ prompt() }}</span>
-      <span class="text-xs text-slate-500">{{ hint() }}</span>
+      <svg class="ti" viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M6.5 3.5h7l4 4v13h-11z" />
+        <path d="M13.5 3.5v4h4" />
+        <path d="M12 10v6M9.8 13.8 12 16l2.2-2.2" />
+      </svg>
+      <span class="dz-prompt">{{ prompt() }}</span>
+      <span class="dz-hint">{{ hint() }}</span>
       <input
         type="file"
         aria-label="Choose PDF files to upload"
@@ -36,7 +44,7 @@ export class UploadDropzone {
    * PDFs on the Word-to-PDF page is a dead end with no explanation.
    */
   readonly accept = input('application/pdf,.pdf');
-  readonly prompt = input('Drop PDFs here or click to browse');
+  readonly prompt = input('Drop PDFs here, or click to browse');
   readonly hint = input('Only PDF files are accepted');
 
   readonly filesPicked = output<File[]>();

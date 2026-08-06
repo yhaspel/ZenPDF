@@ -41,13 +41,10 @@ export const SIGNATURE_FONTS = [
   imports: [FormsModule],
   template: `
     <div class="w-full" data-test="signature-pad">
-      <div class="mb-3 flex gap-1 text-xs">
+      <div class="seg mb-3" role="tablist" aria-label="How to make your signature">
         @for (t of tabs; track t.value) {
-          <button type="button" class="rounded-full border px-3 py-1"
-                  [class.border-indigo-500]="tab() === t.value"
-                  [class.bg-indigo-50]="tab() === t.value"
-                  [class.text-indigo-700]="tab() === t.value"
-                  [class.border-slate-300]="tab() !== t.value"
+          <button type="button"
+                  [class.seg-active]="tab() === t.value"
                   (click)="tab.set(t.value)"
                   [attr.aria-pressed]="tab() === t.value"
                   [attr.data-test]="'sig-tab-' + t.value">{{ t.label }}</button>
@@ -56,30 +53,35 @@ export const SIGNATURE_FONTS = [
 
       @switch (tab()) {
         @case ('draw') {
-          <canvas #pad
-                  class="w-full touch-none rounded-lg border border-slate-300 bg-white"
-                  [width]="width()" [height]="height()"
-                  (pointerdown)="down($event)"
-                  (pointermove)="move($event)"
-                  (pointerup)="up()"
-                  (pointerleave)="up()"
-                  data-test="sig-canvas"></canvas>
-          <p class="mt-1 text-[11px] text-slate-500">
+          <!-- The canvas is paper — pure white by contract (§3), in both modes,
+               with a dashed baseline overlaid 16px above the bottom edge. The
+               rule is an overlay, not ink: the exported PNG stays clean. -->
+          <div class="relative">
+            <canvas #pad
+                    class="border-border-strong rounded-2 w-full touch-none border bg-white"
+                    [width]="width()" [height]="height()"
+                    (pointerdown)="down($event)"
+                    (pointermove)="move($event)"
+                    (pointerup)="up()"
+                    (pointerleave)="up()"
+                    data-test="sig-canvas"></canvas>
+            <div class="border-border-strong pointer-events-none absolute inset-x-4 bottom-4 border-t border-dashed"
+                 aria-hidden="true"></div>
+          </div>
+          <p class="field-hint">
             Draw with a finger, a stylus or the mouse.
           </p>
         }
         @case ('type') {
-          <input class="w-full rounded-lg border border-slate-300 px-3 py-2"
+          <input class="input"
                  placeholder="Type your name"
                  [ngModel]="typed()" (ngModelChange)="onTyped($event)"
                  aria-label="Your name, as you want it to appear"
                  data-test="sig-text" />
-          <div class="mt-2 flex flex-wrap gap-1 text-xs">
+          <div class="seg mt-2 flex-wrap" aria-label="Signature font">
             @for (font of fonts; track font.value) {
-              <button type="button" class="rounded-full border px-3 py-1"
-                      [class.border-indigo-500]="chosenFont() === font.value"
-                      [class.bg-indigo-50]="chosenFont() === font.value"
-                      [class.border-slate-300]="chosenFont() !== font.value"
+              <button type="button"
+                      [class.seg-active]="chosenFont() === font.value"
                       (click)="chooseFont(font.value)"
                       [attr.aria-pressed]="chosenFont() === font.value"
                       [attr.data-test]="'sig-font-' + font.value">
@@ -90,26 +92,26 @@ export const SIGNATURE_FONTS = [
           <div aria-live="polite">
           @if (preview()) {
             <img [src]="preview()" alt="Your typed signature"
-                 class="mt-3 max-h-24 rounded border border-slate-200 bg-white p-2"
+                 class="border-border rounded-1 mt-3 max-h-24 border bg-white p-2"
                  data-test="sig-preview" />
           }
           </div>
         }
         @case ('upload') {
-          <label class="block text-xs text-slate-500">
+          <label>
             A photo or scan of your signature
-            <input type="file" accept="image/png,image/jpeg" class="mt-1 w-full text-xs"
+            <input type="file" accept="image/png,image/jpeg" class="text-ink-muted mt-1 w-full text-xs"
                    aria-label="Choose a signature image"
                    (change)="onFile($event)" data-test="sig-file" />
           </label>
-          <p class="mt-1 text-[11px] text-slate-500">
+          <p class="field-hint">
             The paper is removed by brightness, which is crude: a dark or
             shadowed photo comes back as a dark blob. Drawing gives a better
             result.
           </p>
           @if (preview()) {
             <img [src]="preview()" alt="Your signature"
-                 class="mt-3 max-h-24 rounded border border-slate-200 bg-white p-2"
+                 class="border-border rounded-1 mt-3 max-h-24 border bg-white p-2"
                  data-test="sig-preview" />
           }
         }
@@ -117,11 +119,11 @@ export const SIGNATURE_FONTS = [
 
       <div class="mt-3 flex items-center gap-2">
         <button type="button"
-                class="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-40"
+                class="btn btn-primary btn-sm"
                 [disabled]="!hasInk()" (click)="use()" data-test="sig-use">
           {{ useLabel() }}
         </button>
-        <button type="button" class="rounded-lg px-3 py-2 text-sm text-slate-500"
+        <button type="button" class="btn btn-ghost btn-sm"
                 (click)="clear()" data-test="sig-clear">Clear</button>
       </div>
     </div>
@@ -185,8 +187,9 @@ export class SignaturePad {
     this.last = this.point(event);
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
-    ctx.lineWidth = 2.5;
-    ctx.strokeStyle = '#0f172a';
+    // Ink on paper: the contract's signature stroke (§3) — not raw black.
+    ctx.lineWidth = 2.6;
+    ctx.strokeStyle = '#332D24';
   }
 
   protected move(event: PointerEvent): void {

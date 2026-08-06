@@ -13,7 +13,9 @@ import { DocumentsService } from '../../core/services/documents.service';
 import { ToolPageDef } from '../../core/tool-pages';
 import { saveBlob } from '../../shared/save-blob';
 import { AdSlot } from '../../shared/ad-slot';
+import { Brand } from '../../shared/brand';
 import { SiteFooter } from '../../shared/site-footer';
+import { ThemeToggle } from '../../shared/theme-toggle';
 import { UploadDropzone } from '../../shared/upload-dropzone';
 
 type Phase = 'idle' | 'uploading' | 'running' | 'done' | 'error';
@@ -32,7 +34,7 @@ const IMPORT_KINDS = new Set(['word-to-pdf', 'jpg-to-pdf', 'html-to-pdf']);
 @Component({
   selector: 'app-tool-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [AdSlot, UploadDropzone, RouterLink, SiteFooter],
+  imports: [AdSlot, UploadDropzone, RouterLink, SiteFooter, Brand, ThemeToggle],
   templateUrl: './tool-page.html',
 })
 export class ToolPage {
@@ -56,10 +58,63 @@ export class ToolPage {
   /** Set when the tool produced a downloadable file rather than a document. */
   protected exportJob = signal<Job | null>(null);
 
+  /** 0–100 when the polled job reports progress; null when it has none yet. */
+  protected runningProgress = signal<number | null>(null);
+
   protected readonly ready = computed(() => this.picked().length >= this.tool().minFiles);
   protected readonly busy = computed(() =>
     ['uploading', 'running'].includes(this.phase()),
   );
+
+  /** The breath's counting copy (design contract §3): a calm progressive verb,
+   *  with the job's own progress when the poll reports one. */
+  protected readonly workingCopy = computed(() => {
+    if (this.phase() === 'uploading') {
+      const n = this.picked().length;
+      return n > 1 ? `Uploading ${n} files…` : 'Uploading…';
+    }
+    const verbs: Partial<Record<string, string>> = {
+      merge: 'Merging',
+      split: 'Splitting',
+      compress: 'Compressing',
+      rotate: 'Rotating',
+      'delete-pages': 'Removing pages',
+      'extract-pages': 'Extracting pages',
+      organize: 'Reordering',
+      watermark: 'Adding the watermark',
+      'page-numbers': 'Numbering pages',
+      ocr: 'Reading the scan',
+      'pdf-to-word': 'Converting',
+      'word-to-pdf': 'Converting',
+      'jpg-to-pdf': 'Converting',
+      'pdf-to-jpg': 'Converting',
+      'html-to-pdf': 'Converting',
+      repair: 'Repairing',
+      protect: 'Protecting',
+      unlock: 'Unlocking',
+    };
+    const verb = verbs[this.tool().kind] ?? 'Working on it';
+    const progress = this.runningProgress();
+    return progress && progress > 0 && progress < 100
+      ? `${verb}… ${Math.round(progress)}%`
+      : `${verb}…`;
+  });
+
+  /** The hanko marks completions only (§1): MERGED for the merge, DONE else. */
+  protected readonly stampWord = computed(() =>
+    this.tool().kind === 'merge' ? 'Merged' : 'Done',
+  );
+
+  /** One calm sentence beside the stamp (§4 tool page). */
+  protected readonly summary = computed(() => {
+    if (this.tool().kind === 'merge') {
+      const n = this.picked().length;
+      return n === 2 ? 'Two files became one.' : `${n} files became one.`;
+    }
+    if (this.exportJob()) return 'Converted and ready to download.';
+    const n = this.results().length;
+    return n > 1 ? `${n} files are ready.` : 'Done.';
+  });
 
   constructor() {
     // Runs on the server too, so the crawler sees the real title/meta.
@@ -141,6 +196,7 @@ export class ToolPage {
     this.phase.set('uploading');
     this.error.set('');
     this.results.set([]);
+    this.runningProgress.set(null);
 
     // Mint the guest session *before* uploading in parallel. Minting is
     // per-request, so two concurrent tokenless uploads would create two
@@ -187,6 +243,7 @@ export class ToolPage {
       : this.convert.importFile(files[0]);
     job$.subscribe({
       next: (job) => {
+        if (typeof job.progress === 'number') this.runningProgress.set(job.progress);
         if (job.status === 'succeeded') {
           this.onSuccess(job);
         } else if (job.status === 'failed') {
@@ -294,6 +351,7 @@ export class ToolPage {
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
       next: (job: Job) => {
+        if (typeof job.progress === 'number') this.runningProgress.set(job.progress);
         if (job.status === 'succeeded') {
           this.onSuccess(job, fallback);
         } else if (job.status === 'failed') {
@@ -338,6 +396,7 @@ export class ToolPage {
       }),
     ).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (job) => {
+        if (typeof job.progress === 'number') this.runningProgress.set(job.progress);
         if (job.status === 'succeeded') {
           this.exportJob.set(job);
           this.results.set([doc]);
@@ -362,10 +421,10 @@ export class ToolPage {
   }
 
   promptFor(kind: string): string {
-    if (kind === 'word-to-pdf') return 'Drop a document here or click to browse';
-    if (kind === 'jpg-to-pdf') return 'Drop images here or click to browse';
-    if (kind === 'html-to-pdf') return 'Drop an HTML file here or click to browse';
-    return 'Drop PDFs here or click to browse';
+    if (kind === 'word-to-pdf') return 'Drop a document here, or click to browse';
+    if (kind === 'jpg-to-pdf') return 'Drop images here, or click to browse';
+    if (kind === 'html-to-pdf') return 'Drop an HTML file here, or click to browse';
+    return 'Drop PDFs here, or click to browse';
   }
 
   hintFor(kind: string): string {

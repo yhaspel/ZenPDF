@@ -1,7 +1,11 @@
 import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
 import { Meta, Title } from '@angular/platform-browser';
+import { RouterLink } from '@angular/router';
 
 import { EsignService } from '../../core/services/esign.service';
+import { Brand } from '../../shared/brand';
+import { SiteFooter } from '../../shared/site-footer';
+import { ThemeToggle } from '../../shared/theme-toggle';
 
 /**
  * `/legal/esign-disclosure` — the consent text as a page of its own (§7).
@@ -15,24 +19,36 @@ import { EsignService } from '../../core/services/esign.service';
 @Component({
   selector: 'app-disclosure-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
+  imports: [RouterLink, Brand, SiteFooter, ThemeToggle],
   template: `
-    <div class="mx-auto w-full max-w-2xl p-6" data-test="disclosure-page">
-      <h1 class="text-2xl font-semibold text-slate-800" data-test="disclosure-h1">
-        Consent to use electronic records and signatures
-      </h1>
-      <p class="mt-1 text-xs text-slate-500">
-        Version {{ version() }}
-        @if (hash()) {
-          · SHA-256 <span class="font-mono">{{ hash() }}</span>
-        }
-      </p>
-      <p class="mt-3 text-sm text-slate-600">
-        This is the exact text every signer agrees to before signing through
-        ZenPDF. Its fingerprint is recorded in the audit trail alongside each
-        consent, so the record still identifies this wording after it changes.
-      </p>
-      <pre class="mt-4 whitespace-pre-wrap rounded-lg border border-slate-200 bg-white p-4 font-sans text-sm leading-6 text-slate-700"
-           data-test="disclosure-text">{{ text() }}</pre>
+    <div class="page-shell" data-test="disclosure-page">
+      <header class="hdr">
+        <a routerLink="/" class="brand" aria-label="ZenPDF"><app-brand /></a>
+        <nav>
+          <app-theme-toggle />
+        </nav>
+      </header>
+
+      <main class="wrap-reading w-full pb-16 pt-12">
+        <h1 data-test="disclosure-h1">
+          Consent to use electronic records and signatures
+        </h1>
+        <p class="faint mt-2 text-[12.5px]">
+          Version {{ version() }}
+          @if (hash()) {
+            · SHA-256 <span class="font-mono">{{ hash() }}</span>
+          }
+        </p>
+        <p class="muted mt-4 text-base leading-[1.75]">
+          This is the exact text every signer agrees to before signing through
+          ZenPDF. Its fingerprint is recorded in the audit trail alongside each
+          consent, so the record still identifies this wording after it changes.
+        </p>
+        <pre class="border-border bg-surface-raised rounded-2 text-ink-muted mt-6 whitespace-pre-wrap border p-5 font-ui text-base leading-[1.75]"
+             data-test="disclosure-text">{{ text() }}</pre>
+      </main>
+
+      <app-site-footer />
     </div>
   `,
 })

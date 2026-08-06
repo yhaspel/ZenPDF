@@ -11,19 +11,18 @@ import { ToastService } from './toast.service';
          (§10.3). aria-atomic belongs on each toast, not here: on the
          container it re-announces the whole stack every time one arrives or
          expires. -->
-    <div class="fixed bottom-4 right-4 z-50 flex flex-col gap-2" data-test="toast-host"
+    <div class="fixed bottom-4 end-4 z-50 flex flex-col gap-2" data-test="toast-host"
          aria-live="polite">
       @for (t of toasts.toasts(); track t.id) {
-        <!-- emerald-700/rose-700 rather than -600: white on emerald-600 is
-             3.65:1, under the 4.5:1 AA threshold for text this size.
-             role=alert on errors, because an error is the one a screen reader
-             should hear before the sentence it was reading finishes. -->
+        <!-- Ink on paper with a colored spine — never a colored fill (design
+             contract §3). role=alert on errors, because an error is the one a
+             screen reader should hear before the sentence it was reading
+             finishes. -->
         <button
           type="button"
-          class="rounded-lg px-4 py-3 text-left text-sm text-white shadow-lg"
-          [class.bg-emerald-700]="t.type === 'success'"
-          [class.bg-rose-700]="t.type === 'error'"
-          [class.bg-slate-700]="t.type === 'info'"
+          class="toast text-start"
+          [class.toast-success]="t.type === 'success'"
+          [class.toast-error]="t.type === 'error'"
           [attr.role]="t.type === 'error' ? 'alert' : 'status'"
           aria-atomic="true"
           [attr.data-test]="'toast-' + t.type"

@@ -1,19 +1,19 @@
 <div class="flex min-h-0 flex-1" data-test="sign-mode">
-  <aside class="flex w-80 shrink-0 flex-col overflow-y-auto border-r border-slate-200 bg-white text-sm">
+  <aside class="border-border bg-surface flex w-80 shrink-0 flex-col overflow-y-auto border-e text-sm">
     <div class="flex flex-col gap-3 p-3">
-      <p class="text-[11px] text-slate-500">
+      <p class="muted text-xs">
         Draw or type your signature, then click where it goes on the page.
       </p>
 
       @if (esign.preview(); as preview) {
-        <div class="flex items-center gap-2 rounded border border-indigo-200 bg-indigo-50/40 p-2"
+        <div class="border-border bg-surface-raised rounded-2 flex items-center gap-2 border p-2"
              data-test="chosen-signature">
           <img [src]="preview" alt="Your signature" class="max-h-10" />
-          <button class="ml-auto text-[11px] text-indigo-600 underline"
+          <button class="linklike ms-auto text-xs underline"
                   (click)="padOpen.set(true)" data-test="change-signature">Change</button>
         </div>
       } @else {
-        <button class="rounded bg-indigo-600 px-3 py-1.5 font-medium text-white"
+        <button class="btn btn-secondary"
                 (click)="padOpen.set(true)" data-test="make-signature">
           Create your signature
         </button>
@@ -21,12 +21,12 @@
 
       @if (esign.saved().length) {
         <div>
-          <p class="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+          <p class="kicker">
             Saved
           </p>
           <div class="mt-1 flex flex-wrap gap-2">
             @for (row of esign.saved(); track row.id) {
-              <button class="rounded border border-slate-200 bg-white p-1"
+              <button class="border-border bg-surface-raised rounded-1 border p-1"
                       (click)="choose(row)" [attr.data-test]="'saved-' + row.id">
                 <img [src]="signatureUrl(row)" alt="Saved signature" class="max-h-8" />
               </button>
@@ -35,38 +35,38 @@
         </div>
       }
 
-      <label class="flex items-center gap-2 text-[11px] text-slate-600">
+      <label class="!flex items-center gap-2">
         <input type="checkbox" [ngModel]="includeDate()"
                (ngModelChange)="includeDate.set($event)" data-test="include-date" />
         Add the date underneath
       </label>
 
       @if (esign.placements().length) {
-        <p class="text-[11px] text-slate-500" data-test="placement-count">
+        <p class="muted text-xs" data-test="placement-count">
           {{ esign.placements().length }} placement(s). Click one to remove it.
         </p>
       }
 
-      <button class="rounded bg-indigo-600 px-3 py-1.5 font-medium text-white disabled:opacity-40"
+      <button class="btn btn-primary"
               [disabled]="esign.busy() || !esign.placements().length"
               (click)="apply()" data-test="apply-signature">
         Apply signature
       </button>
-      <p class="text-[10px] text-slate-500">
+      <p class="field-hint">
         Signing flattens the signature into the page, so it cannot be moved
         afterwards. Earlier versions stay in the document's history.
       </p>
 
-      <div class="mt-2 border-t border-slate-100 pt-3">
-        <p class="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+      <div class="border-border mt-2 border-t pt-3">
+        <p class="kicker">
           Somebody else needs to sign?
         </p>
-        <button class="mt-1 w-full rounded border border-slate-300 px-2 py-1 text-[11px]"
+        <button class="btn btn-secondary btn-sm btn-block mt-1"
                 (click)="sendForSignature()" data-test="send-for-signature">
           Send for signature
         </button>
         @if (!isAccount()) {
-          <p class="mt-1 text-[10px] text-slate-500">
+          <p class="field-hint">
             Sending needs a free account — signing it yourself does not.
           </p>
         }
@@ -74,17 +74,17 @@
     </div>
   </aside>
 
-  <main class="flex min-h-0 flex-1 flex-col bg-slate-100">
-    <div class="flex items-center gap-2 border-b border-slate-200 bg-white px-4 py-2 text-sm">
+  <main class="canvas-backdrop flex min-h-0 flex-1 flex-col">
+    <div class="border-border bg-surface flex items-center gap-2 border-b px-4 py-2 text-sm">
       <button (click)="prevPage()" [disabled]="page() === 0"
-              class="rounded px-2 py-1 disabled:opacity-30" data-test="sign-prev">‹</button>
-      <span class="text-slate-500" data-test="sign-page">
+              class="btn btn-ghost btn-sm" data-test="sign-prev">‹</button>
+      <span class="muted" data-test="sign-page">
         Page {{ page() + 1 }} / {{ pageCount() }}
       </span>
       <button (click)="nextPage()" [disabled]="page() >= pageCount() - 1"
-              class="rounded px-2 py-1 disabled:opacity-30" data-test="sign-next">›</button>
+              class="btn btn-ghost btn-sm" data-test="sign-next">›</button>
       @if (esign.busy()) {
-        <span class="text-xs text-indigo-500" data-test="sign-busy">working…</span>
+        <span class="text-accent text-xs" data-test="sign-busy">working…</span>
       }
     </div>
     <div class="min-h-0 flex-1 overflow-auto p-6">
@@ -106,27 +106,27 @@
 </div>
 
 @if (padOpen()) {
-  <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+  <div class="scrim"
        data-test="signature-dialog">
-    <div class="w-full max-w-lg rounded-xl bg-white p-5 shadow-xl"
+    <div class="modal modal-wide"
          zenModal role="dialog" aria-modal="true" aria-label="Your signature"
          (zenModalEscape)="padOpen.set(false)">
-      <h3 class="mb-3 text-lg font-semibold text-slate-800">Your signature</h3>
+      <h3>Your signature</h3>
       <app-signature-pad (chosen)="onSignature($event)" />
       @if (isAccount()) {
-        <label class="mt-3 flex items-center gap-2 text-xs text-slate-600">
+        <label class="mt-3 !flex items-center gap-2">
           <input type="checkbox" [ngModel]="keepIt()" (ngModelChange)="keepIt.set($event)"
                  data-test="keep-signature" />
           Keep this signature for next time
         </label>
       } @else {
-        <p class="mt-3 text-[11px] text-slate-500">
+        <p class="muted mt-3 text-xs">
           This signature is kept in this browser for this session only. A free
           account keeps it for next time.
         </p>
       }
-      <div class="mt-3 flex justify-end">
-        <button class="rounded-lg px-4 py-2 text-sm text-slate-500"
+      <div class="modal-actions">
+        <button class="btn btn-ghost"
                 (click)="padOpen.set(false)" data-test="signature-cancel">Cancel</button>
       </div>
     </div>

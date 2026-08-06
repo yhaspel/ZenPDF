@@ -38,11 +38,9 @@ import { ConsentService } from '../core/services/consent.service';
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     @if (visible()) {
-      <aside class="w-full overflow-hidden" [style.min-height.px]="height()"
+      <aside class="ad-frame w-full overflow-hidden" [style.min-height.px]="height()"
              [attr.data-test]="'ad-slot-' + name()" aria-label="Advertisement">
-        <p class="mb-1 text-[10px] uppercase tracking-wide text-slate-500">
-          Advertisement
-        </p>
+        <p class="ad-label">Advertisement</p>
         <ins #unit class="adsbygoogle block"
              [attr.data-ad-client]="client()"
              [attr.data-ad-slot]="unitId()"

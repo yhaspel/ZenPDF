@@ -1,5 +1,197 @@
 @import "tailwindcss";
 
+/* Dark mode is a deliberate choice (or "system"), carried as a `.dark` class on
+   <html> — never inferred from the media query alone, because the user can
+   override it with the header toggle (design contract §5). */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* ---------------------------------------------------------------------------
+   ZenPDF — "Zen ink & paper" design tokens.
+   Source of truth: docs/design/design-instructions.md §2. Components consume
+   the SEMANTIC layer only; primitives exist so the semantic table has names
+   to point at. Both modes are complete: light in :root, dark under `.dark`.
+--------------------------------------------------------------------------- */
+:root {
+  /* --- primitives: paper --- */
+  --paper-0: #FFFDF7;
+  --paper-50: #FBF8F1;
+  --paper-100: #F5F1E6;
+  --paper-200: #EDE7D8;
+  --paper-300: #E3DBC8;
+  --paper-400: #C6BBA1;
+  /* --- primitives: ink --- */
+  --ink-900: #211C15;
+  --ink-800: #332D24;
+  --ink-700: #4A4337;
+  --ink-600: #5F574A;
+  --ink-500: #776E5E;
+  --ink-400: #948A77;
+  /* --- primitives: night paper --- */
+  --night-900: #171310;
+  --night-800: #1E1915;
+  --night-700: #26201A;
+  --night-600: #362F26;
+  --night-500: #4A4234;
+  /* --- primitives: vermilion (the seal) --- */
+  --verm-700: #7E2717;
+  --verm-600: #96301F;
+  --verm-500: #B23A26;
+  --verm-400: #D96A50;
+  --verm-300: #E98B72;
+  /* --- primitives: status --- */
+  --pine-600: #2F6B46;
+  --pine-300: #8CC3A0;
+  --ochre-600: #8A6212;
+  --ochre-300: #D8B25E;
+  --crimson-600: #8E2A38;
+  --crimson-300: #E08296;
+  --water-600: #3D6478;
+  --water-300: #9CC0D4;
+
+  /* --- semantic: light ("day paper") --- */
+  --color-bg: var(--paper-100);
+  --color-surface: var(--paper-50);
+  --color-surface-raised: var(--paper-0);
+  --color-ink: var(--ink-800);
+  --color-ink-strong: var(--ink-900);
+  --color-ink-muted: var(--ink-600);
+  --color-ink-faint: var(--ink-400);
+  --color-accent: var(--verm-500);
+  --color-accent-hover: var(--verm-600);
+  --color-accent-active: var(--verm-700);
+  --color-on-accent: var(--paper-0);
+  --color-accent-surface: #F6E4DD;
+  --color-border: var(--paper-300);
+  --color-border-strong: var(--paper-400);
+  --color-focus: var(--verm-500);
+  --color-success: var(--pine-600);
+  --color-success-surface: #E6EEE2;
+  --color-warning: var(--ochre-600);
+  --color-warning-surface: #F3EAD2;
+  --color-danger: var(--crimson-600);
+  --color-danger-surface: #F3E0E0;
+  --color-info: var(--water-600);
+  --color-info-surface: #E2EAEE;
+  --color-canvas-backdrop: #E9E2D0;
+  --color-page-shadow: rgba(60, 50, 30, 0.18);
+  --color-ad-frame: var(--paper-200);
+  --color-scrim: rgba(33, 28, 21, 0.45);
+
+  /* --- typography --- */
+  --font-display: "Shippori Mincho", Georgia, "Times New Roman", serif;
+  --font-ui: "Zen Kaku Gothic New", -apple-system, "Segoe UI", system-ui, sans-serif;
+
+  /* --- rhythm --- */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+  --space-8: 64px;
+  --space-9: 96px;
+  --radius-1: 4px;
+  --radius-2: 6px;
+  --radius-3: 10px;
+  --border-hairline: 1px;
+  --border-emphasis: 2px;
+  --shadow-1: 0 1px 2px rgba(50, 40, 25, 0.06);
+  --shadow-2: 0 2px 8px rgba(50, 40, 25, 0.10);
+  --shadow-3: 0 8px 28px rgba(50, 40, 25, 0.16);
+  --dur-1: 150ms;
+  --dur-2: 220ms;
+  --dur-3: 300ms;
+  --ease: cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* --- semantic: dark ("night ink") --- */
+.dark {
+  --color-bg: var(--night-900);
+  --color-surface: var(--night-800);
+  --color-surface-raised: var(--night-700);
+  --color-ink: #EFE8DA;
+  --color-ink-strong: #F8F3E7;
+  --color-ink-muted: #BDB29E;
+  --color-ink-faint: #8E8471;
+  --color-accent: var(--verm-400);
+  --color-accent-hover: var(--verm-300);
+  --color-accent-active: #F2A992;
+  --color-on-accent: var(--night-900);
+  --color-accent-surface: #3B241C;
+  --color-border: var(--night-600);
+  --color-border-strong: var(--night-500);
+  --color-focus: var(--verm-400);
+  --color-success: var(--pine-300);
+  --color-success-surface: #22301F;
+  --color-warning: var(--ochre-300);
+  --color-warning-surface: #332A14;
+  --color-danger: var(--crimson-300);
+  --color-danger-surface: #38202A;
+  --color-info: var(--water-300);
+  --color-info-surface: #1D2B33;
+  --color-canvas-backdrop: #121009;
+  --color-page-shadow: rgba(0, 0, 0, 0.55);
+  --color-ad-frame: #231E18;
+  --color-scrim: rgba(0, 0, 0, 0.6);
+  /* Dark surfaces lift by lightness step + hairline border — shadows soften,
+     they never do the lifting alone (§2). */
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.40);
+  --shadow-2: 0 2px 8px rgba(0, 0, 0, 0.45);
+  --shadow-3: 0 8px 28px rgba(0, 0, 0, 0.55);
+}
+
+/* ---------------------------------------------------------------------------
+   Semantic tokens as Tailwind utilities (bg-surface, text-ink-muted,
+   border-border-strong, …). `inline` makes each utility read the runtime
+   custom property, so every utility flips with `.dark` for free and templates
+   never touch a primitive.
+--------------------------------------------------------------------------- */
+@theme inline {
+  --color-bg: var(--color-bg);
+  --color-surface: var(--color-surface);
+  --color-surface-raised: var(--color-surface-raised);
+  --color-ink: var(--color-ink);
+  --color-ink-strong: var(--color-ink-strong);
+  --color-ink-muted: var(--color-ink-muted);
+  --color-ink-faint: var(--color-ink-faint);
+  --color-accent: var(--color-accent);
+  --color-accent-hover: var(--color-accent-hover);
+  --color-accent-active: var(--color-accent-active);
+  --color-on-accent: var(--color-on-accent);
+  --color-accent-surface: var(--color-accent-surface);
+  --color-border: var(--color-border);
+  --color-border-strong: var(--color-border-strong);
+  --color-focus: var(--color-focus);
+  --color-success: var(--color-success);
+  --color-success-surface: var(--color-success-surface);
+  --color-warning: var(--color-warning);
+  --color-warning-surface: var(--color-warning-surface);
+  --color-danger: var(--color-danger);
+  --color-danger-surface: var(--color-danger-surface);
+  --color-info: var(--color-info);
+  --color-info-surface: var(--color-info-surface);
+  --color-canvas-backdrop: var(--color-canvas-backdrop);
+  --color-ad-frame: var(--color-ad-frame);
+  --color-scrim: var(--color-scrim);
+
+  --font-display: var(--font-display);
+  --font-ui: var(--font-ui);
+
+  --radius-1: var(--radius-1);
+  --radius-2: var(--radius-2);
+  --radius-3: var(--radius-3);
+
+  --shadow-1: var(--shadow-1);
+  --shadow-2: var(--shadow-2);
+  --shadow-3: var(--shadow-3);
+}
+
+@theme {
+  /* Contract §2 breakpoints: 2xl is 1440, not Tailwind's default 1536. */
+  --breakpoint-2xl: 90rem;
+}
+
 /* Somebody who has asked their operating system to reduce motion has usually
    asked because motion makes them ill, not because they dislike it (§10.3).
    Transitions become instant rather than merely shorter — a 10 ms slide is

@@ -21,56 +21,66 @@ import { JobsService } from '../../core/services/jobs.service';
 import { ConsentService } from '../../core/services/consent.service';
 import { VerificationService } from '../../core/services/verification.service';
 import { saveBlob } from '../../shared/save-blob';
+import { SiteFooter } from '../../shared/site-footer';
 import { ToastService } from '../../shared/toast.service';
 
 @Component({
   selector: 'app-settings',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [FormsModule, DatePipe],
+  imports: [FormsModule, DatePipe, SiteFooter],
   template: `
-    <div class="mx-auto max-w-2xl p-6">
-      <h1 class="mb-6 text-2xl font-bold text-slate-800">Settings</h1>
-      <div class="rounded-xl bg-white p-6 shadow-sm">
-        <h2 class="mb-4 font-semibold text-slate-700">Profile</h2>
-        <label for="settings-email" class="mb-1 block text-sm text-slate-500">Email</label>
-        <input id="settings-email" [value]="auth.user()?.email" disabled
-               class="mb-4 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-slate-500" />
-        <label for="settings-name" class="mb-1 block text-sm text-slate-500">Display name</label>
-        <div class="flex gap-2">
-          <input id="settings-name" name="display-name" [(ngModel)]="displayName" class="flex-1 rounded-lg border border-slate-300 px-3 py-2" data-test="display-name" />
-          <button (click)="save()" class="rounded-lg bg-indigo-600 px-4 py-2 text-white hover:bg-indigo-700" data-test="save-profile">
-            Save
-          </button>
+    <div class="wrap-narrow flex w-full flex-1 flex-col gap-6 pt-8 pb-16">
+      <h1 class="!text-[28px]">Settings</h1>
+
+      <section class="card pad-5">
+        <h2 class="mb-4 !text-[17px]">Profile</h2>
+        <label for="settings-email">Email</label>
+        <input id="settings-email" class="input" [value]="auth.user()?.email" disabled />
+        <div class="mt-4">
+          <label for="settings-name">Display name</label>
+          <div class="flex gap-2.5">
+            <input
+              id="settings-name"
+              name="display-name"
+              [(ngModel)]="displayName"
+              class="input flex-1"
+              data-test="display-name" />
+            <button type="button" (click)="save()" class="btn btn-secondary" data-test="save-profile">
+              Save
+            </button>
+          </div>
         </div>
-      </div>
+      </section>
 
       <!-- Email verification (§9B): it gates sending for signature and
            nothing else, and the panel says exactly that rather than implying
            the account is limited. -->
       @if (auth.user(); as user) {
         @if (!user.email_verified) {
-          <div class="mt-6 rounded-xl border border-amber-300 bg-amber-50 p-4"
-               data-test="verify-banner">
-            <p class="text-sm text-amber-800">
+          <section
+            class="border-warning bg-warning-surface rounded-3 shadow-1 border p-6"
+            data-test="verify-banner">
+            <p class="text-sm">
               Confirm your email address to send documents to other people for
               signature. Everything else works already.
             </p>
-            <button class="mt-2 rounded-lg border border-amber-400 px-3 py-1 text-sm text-amber-900"
-                    [disabled]="sendingVerification()" (click)="resendVerification()"
-                    data-test="resend-verification">
+            <button
+              type="button"
+              class="btn btn-secondary btn-sm mt-3"
+              [disabled]="sendingVerification()"
+              (click)="resendVerification()"
+              data-test="resend-verification">
               {{ sentVerification() ? 'Sent — check your inbox' : 'Send me the link' }}
             </button>
-          </div>
+          </section>
         }
       }
 
-      <div class="mt-6 rounded-xl bg-white p-6 shadow-sm">
-        <h2 class="mb-4 font-semibold text-slate-700" data-test="usage-heading">Storage and usage</h2>
+      <section class="card pad-5">
+        <h2 class="mb-4 !text-[17px]" data-test="usage-heading">Storage and usage</h2>
         @if (docs.usage(); as u) {
-          <div class="mb-2 h-3 w-full overflow-hidden rounded-full bg-slate-100">
-            <div class="h-full bg-indigo-500" [style.width.%]="docs.storagePercent()"></div>
-          </div>
-          <p class="text-sm text-slate-500">
+          <div class="meter"><i [style.width.%]="docs.storagePercent()"></i></div>
+          <p class="muted mt-2 text-[13.5px]">
             {{ (u.storage.used_bytes / 1048576).toFixed(1) }} MB of
             {{ (u.storage.quota_bytes / 1048576).toFixed(0) }} MB used
           </p>
@@ -78,29 +88,29 @@ import { ToastService } from '../../shared/toast.service';
           <!-- What you have used this month, against what you are allowed
                (§9B). A limit nobody can see is a limit that arrives as a
                surprise 429. -->
-          <table class="mt-4 w-full text-left text-sm" data-test="usage-table">
-            <tbody class="text-slate-600">
-              <tr class="border-b border-slate-100">
-                <td class="py-1">Signature requests this month</td>
-                <td class="text-right" data-test="usage-sign">
+          <table class="tbl mt-4" data-test="usage-table">
+            <tbody>
+              <tr>
+                <td>Signature requests this month</td>
+                <td class="text-end" data-test="usage-sign">
                   {{ u.counters.sign_requests }} / {{ u.limits.sign_requests_per_month }}
                 </td>
               </tr>
-              <tr class="border-b border-slate-100">
-                <td class="py-1">Pages OCR'd this month</td>
-                <td class="text-right" data-test="usage-ocr">
+              <tr>
+                <td>Pages OCR'd this month</td>
+                <td class="text-end" data-test="usage-ocr">
                   {{ u.counters.ocr_pages }} / {{ u.limits.ocr_pages_per_month }}
                 </td>
               </tr>
-              <tr class="border-b border-slate-100">
-                <td class="py-1">Heavy operations this hour</td>
-                <td class="text-right" data-test="usage-metered">
+              <tr>
+                <td>Heavy operations this hour</td>
+                <td class="text-end" data-test="usage-metered">
                   {{ u.counters.metered_ops_this_hour }} / {{ u.limits.metered_ops_per_hour }}
                 </td>
               </tr>
               <tr>
-                <td class="py-1">Conversions this month</td>
-                <td class="text-right">{{ u.counters.conversions }}</td>
+                <td>Conversions this month</td>
+                <td class="text-end">{{ u.counters.conversions }}</td>
               </tr>
             </tbody>
           </table>
@@ -109,28 +119,26 @@ import { ToastService } from '../../shared/toast.service';
         <!-- What actually ran (§9B). The counters above say how much of the
              month is gone; this says *what* spent it, which is the question
              somebody asks when the number surprises them. -->
-        <h3 class="mt-6 text-sm font-semibold text-slate-700">Recent jobs</h3>
-        <div class="mt-2 flex gap-1 text-xs">
+        <h3 class="mt-6 !font-ui !text-sm !font-medium">Recent jobs</h3>
+        <div class="seg mt-2.5">
           @for (option of jobFilters; track option.value) {
-            <button class="rounded-full border px-2 py-0.5"
-                    [class.border-indigo-400]="jobFilter() === option.value"
-                    [class.text-indigo-700]="jobFilter() === option.value"
-                    [class.border-slate-200]="jobFilter() !== option.value"
-                    [class.text-slate-500]="jobFilter() !== option.value"
-                    (click)="setJobFilter(option.value)"
-                    [attr.data-test]="'job-filter-' + (option.value || 'all')">
+            <button
+              type="button"
+              [class.seg-active]="jobFilter() === option.value"
+              (click)="setJobFilter(option.value)"
+              [attr.data-test]="'job-filter-' + (option.value || 'all')">
               {{ option.label }}
             </button>
           }
         </div>
         @if (jobs().length) {
-          <table class="mt-2 w-full text-left text-sm" data-test="job-history">
-            <tbody class="text-slate-600">
+          <table class="tbl mt-2.5" data-test="job-history">
+            <tbody>
               @for (job of jobs(); track job.id) {
-                <tr class="border-b border-slate-100" data-test="job-row">
-                  <td class="py-1">{{ job.type }}</td>
-                  <td class="py-1 text-slate-500">{{ job.status }}</td>
-                  <td class="py-1 text-right text-slate-500">
+                <tr data-test="job-row">
+                  <td>{{ job.type }}</td>
+                  <td>{{ job.status }}</td>
+                  <td class="text-end">
                     {{ job.created_at | date: 'd MMM, HH:mm' }}
                   </td>
                 </tr>
@@ -138,98 +146,120 @@ import { ToastService } from '../../shared/toast.service';
             </tbody>
           </table>
         } @else {
-          <p class="mt-2 text-sm text-slate-500" data-test="job-history-empty">
+          <p class="faint mt-2.5 text-sm" data-test="job-history-empty">
             Nothing yet.
           </p>
         }
-      </div>
+      </section>
 
       <!-- Somebody who said yes (or no) to ads can change their mind. A
-           consent you cannot withdraw is not consent (§9A). -->
+           consent you cannot withdraw is not consent (§9A). Decline and Allow
+           carry equal weight — the symmetry is deliberate (contract §3). -->
       @if (adsEnabled()) {
-        <div class="mt-6 rounded-xl bg-white p-6 shadow-sm" data-test="consent-settings">
-          <h2 class="mb-2 font-semibold text-slate-700">Advertising</h2>
-          <p class="text-sm text-slate-500">
+        <section class="card pad-5" data-test="consent-settings">
+          <h2 class="mb-2 !text-[17px]">Advertising</h2>
+          <p class="muted text-sm">
             Ads keep ZenPDF free. Your current choice:
-            <strong data-test="consent-choice">
+            <strong class="text-ink-strong font-medium" data-test="consent-choice">
               {{ consent.choice() === 'granted' ? 'personalised ads allowed'
                  : consent.choice() === 'denied' ? 'personalised ads declined'
                  : 'not decided yet' }}</strong>.
           </p>
-          <div class="mt-3 flex gap-2">
-            <button class="rounded-lg border border-slate-300 px-3 py-1 text-sm"
-                    (click)="consent.set('denied')" data-test="settings-consent-deny">
+          <div class="mt-4 flex gap-2.5">
+            <button
+              type="button"
+              class="btn btn-secondary btn-sm"
+              (click)="consent.set('denied')"
+              data-test="settings-consent-deny">
               Decline
             </button>
-            <button class="rounded-lg border border-slate-300 px-3 py-1 text-sm"
-                    (click)="consent.set('granted')" data-test="settings-consent-allow">
+            <button
+              type="button"
+              class="btn btn-secondary btn-sm"
+              (click)="consent.set('granted')"
+              data-test="settings-consent-allow">
               Allow
             </button>
           </div>
-        </div>
+        </section>
       }
 
       <!-- The two things the privacy policy promises, reachable rather than
            promised (§10.1). Deletion is the only irreversible action in the
            product, so it asks for the password and says what survives. -->
-      <div class="mt-6 rounded-xl bg-white p-6 shadow-sm" data-test="privacy-settings">
-        <h2 class="mb-2 font-semibold text-slate-700">Your data</h2>
-        <p class="text-sm text-slate-500">
+      <section class="card pad-5" data-test="privacy-settings">
+        <h2 class="mb-2 !text-[17px]">Your data</h2>
+        <p class="muted text-sm">
           Take a copy of everything we hold, or close the account for good.
         </p>
-        <div class="mt-3 flex flex-wrap gap-2">
-          <button class="rounded-lg border border-slate-300 px-3 py-1 text-sm disabled:opacity-50"
-                  [disabled]="exporting()" (click)="exportData()"
-                  data-test="export-data">
+        <div class="mt-4 flex flex-wrap gap-2.5">
+          <button
+            type="button"
+            class="btn btn-secondary btn-sm"
+            [disabled]="exporting()"
+            (click)="exportData()"
+            data-test="export-data">
             {{ exporting() ? 'Preparing…' : 'Download my data' }}
           </button>
-          <button class="rounded-lg border border-rose-300 px-3 py-1 text-sm text-rose-700"
-                  (click)="openDelete()" data-test="delete-account">
+          <button
+            type="button"
+            class="btn btn-danger btn-sm"
+            (click)="openDelete()"
+            data-test="delete-account">
             Delete my account
           </button>
         </div>
 
         @if (deleting()) {
-          <div class="mt-4 rounded-lg border border-rose-200 bg-rose-50 p-4"
-               role="group" aria-label="Confirm account deletion"
-               data-test="delete-confirm">
-            <p class="text-sm text-rose-900">
+          <div
+            class="bg-danger-surface rounded-2 mt-4 p-4"
+            role="group"
+            aria-label="Confirm account deletion"
+            data-test="delete-confirm">
+            <p class="text-sm">
               This deletes your documents and cannot be undone. Signature
               envelopes other people have already signed are kept as their
               record of the agreement — the privacy policy explains why.
             </p>
-            <label for="delete-password"
-                   class="mt-3 block text-sm font-medium text-slate-700">
+            <label for="delete-password" class="mt-3">
               Your password, to confirm
             </label>
-            <input id="delete-password" type="password" name="confirm-password"
-                   #deletePasswordInput
-                   [(ngModel)]="deletePassword" placeholder="Your password"
-                   [attr.aria-invalid]="deleteError() ? 'true' : null"
-                   aria-describedby="delete-error"
-                   class="mt-1 w-full max-w-xs rounded-lg border border-slate-300 px-3 py-2"
-                   data-test="delete-password" />
+            <input
+              id="delete-password"
+              type="password"
+              name="confirm-password"
+              #deletePasswordInput
+              [(ngModel)]="deletePassword"
+              placeholder="Your password"
+              [attr.aria-invalid]="deleteError() ? 'true' : null"
+              aria-describedby="delete-error"
+              class="input max-w-xs"
+              data-test="delete-password" />
             <!-- Assertive, and always present: a message that only appears
                  when it is needed is a message a screen reader never
                  announces, and this one is the difference between "wrong
                  password" and "nothing happened". -->
-            <p id="delete-error" role="alert"
-               class="mt-2 text-sm text-rose-700" data-test="delete-error">
+            <p id="delete-error" role="alert" class="field-error" data-test="delete-error">
               {{ deleteError() }}
             </p>
-            <div class="mt-3 flex gap-2">
-              <button class="rounded-lg bg-rose-700 px-3 py-1 text-sm text-white disabled:opacity-50"
-                      [disabled]="!deletePassword || busyDeleting()"
-                      (click)="confirmDelete()" data-test="delete-confirm-yes">
+            <div class="mt-3 flex gap-2.5">
+              <button
+                type="button"
+                class="btn btn-danger-filled btn-sm"
+                [disabled]="!deletePassword || busyDeleting()"
+                (click)="confirmDelete()"
+                data-test="delete-confirm-yes">
                 Delete everything
               </button>
-              <button class="rounded-lg px-3 py-1 text-sm text-slate-700"
-                      (click)="deleting.set(false)">Cancel</button>
+              <button type="button" class="btn btn-ghost btn-sm" (click)="deleting.set(false)">
+                Cancel
+              </button>
             </div>
           </div>
         }
-      </div>
+      </section>
     </div>
+    <app-site-footer />
   `,
 })
 export class Settings {

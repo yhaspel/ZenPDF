@@ -1,15 +1,95 @@
 import { DOCUMENT } from '@angular/common';
-import { ChangeDetectionStrategy, Component, inject } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { Meta, Title } from '@angular/platform-browser';
 import { RouterLink } from '@angular/router';
 
 import { AuthFacade } from '../../abstraction/auth.facade';
 import { TOOL_PAGES } from '../../core/tool-pages';
 import { AdSlot } from '../../shared/ad-slot';
+import { Brand } from '../../shared/brand';
 import { SiteFooter } from '../../shared/site-footer';
+import { ThemeToggle } from '../../shared/theme-toggle';
+import { ToolIcon } from '../../shared/tool-icon';
+
+interface DirectoryEntry {
+  slug: string;
+  /** The short card name — the group heading carries the rest of the context (D4). */
+  name: string;
+  /** What the filter matches besides the name: synonyms people actually type. */
+  keywords: string;
+}
+
+interface DirectoryGroup {
+  heading: string;
+  tools: DirectoryEntry[];
+}
+
+/**
+ * The six kicker-headed groups of the landing directory (design contract §4).
+ * Every slug here must exist in TOOL_PAGES; anything in TOOL_PAGES that is not
+ * placed in a group is appended to a trailing group so no tool can silently
+ * fall out of the directory.
+ */
+const DIRECTORY: DirectoryGroup[] = [
+  {
+    heading: 'Organize',
+    tools: [
+      { slug: 'merge-pdf', name: 'Merge PDFs', keywords: 'merge pdf files combine' },
+      { slug: 'split-pdf', name: 'Split a PDF', keywords: 'split a pdf' },
+      { slug: 'organize-pdf', name: 'Organize pages', keywords: 'organize pdf pages reorder' },
+      { slug: 'rotate-pdf', name: 'Rotate pages', keywords: 'rotate pdf pages' },
+      { slug: 'delete-pdf-pages', name: 'Delete pages', keywords: 'delete pages from a pdf remove' },
+      { slug: 'extract-pdf-pages', name: 'Extract pages', keywords: 'extract pages from a pdf' },
+      { slug: 'add-page-numbers', name: 'Page numbers', keywords: 'add page numbers to a pdf' },
+    ],
+  },
+  {
+    heading: 'Edit & annotate',
+    tools: [
+      { slug: 'edit-pdf', name: 'Edit a PDF', keywords: 'edit a pdf text' },
+      { slug: 'annotate-pdf', name: 'Annotate', keywords: 'annotate a pdf highlight comment' },
+      { slug: 'fill-pdf-form', name: 'Fill out a form', keywords: 'fill out a pdf form' },
+      { slug: 'watermark-pdf', name: 'Watermark', keywords: 'add a watermark to a pdf' },
+    ],
+  },
+  {
+    heading: 'Convert & OCR',
+    tools: [
+      { slug: 'pdf-to-word', name: 'PDF to Word', keywords: 'convert pdf to word docx' },
+      { slug: 'word-to-pdf', name: 'Word to PDF', keywords: 'convert word to pdf' },
+      { slug: 'jpg-to-pdf', name: 'Images to PDF', keywords: 'convert images jpg jpeg png to pdf' },
+      { slug: 'pdf-to-jpg', name: 'PDF to images', keywords: 'convert pdf to images jpg jpeg png' },
+      { slug: 'html-to-pdf', name: 'HTML to PDF', keywords: 'convert html to pdf web page' },
+      { slug: 'ocr-pdf', name: 'OCR a scan', keywords: 'ocr make a scanned pdf searchable' },
+    ],
+  },
+  {
+    heading: 'Optimize & review',
+    tools: [
+      { slug: 'compress-pdf', name: 'Compress', keywords: 'compress a pdf smaller shrink' },
+      { slug: 'repair-pdf', name: 'Repair', keywords: 'repair a damaged broken pdf' },
+      { slug: 'compare-pdf', name: 'Compare two PDFs', keywords: 'compare two pdfs diff' },
+    ],
+  },
+  {
+    heading: 'Protect',
+    tools: [
+      { slug: 'protect-pdf', name: 'Protect', keywords: 'password protect encrypt a pdf' },
+      { slug: 'unlock-pdf', name: 'Unlock', keywords: 'remove a password from a pdf unlock decrypt' },
+      { slug: 'redact-pdf', name: 'Redact', keywords: 'redact a pdf black out' },
+    ],
+  },
+  {
+    heading: 'Sign',
+    tools: [{ slug: 'sign-pdf', name: 'Sign a PDF', keywords: 'sign a pdf signature esign' }],
+  },
+];
 
 /**
  * The landing page is a directory of working tools, not a signup wall (§21.1).
+ * The directory IS the hero (design contract §4): kicker, display h1, one muted
+ * paragraph, the folded-sheet trust strip, a client-side type-to-filter, six
+ * groups of icon+name cards, one ad frame, footer. No other CTAs.
  *
  * An authenticated visitor is no longer bounced to the dashboard: the tools are
  * the product for both principals, and the library is one click away in the nav.
@@ -17,56 +97,101 @@ import { SiteFooter } from '../../shared/site-footer';
 @Component({
   selector: 'app-landing',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [RouterLink, AdSlot, SiteFooter],
+  imports: [RouterLink, AdSlot, SiteFooter, Brand, ThemeToggle, ToolIcon],
   template: `
-    <div class="min-h-screen bg-gradient-to-b from-indigo-50 to-white">
-      <header class="mx-auto flex max-w-5xl items-center justify-between px-6 py-4">
-        <span class="flex items-center gap-2 font-bold text-slate-800">🧘‍♀️ ZenPDF</span>
-        <nav class="flex items-center gap-4 text-sm">
+    <div class="page-shell">
+      <header class="hdr">
+        <a routerLink="/" class="brand" aria-label="ZenPDF"><app-brand /></a>
+        <nav>
           @if (auth.isAuthenticated()) {
-            <a routerLink="/app/dashboard" class="text-slate-600" data-test="cta-library">My files</a>
+            <a routerLink="/app/dashboard" data-test="cta-library">My files</a>
           } @else {
-            <a routerLink="/auth/login" class="text-slate-600" data-test="cta-login">Log in</a>
-            <a routerLink="/auth/register"
-               class="rounded-lg bg-indigo-600 px-4 py-2 font-medium text-white hover:bg-indigo-700"
-               data-test="cta-register">Create free account</a>
+            <a routerLink="/auth/login" data-test="cta-login">Log in</a>
+            <a routerLink="/auth/register" class="btn btn-secondary btn-sm" data-test="cta-register"
+              >Create free account</a
+            >
           }
+          <app-theme-toggle />
         </nav>
       </header>
 
-      <main class="mx-auto max-w-5xl px-6 pb-20 pt-8 text-center">
-        <h1 class="text-4xl font-bold text-slate-800">Every PDF tool, no account needed</h1>
-        <p class="mx-auto mt-3 max-w-xl text-slate-500">
-          Organize, merge, split, compress and rotate PDFs in your browser. Free, no watermark,
-          and files are deleted automatically within 24 hours.
-        </p>
+      <main class="wrap w-full pb-24 pt-16">
+        <div class="max-w-[640px]">
+          <p class="kicker">PDF tools &amp; e-signature</p>
+          <h1 class="hero-h1 mt-2.5">Every PDF tool, no&nbsp;account&nbsp;needed</h1>
+          <p class="muted mt-3.5 max-w-[520px]">
+            Organize, merge, split, compress and sign PDFs in your browser. Pick a tool below
+            and drop a file on it — that is the whole process.
+          </p>
+        </div>
 
-        <ul class="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-3" data-test="tool-grid">
-          @for (tool of tools; track tool.slug) {
-            <li>
-              <a
-                [routerLink]="'/' + tool.slug"
-                class="block rounded-2xl bg-white p-5 text-left shadow-sm transition hover:shadow-md"
-                [attr.data-test]="'tool-link-' + tool.slug"
-              >
-                <span class="font-medium text-slate-800">{{ tool.h1 }}</span>
-                <span class="mt-1 block text-sm text-slate-500">{{ tool.cta }}</span>
-              </a>
-            </li>
+        <!-- The folded sheet: the three trust promises, stated as facts (§1). -->
+        <div class="sheet mt-8 flex max-w-[760px] flex-wrap items-center gap-y-2 px-6 py-4">
+          <span class="flex items-center gap-2.5 pe-6">
+            <app-brand [size]="20" [wordmark]="false" />
+            <span class="text-sm">No watermarks</span>
+          </span>
+          <span class="border-border flex items-center border-s py-1 pe-6 ps-6 text-sm"
+            >Files delete automatically after 24&nbsp;hours</span
+          >
+          <span class="border-border flex items-center border-s py-1 ps-6 text-sm"
+            >Free, paid for by advertising</span
+          >
+        </div>
+
+        <!-- Type-to-filter: pure client-side, one of the redesign's two
+             sanctioned additions (contract §0/§4). -->
+        <div class="input-wrap mt-16 max-w-[420px]">
+          <input
+            class="input"
+            type="search"
+            placeholder='Filter the tools… try "merge" or "sign"'
+            aria-label="Filter the 24 tools"
+            [value]="query()"
+            (input)="onQuery($event)"
+            data-test="tool-filter"
+          />
+          <span class="input-eye pointer-events-none" aria-hidden="true">
+            <svg class="ti" viewBox="0 0 24 24" style="width:18px;height:18px">
+              <circle cx="11" cy="11" r="6.5" />
+              <path d="m16 16 4.5 4.5" />
+            </svg>
+          </span>
+        </div>
+        @if (nothingMatches()) {
+          <p class="faint mt-4" data-test="tool-filter-empty">
+            No tool matches that. Clear the filter to see all 24.
+          </p>
+        }
+
+        <div class="mt-8 flex flex-col gap-12" data-test="tool-grid" aria-live="polite">
+          @for (group of visibleGroups(); track group.heading) {
+            <section>
+              <h2 class="kicker">{{ group.heading }}</h2>
+              <div class="tool-grid">
+                @for (tool of group.tools; track tool.slug) {
+                  <a
+                    class="tool-card"
+                    [routerLink]="'/' + tool.slug"
+                    [attr.data-test]="'tool-link-' + tool.slug"
+                  >
+                    <app-tool-icon [slug]="tool.slug" />
+                    <span>{{ tool.name }}</span>
+                  </a>
+                }
+              </div>
+            </section>
           }
-        </ul>
+        </div>
 
         <!-- One of the three allowed surfaces (§9A). Renders nothing at all
              unless ads are enabled *and* this visitor consented. -->
-        <div class="mt-10">
+        <div class="mt-24">
           <app-ad-slot name="landing" [height]="250" />
         </div>
       </main>
 
       <app-site-footer />
-      <p class="pb-6 text-center text-xs text-slate-500">
-        Free, paid for by advertising. Files are deleted automatically.
-      </p>
     </div>
   `,
 })
@@ -105,5 +230,44 @@ export class Landing {
   }
 
   protected auth = inject(AuthFacade);
-  protected readonly tools = TOOL_PAGES;
+
+  protected readonly query = signal('');
+
+  /** The static groups, plus a safety net for any TOOL_PAGES slug left out. */
+  private readonly groups: DirectoryGroup[] = (() => {
+    const placed = new Set(DIRECTORY.flatMap((g) => g.tools.map((t) => t.slug)));
+    const missing = TOOL_PAGES.filter((t) => !placed.has(t.slug));
+    return missing.length
+      ? [
+          ...DIRECTORY,
+          {
+            heading: 'More',
+            tools: missing.map((t) => ({ slug: t.slug, name: t.h1, keywords: t.slug })),
+          },
+        ]
+      : DIRECTORY;
+  })();
+
+  protected readonly visibleGroups = computed(() => {
+    const q = this.query().trim().toLowerCase();
+    if (!q) return this.groups;
+    const terms = q.split(/\s+/);
+    return this.groups
+      .map((group) => ({
+        heading: group.heading,
+        tools: group.tools.filter((tool) => {
+          const haystack = `${tool.name} ${tool.keywords} ${tool.slug}`.toLowerCase();
+          return terms.every((term) => haystack.includes(term));
+        }),
+      }))
+      .filter((group) => group.tools.length > 0);
+  });
+
+  protected readonly nothingMatches = computed(
+    () => this.query().trim().length > 0 && this.visibleGroups().length === 0,
+  );
+
+  protected onQuery(event: Event): void {
+    this.query.set((event.target as HTMLInputElement).value);
+  }
 }

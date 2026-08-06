@@ -1,131 +1,154 @@
-<div class="mx-auto w-full max-w-2xl p-6" data-test="verify-page">
-  <h1 class="text-2xl font-semibold text-slate-800" data-test="verify-h1">
-    Verify a signed PDF
-  </h1>
-  <p class="mt-2 text-sm text-slate-600">
-    Drop in a document that was signed through ZenPDF and this will tell you
-    whether it is exactly the file that was signed, and who sealed it. Nothing
-    is stored: the file is read, checked and discarded.
-  </p>
+<div class="page-shell" data-test="verify-page">
+  <header class="hdr">
+    <a routerLink="/" class="brand" aria-label="ZenPDF"><app-brand /></a>
+    <nav>
+      <app-theme-toggle />
+    </nav>
+  </header>
 
-  <div class="mt-5 rounded-xl border-2 border-dashed border-slate-300 bg-white p-8 text-center"
-       (drop)="onDrop($event)" (dragover)="allowDrop($event)" data-test="verify-dropzone">
-    <label class="cursor-pointer text-sm text-indigo-600">
-      Choose a PDF or drop one here
+  <main class="wrap-narrow w-full pb-16 pt-12">
+    <h1 data-test="verify-h1">
+      Verify a signed PDF
+    </h1>
+    <p class="muted mt-2.5 max-w-[560px]">
+      Drop in a document that was signed through ZenPDF and this will tell you
+      whether it is exactly the file that was signed, and who sealed it. Nothing
+      is stored: the file is read, checked and discarded.
+    </p>
+
+    <!-- Restyled in place (not <app-upload-dropzone>) so the page's own
+         data-tests and (change)/(drop) bindings survive untouched. The whole
+         zone is the click target and a labelled file input (§3). -->
+    <label class="dropzone mt-8"
+           (drop)="onDrop($event)" (dragover)="allowDrop($event)"
+           data-test="verify-dropzone">
+      <svg class="ti" viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M6.5 3.5h7l4 4v13h-11z" />
+        <path d="M13.5 3.5v4h4" />
+        <path d="M12 10v6M9.8 13.8 12 16l2.2-2.2" />
+      </svg>
+      <span class="dz-prompt">Choose a PDF or drop one here</span>
+      @if (filename()) {
+        <span class="dz-hint">{{ filename() }}</span>
+      }
       <input type="file" accept="application/pdf,.pdf" class="hidden"
              (change)="onFile($event)" data-test="verify-input" />
     </label>
-    @if (filename()) {
-      <p class="mt-2 text-xs text-slate-500">{{ filename() }}</p>
+
+    @if (busy()) {
+      <div class="breath mt-6">
+        <div class="breath-dot" aria-hidden="true"></div>
+        <p data-test="verify-busy">Checking…</p>
+      </div>
     }
-  </div>
 
-  @if (busy()) {
-    <p class="mt-4 text-sm text-slate-500" data-test="verify-busy">Checking…</p>
-  }
+    @if (error(); as message) {
+      <p class="border-danger bg-danger-surface text-danger rounded-2 mt-6 border p-3 text-sm"
+         data-test="verify-error">{{ message }}</p>
+    }
 
-  @if (error(); as message) {
-    <p class="mt-4 rounded border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700"
-       data-test="verify-error">{{ message }}</p>
-  }
+    @if (report(); as report) {
+      <!-- The report card: neutral = raised paper, intact = success surface,
+           modified = danger surface (§4 Verify). -->
+      <section class="rounded-3 mt-6 border p-5"
+               [class.border-success]="tone(report) === 'good'"
+               [class.bg-success-surface]="tone(report) === 'good'"
+               [class.border-danger]="tone(report) === 'bad'"
+               [class.bg-danger-surface]="tone(report) === 'bad'"
+               [class.border-border]="tone(report) === 'neutral'"
+               [class.bg-surface-raised]="tone(report) === 'neutral'"
+               data-test="verify-report">
+        <h2 data-test="verify-headline">
+          {{ headline(report) }}
+        </h2>
 
-  @if (report(); as report) {
-    <section class="mt-5 rounded-xl border p-4"
-             [class.border-emerald-200]="tone(report) === 'good'"
-             [class.bg-emerald-50]="tone(report) === 'good'"
-             [class.border-rose-200]="tone(report) === 'bad'"
-             [class.bg-rose-50]="tone(report) === 'bad'"
-             [class.border-slate-200]="tone(report) === 'neutral'"
-             [class.bg-white]="tone(report) === 'neutral'"
-             data-test="verify-report">
-      <h2 class="text-lg font-semibold text-slate-800" data-test="verify-headline">
-        {{ headline(report) }}
-      </h2>
-
-      @if (!report.sealed) {
-        <p class="mt-1 text-sm text-slate-600">
-          That is not a fault — most PDFs are not signed. It means nothing here
-          can tell you where this file came from or whether it has been edited.
-        </p>
-      } @else if (report.integrity === 'modified') {
-        <p class="mt-1 text-sm text-rose-700">
-          The file no longer matches its signature. Something was changed after
-          it was signed — even one byte does this. Ask the sender for a fresh copy.
-        </p>
-      } @else {
-        <p class="mt-1 text-sm text-slate-600">
-          The signature covers the file and the file has not changed since.
-        </p>
-      }
-
-      @for (sig of report.signatures; track sig.field) {
-        <dl class="mt-3 grid grid-cols-[9rem_1fr] gap-x-3 gap-y-1 text-xs"
-            data-test="signature-detail">
-          <dt class="text-slate-500">Sealed by</dt>
-          <dd class="text-slate-700">{{ sig.signer || 'unknown' }}</dd>
-          <dt class="text-slate-500">Signed at</dt>
-          <dd class="text-slate-700">{{ sig.signing_time || 'not stated' }}</dd>
-          <dt class="text-slate-500">Covers</dt>
-          <dd class="text-slate-700">
-            {{ sig.whole_document ? 'the whole document' : 'part of the document only' }}
-          </dd>
-          <dt class="text-slate-500">Timestamp</dt>
-          <dd class="text-slate-700">
-            {{ sig.timestamp ? 'from an independent authority' : 'none' }}
-          </dd>
-          <dt class="text-slate-500">Certificate</dt>
-          <dd class="text-slate-700" data-test="trust-line">
-            {{ sig.trusted
-               ? 'issued by a trusted authority'
-               : 'not from a trusted authority — the seal is valid, but nothing outside this file vouches for who made it' }}
-          </dd>
-          @if (sig.reason) {
-            <dt class="text-slate-500">Reason</dt>
-            <dd class="text-slate-700">{{ sig.reason }}</dd>
-          }
-        </dl>
-      }
-
-      @if (report.envelope_match.found_code) {
-        <div class="mt-4 border-t border-slate-200 pt-3" data-test="envelope-match">
-          <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">
-            Envelope {{ report.envelope_match.found_code }}
+        @if (!report.sealed) {
+          <p class="muted mt-2 text-sm">
+            That is not a fault — most PDFs are not signed. It means nothing here
+            can tell you where this file came from or whether it has been edited.
           </p>
-          @if (report.envelope_match.known) {
-            <p class="mt-1 text-sm text-slate-700">
-              This envelope is in our records
-              @if (report.envelope_match.completed_at) {
-                (completed {{ report.envelope_match.completed_at }})
-              }
-              and the file's fingerprint
-              {{ report.envelope_match.sha256_match ? 'matches' : 'DOES NOT match' }}
-              the one we recorded.
+        } @else if (report.integrity === 'modified') {
+          <p class="text-danger mt-2 text-sm">
+            The file no longer matches its signature. Something was changed after
+            it was signed — even one byte does this. Ask the sender for a fresh copy.
+          </p>
+        } @else {
+          <p class="muted mt-2 text-sm">
+            The signature covers the file and the file has not changed since.
+          </p>
+        }
+
+        @for (sig of report.signatures; track sig.field) {
+          <dl class="mt-4 grid grid-cols-[9rem_1fr] gap-x-3 gap-y-1 text-[12.5px]"
+              data-test="signature-detail">
+            <dt class="faint">Sealed by</dt>
+            <dd class="text-ink">{{ sig.signer || 'unknown' }}</dd>
+            <dt class="faint">Signed at</dt>
+            <dd class="text-ink">{{ sig.signing_time || 'not stated' }}</dd>
+            <dt class="faint">Covers</dt>
+            <dd class="text-ink">
+              {{ sig.whole_document ? 'the whole document' : 'part of the document only' }}
+            </dd>
+            <dt class="faint">Timestamp</dt>
+            <dd class="text-ink">
+              {{ sig.timestamp ? 'from an independent authority' : 'none' }}
+            </dd>
+            <dt class="faint">Certificate</dt>
+            <dd class="text-ink" data-test="trust-line">
+              {{ sig.trusted
+                 ? 'issued by a trusted authority'
+                 : 'not from a trusted authority — the seal is valid, but nothing outside this file vouches for who made it' }}
+            </dd>
+            @if (sig.reason) {
+              <dt class="faint">Reason</dt>
+              <dd class="text-ink">{{ sig.reason }}</dd>
+            }
+          </dl>
+        }
+
+        @if (report.envelope_match.found_code) {
+          <div class="border-border mt-4 border-t pt-3" data-test="envelope-match">
+            <p class="kicker">
+              Envelope {{ report.envelope_match.found_code }}
             </p>
-            @if (report.envelope_match.signers?.length) {
-              <ul class="mt-2 text-xs text-slate-600">
-                @for (person of report.envelope_match.signers; track person.email) {
-                  <li>{{ person.name || person.email }} — {{ person.role }}</li>
+            @if (report.envelope_match.known) {
+              <p class="text-ink mt-1 text-sm">
+                This envelope is in our records
+                @if (report.envelope_match.completed_at) {
+                  (completed {{ report.envelope_match.completed_at }})
                 }
-              </ul>
-              <p class="mt-1 text-[11px] text-slate-500">
-                Addresses are partly hidden: this file may be in anybody's hands.
+                and the file's fingerprint
+                {{ report.envelope_match.sha256_match ? 'matches' : 'DOES NOT match' }}
+                the one we recorded.
+              </p>
+              @if (report.envelope_match.signers?.length) {
+                <ul class="muted mt-2 text-xs">
+                  @for (person of report.envelope_match.signers; track person.email) {
+                    <li>{{ person.name || person.email }} — {{ person.role }}</li>
+                  }
+                </ul>
+                <p class="faint mt-1 text-[11px]">
+                  Addresses are partly hidden: this file may be in anybody's hands.
+                </p>
+              }
+            } @else {
+              <p class="muted mt-1 text-sm">
+                We have no record of that envelope. It may have been signed on a
+                different ZenPDF installation, or the code may have been altered.
               </p>
             }
-          } @else {
-            <p class="mt-1 text-sm text-slate-600">
-              We have no record of that envelope. It may have been signed on a
-              different ZenPDF installation, or the code may have been altered.
-            </p>
-          }
-        </div>
-      }
-    </section>
+          </div>
+        }
+      </section>
 
-    <p class="mt-4 text-[11px] text-slate-500">
-      What this checks: that the file matches its cryptographic seal, and
-      whether that seal is ours. It is a simple electronic signature with a
-      platform seal — it does not prove the identity of the signers beyond what
-      the certificate of completion records.
-    </p>
-  }
+      <p class="faint mt-4 text-[11px]">
+        What this checks: that the file matches its cryptographic seal, and
+        whether that seal is ours. It is a simple electronic signature with a
+        platform seal — it does not prove the identity of the signers beyond what
+        the certificate of completion records.
+      </p>
+    }
+  </main>
+
+  <app-site-footer />
 </div>

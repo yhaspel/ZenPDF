@@ -4,39 +4,43 @@ import { FormsModule } from '@angular/forms';
 import { ConfirmService } from './confirm.service';
 import { ZenModal } from './modal.directive';
 
+/**
+ * The confirm dialog. Filled danger is allowed here and only here — the final
+ * confirmation inside a confirm panel (design contract §3 buttons).
+ */
 @Component({
   selector: 'app-confirm-host',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [FormsModule, ZenModal],
   template: `
     @if (confirm.current(); as req) {
-      <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/40" data-test="confirm-host">
-        <div class="w-full max-w-sm rounded-xl bg-white p-6 shadow-xl"
+      <div class="scrim" data-test="confirm-host">
+        <div class="modal"
              zenModal role="dialog" aria-modal="true"
              [attr.aria-label]="req.message"
              (zenModalEscape)="confirm.answer(false)">
-          <p class="mb-6 whitespace-pre-line text-slate-700">{{ req.message }}</p>
+          <p class="text-ink mb-6 whitespace-pre-line">{{ req.message }}</p>
           @if (req.requireText) {
-            <label class="mb-6 block text-sm text-slate-500">
-              Type <strong class="text-slate-700">{{ req.requireText }}</strong> to continue
+            <label class="mb-6">
+              Type <strong class="text-ink">{{ req.requireText }}</strong> to continue
               <input
-                class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-800"
+                class="input mt-1"
                 [ngModel]="typed()"
                 (ngModelChange)="typed.set($event)"
                 data-test="confirm-text"
               />
             </label>
           }
-          <div class="flex justify-end gap-3">
+          <div class="modal-actions">
             <button
-              class="rounded-lg px-4 py-2 text-slate-600 hover:bg-slate-100"
+              class="btn btn-ghost"
               (click)="confirm.answer(false)"
               data-test="confirm-cancel"
             >
               Cancel
             </button>
             <button
-              class="rounded-lg bg-rose-700 px-4 py-2 text-white hover:bg-rose-800 disabled:opacity-40"
+              class="btn btn-danger-filled"
               [disabled]="!!req.requireText && typed().trim() !== req.requireText"
               (click)="confirm.answer(true)"
               data-test="confirm-ok"

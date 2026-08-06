@@ -102,7 +102,7 @@ export class Edit {
   /** Set while a freshly drawn "add text" box is waiting for its content. */
   protected addTextRect = signal<OverlayDraft['rect'] | null>(null);
   protected draftText = signal('');
-  protected style = signal<TextStyle>({ font_family: 'helvetica', size: 11, color: '#111827' });
+  protected style = signal<TextStyle>({ font_family: 'helvetica', size: 11, color: '#211C15' });
 
   // find & replace
   protected findText = signal('');
@@ -174,7 +174,7 @@ export class Edit {
           page,
           shape: 'rect',
           rect: block.bbox,
-          stroke: staged ? '#6366f1' : '#94a3b8',
+          stroke: staged ? '#B23A26' : '#948A77',
           fill: staged ? '#c7d2fe' : null,
           opacity: staged ? 0.35 : 1,
           width: 1,
@@ -190,7 +190,7 @@ export class Edit {
           page,
           shape: 'rect',
           rect: image.bbox,
-          stroke: this.selectedImage()?.xref === image.xref ? '#6366f1' : '#0ea5e9',
+          stroke: this.selectedImage()?.xref === image.xref ? '#B23A26' : '#3D6478',
           width: 2,
           label: `${image.width}×${image.height}`,
           data: { xref: image.xref },

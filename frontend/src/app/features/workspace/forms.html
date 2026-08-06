@@ -1,15 +1,15 @@
 <div class="flex min-h-0 flex-1" data-test="forms-mode">
   <!-- Left: panel -->
-  <aside class="flex w-72 shrink-0 flex-col overflow-y-auto border-r border-slate-200 bg-white text-sm">
-    <div class="flex border-b border-slate-200 text-xs">
-      <button class="flex-1 py-2" [class.font-semibold]="tab() === 'fill'" [class.text-indigo-600]="tab() === 'fill'"
+  <aside class="border-border bg-surface flex w-72 shrink-0 flex-col overflow-y-auto border-e text-sm">
+    <div class="seg border-border gap-0 border-b px-1 py-1">
+      <button class="flex-1 justify-center" [class.seg-active]="tab() === 'fill'" [attr.aria-selected]="tab() === 'fill'"
               (click)="tab.set('fill')" data-test="tab-fill">Fill in</button>
-      <button class="flex-1 py-2" [class.font-semibold]="tab() === 'build'" [class.text-indigo-600]="tab() === 'build'"
+      <button class="flex-1 justify-center" [class.seg-active]="tab() === 'build'" [attr.aria-selected]="tab() === 'build'"
               (click)="tab.set('build')" data-test="tab-build">Form builder</button>
     </div>
 
     @if (forms.model()?.truncated) {
-      <p class="m-3 rounded border border-amber-300 bg-amber-50 p-2 text-[11px] text-amber-800"
+      <p class="rounded-2 bg-warning-surface text-ink m-3 p-2 text-[11px]"
          data-test="truncated-warning">
         This document has an unusual number of form fields, so only the first
         few thousand are listed. Filling in the ones shown still works.
@@ -17,7 +17,7 @@
     }
 
     @if (forms.isXfa()) {
-      <p class="m-3 rounded border border-amber-300 bg-amber-50 p-2 text-[11px] text-amber-800"
+      <p class="rounded-2 bg-warning-surface text-ink m-3 p-2 text-[11px]"
          data-test="xfa-warning">
         This is a legacy <strong>XFA</strong> form. XFA is not supported — the fields
         shown here come from the fallback layer inside the file and may be incomplete,
@@ -28,35 +28,35 @@
     @if (tab() === 'fill') {
       <div class="flex flex-col gap-3 p-3">
         @if (!forms.hasForm()) {
-          <p class="rounded border border-slate-200 bg-slate-50 p-2 text-[11px] text-slate-500"
+          <p class="muted rounded-2 border-border bg-bg border p-2 text-[11px]"
              data-test="no-form">
             This document has no form fields — there is nothing to fill in yet.
           </p>
-          <button class="rounded border border-slate-300 px-2 py-1 text-[11px]"
+          <button class="btn btn-secondary btn-sm"
                   (click)="tab.set('build')" data-test="no-form-build">
             Add fields with the form builder
           </button>
         } @else {
-          <p class="text-[11px] text-slate-500">
+          <p class="muted text-[11px]">
             Type straight into the page, or use the list below. Everything you change is
             saved in one go.
           </p>
 
           <div class="flex flex-col gap-2">
             @for (field of forms.fields(); track field.name) {
-              <div class="rounded border border-slate-200 p-2" data-test="field-row">
+              <div class="rounded-1 border-border border p-2" data-test="field-row">
                 <div class="flex items-baseline gap-1">
-                  <span class="truncate text-[11px] font-medium text-slate-700">{{ field.name }}</span>
-                  <span class="text-[10px] text-slate-500">{{ field.type }}</span>
+                  <span class="text-ink truncate text-[11px] font-medium">{{ field.name }}</span>
+                  <span class="muted text-[10px]">{{ field.type }}</span>
                   @if (field.flags.required) {
-                    <span class="text-[10px] text-rose-500" title="Required">*</span>
+                    <span class="text-danger text-[10px]" title="Required">*</span>
                   }
-                  <span class="ml-auto text-[10px] text-slate-500">p{{ field.page + 1 }}</span>
+                  <span class="muted ms-auto text-[10px]">p{{ field.page + 1 }}</span>
                 </div>
 
                 @switch (field.type) {
                   @case ('checkbox') {
-                    <label class="mt-1 flex items-center gap-2 text-[11px] text-slate-600">
+                    <label class="mt-1 flex items-center gap-2">
                       <input type="checkbox" [ngModel]="boolValue(field)"
                              [disabled]="field.flags.readonly"
                              (ngModelChange)="setValue(field, $event)"
@@ -67,7 +67,7 @@
                   @case ('radio') {
                     <div class="mt-1 flex flex-col gap-0.5">
                       @for (option of field.options; track option) {
-                        <label class="flex items-center gap-2 text-[11px] text-slate-600">
+                        <label class="flex items-center gap-2">
                           <input type="radio" [name]="field.name" [value]="option"
                                  [checked]="stringValue(field) === option"
                                  [disabled]="field.flags.readonly"
@@ -79,13 +79,13 @@
                     </div>
                   }
                   @case ('signature') {
-                    <p class="mt-1 text-[11px] text-slate-500" data-test="signature-placeholder">
+                    <p class="muted mt-1 text-[11px]" data-test="signature-placeholder">
                       Signature field — sign it with the signing tool.
                     </p>
                   }
                   @default {
                     @if (field.options.length) {
-                      <select class="mt-1 w-full rounded border border-slate-300 px-2 py-1 text-[11px]"
+                      <select class="input mt-1 !min-h-9 !px-2"
                               [ngModel]="stringValue(field)" [disabled]="field.flags.readonly"
                               (ngModelChange)="setValue(field, $event)"
                               [attr.data-test]="'field-' + field.name">
@@ -95,7 +95,7 @@
                         }
                       </select>
                     } @else {
-                      <input class="mt-1 w-full rounded border border-slate-300 px-2 py-1 text-[11px]"
+                      <input class="input mt-1 !min-h-9 !px-2"
                              [ngModel]="stringValue(field)" [disabled]="field.flags.readonly"
                              [attr.maxlength]="field.max_len || null"
                              (ngModelChange)="setValue(field, $event)"
@@ -107,18 +107,18 @@
             }
           </div>
 
-          <button class="rounded bg-indigo-600 px-3 py-1.5 font-medium text-white disabled:opacity-40"
+          <button class="btn btn-primary"
                   [disabled]="busy() || !forms.dirty()" (click)="save()" data-test="form-save">
             Save {{ forms.dirty() ? '(unsaved changes)' : '' }}
           </button>
 
-          <div class="grid grid-cols-2 gap-1 text-[11px]">
-            <button class="rounded border border-slate-300 px-2 py-1" (click)="exportData('json')"
+          <div class="grid grid-cols-2 gap-1">
+            <button class="btn btn-secondary btn-sm" (click)="exportData('json')"
                     data-test="form-export-json">Export JSON</button>
-            <button class="rounded border border-slate-300 px-2 py-1" (click)="exportData('csv')"
+            <button class="btn btn-secondary btn-sm" (click)="exportData('csv')"
                     data-test="form-export-csv">Export CSV</button>
           </div>
-          <label class="text-[11px] text-slate-500">
+          <label>
             Import data
             <input type="file" accept=".json,.csv,application/json,text/csv"
                    aria-label="Choose form data to import"
@@ -126,11 +126,11 @@
                    data-test="form-import" />
           </label>
 
-          <button class="rounded border border-amber-300 bg-amber-50 px-2 py-1 text-[11px] text-amber-800"
+          <button class="btn btn-danger btn-sm"
                   [disabled]="busy()" (click)="saveAndFlatten()" data-test="form-flatten">
             Flatten form
           </button>
-          <p class="text-[10px] text-slate-500">
+          <p class="field-hint">
             Flattening prints the values onto the page and removes the fields. It cannot be
             undone, except by reverting in version history.
           </p>
@@ -138,73 +138,73 @@
       </div>
     } @else {
       <div class="flex flex-col gap-3 p-3">
-        <p class="text-[11px] text-slate-500">
+        <p class="muted text-[11px]">
           Pick a field type, then drag a box on the page.
         </p>
         <div class="grid grid-cols-2 gap-1">
           @for (type of types; track type) {
-            <button class="rounded border border-slate-200 px-2 py-1 text-left text-[11px] capitalize"
-                    [class.bg-indigo-600]="armed() === type" [class.text-white]="armed() === type"
+            <button class="rounded-1 border-border border px-2 py-1 text-start text-[11px] capitalize"
+                    [class.bg-ink-strong]="armed() === type" [class.text-bg]="armed() === type"
                     (click)="arm(type)" [attr.data-test]="'field-type-' + type">{{ type }}</button>
           }
         </div>
 
         @if (armed() === 'radio' || armed() === 'combobox' || armed() === 'listbox') {
-          <label for="arm-options" class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+          <label for="arm-options" class="kicker">
             Options (one per line)
           </label>
-          <textarea id="arm-options" rows="3" class="rounded border border-slate-300 p-1 text-[11px]"
+          <textarea id="arm-options" rows="3" class="input"
                     [ngModel]="draftOptions()" (ngModelChange)="draftOptions.set($event)"
                     data-test="arm-options"></textarea>
           @if (armed() === 'radio') {
-            <p class="text-[10px] text-slate-500">
+            <p class="field-hint">
               Draw one box — the other choices are laid out below it at the same size.
             </p>
           }
         }
 
         @if (selectedName(); as name) {
-          <div class="rounded border border-indigo-200 bg-indigo-50/40 p-2" data-test="field-properties">
-            <p class="text-[10px] font-semibold uppercase tracking-wide text-indigo-500">
+          <div class="rounded-2 bg-accent-surface p-2" data-test="field-properties">
+            <p class="kicker">
               {{ selectedType() }} field
             </p>
-            <label class="mt-1 block text-[11px] text-slate-500">
+            <label class="mt-1 block">
               Name
-              <input class="mt-0.5 w-full rounded border border-slate-300 px-2 py-1 text-[11px]"
+              <input class="input mt-0.5 !min-h-9 !px-2"
                      [ngModel]="draftName()" (ngModelChange)="draftName.set($event)"
                      data-test="prop-name" />
             </label>
             @if (needsOptions()) {
-              <label class="mt-1 block text-[11px] text-slate-500">
+              <label class="mt-1 block">
                 Options (one per line)
-                <textarea rows="3" class="mt-0.5 w-full rounded border border-slate-300 p-1 text-[11px]"
+                <textarea rows="3" class="input mt-0.5"
                           [ngModel]="draftOptions()" (ngModelChange)="draftOptions.set($event)"
                           data-test="prop-options"></textarea>
               </label>
             }
-            <div class="mt-1 flex flex-wrap gap-2 text-[11px] text-slate-600">
-              <label class="flex items-center gap-1">
+            <div class="mt-1 flex flex-wrap gap-2">
+              <label class="!mb-0 flex items-center gap-1">
                 <input type="checkbox" [ngModel]="draftRequired()"
                        (ngModelChange)="draftRequired.set($event)" data-test="prop-required" />
                 Required
               </label>
-              <label class="flex items-center gap-1">
+              <label class="!mb-0 flex items-center gap-1">
                 <input type="checkbox" [ngModel]="draftReadonly()"
                        (ngModelChange)="draftReadonly.set($event)" data-test="prop-readonly" />
                 Read-only
               </label>
               @if (selectedType() === 'text') {
-                <label class="flex items-center gap-1">
+                <label class="!mb-0 flex items-center gap-1">
                   <input type="checkbox" [ngModel]="draftMultiline()"
                          (ngModelChange)="draftMultiline.set($event)" data-test="prop-multiline" />
                   Multi-line
                 </label>
               }
             </div>
-            <div class="mt-1 flex items-center gap-2 text-[11px] text-slate-500">
-              <label class="flex items-center gap-1">
+            <div class="mt-1 flex items-center gap-2">
+              <label class="!mb-0 flex items-center gap-1">
                 Align
-                <select class="rounded border border-slate-300 px-1 py-0.5"
+                <select class="input !min-h-8 !w-auto !px-2"
                         [ngModel]="draftAlign()" (ngModelChange)="draftAlign.set($event)"
                         data-test="prop-align">
                   <option value="left">Left</option>
@@ -212,30 +212,30 @@
                   <option value="right">Right</option>
                 </select>
               </label>
-              <label class="flex items-center gap-1">
+              <label class="!mb-0 flex items-center gap-1">
                 Size
-                <input type="number" min="4" max="96" class="w-12 rounded border border-slate-300 px-1 py-0.5"
+                <input type="number" min="4" max="96" class="input !min-h-8 !w-12 !px-1"
                        [ngModel]="draftFontSize()" (ngModelChange)="draftFontSize.set(+$event)"
                        data-test="prop-size" />
               </label>
             </div>
             <div class="mt-2 flex gap-1">
-              <button class="flex-1 rounded bg-indigo-600 px-2 py-1 text-[11px] text-white"
+              <button class="btn btn-secondary btn-sm flex-1"
                       (click)="applyProperties()" data-test="prop-apply">Apply</button>
-              <button class="rounded border border-rose-300 px-2 py-1 text-[11px] text-rose-600"
+              <button class="btn btn-danger btn-sm"
                       (click)="deleteSelected()" data-test="prop-delete">Remove</button>
             </div>
           </div>
         }
 
         <div class="flex flex-col gap-1">
-          <button class="rounded bg-indigo-600 px-3 py-1.5 font-medium text-white disabled:opacity-40"
+          <button class="btn btn-primary"
                   [disabled]="busy() || !forms.builderDirty()" (click)="saveFields()"
                   data-test="fields-save">
             Save {{ forms.pendingOps().length }} field change(s)
           </button>
           @if (forms.builderDirty()) {
-            <button class="rounded border border-slate-300 px-3 py-1 text-[11px] text-slate-500"
+            <button class="btn btn-ghost btn-sm"
                     (click)="discardFields()" data-test="fields-discard">Discard</button>
           }
         </div>
@@ -244,18 +244,18 @@
   </aside>
 
   <!-- Right: the page -->
-  <main class="flex min-h-0 flex-1 flex-col bg-slate-100">
-    <div class="flex items-center gap-2 border-b border-slate-200 bg-white px-4 py-2 text-sm">
+  <main class="canvas-backdrop flex min-h-0 flex-1 flex-col">
+    <div class="border-border bg-surface flex items-center gap-2 border-b px-4 py-2 text-sm">
       @if (tab() === 'build') {
         <button (click)="prevPage()" [disabled]="page() === 0"
-                class="rounded px-2 py-1 disabled:opacity-30" data-test="forms-prev">‹</button>
-        <span class="text-slate-500" data-test="forms-page">Page {{ page() + 1 }} / {{ pageCount() }}</span>
+                class="btn btn-ghost btn-sm" data-test="forms-prev">‹</button>
+        <span class="muted" data-test="forms-page">Page {{ page() + 1 }} / {{ pageCount() }}</span>
         <button (click)="nextPage()" [disabled]="page() >= pageCount() - 1"
-                class="rounded px-2 py-1 disabled:opacity-30" data-test="forms-next">›</button>
+                class="btn btn-ghost btn-sm" data-test="forms-next">›</button>
       } @else {
-        <span class="text-slate-500">{{ forms.fields().length }} field(s)</span>
+        <span class="muted">{{ forms.fields().length }} field(s)</span>
       }
-      @if (busy()) { <span class="text-xs text-indigo-500" data-test="forms-busy">working…</span> }
+      @if (busy()) { <span class="text-accent text-xs" data-test="forms-busy">working…</span> }
     </div>
 
     @if (tab() === 'fill') {
@@ -285,7 +285,7 @@
             [items]="overlayItems()"
             [tool]="armed() ? 'rect' : 'select'"
             [selectedId]="selectedItemId()"
-            [drawStroke]="'#059669'"
+            [drawStroke]="'#B23A26'"
             (created)="onCreated($event)"
             (selectionChanged)="onSelect($event)"
             (geometryChanged)="onGeometryChanged($event)"

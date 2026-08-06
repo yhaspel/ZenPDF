@@ -16,32 +16,38 @@ import { environment } from '../../../environments/environment';
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [RouterLink],
   template: `
-    <div class="mx-auto w-full max-w-lg p-8" data-test="unsubscribe-page">
-      @switch (state()) {
-        @case ('done') {
-          <h1 class="text-xl font-semibold text-slate-800" data-test="unsubscribe-done">
-            You will not hear from us again
-          </h1>
-          <p class="mt-2 text-sm text-slate-600">
-            {{ email() }} has been removed from our mail. Documents already sent
-            to you still work — this only stops the emails.
-          </p>
+    <main class="flex min-h-dvh items-center justify-center p-6"
+          data-test="unsubscribe-page">
+      <div class="card pad-6 w-full max-w-sm">
+        @switch (state()) {
+          @case ('done') {
+            <h1 class="!text-lg" data-test="unsubscribe-done">
+              You will not hear from us again
+            </h1>
+            <p class="muted mt-2 text-sm">
+              {{ email() }} has been removed from our mail. Documents already sent
+              to you still work — this only stops the emails.
+            </p>
+          }
+          @case ('error') {
+            <h1 class="!text-lg">That link did not work</h1>
+            <p class="muted mt-2 text-sm">
+              It may have been altered on the way. Forward the message to the
+              address in its footer and we will remove you by hand.
+            </p>
+          }
+          @default {
+            <div class="breath">
+              <div class="breath-dot" aria-hidden="true"></div>
+              <p>One moment…</p>
+            </div>
+          }
         }
-        @case ('error') {
-          <h1 class="text-xl font-semibold text-slate-800">That link did not work</h1>
-          <p class="mt-2 text-sm text-slate-600">
-            It may have been altered on the way. Forward the message to the
-            address in its footer and we will remove you by hand.
-          </p>
-        }
-        @default {
-          <p class="text-sm text-slate-500">One moment…</p>
-        }
-      }
-      <p class="mt-6 text-xs text-slate-500">
-        <a routerLink="/" class="underline">ZenPDF</a>
-      </p>
-    </div>
+        <p class="mt-6 text-[12.5px]">
+          <a routerLink="/">ZenPDF</a>
+        </p>
+      </div>
+    </main>
   `,
 })
 export class UnsubscribePage {

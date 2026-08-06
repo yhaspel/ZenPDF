@@ -5,6 +5,9 @@ import { ActivatedRoute, RouterLink } from '@angular/router';
 import { AppConfig } from '../../core/models/models';
 import { RETENTION } from '../../core/retention';
 import { ConfigService } from '../../core/services/config.service';
+import { Brand } from '../../shared/brand';
+import { SiteFooter } from '../../shared/site-footer';
+import { ThemeToggle } from '../../shared/theme-toggle';
 
 type LegalKind = 'privacy' | 'terms' | 'about';
 
@@ -23,7 +26,7 @@ type LegalKind = 'privacy' | 'terms' | 'about';
 @Component({
   selector: 'app-legal-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [RouterLink],
+  imports: [RouterLink, Brand, SiteFooter, ThemeToggle],
   templateUrl: './legal-page.html',
 })
 export class LegalPage {

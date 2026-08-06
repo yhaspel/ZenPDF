@@ -16,10 +16,14 @@ import { ViewerFacade } from '../../abstraction/viewer.facade';
 import { Job, SearchHit } from '../../core/models/models';
 import { DocumentsService } from '../../core/services/documents.service';
 import { GuestTokenService } from '../../core/services/guest-token.service';
+import { ThemeService } from '../../core/services/theme.service';
 import { TokenService } from '../../core/services/token.service';
+import { Brand } from '../../shared/brand';
 import { ConfirmService } from '../../shared/confirm.service';
+import { GuestBanner } from '../../shared/guest-banner';
 import { ZenModal } from '../../shared/modal.directive';
 import { PdfThumbnail } from '../../shared/pdf-thumbnail';
+import { ThemeToggle } from '../../shared/theme-toggle';
 import { saveBlob } from '../../shared/save-blob';
 import { Spinner } from '../../shared/spinner';
 import { ToastService } from '../../shared/toast.service';
@@ -41,12 +45,14 @@ type Dialog = null | 'split' | 'scale' | 'nup' | 'compress' | 'insert';
   imports: [
     FormsModule, RouterLink, NgxExtendedPdfViewerModule, CdkDropList, CdkDrag, PdfThumbnail,
     Annotate, Edit, Forms, Convert, Compare, Protect, Sign, ZenModal, Spinner,
+    Brand, GuestBanner, ThemeToggle,
   ],
   templateUrl: './workspace.html',
 })
 export class Workspace {
   protected viewer = inject(ViewerFacade);
   protected pages = inject(PagesFacade);
+  protected themes = inject(ThemeService);
   private jobs = inject(JobsFacade);
   private docsSvc = inject(DocumentsService);
   private tokens = inject(TokenService);

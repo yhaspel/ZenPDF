@@ -1,15 +1,18 @@
 @if (request(); as request) {
   <div class="flex h-full flex-col" data-test="request-builder">
-    <div class="flex items-center gap-3 border-b border-slate-200 bg-white px-4 py-2">
-      <a [routerLink]="['/app/doc', docId()]" class="text-slate-500 hover:text-slate-600"
+    <!-- Workspace-style top bar (design contract §4 builder): back to the
+         document, the task, the doc title, then the step dots — the current
+         dot is an ink stamp, never accent. -->
+    <div class="ws-bar">
+      <a [routerLink]="['/app/doc', docId()]" class="ws-back"
          data-test="builder-back">←</a>
-      <span class="font-medium text-slate-800">Send for signature</span>
-      <span class="text-xs text-slate-500">{{ request.document_title }}</span>
-      <div class="ml-auto flex items-center gap-2 text-xs">
+      <span class="text-ink-strong font-medium">Send for signature</span>
+      <span class="text-ink-muted text-xs">{{ request.document_title }}</span>
+      <div class="ms-auto flex items-center gap-2 text-xs">
         @for (n of [1, 2, 3, 4]; track n) {
           <span class="rounded-full px-2 py-0.5"
-                [class.bg-indigo-600]="step() === n" [class.text-white]="step() === n"
-                [class.bg-slate-100]="step() !== n" [class.text-slate-500]="step() !== n">
+                [class.bg-ink-strong]="step() === n" [class.text-bg]="step() === n"
+                [class.bg-bg]="step() !== n" [class.text-ink-muted]="step() !== n">
             {{ n }}
           </span>
         }
@@ -19,25 +22,25 @@
     @switch (step()) {
       @case (1) {
         <section class="mx-auto w-full max-w-2xl p-6" data-test="step-recipients">
-          <h1 class="text-lg font-semibold text-slate-800">Who needs to act?</h1>
-          <p class="mt-1 text-sm text-slate-500">
+          <h1 class="!text-[22px]">Who needs to act?</h1>
+          <p class="text-ink-muted mt-1 text-sm">
             People with the same number are asked at the same time. Different
             numbers go in order.
           </p>
 
           <div class="mt-4 flex flex-col gap-2">
             @for (row of recipients(); track $index) {
-              <div class="flex flex-wrap items-center gap-2 rounded border border-slate-200 bg-white p-2"
+              <div class="border-border bg-surface-raised rounded-2 flex flex-wrap items-center gap-2 border p-2"
                    data-test="recipient-row">
-                <input class="min-w-48 flex-1 rounded border border-slate-300 px-2 py-1 text-sm"
+                <input class="input !min-h-9 min-w-48 flex-1"
                        placeholder="email@example.com" [ngModel]="row.email"
                        (ngModelChange)="update($index, { email: $event })"
                        [attr.data-test]="'recipient-email-' + $index" />
-                <input class="w-32 rounded border border-slate-300 px-2 py-1 text-sm"
+                <input class="input !min-h-9 !w-32"
                        placeholder="Name" [ngModel]="row.name"
                        (ngModelChange)="update($index, { name: $event })"
                        [attr.data-test]="'recipient-name-' + $index" />
-                <select class="rounded border border-slate-300 px-2 py-1 text-sm"
+                <select class="input !min-h-9 !w-auto"
                         [ngModel]="row.role"
                         (ngModelChange)="update($index, { role: $event })"
                         [attr.data-test]="'recipient-role-' + $index">
@@ -46,28 +49,28 @@
                   }
                 </select>
                 <input type="number" min="1" max="50"
-                       class="w-16 rounded border border-slate-300 px-2 py-1 text-sm"
+                       class="input !min-h-9 !w-16"
                        [ngModel]="row.order"
                        (ngModelChange)="update($index, { order: +$event })"
                        [attr.data-test]="'recipient-order-' + $index" />
-                <button class="text-slate-500 hover:text-rose-600"
+                <button class="btn btn-ghost btn-sm"
                         (click)="removeRecipient($index)"
                         [attr.data-test]="'recipient-remove-' + $index">✕</button>
               </div>
             }
           </div>
 
-          <button class="mt-2 rounded border border-slate-300 px-3 py-1 text-sm"
+          <button class="btn btn-secondary btn-sm mt-2"
                   (click)="addRecipient()" data-test="add-recipient">
             Add someone
           </button>
-          <p class="mt-3 text-[11px] text-slate-500">
+          <p class="faint mt-3 text-[11px]">
             A <strong>signer</strong> fills in fields. An <strong>approver</strong>
             says yes or no without signing. A <strong>viewer</strong> must open it.
             A <strong>cc</strong> just gets the finished document.
           </p>
 
-          <button class="mt-4 rounded-lg bg-indigo-600 px-4 py-2 font-medium text-white disabled:opacity-40"
+          <button class="btn btn-secondary mt-4"
                   [disabled]="busy()" (click)="saveRecipients()" data-test="to-fields">
             Next: place fields
           </button>
@@ -76,34 +79,38 @@
 
       @case (2) {
         <section class="flex min-h-0 flex-1" data-test="step-fields">
-          <aside class="w-64 shrink-0 overflow-y-auto border-r border-slate-200 bg-white p-3 text-sm">
-            <p class="text-[11px] text-slate-500">
+          <aside class="border-border bg-surface w-64 shrink-0 overflow-y-auto border-e p-3 text-sm">
+            <p class="text-ink-muted text-[11px]">
               Pick a person and a field type, then drag a box on the page.
             </p>
+            <!-- Per-recipient dot colours are content, not chrome — they map a
+                 box on the page to a person, so they are exempt from the
+                 one-accent rule (§4). The armed pill is a selection mark. -->
             <div class="mt-2 flex flex-col gap-1">
               @for (row of recipients(); track row.id) {
                 @if (row.role === 'signer' || row.role === 'approver') {
-                  <button class="flex items-center gap-2 rounded border px-2 py-1 text-left text-[11px]"
-                          [class.border-indigo-500]="armedFor() === row.id"
-                          [class.bg-indigo-50]="armedFor() === row.id"
-                          [class.border-slate-200]="armedFor() !== row.id"
+                  <button class="rounded-1 flex items-center gap-2 border px-2 py-1 text-start text-[11px]"
+                          [class.border-accent]="armedFor() === row.id"
+                          [class.bg-accent-surface]="armedFor() === row.id"
+                          [class.border-border]="armedFor() !== row.id"
                           (click)="armedFor.set(row.id!)"
                           [attr.data-test]="'arm-' + row.email">
                     <span class="h-3 w-3 rounded-full"
                           [style.background]="colorFor(row.id!)"></span>
                     <span class="truncate">{{ row.name || row.email }}</span>
-                    <span class="ml-auto text-slate-500">{{ fieldsFor(row.id!) }}</span>
+                    <span class="text-ink-muted ms-auto">{{ fieldsFor(row.id!) }}</span>
                   </button>
                 }
               }
             </div>
 
+            <!-- Field-type selection is an ink stamp (bg-ink-strong), like every
+                 segmented choice — accent stays reserved (§3 tabs). -->
             <div class="mt-3 grid grid-cols-2 gap-1">
               @for (type of fieldTypes; track type) {
-                <button class="rounded border px-2 py-1 text-[11px]"
-                        [class.bg-slate-900]="armedType() === type"
-                        [class.text-white]="armedType() === type"
-                        [class.border-slate-200]="armedType() !== type"
+                <button class="rounded-1 border-border border px-2 py-1 text-[11px]"
+                        [class.bg-ink-strong]="armedType() === type"
+                        [class.text-bg]="armedType() === type"
                         (click)="armedType.set(type)"
                         [attr.data-test]="'field-type-' + type">
                   {{ type.replace('_', ' ') }}
@@ -111,35 +118,35 @@
               }
             </div>
 
-            <label class="mt-3 flex items-center gap-2 text-[11px] text-slate-600">
+            <label class="mt-3 !flex items-center gap-2">
               <input type="checkbox" [ngModel]="armedRequired()"
                      (ngModelChange)="armedRequired.set($event)"
                      data-test="field-required" />
               Required
             </label>
-            <p class="mt-2 text-[10px] text-slate-500">
+            <p class="faint mt-2 text-[11px]">
               A <em>date signed</em> field fills itself in when the person
               finishes — nobody types it.
             </p>
 
-            <button class="mt-4 w-full rounded-lg bg-indigo-600 px-3 py-2 text-sm font-medium text-white disabled:opacity-40"
+            <button class="btn btn-secondary btn-block mt-4"
                     [disabled]="busy()" (click)="saveFields()" data-test="to-message">
               Next: message
             </button>
-            <button class="mt-1 w-full rounded px-3 py-1 text-[11px] text-slate-500"
+            <button class="btn btn-secondary btn-sm btn-block mt-2"
                     (click)="step.set(1)">Back</button>
           </aside>
 
-          <main class="flex min-h-0 flex-1 flex-col bg-slate-100">
-            <div class="flex items-center gap-2 border-b border-slate-200 bg-white px-4 py-2 text-sm">
+          <main class="canvas-backdrop flex min-h-0 flex-1 flex-col">
+            <div class="border-border bg-surface flex items-center gap-2 border-b px-4 py-2 text-sm">
               <button (click)="prevPage()" [disabled]="page() === 0"
-                      class="rounded px-2 py-1 disabled:opacity-30"
+                      class="btn btn-ghost btn-sm"
                       data-test="builder-prev">‹</button>
-              <span class="text-slate-500" data-test="builder-page">
+              <span class="text-ink-muted" data-test="builder-page">
                 Page {{ page() + 1 }} / {{ pageCount() }}
               </span>
               <button (click)="nextPage()" [disabled]="page() >= pageCount() - 1"
-                      class="rounded px-2 py-1 disabled:opacity-30"
+                      class="btn btn-ghost btn-sm"
                       data-test="builder-next">›</button>
             </div>
             <div class="min-h-0 flex-1 overflow-auto p-6">
@@ -162,37 +169,37 @@
 
       @case (3) {
         <section class="mx-auto w-full max-w-2xl p-6" data-test="step-message">
-          <h1 class="text-lg font-semibold text-slate-800">Anything to say?</h1>
-          <label class="mt-3 block text-xs text-slate-500">
+          <h1 class="!text-[22px]">Anything to say?</h1>
+          <label class="mt-3 block">
             Message (goes in the email)
-            <textarea rows="4" class="mt-1 w-full rounded border border-slate-300 p-2 text-sm"
+            <textarea rows="4" class="input mt-1"
                       [ngModel]="message()" (ngModelChange)="message.set($event)"
                       data-test="builder-message"></textarea>
           </label>
-          <div class="mt-3 flex gap-4">
-            <label class="text-xs text-slate-500">
+          <div class="mt-3 flex flex-wrap gap-4">
+            <label>
               Expires after
               <input type="number" min="1" max="365"
-                     class="ml-1 w-20 rounded border border-slate-300 px-2 py-1 text-sm"
+                     class="input !min-h-9 !w-20 ms-1"
                      [ngModel]="expiresInDays()"
                      (ngModelChange)="expiresInDays.set(+$event)"
                      data-test="builder-expiry" /> days
             </label>
-            <label class="text-xs text-slate-500">
+            <label>
               Remind every
               <input type="number" min="0" max="90"
-                     class="ml-1 w-20 rounded border border-slate-300 px-2 py-1 text-sm"
+                     class="input !min-h-9 !w-20 ms-1"
                      [ngModel]="reminderDays()"
                      (ngModelChange)="reminderDays.set(+$event)"
                      data-test="builder-reminder" /> days (0 = never)
             </label>
           </div>
           <div class="mt-4 flex gap-2">
-            <button class="rounded-lg bg-indigo-600 px-4 py-2 font-medium text-white disabled:opacity-40"
+            <button class="btn btn-secondary"
                     [disabled]="busy()" (click)="saveMessage()" data-test="to-review">
               Next: review
             </button>
-            <button class="rounded px-3 py-2 text-sm text-slate-500"
+            <button class="btn btn-secondary"
                     (click)="step.set(2)">Back</button>
           </div>
         </section>
@@ -200,44 +207,44 @@
 
       @default {
         <section class="mx-auto w-full max-w-2xl p-6" data-test="step-review">
-          <h1 class="text-lg font-semibold text-slate-800">Ready to send</h1>
-          <p class="mt-1 text-sm text-slate-500">
+          <h1 class="!text-[22px]">Ready to send</h1>
+          <p class="text-ink-muted mt-1 text-sm">
             {{ request.title }} · envelope {{ request.envelope_code }}
           </p>
 
           <ul class="mt-4 flex flex-col gap-1 text-sm">
             @for (row of recipients(); track row.id) {
-              <li class="flex items-center gap-2 rounded border border-slate-200 bg-white p-2"
+              <li class="border-border bg-surface-raised rounded-2 flex items-center gap-2 border p-2"
                   data-test="review-recipient">
                 <span class="h-3 w-3 rounded-full" [style.background]="colorFor(row.id!)"></span>
                 <span>{{ row.name || row.email }}</span>
-                <span class="text-xs text-slate-500">{{ row.role }} · step {{ row.order }}</span>
-                <span class="ml-auto text-xs text-slate-500">
+                <span class="text-ink-muted text-xs">{{ row.role }} · step {{ row.order }}</span>
+                <span class="text-ink-muted ms-auto text-xs">
                   {{ fieldsFor(row.id!) }} field(s)
                 </span>
               </li>
             }
           </ul>
 
-          <p class="mt-4 text-[11px] text-slate-500">
+          <p class="faint mt-4 text-[11px]">
             Sending freezes this version of the document. Later edits to it will
             not change what these people are asked to sign.
           </p>
 
           @if (needsVerification()) {
-            <div class="mt-4 rounded-lg border border-amber-300 bg-amber-50 p-4"
+            <div class="border-warning bg-warning-surface rounded-3 mt-4 border p-4"
                  data-test="verify-gate">
-              <p class="text-sm text-amber-900">
+              <p class="text-sm">
                 Confirm your email address before sending documents to other
                 people. We sent a link when you signed up — everything you have
                 built here is saved.
               </p>
               @if (verification.failure(); as message) {
-                <p class="mt-2 text-sm text-amber-800" data-test="verify-gate-error">
+                <p class="text-danger mt-2 text-sm" data-test="verify-gate-error">
                   {{ message }}
                 </p>
               }
-              <button class="mt-2 rounded-lg border border-amber-400 px-3 py-1 text-sm text-amber-900"
+              <button class="btn btn-secondary btn-sm mt-3"
                       [disabled]="verification.sending()"
                       (click)="verification.resend()"
                       data-test="verify-gate-resend">
@@ -247,11 +254,13 @@
           }
 
           <div class="mt-4 flex gap-2">
-            <button class="rounded-lg bg-emerald-700 px-4 py-2 font-medium text-white disabled:opacity-40"
+            <!-- The screen's single primary — a standard vermilion .btn-primary
+                 (D1: the green/lavender send variants are retired). -->
+            <button class="btn btn-primary"
                     [disabled]="busy()" (click)="send()" data-test="send-request">
               Send it
             </button>
-            <button class="rounded px-3 py-2 text-sm text-slate-500"
+            <button class="btn btn-secondary"
                     (click)="step.set(3)">Back</button>
           </div>
         </section>
@@ -259,5 +268,5 @@
     }
   </div>
 } @else {
-  <p class="p-6 text-sm text-slate-500" data-test="builder-loading">Preparing…</p>
+  <p class="text-ink-muted p-6 text-sm" data-test="builder-loading">Preparing…</p>
 }

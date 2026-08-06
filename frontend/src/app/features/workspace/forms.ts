@@ -190,7 +190,7 @@ export class Forms {
       page: this.page(),
       shape: 'rect',
       rect,
-      stroke: selected ? '#4f46e5' : (staged ? '#059669' : '#64748b'),
+      stroke: selected ? '#B23A26' : (staged ? '#2F6B46' : '#776E5E'),
       fill: staged ? '#a7f3d0' : '#e2e8f0',
       opacity: 0.45,
       width: selected ? 2 : 1,

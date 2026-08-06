@@ -1,0 +1,419 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Landing — ZenPDF (light)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Shippori+Mincho:wght@500;600;700&family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap" rel="stylesheet">
+<meta name="theme-color" content="#F5F1E6">
+<style>
+/* ZenPDF — "Zen ink & paper" design tokens + component layer.
+   Source of truth: handoff/design-instructions.md. Semantic tokens only in components. */
+
+/* ---------- 1. Primitives + semantic aliases (light) ---------- */
+:root {
+  /* paper */
+  --paper-0:#FFFDF7; --paper-50:#FBF8F1; --paper-100:#F5F1E6; --paper-200:#EDE7D8;
+  --paper-300:#E3DBC8; --paper-400:#C6BBA1;
+  /* ink */
+  --ink-900:#211C15; --ink-800:#332D24; --ink-700:#4A4337; --ink-600:#5F574A;
+  --ink-500:#776E5E; --ink-400:#948A77;
+  /* night paper */
+  --night-900:#171310; --night-800:#1E1915; --night-700:#26201A; --night-600:#362F26; --night-500:#4A4234;
+  /* vermilion (the seal) */
+  --verm-700:#7E2717; --verm-600:#96301F; --verm-500:#B23A26; --verm-400:#D96A50; --verm-300:#E98B72;
+  /* status primitives */
+  --pine-600:#2F6B46; --pine-300:#8CC3A0;
+  --ochre-600:#8A6212; --ochre-300:#D8B25E;
+  --crimson-600:#8E2A38; --crimson-300:#E08296;
+  --water-600:#3D6478; --water-300:#9CC0D4;
+
+  /* semantic — light ("day paper") */
+  --color-bg:var(--paper-100);
+  --color-surface:var(--paper-50);
+  --color-surface-raised:var(--paper-0);
+  --color-ink:var(--ink-800);
+  --color-ink-strong:var(--ink-900);
+  --color-ink-muted:var(--ink-600);
+  --color-ink-faint:var(--ink-400);
+  --color-accent:var(--verm-500);
+  --color-accent-hover:var(--verm-600);
+  --color-accent-active:var(--verm-700);
+  --color-on-accent:var(--paper-0);
+  --color-accent-surface:#F6E4DD;
+  --color-border:var(--paper-300);
+  --color-border-strong:var(--paper-400);
+  --color-focus:var(--verm-500);
+  --color-success:var(--pine-600);       --color-success-surface:#E6EEE2;
+  --color-warning:var(--ochre-600);      --color-warning-surface:#F3EAD2;
+  --color-danger:var(--crimson-600);     --color-danger-surface:#F3E0E0;
+  --color-info:var(--water-600);         --color-info-surface:#E2EAEE;
+  --color-canvas-backdrop:#E9E2D0;
+  --color-page-shadow:rgba(60,50,30,.18);
+  --color-ad-frame:var(--paper-200);
+  --color-scrim:rgba(33,28,21,.45);
+
+  /* type */
+  --font-display:"Shippori Mincho", Georgia, "Times New Roman", serif;
+  --font-ui:"Zen Kaku Gothic New", -apple-system, "Segoe UI", system-ui, sans-serif;
+
+  /* rhythm */
+  --space-1:4px; --space-2:8px; --space-3:12px; --space-4:16px; --space-5:24px;
+  --space-6:32px; --space-7:48px; --space-8:64px; --space-9:96px;
+  --radius-1:4px; --radius-2:6px; --radius-3:10px;
+  --border-hairline:1px; --border-emphasis:2px;
+  --shadow-1:0 1px 2px rgba(50,40,25,.06);
+  --shadow-2:0 2px 8px rgba(50,40,25,.10);
+  --shadow-3:0 8px 28px rgba(50,40,25,.16);
+  --dur-1:150ms; --dur-2:220ms; --dur-3:300ms;
+  --ease:cubic-bezier(.4,0,.2,1);
+}
+.dark {
+  --color-bg:var(--night-900);
+  --color-surface:var(--night-800);
+  --color-surface-raised:var(--night-700);
+  --color-ink:#EFE8DA;
+  --color-ink-strong:#F8F3E7;
+  --color-ink-muted:#BDB29E;
+  --color-ink-faint:#8E8471;
+  --color-accent:var(--verm-400);
+  --color-accent-hover:var(--verm-300);
+  --color-accent-active:#F2A992;
+  --color-on-accent:var(--night-900);
+  --color-accent-surface:#3B241C;
+  --color-border:var(--night-600);
+  --color-border-strong:var(--night-500);
+  --color-focus:var(--verm-400);
+  --color-success:var(--pine-300);   --color-success-surface:#22301F;
+  --color-warning:var(--ochre-300);  --color-warning-surface:#332A14;
+  --color-danger:var(--crimson-300); --color-danger-surface:#38202A;
+  --color-info:var(--water-300);     --color-info-surface:#1D2B33;
+  --color-canvas-backdrop:#121009;
+  --color-page-shadow:rgba(0,0,0,.55);
+  --color-ad-frame:#231E18;
+  --color-scrim:rgba(0,0,0,.6);
+  --shadow-1:0 1px 2px rgba(0,0,0,.4);
+  --shadow-2:0 2px 8px rgba(0,0,0,.45);
+  --shadow-3:0 8px 28px rgba(0,0,0,.55);
+}
+
+/* ---------- 2. Base ---------- */
+* { box-sizing:border-box; margin:0; }
+html,body { height:100%; }
+body {
+  background:var(--color-bg); color:var(--color-ink);
+  font:400 15px/1.6 var(--font-ui);
+  -webkit-font-smoothing:antialiased;
+}
+h1,h2,h3,.display { font-family:var(--font-display); color:var(--color-ink-strong); font-weight:600; line-height:1.25; text-wrap:pretty; }
+h1{font-size:34px} h2{font-size:22px} h3{font-size:17px}
+a { color:var(--color-ink); text-decoration:underline; text-underline-offset:3px; text-decoration-color:var(--color-border-strong); }
+a:hover { color:var(--color-accent-hover); text-decoration-color:currentColor; }
+:focus-visible { outline:2px solid var(--color-focus); outline-offset:2px; border-radius:2px; }
+::selection { background:var(--color-accent-surface); }
+small,.muted { color:var(--color-ink-muted); }
+.faint { color:var(--color-ink-faint); }
+.kicker { font:500 11px/1.4 var(--font-ui); letter-spacing:.14em; text-transform:uppercase; color:var(--color-ink-faint); }
+
+/* ---------- 3. Brand ---------- */
+.brand { display:inline-flex; align-items:center; gap:10px; text-decoration:none; }
+.brand:hover { color:inherit; }
+.seal { width:28px; height:28px; flex:none; display:block; }
+.brand b { font:700 19px/1 var(--font-display); color:var(--color-ink-strong); letter-spacing:.01em; }
+.brand b i { font-style:normal; color:var(--color-ink-muted); font-weight:500; }
+
+/* ---------- 4. Headers ---------- */
+.hdr { display:flex; align-items:center; gap:20px; padding:14px 32px;
+  border-bottom:var(--border-hairline) solid var(--color-border); background:var(--color-surface); }
+.hdr nav { margin-inline-start:auto; display:flex; align-items:center; gap:18px; font-size:14px; }
+.hdr nav a { text-decoration:none; color:var(--color-ink-muted); }
+.hdr nav a:hover { color:var(--color-ink-strong); }
+.hdr nav a[aria-current] { color:var(--color-ink-strong); font-weight:500; }
+
+/* theme toggle — 44px hit target on all header variants */
+.theme-toggle { width:44px; height:44px; margin:-8px 0; display:inline-flex; align-items:center; justify-content:center;
+  border:none; background:none; border-radius:var(--radius-2); color:var(--color-ink-muted); cursor:pointer; }
+.theme-toggle:hover { background:var(--color-bg); color:var(--color-ink-strong); }
+.theme-toggle svg { width:20px; height:20px; }
+
+/* ---------- 5. Buttons ---------- */
+.btn { display:inline-flex; align-items:center; justify-content:center; gap:8px; white-space:nowrap;
+  min-height:44px; padding:0 20px; border-radius:var(--radius-2); cursor:pointer;
+  font:500 15px/1 var(--font-ui); text-decoration:none; border:var(--border-hairline) solid transparent;
+  transition:background var(--dur-1) var(--ease), border-color var(--dur-1) var(--ease), color var(--dur-1) var(--ease); }
+.btn-primary { background:var(--color-accent); color:var(--color-on-accent); }
+.btn-primary:hover { background:var(--color-accent-hover); color:var(--color-on-accent); }
+.btn-primary:active { background:var(--color-accent-active); }
+.btn-secondary { background:var(--color-surface-raised); border-color:var(--color-border-strong); color:var(--color-ink); }
+.btn-secondary:hover { border-color:var(--color-ink-faint); background:var(--color-surface); color:var(--color-ink-strong); }
+.btn-ghost { background:none; color:var(--color-ink-muted); }
+.btn-ghost:hover { background:var(--color-surface-raised); color:var(--color-ink-strong); }
+.dark .btn-ghost:hover { background:var(--color-surface); }
+.btn-danger { background:none; border-color:var(--color-danger); color:var(--color-danger); }
+.btn-danger:hover { background:var(--color-danger-surface); }
+.btn[disabled], .btn-disabled { background:transparent !important; border:var(--border-hairline) dashed var(--color-border-strong) !important;
+  color:var(--color-ink-muted) !important; cursor:not-allowed; }
+.btn-sm { min-height:36px; padding:0 14px; font-size:14px; }
+.btn-block { width:100%; }
+.btn .spin { width:14px; height:14px; border:2px solid currentColor; border-inline-end-color:transparent; border-radius:50%;
+  animation:spin 1s linear infinite; }
+@keyframes spin { to { transform:rotate(1turn); } }
+
+/* ---------- 6. Cards, panels ---------- */
+.card { background:var(--color-surface); border:var(--border-hairline) solid var(--color-border);
+  border-radius:var(--radius-3); box-shadow:var(--shadow-1); }
+.card-raised { background:var(--color-surface-raised); box-shadow:var(--shadow-2); }
+.pad-5 { padding:var(--space-5); } .pad-6 { padding:var(--space-6); }
+
+/* folded-corner sheet — used sparingly (trust notice, empty states) */
+.sheet { position:relative; background:var(--color-surface-raised); border:var(--border-hairline) solid var(--color-border);
+  border-radius:var(--radius-1); }
+.sheet::after { content:""; position:absolute; top:0; inset-inline-end:0; width:0; height:0;
+  border-block-start:16px solid var(--color-bg); border-inline-start:16px solid var(--color-border); border-end-start-radius:3px; }
+
+/* ---------- 7. Stamp (the hanko — completion states only) ---------- */
+.stamp { display:inline-flex; align-items:center; justify-content:center; padding:5px 14px;
+  border:var(--border-emphasis) solid var(--color-accent); border-radius:var(--radius-2);
+  box-shadow:inset 0 0 0 1.5px color-mix(in srgb, var(--color-accent) 45%, transparent);
+  color:var(--color-accent); background:color-mix(in srgb, var(--color-accent) 7%, transparent);
+  font:700 13px/1.5 var(--font-display); letter-spacing:.22em; text-transform:uppercase;
+  transform:rotate(-4deg); white-space:nowrap; }
+.stamp-sm { padding:2px 9px; font-size:10px; letter-spacing:.18em; border-width:1.5px; }
+
+/* ---------- 8. Forms ---------- */
+label { display:block; font:500 13px/1.5 var(--font-ui); color:var(--color-ink-muted); margin-block-end:6px; }
+.input { width:100%; min-height:44px; padding:0 14px; font:400 15px/1.4 var(--font-ui);
+  color:var(--color-ink); background:var(--color-surface-raised);
+  border:var(--border-hairline) solid var(--color-border-strong); border-radius:var(--radius-2); }
+.input::placeholder { color:var(--color-ink-faint); }
+.input:hover { border-color:var(--color-ink-faint); }
+.input:focus { outline:2px solid var(--color-focus); outline-offset:0; border-color:transparent; }
+.input[disabled] { background:var(--color-bg); color:var(--color-ink-muted); border-style:dashed; }
+.input-invalid { border-color:var(--color-danger); }
+.field-hint { font-size:12.5px; color:var(--color-ink-faint); margin-block-start:5px; }
+.field-error { font-size:13px; color:var(--color-danger); margin-block-start:5px; }
+.input-wrap { position:relative; }
+.input-wrap .input { padding-inline-end:48px; }
+.input-eye { position:absolute; inset-block-start:0; inset-inline-end:0; width:44px; height:44px;
+  display:flex; align-items:center; justify-content:center; background:none; border:none;
+  color:var(--color-ink-faint); cursor:pointer; border-radius:var(--radius-2); }
+.input-eye:hover { color:var(--color-ink); }
+input[type=checkbox] { width:17px; height:17px; accent-color:var(--color-accent); }
+input[type=range] { accent-color:var(--color-accent); }
+input[type=color] { border:var(--border-hairline) solid var(--color-border-strong); border-radius:var(--radius-1); background:none; }
+
+/* ---------- 9. Dropzone — paper laid on a desk ---------- */
+.dropzone { display:flex; flex-direction:column; align-items:center; gap:10px; text-align:center;
+  padding:var(--space-7) var(--space-5); cursor:pointer;
+  background:var(--color-surface-raised); border:var(--border-hairline) dashed var(--color-border-strong);
+  border-radius:var(--radius-1); transition:border-color var(--dur-2) var(--ease), background var(--dur-2) var(--ease); }
+.dropzone:hover { border-color:var(--color-ink-faint); }
+.dropzone.dragging { border-color:var(--color-accent); border-style:solid; background:var(--color-accent-surface); }
+.dropzone svg { width:36px; height:36px; color:var(--color-ink-faint); }
+.dropzone .dz-prompt { font:500 15px/1.5 var(--font-ui); color:var(--color-ink); }
+.dropzone .dz-hint { font-size:12.5px; color:var(--color-ink-faint); }
+
+/* ---------- 10. Progress — the breath ---------- */
+.breath { display:flex; align-items:center; gap:14px; }
+.breath-dot { width:34px; height:34px; flex:none; border-radius:50%;
+  border:var(--border-emphasis) solid var(--color-accent);
+  animation:breathe 2.6s var(--ease) infinite; }
+@keyframes breathe { 0%,100% { transform:scale(.82); opacity:.55; } 50% { transform:scale(1); opacity:1; } }
+@media (prefers-reduced-motion:reduce) { .breath-dot,.btn .spin { animation:none; } }
+.breath p { font:400 15px/1.5 var(--font-ui); color:var(--color-ink-muted); }
+.meter { height:6px; border-radius:3px; background:var(--color-bg); border:var(--border-hairline) solid var(--color-border); overflow:hidden; }
+.meter > i { display:block; height:100%; background:var(--color-accent); border-radius:3px; }
+
+/* ---------- 11. Ad container — honest, bounded ---------- */
+.ad-frame { border:var(--border-hairline) dashed var(--color-border-strong); border-radius:var(--radius-2);
+  background:var(--color-ad-frame); padding:10px 12px 12px; }
+.ad-frame .ad-label { font:500 10px/1 var(--font-ui); letter-spacing:.16em; text-transform:uppercase;
+  color:var(--color-ink-faint); margin-block-end:8px; }
+.ad-frame .ad-unit { display:flex; align-items:center; justify-content:center;
+  border-radius:var(--radius-1); background:color-mix(in srgb, var(--color-ink) 4%, transparent);
+  color:var(--color-ink-faint); font-size:12px; }
+
+/* ---------- 12. Toasts, banners, badges ---------- */
+.toast { display:flex; align-items:center; gap:10px; padding:12px 16px; border-radius:var(--radius-2);
+  background:var(--color-surface-raised); border:var(--border-hairline) solid var(--color-border);
+  border-inline-start:3px solid var(--color-ink-faint); box-shadow:var(--shadow-3); font-size:14px; max-width:360px; }
+.toast-success { border-inline-start-color:var(--color-success); }
+.toast-error { border-inline-start-color:var(--color-danger); }
+.banner { display:flex; flex-wrap:wrap; align-items:center; gap:12px; padding:9px 32px; font-size:13.5px;
+  border-block-end:var(--border-hairline) solid var(--color-border); background:var(--color-surface); color:var(--color-ink-muted); }
+.banner-info { background:var(--color-info-surface); color:var(--color-ink); }
+.banner-warning { background:var(--color-warning-surface); color:var(--color-ink); }
+.badge { display:inline-flex; align-items:center; white-space:nowrap; padding:2px 10px; border-radius:999px;
+  font:500 12px/1.6 var(--font-ui); border:var(--border-hairline) solid var(--color-border-strong); color:var(--color-ink-muted); }
+.badge-success { border-color:transparent; background:var(--color-success-surface); color:var(--color-success); }
+.badge-danger { border-color:transparent; background:var(--color-danger-surface); color:var(--color-danger); }
+
+/* ---------- 13. Tabs / segmented workspace nav ---------- */
+.seg { display:flex; align-items:center; gap:2px; }
+.seg button, .seg a { min-height:36px; padding:0 13px; display:inline-flex; align-items:center; white-space:nowrap; border:none; background:none;
+  border-radius:var(--radius-2); font:400 13.5px/1 var(--font-ui); color:var(--color-ink-muted); cursor:pointer; text-decoration:none; }
+.seg button:hover, .seg a:hover { color:var(--color-ink-strong); background:var(--color-bg); }
+.seg [aria-selected=true] { background:var(--color-ink-strong); color:var(--color-bg); font-weight:500; }
+
+/* ---------- 14. Tables ---------- */
+.tbl { width:100%; border-collapse:collapse; font-size:14px; }
+.tbl th { font:500 11.5px/1.4 var(--font-ui); letter-spacing:.1em; text-transform:uppercase;
+  color:var(--color-ink-faint); text-align:start; padding:8px 0; }
+.tbl td { padding:9px 0; border-block-start:var(--border-hairline) solid var(--color-border); color:var(--color-ink-muted); }
+.tbl td:first-child { color:var(--color-ink); }
+
+/* ---------- 15. Footer ---------- */
+.ftr { border-block-start:var(--border-hairline) solid var(--color-border); padding:var(--space-5) 32px;
+  text-align:center; font-size:12.5px; color:var(--color-ink-faint); }
+.ftr a { color:var(--color-ink-muted); margin:0 10px; }
+.ftr .ftr-fact { margin-block-start:10px; }
+
+/* ---------- 16. Tool icons — 24px grid, 1.5 stroke ---------- */
+.ti { width:24px; height:24px; stroke:currentColor; stroke-width:1.5; fill:none;
+  stroke-linecap:round; stroke-linejoin:round; flex:none; }
+
+/* ---------- 17. Layout helpers ---------- */
+.wrap { max-width:1120px; margin-inline:auto; padding-inline:32px; }
+.wrap-narrow { max-width:720px; margin-inline:auto; padding-inline:32px; }
+.row { display:flex; align-items:center; gap:var(--space-3); }
+.col { display:flex; flex-direction:column; gap:var(--space-3); }
+.grow { flex:1; min-width:0; }
+
+/* PDF page placeholders (mockup-only stand-ins for rendered pages) */
+.page-thumb { aspect-ratio:3/4; background:#fff; border:var(--border-hairline) solid var(--color-border);
+  border-radius:2px; box-shadow:0 1px 3px var(--color-page-shadow); position:relative; overflow:hidden; }
+.dark .page-thumb { border-color:var(--night-500); }
+.page-thumb i { position:absolute; inset-inline:12%; height:3px; border-radius:2px; background:#D9D2C0; }
+.dark .page-thumb i { background:#C9C2B0; opacity:.85; }
+
+/* phone frame for mobile artboards */
+.phone { width:390px; margin:40px auto; background:var(--color-bg); border:var(--border-hairline) solid var(--color-border-strong);
+  border-radius:14px; overflow:hidden; box-shadow:var(--shadow-3); }
+.phone .hdr { padding:12px 16px; }
+.phone .ftr { padding:20px 16px; }
+
+</style>
+</head>
+<body>
+<header class="hdr">
+  <a class="brand" href="01a-landing-desktop.html"><svg style="width:28px;height:28px;flex:none" viewBox="0 0 32 32" aria-hidden="true"><rect x="1.5" y="1.5" width="29" height="29" rx="7" fill="var(--color-accent)"/><path d="M10.5 11h11l-11 10h11" fill="none" stroke="var(--color-on-accent)" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg><b>Zen<i>PDF</i></b></a>
+  <nav>
+    <a href="#/auth/login">Log in</a>
+    <a class="btn btn-sm btn-secondary" href="#/auth/register" style="text-decoration:none">Create free account</a>
+    <button class="theme-toggle" type="button" aria-label="Theme: System — change theme"><svg class="ti" viewBox="0 0 24 24" style="width:20px;height:20px"><rect x="3" y="5" width="18" height="12" rx="2"/><path d="M9 21h6M12 17v4"/></svg></button>
+  </nav>
+</header>
+
+<main class="wrap" style="padding-block:var(--space-8) var(--space-9)">
+  <div style="max-width:640px">
+    <p class="kicker">PDF tools &amp; e-signature</p>
+    <h1 style="font-size:42px; margin-top:10px">Every PDF tool, no&nbsp;account&nbsp;needed</h1>
+    <p class="muted" style="margin-top:14px; max-width:520px">Organize, merge, split, compress and sign PDFs in your browser. Pick a tool below and drop a file on it — that is the whole process.</p>
+  </div>
+
+  <div class="sheet" style="margin-top:var(--space-6); display:flex; flex-wrap:wrap; align-items:center; gap:0; padding:16px 24px; max-width:760px">
+    <span style="display:flex; align-items:center; gap:10px; padding-inline-end:24px"><svg style="width:20px;height:20px;flex:none" viewBox="0 0 32 32" aria-hidden="true"><rect x="1.5" y="1.5" width="29" height="29" rx="7" fill="var(--color-accent)"/><path d="M10.5 11h11l-11 10h11" fill="none" stroke="var(--color-on-accent)" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg><span style="font-size:14px">No watermarks</span></span>
+    <span style="display:flex; align-items:center; gap:10px; padding-inline:24px; border-inline-start:1px solid var(--color-border)"><span style="font-size:14px">Files delete automatically after 24&nbsp;hours</span></span>
+    <span style="display:flex; align-items:center; gap:10px; padding-inline-start:24px; border-inline-start:1px solid var(--color-border)"><span style="font-size:14px">Free, paid for by advertising</span></span>
+  </div>
+
+  <div class="input-wrap" style="margin-top:var(--space-8); max-width:420px">
+    <input class="input" id="tool-filter" type="search" placeholder="Filter the tools… try “merge” or “sign”" aria-label="Filter the 24 tools" />
+    <span class="input-eye" aria-hidden="true" style="pointer-events:none"><svg class="ti" viewBox="0 0 24 24" style="width:18px;height:18px"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4.5 4.5"/></svg></span>
+  </div>
+  <p class="faint" id="filter-empty" hidden style="margin-top:16px">No tool matches that. Clear the filter to see all 24.</p>
+
+  <div id="tool-groups" class="col" style="gap:var(--space-7); margin-top:var(--space-6)">
+    <section data-group>
+      <h2 class="kicker" style="font-family:var(--font-ui); font-size:11px; color:var(--color-ink-faint)">Organize</h2>
+      <div class="tool-grid">
+        <a class="tool-card" href="#/merge-pdf" data-name="merge pdf files combine"><svg class="ti" viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="3.5" width="7" height="9.5" rx="1"/><rect x="13.5" y="3.5" width="7" height="9.5" rx="1"/><path d="M12 13.5v6"/><path d="m9.5 17.5 2.5 2.5 2.5-2.5"/></svg><span>Merge PDFs</span></a>
+        <a class="tool-card" href="#/split-pdf" data-name="split a pdf"><svg class="ti" viewBox="0 0 24 24" aria-hidden="true"><rect x="8.5" y="3.5" width="7" height="9.5" rx="1"/><path d="M12 13v2.5l-4.5 4.5M12 15.5 16.5 20"/><path d="M9.8 20.3H7.2v-2.6M14.2 20.3h2.6v-2.6"/></svg><span>Split a PDF</span></a>
+        <a class="tool-card" href="#/organize-pdf" data-name="organize pdf pages reorder"><svg class="ti" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="7" height="7" rx="1"/><rect x="13" y="4" width="7" height="7" rx="1"/><rect x="4" y="13" width="7" height="7" rx="1"/><path d="M16.5 13.5v6M13.5 16.5h6"/></svg><span>Organize pages</span></a>
+        <a class="tool-card" href="#/rotate-pdf" data-name="rotate pdf pages"><svg class="ti" viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="8" width="10" height="12.5" rx="1"/><path d="M7 4.5h6a4 4 0 0 1 4 4v1"/><path d="m15.2 7.7 1.8 1.8 1.8-1.8"/></svg><span>Rotate pages</span></a>
+        <a class="tool-card" href="#/delete-pdf-pages" data-name="delete pages from a pdf"><svg class="ti" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="3.5" width="10.5" height="13.5" rx="1"/><circle cx="17" cy="17.5" r="3.75"/><path d="M15.2 17.5h3.6"/></svg><span>Delete pages</span></a>
+        <a class="tool-card" href="#/extract-pdf-pages" data-name="extract pages from a pdf"><svg class="ti" viewBox="0 0 24 24" aria-hidden="true"><rect x="4.5" y="3.5" width="10.5" height="13.5" rx="1"/><path d="M11.5 20.5h8.5M17.4 17.9l2.6 2.6-2.6 2.6"/></svg><span>Extract pages</span></a>
+        <a class="tool-card" href="#/add-page-numbers" data-name="add page numbers to a pdf"><svg class="ti" viewBox="0 0 24 24" aria-hidden="true"><rect x="6.5" y="3.5" width="11" height="13.5" rx="1"/><path d="M9.5 20.5h.01M12 20.5h.01M14.5 20.5h.01"/></svg><span>Page numbers</span></a>
+      </div>
+    </section>
+    <section data-group>
+      <h2 class="kicker" style="font-family:var(--font-ui); font-size:11px; color:var(--color-ink-faint)">Edit &amp; annotate</h2>
+      <div class="tool-grid">
+        <a class="tool-card" href="#/edit-pdf" data-name="edit a pdf text"><svg class="ti" viewBox="0 0 24 24" aria-hidden="true"><path d="m5 19 .9-3.6L16.3 5a1.8 1.8 0 0 1 2.6 0l.5.5a1.8 1.8 0 0 1 0 2.6L9 18.5 5 19Z"/><path d="m14.8 6.5 3 3"/></svg><span>Edit a PDF</span></a>
+        <a class="tool-card" href="#/annotate-pdf" data-name="annotate a pdf highlight comment"><svg class="ti" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 14.5 14 6.4a1.7 1.7 0 0 1 2.4 0l1.6 1.6a1.7 1.7 0 0 1 0 2.4l-8.1 8H6v-3.9Z"/><path d="M4 21.5h16"/></svg><span>Annotate</span></a>
+        <a class="tool-card" href="#/fill-pdf-form" data-name="fill out a pdf form"><svg class="ti" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="6.5" height="6.5" rx="1"/><path d="m5.9 7.3 1.3 1.3 2.3-2.7"/><path d="M14 6h6M14 8.8h4.5"/><rect x="4" y="13.5" width="6.5" height="6.5" rx="1"/><path d="M14 15.5h6M14 18.3h4.5"/></svg><span>Fill out a form</span></a>
+        <a class="tool-card" href="#/watermark-pdf" data-name="add a watermark to a pdf"><svg class="ti" viewBox="0 0 24 24" aria-hidden="true"><rect x="4.5" y="3.5" width="12" height="15" rx="1"/><path d="M17.5 13.8s2.9 3 2.9 4.8a2.9 2.9 0 0 1-5.8 0c0-1.8 2.9-4.8 2.9-4.8Z"/></svg><span>Watermark</span></a>
+      </div>
+    </section>
+    <section data-group>
+      <h2 class="kicker" style="font-family:var(--font-ui); font-size:11px; color:var(--color-ink-faint)">Convert &amp; OCR</h2>
+      <div class="tool-grid">
+        <a class="tool-card" href="#/pdf-to-word" data-name="convert pdf to word docx"><svg class="ti" viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5.5" width="7.5" height="10" rx="1"/><path d="M12.5 10.5h3.2M14.2 8.6l1.9 1.9-1.9 1.9"/><path d="m16.3 13.5 1.4 5 1.3-3.2 1.3 3.2 1.4-5"/></svg><span>PDF to Word</span></a>
+        <a class="tool-card" href="#/word-to-pdf" data-name="convert word to pdf"><svg class="ti" viewBox="0 0 24 24" aria-hidden="true"><path d="m2.3 5.5 1.4 5 1.3-3.2 1.3 3.2 1.4-5"/><path d="M8.5 13.5h3.2M10.2 11.6l1.9 1.9-1.9 1.9"/><rect x="13" y="8.5" width="7.5" height="10" rx="1"/></svg><span>Word to PDF</span></a>
+        <a class="tool-card" href="#/jpg-to-pdf" data-name="convert images jpg to pdf"><svg class="ti" viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="4.5" width="10" height="8" rx="1"/><circle cx="6.6" cy="7.2" r="1"/><path d="m5 12.5 2.8-3.2 2.4 3.2"/><path d="M10.5 17.5h3M12 15.8l1.7 1.7-1.7 1.7"/><rect x="15.5" y="13" width="5.5" height="7.5" rx="1"/></svg><span>Images to PDF</span></a>
+        <a class="tool-card" href="#/pdf-to-jpg" data-name="convert pdf to images jpg"><svg class="ti" viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="3.5" width="5.5" height="7.5" rx="1"/><path d="M10 7.5h3M11.5 5.8l1.7 1.7-1.7 1.7"/><rect x="10.5" y="12" width="10" height="8.5" rx="1"/><circle cx="13.6" cy="14.8" r="1"/><path d="m12 20.5 3-3.4 2.6 3.4"/></svg><span>PDF to images</span></a>
+        <a class="tool-card" href="#/html-to-pdf" data-name="convert html to pdf web page"><svg class="ti" viewBox="0 0 24 24" aria-hidden="true"><path d="m8.5 5.5-5 6.5 5 6.5M15.5 5.5l5 6.5-5 6.5"/><path d="M13.2 4.5 10.8 19.5"/></svg><span>HTML to PDF</span></a>
+        <a class="tool-card" href="#/ocr-pdf" data-name="ocr make a scanned pdf searchable"><svg class="ti" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8V5.5A1.5 1.5 0 0 1 5.5 4H8M16 4h2.5A1.5 1.5 0 0 1 20 5.5V8M20 16v2.5a1.5 1.5 0 0 1-1.5 1.5H16M8 20H5.5A1.5 1.5 0 0 1 4 18.5V16"/><path d="M8 10h8M8 13.5h5.5"/></svg><span>OCR a scan</span></a>
+      </div>
+    </section>
+    <section data-group>
+      <h2 class="kicker" style="font-family:var(--font-ui); font-size:11px; color:var(--color-ink-faint)">Optimize &amp; review</h2>
+      <div class="tool-grid">
+        <a class="tool-card" href="#/compress-pdf" data-name="compress a pdf smaller"><svg class="ti" viewBox="0 0 24 24" aria-hidden="true"><rect x="6.5" y="9" width="11" height="6" rx="1"/><path d="M12 2.5v4M10 4.7l2 1.8 2-1.8M12 21.5v-4M10 19.3l2-1.8 2 1.8"/></svg><span>Compress</span></a>
+        <a class="tool-card" href="#/repair-pdf" data-name="repair a damaged pdf"><svg class="ti" viewBox="0 0 24 24" aria-hidden="true"><path d="M14.8 6.3a4.2 4.2 0 0 0-5.6 5.2l-4.7 4.7a1.8 1.8 0 0 0 2.5 2.5l4.7-4.7a4.2 4.2 0 0 0 5.2-5.6L14 11.3l-2.1-2.1 2.9-2.9Z"/></svg><span>Repair</span></a>
+        <a class="tool-card" href="#/compare-pdf" data-name="compare two pdfs diff"><svg class="ti" viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="4.5" width="7" height="9.5" rx="1"/><rect x="13.5" y="10" width="7" height="9.5" rx="1"/><path d="M13.5 5.5h4.5M16.3 3.7l1.8 1.8-1.8 1.8M10.5 18.5H6M7.7 20.3 5.9 18.5l1.8-1.8"/></svg><span>Compare two PDFs</span></a>
+      </div>
+    </section>
+    <section data-group>
+      <h2 class="kicker" style="font-family:var(--font-ui); font-size:11px; color:var(--color-ink-faint)">Protect</h2>
+      <div class="tool-grid">
+        <a class="tool-card" href="#/protect-pdf" data-name="password protect a pdf"><svg class="ti" viewBox="0 0 24 24" aria-hidden="true"><rect x="5.5" y="10.5" width="13" height="9.5" rx="1.5"/><path d="M8.5 10.5V8a3.5 3.5 0 0 1 7 0v2.5"/><path d="M12 14.2v2.3"/></svg><span>Protect</span></a>
+        <a class="tool-card" href="#/unlock-pdf" data-name="remove a password from a pdf unlock"><svg class="ti" viewBox="0 0 24 24" aria-hidden="true"><rect x="5.5" y="10.5" width="13" height="9.5" rx="1.5"/><path d="M8.5 10.5V8a3.5 3.5 0 0 1 6.8-1.1"/><path d="M12 14.2v2.3"/></svg><span>Unlock</span></a>
+        <a class="tool-card" href="#/redact-pdf" data-name="redact a pdf black out"><svg class="ti" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="3.5" width="14" height="17" rx="1"/><path d="M8 7.5h8"/><rect x="8" y="10.8" width="8" height="2.6" rx=".6" fill="currentColor" stroke="none"/><path d="M8 17h5"/></svg><span>Redact</span></a>
+      </div>
+    </section>
+    <section data-group>
+      <h2 class="kicker" style="font-family:var(--font-ui); font-size:11px; color:var(--color-ink-faint)">Sign</h2>
+      <div class="tool-grid">
+        <a class="tool-card" href="#/sign-pdf" data-name="sign a pdf signature"><svg class="ti" viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 16.5c2.4-5 4.3-7.3 5.3-6.4s-1.9 6.2-.5 6.7 3.3-3.3 4.3-2.8.6 2.4 1.6 2.4 2-1.4 5.3-1.4"/><path d="M4 20.5h16"/></svg><span>Sign a PDF</span></a>
+      </div>
+    </section>
+  </div>
+
+  <div class="ad-frame" style="margin-top:var(--space-9)">
+    <p class="ad-label">Advertisement</p>
+    <div class="ad-unit" style="min-height:250px">Reserved · responsive unit · 250&nbsp;px</div>
+  </div>
+</main>
+
+<footer class="ftr"><p><a href="#/about">About</a><a href="#/legal/privacy">Privacy</a><a href="#/legal/terms">Terms</a><a href="#/legal/esign-disclosure">E-sign disclosure</a><a href="#/verify">Verify a signed PDF</a></p><p class="ftr-fact">Free, paid for by advertising. Files are deleted automatically.</p></footer>
+
+<style>
+  .tool-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; margin-top:14px; }
+  .tool-card { display:flex; align-items:center; gap:14px; padding:16px 18px; text-decoration:none;
+    background:var(--color-surface); border:var(--border-hairline) solid var(--color-border); border-radius:var(--radius-3);
+    color:var(--color-ink); font:500 15px/1.4 var(--font-ui);
+    transition:border-color var(--dur-1) var(--ease); }
+  .tool-card .ti { color:var(--color-ink-muted); }
+  .tool-card:hover { border-color:var(--color-ink-faint); color:var(--color-ink-strong); }
+</style>
+<script>
+  const q = document.getElementById('tool-filter');
+  q.addEventListener('input', () => {
+    const needle = q.value.trim().toLowerCase();
+    let any = false;
+    document.querySelectorAll('.tool-card').forEach(c => {
+      const hit = !needle || c.dataset.name.includes(needle) || c.textContent.toLowerCase().includes(needle);
+      c.style.display = hit ? '' : 'none'; if (hit) any = true;
+    });
+    document.querySelectorAll('[data-group]').forEach(g => {
+      g.style.display = [...g.querySelectorAll('.tool-card')].some(c => c.style.display !== 'none') ? '' : 'none';
+    });
+    document.getElementById('filter-empty').hidden = any;
+  });
+</script>
+
+</body>
+</html>

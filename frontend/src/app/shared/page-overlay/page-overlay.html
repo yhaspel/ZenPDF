@@ -1,6 +1,6 @@
 <div
   #surface
-  class="relative select-none bg-white shadow-sm ring-1 ring-slate-200"
+  class="ring-border relative select-none bg-white shadow-sm ring-1"
   [style.width.px]="renderWidth()"
   [style.height.px]="boxHeight()"
   [style.cursor]="cursor()"
@@ -20,7 +20,7 @@
       draggable="false"
     />
   } @else {
-    <div class="pointer-events-none absolute inset-0 flex items-center justify-center bg-slate-50 text-sm text-slate-500"
+    <div class="pointer-events-none absolute inset-0 flex items-center justify-center bg-surface text-ink-faint text-sm"
          data-test="overlay-placeholder">
       Rendering page {{ page() + 1 }}…
     </div>
@@ -33,7 +33,7 @@
       @for (word of words(); track trackWord($index, word)) {
         <span
           class="absolute cursor-text rounded-[1px]"
-          [class.bg-indigo-300/50]="isWordSelected(word)"
+          [class.bg-accent/25]="isWordSelected(word)"
           [style.left.px]="px(word.x)"
           [style.top.px]="pyv(word.y)"
           [style.width.px]="px(word.w)"
@@ -201,7 +201,7 @@
   @for (item of items(); track trackItem($index, item)) {
     @if (item.page === page() && item.id === selectedId() && item.rect) {
       <div
-        class="pointer-events-none absolute border border-dashed border-indigo-500"
+        class="pointer-events-none absolute border-accent border border-dashed"
         [style.left.px]="px(item.rect.x)"
         [style.top.px]="pyv(item.rect.y)"
         [style.width.px]="px(item.rect.w)"
@@ -212,7 +212,7 @@
         @for (handle of ['nw', 'ne', 'sw', 'se']; track handle) {
           <button
             type="button"
-            class="absolute h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-sm border border-white bg-indigo-600"
+            class="absolute h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 bg-accent rounded-sm border border-white"
             [style.left.px]="px(item.rect.x + (handle === 'ne' || handle === 'se' ? item.rect.w : 0))"
             [style.top.px]="pyv(item.rect.y + (handle === 'sw' || handle === 'se' ? item.rect.h : 0))"
             [style.cursor]="handle === 'nw' || handle === 'se' ? 'nwse-resize' : 'nesw-resize'"
@@ -225,7 +225,7 @@
     }
     @if (item.page === page() && item.label && item.rect) {
       <span
-        class="pointer-events-none absolute -translate-y-full rounded bg-slate-800/85 px-1 text-[10px] leading-4 text-white"
+        class="pointer-events-none absolute -translate-y-full rounded bg-ink-strong/85 text-bg px-1 text-[10px] leading-4"
         [style.left.px]="px(item.rect.x)"
         [style.top.px]="pyv(item.rect.y)"
         data-test="overlay-label"
