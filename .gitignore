@@ -70,3 +70,6 @@ infra/perf/results/
 
 # Cleanup staging from the Cowork session — review and delete this folder
 _to_delete/
+
+# Disposable deploy staging (docs/ops/railway-deploy-plan.md B2); already in .railwayignore.
+.stage/
