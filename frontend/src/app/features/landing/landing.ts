@@ -88,9 +88,11 @@ const DIRECTORY: DirectoryGroup[] = [
 
 /**
  * The landing page is a directory of working tools, not a signup wall (§21.1).
- * The directory IS the hero (design contract §4): kicker, display h1, one muted
- * paragraph, the folded-sheet trust strip, a client-side type-to-filter, six
- * groups of icon+name cards, one ad frame, footer. No other CTAs.
+ * The directory IS the hero (design contract §4, compact since 2026-08-10 —
+ * see docs/design/2026-08-10-compact-landing.md): the header carries the h1 as
+ * a masthead motto, the folded sheet is one line of the three trust facts
+ * beside the client-side type-to-filter, then six groups of icon+name cards,
+ * one ad frame, footer. No hero block, no other CTAs.
  *
  * An authenticated visitor is no longer bounced to the dashboard: the tools are
  * the product for both principals, and the library is one click away in the nav.
@@ -101,8 +103,12 @@ const DIRECTORY: DirectoryGroup[] = [
   imports: [RouterLink, AdSlot, SiteFooter, Brand, ThemeToggle, ToolIcon],
   template: `
     <div class="page-shell">
-      <header class="hdr">
+      <!-- The masthead: on this page only, the header carries the page's h1
+           as a motto after the brand (§3). It wraps to a second header line
+           below lg so the h1 stays visible at every viewport. -->
+      <header class="hdr hdr-mast">
         <a routerLink="/" class="brand" aria-label="ZenPDF"><app-brand /></a>
+        <h1 class="masthead">Every PDF tool, no&nbsp;account&nbsp;needed</h1>
         <nav>
           @if (auth.isAuthenticated()) {
             <a routerLink="/app/dashboard" data-test="cta-library">My files</a>
@@ -116,48 +122,34 @@ const DIRECTORY: DirectoryGroup[] = [
         </nav>
       </header>
 
-      <main class="wrap w-full pb-24 pt-16">
-        <div class="max-w-[640px]">
-          <p class="kicker">PDF tools &amp; e-signature</p>
-          <h1 class="hero-h1 mt-2.5">Every PDF tool, no&nbsp;account&nbsp;needed</h1>
-          <p class="muted mt-3.5 max-w-[520px]">
-            Organize, merge, split, compress and sign PDFs in your browser. Pick a tool below
-            and drop a file on it — that is the whole process.
-          </p>
-        </div>
-
-        <!-- The folded sheet: the three trust promises, stated as facts (§1). -->
-        <div class="sheet mt-8 flex max-w-[760px] flex-wrap items-center gap-y-2 px-6 py-4">
-          <span class="flex items-center gap-2.5 pe-6">
-            <app-brand [size]="20" [wordmark]="false" />
-            <span class="text-sm">No watermarks</span>
-          </span>
-          <span class="border-border flex items-center border-s py-1 pe-6 ps-6 text-sm"
-            >Files delete automatically after 24&nbsp;hours</span
-          >
-          <span class="border-border flex items-center border-s py-1 ps-6 text-sm"
-            >Free, paid for by advertising</span
-          >
-        </div>
-
-        <!-- Type-to-filter: pure client-side, one of the redesign's two
-             sanctioned additions (contract §0/§4). -->
-        <div class="input-wrap mt-16 max-w-[420px]">
-          <input
-            class="input"
-            type="search"
-            placeholder='Filter the tools… try "merge" or "sign"'
-            aria-label="Filter the 24 tools"
-            [value]="query()"
-            (input)="onQuery($event)"
-            data-test="tool-filter"
-          />
-          <span class="input-eye pointer-events-none" aria-hidden="true">
-            <svg class="ti" viewBox="0 0 24 24" style="width:18px;height:18px">
-              <circle cx="11" cy="11" r="6.5" />
-              <path d="m16 16 4.5 4.5" />
-            </svg>
-          </span>
+      <main class="wrap w-full pb-24 pt-8">
+        <!-- The directory begins immediately (§4): the type-to-filter (one of
+             the redesign's two sanctioned additions, contract §0/§4) at the
+             start, and the folded sheet — the three trust promises, stated as
+             facts (§1) — shrunk to one line at the end. -->
+        <div class="flex flex-wrap items-center justify-between gap-6">
+          <div class="input-wrap grow max-w-[380px]">
+            <input
+              class="input"
+              type="search"
+              placeholder='Filter the tools… try "merge" or "sign"'
+              aria-label="Filter the 24 tools"
+              [value]="query()"
+              (input)="onQuery($event)"
+              data-test="tool-filter"
+            />
+            <span class="input-eye pointer-events-none" aria-hidden="true">
+              <svg class="ti" viewBox="0 0 24 24" style="width:18px;height:18px">
+                <circle cx="11" cy="11" r="6.5" />
+                <path d="m16 16 4.5 4.5" />
+              </svg>
+            </span>
+          </div>
+          <div class="sheet trust-line">
+            <span>No watermarks</span>
+            <span>Files delete automatically after 24&nbsp;hours</span>
+            <span>Free, paid for by advertising</span>
+          </div>
         </div>
         @if (nothingMatches()) {
           <p class="faint mt-4" data-test="tool-filter-empty">

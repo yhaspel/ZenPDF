@@ -147,6 +147,28 @@ small, .muted { color: var(--color-ink-muted); }
 .hdr nav a:hover { color: var(--color-ink-strong); }
 .hdr nav a[aria-current] { color: var(--color-ink-strong); font-weight: 500; }
 
+/* The landing masthead (§3, §4 compact landing 2026-08-10): on `/` only, the
+   header carries the page's h1 as a motto — display 500 16px ink-muted after a
+   hairline divider. Below lg it wraps to a second header line so the h1 stays
+   visible at every viewport. */
+.hdr-mast { flex-wrap: wrap; row-gap: 2px; }
+.masthead {
+  font: 500 16px/1.3 var(--font-display);
+  color: var(--color-ink-muted);
+  letter-spacing: 0.01em;
+  padding-inline-start: 20px;
+  border-inline-start: var(--border-hairline) solid var(--color-border-strong);
+}
+@media (max-width: 1023px) {
+  .masthead {
+    flex-basis: 100%;
+    order: 10;
+    border-inline-start: none;
+    padding-inline-start: 0;
+    font-size: 13.5px;
+  }
+}
+
 /* Theme toggle — 44px hit target, present on every header variant (§5). */
 .theme-toggle {
   width: 44px;
@@ -595,9 +617,30 @@ input[type="color"] {
 .ti-sm { width: 20px; height: 20px; }
 
 /* ---------- 16b. Landing directory (§4) ---------- */
-.hero-h1 { font-size: 42px; }
+/* One line of the three trust facts inside the folded sheet (compact landing,
+   2026-08-10): 13px muted, hairline separators; still the screen's only sheet.
+   The last span keeps clear of the folded corner. */
+.trust-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  row-gap: 6px;
+  padding: 10px 20px;
+  font-size: 13px;
+  color: var(--color-ink-muted);
+}
+.trust-line span { padding-inline-end: 18px; }
+.trust-line span + span {
+  border-inline-start: var(--border-hairline) solid var(--color-border);
+  padding-inline-start: 18px;
+}
+.trust-line span:last-child { padding-inline-end: 8px; }
+/* Stacked on narrow viewports the separators would read as stray ticks —
+   the facts become plain rows. */
 @media (max-width: 767px) {
-  .hero-h1 { font-size: 30px; }
+  .trust-line { row-gap: 3px; padding-block: 9px; }
+  .trust-line span { flex-basis: 100%; padding-inline: 0; }
+  .trust-line span + span { border-inline-start: none; padding-inline-start: 0; }
 }
 .tool-grid {
   display: grid;
