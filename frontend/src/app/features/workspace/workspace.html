@@ -18,30 +18,30 @@
 
       <nav class="seg ms-auto overflow-x-auto" aria-label="Workspace mode">
         <button (click)="mode.set('view')" [class.seg-active]="mode() === 'view'"
-                [attr.aria-selected]="mode() === 'view'" data-test="view-toggle">View</button>
+                [attr.aria-pressed]="mode() === 'view'" data-test="view-toggle">View</button>
         <button (click)="mode.set(mode() === 'organize' ? 'view' : 'organize')"
-                [class.seg-active]="mode() === 'organize'" [attr.aria-selected]="mode() === 'organize'"
+                [class.seg-active]="mode() === 'organize'" [attr.aria-pressed]="mode() === 'organize'"
                 data-test="organize-toggle">Organize</button>
         <button (click)="mode.set(mode() === 'edit' ? 'view' : 'edit')"
-                [class.seg-active]="mode() === 'edit'" [attr.aria-selected]="mode() === 'edit'"
+                [class.seg-active]="mode() === 'edit'" [attr.aria-pressed]="mode() === 'edit'"
                 data-test="edit-toggle">Edit</button>
         <button (click)="mode.set(mode() === 'annotate' ? 'view' : 'annotate')"
-                [class.seg-active]="mode() === 'annotate'" [attr.aria-selected]="mode() === 'annotate'"
+                [class.seg-active]="mode() === 'annotate'" [attr.aria-pressed]="mode() === 'annotate'"
                 data-test="annotate-toggle">Annotate</button>
         <button (click)="mode.set(mode() === 'forms' ? 'view' : 'forms')"
-                [class.seg-active]="mode() === 'forms'" [attr.aria-selected]="mode() === 'forms'"
+                [class.seg-active]="mode() === 'forms'" [attr.aria-pressed]="mode() === 'forms'"
                 data-test="forms-toggle">Forms</button>
         <button (click)="mode.set(mode() === 'convert' ? 'view' : 'convert')"
-                [class.seg-active]="mode() === 'convert'" [attr.aria-selected]="mode() === 'convert'"
+                [class.seg-active]="mode() === 'convert'" [attr.aria-pressed]="mode() === 'convert'"
                 data-test="convert-toggle">Convert</button>
         <button (click)="mode.set(mode() === 'compare' ? 'view' : 'compare')"
-                [class.seg-active]="mode() === 'compare'" [attr.aria-selected]="mode() === 'compare'"
+                [class.seg-active]="mode() === 'compare'" [attr.aria-pressed]="mode() === 'compare'"
                 data-test="compare-toggle">Compare</button>
         <button (click)="mode.set(mode() === 'sign' ? 'view' : 'sign')"
-                [class.seg-active]="mode() === 'sign'" [attr.aria-selected]="mode() === 'sign'"
+                [class.seg-active]="mode() === 'sign'" [attr.aria-pressed]="mode() === 'sign'"
                 data-test="sign-toggle">Sign</button>
         <button (click)="mode.set(mode() === 'protect' ? 'view' : 'protect')"
-                [class.seg-active]="mode() === 'protect'" [attr.aria-selected]="mode() === 'protect'"
+                [class.seg-active]="mode() === 'protect'" [attr.aria-pressed]="mode() === 'protect'"
                 data-test="protect-toggle">Protect</button>
       </nav>
       <span class="border-border h-5 shrink-0 border-s" aria-hidden="true"></span>
@@ -163,13 +163,13 @@
       <aside class="border-border bg-surface flex w-56 shrink-0 flex-col border-e">
         <div class="seg border-border gap-0 border-b px-1 py-1">
           <button class="flex-1 justify-center" [class.seg-active]="leftTab() === 'thumbs'"
-                  [attr.aria-selected]="leftTab() === 'thumbs'"
+                  [attr.aria-pressed]="leftTab() === 'thumbs'"
                   (click)="leftTab.set('thumbs')" data-test="tab-thumbs">Pages</button>
           <button class="flex-1 justify-center" [class.seg-active]="leftTab() === 'outline'"
-                  [attr.aria-selected]="leftTab() === 'outline'"
+                  [attr.aria-pressed]="leftTab() === 'outline'"
                   (click)="leftTab.set('outline')" data-test="tab-outline">Outline</button>
           <button class="flex-1 justify-center" [class.seg-active]="leftTab() === 'history'"
-                  [attr.aria-selected]="leftTab() === 'history'"
+                  [attr.aria-pressed]="leftTab() === 'history'"
                   (click)="leftTab.set('history')" data-test="tab-history">History</button>
         </div>
         <div class="min-h-0 flex-1 overflow-y-auto p-2">
@@ -327,9 +327,9 @@
         @if (d === 'split') {
           <h3>Split document</h3>
           <div class="seg mb-3">
-            <button (click)="splitMode.set('ranges')" [class.seg-active]="splitMode()==='ranges'" [attr.aria-selected]="splitMode()==='ranges'" data-test="split-ranges">Ranges</button>
-            <button (click)="splitMode.set('every_n')" [class.seg-active]="splitMode()==='every_n'" [attr.aria-selected]="splitMode()==='every_n'" data-test="split-everyn">Every N</button>
-            <button (click)="splitMode.set('by_bookmarks')" [class.seg-active]="splitMode()==='by_bookmarks'" [attr.aria-selected]="splitMode()==='by_bookmarks'" data-test="split-bookmarks">Bookmarks</button>
+            <button (click)="splitMode.set('ranges')" [class.seg-active]="splitMode()==='ranges'" [attr.aria-pressed]="splitMode()==='ranges'" data-test="split-ranges">Ranges</button>
+            <button (click)="splitMode.set('every_n')" [class.seg-active]="splitMode()==='every_n'" [attr.aria-pressed]="splitMode()==='every_n'" data-test="split-everyn">Every N</button>
+            <button (click)="splitMode.set('by_bookmarks')" [class.seg-active]="splitMode()==='by_bookmarks'" [attr.aria-pressed]="splitMode()==='by_bookmarks'" data-test="split-bookmarks">Bookmarks</button>
           </div>
           @if (splitMode() === 'ranges') {
             <input [ngModel]="splitRanges()" (ngModelChange)="splitRanges.set($event)" placeholder="e.g. 1-3,5,7-9"

@@ -2,9 +2,9 @@
   <!-- Left: panel -->
   <aside class="border-border bg-surface flex w-72 shrink-0 flex-col overflow-y-auto border-e text-sm">
     <div class="seg border-border gap-0 border-b px-1 py-1">
-      <button class="flex-1 justify-center" [class.seg-active]="tab() === 'fill'" [attr.aria-selected]="tab() === 'fill'"
+      <button class="flex-1 justify-center" [class.seg-active]="tab() === 'fill'" [attr.aria-pressed]="tab() === 'fill'"
               (click)="tab.set('fill')" data-test="tab-fill">Fill in</button>
-      <button class="flex-1 justify-center" [class.seg-active]="tab() === 'build'" [attr.aria-selected]="tab() === 'build'"
+      <button class="flex-1 justify-center" [class.seg-active]="tab() === 'build'" [attr.aria-pressed]="tab() === 'build'"
               (click)="tab.set('build')" data-test="tab-build">Form builder</button>
     </div>
 

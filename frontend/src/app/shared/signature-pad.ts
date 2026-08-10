@@ -41,7 +41,10 @@ export const SIGNATURE_FONTS = [
   imports: [FormsModule],
   template: `
     <div class="w-full" data-test="signature-pad">
-      <div class="seg mb-3" role="tablist" aria-label="How to make your signature">
+      <!-- A group, not a tablist: role=tablist obliges every child to be a
+           role=tab, and these are toggle buttons carrying aria-pressed
+           (the same pattern as the workspace .seg nav). -->
+      <div class="seg mb-3" role="group" aria-label="How to make your signature">
         @for (t of tabs; track t.value) {
           <button type="button"
                   [class.seg-active]="tab() === t.value"

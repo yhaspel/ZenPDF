@@ -55,7 +55,12 @@
   --color-ink: var(--ink-800);
   --color-ink-strong: var(--ink-900);
   --color-ink-muted: var(--ink-600);
-  --color-ink-faint: var(--ink-400);
+  /* Not `--ink-400` (#948A77): that is 3.0:1 on `--color-bg` and this token
+     dresses real copy — kickers, hints, the ad label, legal footers — so it has
+     to clear 4.5:1, not the 3:1 large-text floor. 5.0:1 on bg, 5.3:1 on
+     surface, 5.6:1 on surface-raised, 4.6:1 on the ad frame. The primitive
+     ramp keeps `--ink-400` for decorative, non-text use. */
+  --color-ink-faint: #6F6656;
   --color-accent: var(--verm-500);
   --color-accent-hover: var(--verm-600);
   --color-accent-active: var(--verm-700);
@@ -113,7 +118,11 @@
   --color-ink: #EFE8DA;
   --color-ink-strong: #F8F3E7;
   --color-ink-muted: #BDB29E;
-  --color-ink-faint: #8E8471;
+  /* #8E8471 cleared 4.5:1 on `--color-bg` but only reached 4.36:1 on
+     `--color-surface-raised` — the a11y specs scan the light theme, so nothing
+     caught it. Lifted so it passes on every night surface: 5.9:1 bg, 5.5:1
+     surface, 5.1:1 raised. */
+  --color-ink-faint: #9A9080;
   --color-accent: var(--verm-400);
   --color-accent-hover: var(--verm-300);
   --color-accent-active: #F2A992;

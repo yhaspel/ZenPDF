@@ -10,10 +10,10 @@
 
     <div class="seg mt-4">
       <button [class.seg-active]="tab() === 'status'"
-              [attr.aria-selected]="tab() === 'status'"
+              [attr.aria-pressed]="tab() === 'status'"
               (click)="tab.set('status')" data-test="tab-status">Progress</button>
       <button [class.seg-active]="tab() === 'audit'"
-              [attr.aria-selected]="tab() === 'audit'"
+              [attr.aria-pressed]="tab() === 'audit'"
               (click)="tab.set('audit')" data-test="tab-audit">Audit trail</button>
     </div>
 

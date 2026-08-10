@@ -42,13 +42,13 @@
 
       <div class="seg">
         <button class="flex-1 justify-center"
-                [class.seg-active]="view() === 'all'" [attr.aria-selected]="view() === 'all'"
+                [class.seg-active]="view() === 'all'" [attr.aria-pressed]="view() === 'all'"
                 (click)="view.set('all')" data-test="compare-view-all">All</button>
         <button class="flex-1 justify-center"
-                [class.seg-active]="view() === 'text'" [attr.aria-selected]="view() === 'text'"
+                [class.seg-active]="view() === 'text'" [attr.aria-pressed]="view() === 'text'"
                 (click)="view.set('text')" data-test="compare-view-text">Text</button>
         <button class="flex-1 justify-center"
-                [class.seg-active]="view() === 'visual'" [attr.aria-selected]="view() === 'visual'"
+                [class.seg-active]="view() === 'visual'" [attr.aria-pressed]="view() === 'visual'"
                 (click)="view.set('visual')" data-test="compare-view-visual">Visual</button>
       </div>
 

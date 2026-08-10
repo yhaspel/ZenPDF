@@ -87,7 +87,7 @@ Semantic aliases — **every token has both values**; light in `:root`, dark und
 | `--color-ink` | `--ink-800` #332D24 | #EFE8DA |
 | `--color-ink-strong` | `--ink-900` #211C15 | #F8F3E7 |
 | `--color-ink-muted` | `--ink-600` #5F574A | #BDB29E |
-| `--color-ink-faint` | `--ink-400` #948A77 | #8E8471 |
+| `--color-ink-faint` | #6F6656 | #9A9080 |
 | `--color-accent` | `--verm-500` #B23A26 | `--verm-400` #D96A50 |
 | `--color-accent-hover` | `--verm-600` #96301F | `--verm-300` #E98B72 |
 | `--color-accent-active` | `--verm-700` #7E2717 | #F2A992 |
@@ -165,6 +165,8 @@ Scrim `--color-scrim`; dialog raised surface, radius 10 px, shadow-3, padding 24
 ### Tabs / segmented workspace nav (`.seg`)
 Row of 36 px text buttons, radius 6 px; idle `--color-ink-muted`; hover bg `--color-bg`; **selected: bg `--color-ink-strong`, text `--color-bg`** (ink stamp, not accent — accent stays reserved). Used for workspace modes, signature-pad tabs, job filters (badge-sized variant).
 
+**Semantics — toggle buttons, not ARIA tabs.** Each is a plain `<button>` carrying `aria-pressed`; the row is a `<div role="group">` with an `aria-label`. Never `aria-selected` (invalid on `role=button`) and never `role="tablist"` (it obliges every child to be a `role=tab`, which then needs `aria-controls`, `role=tabpanel` and roving tabindex). Both mistakes shipped once and were caught only after an earlier contrast failure stopped masking them — every `.seg` button stays individually tabbable.
+
 ### Badges / stamps
 Badge: pill, hairline `--color-border-strong`, 12 px muted text; status tints use the status surface+color pairs (`completed` pine, `declined` crimson). The `.stamp` is specified in §1 and is not a badge — never use it for status words that aren't completions.
 
@@ -228,7 +230,9 @@ Computed WCAG 2.1 contrast (relative-luminance math, rounded):
 |---|---|---|---|
 | body: ink on bg | #332D24/#F5F1E6 **12.1:1** | #EFE8DA/#171310 **15.2:1** | ≥4.5 ✓ |
 | muted: ink-muted on bg | **6.3:1** | **8.8:1** | ≥4.5 ✓ |
-| faint: ink-faint on bg | **3.0:1** | **5.0:1** | large/decorative only in light — never body copy |
+| faint: ink-faint on bg | **5.0:1** | **5.9:1** | ≥4.5 ✓ |
+| faint: ink-faint on surface-raised | **5.6:1** | **5.1:1** | ≥4.5 ✓ |
+| faint: ink-faint on ad-frame | **4.6:1** | **5.3:1** | ≥4.5 ✓ (10 px ad label) |
 | primary btn: on-accent on accent | **5.9:1** | **5.4:1** | ≥4.5 ✓ |
 | accent as text/icon on bg | **5.3:1** | **5.1:1** (on surface) | ≥3 (UI) ✓, also passes 4.5 |
 | disabled btn text: ink-muted on bg | **6.3:1** | **8.8:1** | ≥3 ✓ (D5 resolved) |

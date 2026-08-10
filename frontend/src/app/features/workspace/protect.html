@@ -3,13 +3,13 @@
   <aside class="border-border bg-surface flex w-80 shrink-0 flex-col overflow-y-auto border-e text-sm">
     <div class="seg border-border gap-0 border-b px-1 py-1">
       <button class="flex-1 justify-center" [class.seg-active]="tab() === 'protect'"
-              [attr.aria-selected]="tab() === 'protect'"
+              [attr.aria-pressed]="tab() === 'protect'"
               (click)="tab.set('protect')" data-test="tab-protect">Password</button>
       <button class="flex-1 justify-center" [class.seg-active]="tab() === 'redact'"
-              [attr.aria-selected]="tab() === 'redact'"
+              [attr.aria-pressed]="tab() === 'redact'"
               (click)="tab.set('redact')" data-test="tab-redact">Redact</button>
       <button class="flex-1 justify-center" [class.seg-active]="tab() === 'sanitize'"
-              [attr.aria-selected]="tab() === 'sanitize'"
+              [attr.aria-pressed]="tab() === 'sanitize'"
               (click)="tab.set('sanitize')" data-test="tab-sanitize">Clean up</button>
     </div>
 
