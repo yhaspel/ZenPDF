@@ -32,25 +32,30 @@ So a backend change leaves `web` alone, a frontend change leaves the Django five
 alone, `infra/railway/**` rebuilds everything (it holds both Dockerfiles and the
 nginx config), and a commit touching only `docs/` rebuilds nothing at all.
 
-They are **not** settable from the CLI. `railway config` wants the Railway TS
-SDK as a repo dependency, and the per-service "config as code" file path can
-only be set in the dashboard — so these were set through the public API with a
-minted account token:
+No `railway` subcommand sets them directly, and `railway config` wants the
+Railway TypeScript SDK as a repo dependency. But **`railway api` reaches the
+public GraphQL API using your existing `railway login` session**, so no token is
+involved:
 
-```graphql
-mutation($serviceId: String!, $environmentId: String!, $input: ServiceInstanceUpdateInput!) {
-  serviceInstanceUpdate(serviceId: $serviceId, environmentId: $environmentId, input: $input)
-}
-# input: { "watchPatterns": ["backend/**", "infra/railway/**"] }
+```bash
+railway api 'mutation($s: String!, $e: String!, $i: ServiceInstanceUpdateInput!){
+  serviceInstanceUpdate(serviceId: $s, environmentId: $e, input: $i) }' \
+  --variables '{"s":"<serviceId>","e":"<environmentId>",
+                "i":{"watchPatterns":["backend/**","infra/railway/**"]}}'
 ```
 
-Two things that will waste an hour otherwise: the endpoint is
-`https://backboard.railway.com/graphql/v2` with `Authorization: Bearer <token>`,
-and it sits behind Cloudflare — a request with no browser-ish `User-Agent` is
-refused with **HTTP 403, `error code: 1010`** before it ever reaches the API,
-which reads exactly like a bad token but is not one. A workspace token also
-cannot query `me` (`Not Authorized`) while working perfectly on `project(id:)`
-and the mutation, so test with a project query, not `me`.
+`railway api search`/`describe` introspect the schema, and the dashboard does
+the same job in six fields (service → Settings → Build → Watch Patterns) if you
+would rather click.
+
+Only reach for a minted account token where there is no interactive login — CI,
+or a script on a machine nobody has logged in on. If you do, two traps cost an
+hour each: the endpoint `https://backboard.railway.com/graphql/v2` sits behind
+Cloudflare and refuses any request without a browser-ish `User-Agent` with
+**HTTP 403, `error code: 1010`**, which reads exactly like a bad token but is
+not one; and a workspace token cannot query `me` (`Not Authorized`) while
+working perfectly on `project(id:)` and the mutation, so probe with a project
+query, never `me`.
 
 ## Service map
 
