@@ -3,16 +3,40 @@
 The owner's deploy target. Railway runs one process per service, so the compose
 stack maps to eight services plus two managed add-ons.
 
+## How a deploy happens
+
+**Push to `main`.** Since 2026-08-10 the six app services — `api`, the three
+workers, `beat` and `web` — build from `yhaspel/ZenPDF@main` through Railway's
+GitHub integration, so a merged commit is the deploy and the running image is
+always attributable to a SHA.
+
+It was not always so, and the reason matters. Until then every deploy was
+`railway up`, which uploads a snapshot of **whatever is in the working tree** —
+committed or not. That shipped two defects nobody could see in git: fonts and
+favicons baked in at mode 0600 because one laptop's umask had left them
+unreadable (git records 0644, so a clean checkout was fine), and a landing-page
+redesign that was still uncommitted when an unrelated deploy swept it up.
+Building from a commit removes the whole class.
+
+`railway up -d -s <svc>` still works and is the escape hatch for an emergency
+that cannot wait for a push. Use it knowing it ships your working tree.
+
+Not yet wired: **watch patterns**, so today one commit rebuilds all six services
+regardless of what it touched. They want to be `frontend/**` + `infra/railway/**`
+for `web` and `backend/**` + `infra/railway/**` for the five Django services.
+The CLI has no flag for them; they need the dashboard or a minted account token
+against `serviceInstanceUpdate`.
+
 ## Service map
 
 | Railway service | Start command | Notes |
 |---|---|---|
-| `api` | `gunicorn config.wsgi --bind 0.0.0.0:$PORT --workers $((2 * $(nproc) + 1)) --timeout 120` | Public. Run migrations on deploy (below). **`--timeout`**: the default 30 s kills a large account's data export mid-build and the user gets a 502. |
+| `api` | `gunicorn config.wsgi --bind [::]:$PORT --workers 4 --timeout 120` | Private only — nginx reaches it over the private network. Run migrations on deploy (below). **`--timeout`**: the default 30 s kills a large account's data export mid-build and the user gets a 502. **A fixed worker count, not `$((2 * $(nproc) + 1))`**: on Railway Metal `nproc` reports the *host's* cores, so the formula asks for dozens of gunicorn workers on a container sized for a handful and the service OOMs. |
 | `worker-default` | `celery -A config worker -Q default -c 2 --time-limit 300 --soft-time-limit 240` | Cheap page ops; 60 s is not enough for a large merge. |
 | `worker-heavy` | `celery -A config worker -Q heavy -c 1 --time-limit 900 --soft-time-limit 600 --max-tasks-per-child 20` | OCR and conversion. `--max-tasks-per-child` recycles the process, which is what bounds a slow memory leak in a C parser. |
 | `worker-render` | `celery -A config worker -Q render -c 2 --time-limit 300` | Thumbnails; neither cheap nor user-visible, so it gets its own lane. |
 | `beat` | `celery -A config beat -s /tmp/celerybeat-schedule` | **Exactly one instance.** Two beats means two of every sweep. |
-| `web` | nginx image built from `infra/docker/web.Dockerfile` | Serves the SPA, proxies `/api` and `/ads.txt`. |
+| `web` | nginx image built from `infra/railway/web.Dockerfile` | Serves the SPA, proxies `/api` and `/ads.txt`. Config is `infra/railway/nginx.railway.conf`. |
 | `gotenberg` | `gotenberg/gotenberg:8` with the two hardening flags from `infra/docker-compose.prod.yml` | Private; never expose it. |
 | Postgres | Railway plugin | Managed is the right call here. |
 | Redis | Railway plugin | Broker **and** cache — the throttles, the captcha pass and the worker heartbeat live in the cache. |
@@ -44,10 +68,12 @@ verification link and unsubscribe link in every email is built from them, and
    than to 8000/80.
 3. **Migrations** — set a deploy command (`python manage.py migrate --noinput`)
    rather than running them in the start command, or every replica races.
-4. **The proxy hop** — `NUM_PROXIES=1` is already set, and `client_ip` reads
-   the hop *our* proxy appended. If you put another proxy (Cloudflare) in
-   front, raise it, or every throttle and the admin allowlist key on the wrong
-   address.
+4. **The proxy hop** — **`NUM_PROXIES=3`**, which is the value measured against
+   the running stack, not the 1 this file used to claim or the 2 the deploy plan
+   predicted. The chain is browser → Railway edge → our nginx → gunicorn, and
+   `client_ip` counts from the right, so an undercount reads a proxy's address
+   as the client and every throttle and the admin allowlist key on the wrong
+   one. If you put another proxy (Cloudflare) in front, raise it again.
 5. **`SECURE_SSL_REDIRECT`** with Railway's TLS termination needs
    `SECURE_PROXY_SSL_HEADER`, which `config/settings/prod.py` sets. The health
    endpoints are exempt (`SECURE_REDIRECT_EXEMPT`), because the platform probes

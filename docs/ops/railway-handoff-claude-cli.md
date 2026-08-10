@@ -135,12 +135,12 @@ green) — but its **e2e suite had never been run**, and per H2 it still hasn't.
 | Item | Note |
 |---|---|
 | SMTP | Owner decision to skip. Re-enable recipe in `RAILWAY-SECRETS.md`. **Blocks multi-party signing.** |
-| Correct `docs/ops/railway.md` gotcha 4 | It says `NUM_PROXIES=1`; the plan said 2; **measured truth is 3.** Also drop its `$((2*nproc+1))` gunicorn formula — `nproc` reports the host's cores on Railway Metal. |
+| ~~Correct `docs/ops/railway.md` gotcha 4~~ | **Done 2026-08-10.** Gotcha 4 now reads `NUM_PROXIES=3` with the chain spelled out, and the `$((2*nproc+1))` formula is replaced by the fixed `--workers 4` the service actually runs, with the Railway Metal `nproc` trap explained. |
 | Custom domain | Currently `zenpdf.up.railway.app`. |
 | AdSense | `ADS_ENABLED` off. CSP additions are pre-written at the foot of `frontend/nginx.conf`; mirror them into `infra/railway/nginx.railway.conf` when switching on. |
 | Sentry | Unset, inert. |
 | Admin | Stays off — no collectstatic/whitenoise exists and nginx 404s `/static/` (plan R9). |
 | AATL signing cert | Post-launch upgrade; self-signed until then. |
-| GitHub auto-deploys | Plan Appendix C. Deploys are currently working-tree snapshots via `railway up`. |
+| ~~GitHub auto-deploys~~ | **Done 2026-08-10.** All six app services (`api`, three workers, `beat`, `web`) build from `yhaspel/ZenPDF@main`; the four image-sourced services are unchanged. A push to `main` is the deploy. Before flipping, a `git archive HEAD` checkout was built with both Dockerfiles and produced the byte-identical CSS bundle production was serving, which is what proved a commit-sourced build reproduces the snapshot. **Watch patterns are still unset** — one commit currently rebuilds all six. See `docs/ops/railway.md`. |
 | First restore drill | Per `docs/ops/restore-drill.md`. Postgres has template backups; a daily schedule on the storage volume still needs confirming in the dashboard. |
 | `v1.0.0` tag | Phase 10 still open in `PROGRESS.md`. |
