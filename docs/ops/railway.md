@@ -21,11 +21,36 @@ Building from a commit removes the whole class.
 `railway up -d -s <svc>` still works and is the escape hatch for an emergency
 that cannot wait for a push. Use it knowing it ships your working tree.
 
-Not yet wired: **watch patterns**, so today one commit rebuilds all six services
-regardless of what it touched. They want to be `frontend/**` + `infra/railway/**`
-for `web` and `backend/**` + `infra/railway/**` for the five Django services.
-The CLI has no flag for them; they need the dashboard or a minted account token
-against `serviceInstanceUpdate`.
+**Watch patterns** decide which services a commit rebuilds:
+
+| Service | Rebuilds when a commit touches |
+|---|---|
+| `web` | `frontend/**`, `infra/railway/**` |
+| `api`, `worker-default`, `worker-heavy`, `worker-render`, `beat` | `backend/**`, `infra/railway/**` |
+
+So a backend change leaves `web` alone, a frontend change leaves the Django five
+alone, `infra/railway/**` rebuilds everything (it holds both Dockerfiles and the
+nginx config), and a commit touching only `docs/` rebuilds nothing at all.
+
+They are **not** settable from the CLI. `railway config` wants the Railway TS
+SDK as a repo dependency, and the per-service "config as code" file path can
+only be set in the dashboard — so these were set through the public API with a
+minted account token:
+
+```graphql
+mutation($serviceId: String!, $environmentId: String!, $input: ServiceInstanceUpdateInput!) {
+  serviceInstanceUpdate(serviceId: $serviceId, environmentId: $environmentId, input: $input)
+}
+# input: { "watchPatterns": ["backend/**", "infra/railway/**"] }
+```
+
+Two things that will waste an hour otherwise: the endpoint is
+`https://backboard.railway.com/graphql/v2` with `Authorization: Bearer <token>`,
+and it sits behind Cloudflare — a request with no browser-ish `User-Agent` is
+refused with **HTTP 403, `error code: 1010`** before it ever reaches the API,
+which reads exactly like a bad token but is not one. A workspace token also
+cannot query `me` (`Not Authorized`) while working perfectly on `project(id:)`
+and the mutation, so test with a project query, not `me`.
 
 ## Service map
 
