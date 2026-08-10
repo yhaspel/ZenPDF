@@ -18,23 +18,12 @@
   <link rel="preload" href="/fonts/shippori-mincho-latin-600-normal.woff2" as="font" type="font/woff2" crossorigin>
   <!-- FOUC prevention (design contract §5): resolve the stored theme before the
        first paint of a prerendered page. Must stay ahead of the stylesheets and
-       mirror ThemeService's logic exactly. -->
-  <script>
-    (function () {
-      try {
-        var stored = localStorage.getItem('zenpdf.theme');
-        var pref = stored === 'light' || stored === 'dark' ? stored : 'system';
-        var media = window.matchMedia('(prefers-color-scheme: dark)');
-        var apply = function () {
-          var dark = pref === 'dark' || (pref === 'system' && media.matches);
-          document.documentElement.classList.toggle('dark', dark);
-        };
-        apply();
-        // Follow OS changes while "system" is active, until Angular takes over.
-        if (media.addEventListener) { media.addEventListener('change', apply); }
-      } catch (e) { /* storage unavailable — system light it is */ }
-    })();
-  </script>
+       mirror ThemeService's logic exactly.
+       A file, not an inline block: production's CSP is `script-src 'self'
+       'wasm-unsafe-eval'`, which refuses inline script, so inlining this meant
+       the theme was never applied before hydration. Classic and non-deferred,
+       so it still runs before first paint. -->
+  <script src="/theme-boot.js"></script>
 </head>
 <body>
   <app-root></app-root>
