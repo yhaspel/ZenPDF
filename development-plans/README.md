@@ -39,6 +39,7 @@ ZenPDF is a free-to-use, ad-supported web application for editing, organizing, c
 | [phase-08-esignatures.md](phase-08-esignatures.md) | Saved signatures, self-sign, sign requests, public signing ceremony, audit trail, PAdES seal, verification |
 | [phase-09-ads-and-abuse-controls.md](phase-09-ads-and-abuse-controls.md) | Ad slots + consent (CMP), landing page, quotas, throttling, anti-abuse |
 | [phase-10-hardening-release.md](phase-10-hardening-release.md) | Security hardening, performance, a11y, E2E suite, prod deploy |
+| [phase-11-adsense-review.md](phase-11-adsense-review.md) | AdSense approval pass: custom-domain cutover, contact page, guides editorial layer, application loop |
 
 ## How to use this plan
 
@@ -63,6 +64,7 @@ ZenPDF is a free-to-use, ad-supported web application for editing, organizing, c
 8  E-signatures        — after 3 + 5
 9  Ads & abuse controls — after 8 (product feature-complete)
 10 Hardening & release  — after everything
+11 AdSense review readiness — after 9 + production deploy; gated on an owner-purchased custom domain, terminal gate external (Google review)
 ```
 
 **Why 2B sits there:** every phase after it adds ownership-coupled code. Doing the principal refactor once, before Phase 3, costs one focused phase; doing it after Phase 8 means unpicking eight phases of accumulated `filter(owner=request.user)`. From 2B onward, each phase also ships its own public tool page (§21.6) rather than deferring all SEO surface to Phase 9.

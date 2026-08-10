@@ -18,6 +18,7 @@ This file is the **single source of truth for execution status**. Every agent se
 | 8 — E-signatures | [phase-08-esignatures.md](phase-08-esignatures.md) | ✅ Complete | 2026-08-02 | 2026-08-02 | Self-sign (guest), multi-party requests, hash-chained audit, PAdES seal, certificate, `/verify`. **2B GATE cleared.** Owner items: legal review + production certificate |
 | 9 — Ads & abuse controls | [phase-09-ads-and-abuse-controls.md](phase-09-ads-and-abuse-controls.md) | ✅ Complete | 2026-08-02 | 2026-08-02 | Ads off by default and launchable; consent gate, legal pages, verification, suppression, abuse reports. Owner: AdSense account + CMP + legal review |
 | 10 — Hardening & release | [phase-10-hardening-release.md](phase-10-hardening-release.md) | 🟠 Awaiting human review | 2026-08-02 | — | Engineering complete; **launch checklist is owner-executed** (`docs/10-launch-checklist.md`). Do not tag v1.0.0 until it has no unticked box |
+| 11 — AdSense review readiness | [phase-11-adsense-review.md](phase-11-adsense-review.md) | ⬜ Not started | — | — | Site-side approval work: domain cutover, `/contact` + guides, application loop. Gated on owner domain purchase (P1); terminal criterion is external (Google review) |
 
 Status values: ⬜ Not started · 🔵 In progress · 🟡 Blocked · 🟠 Awaiting human review · ✅ Complete (all acceptance criteria + DoD evidenced below)
 
