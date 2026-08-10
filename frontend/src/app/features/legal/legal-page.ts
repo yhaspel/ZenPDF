@@ -1,3 +1,4 @@
+import { DOCUMENT } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { Meta, Title } from '@angular/platform-browser';
 import { ActivatedRoute, RouterLink } from '@angular/router';
@@ -5,6 +6,7 @@ import { ActivatedRoute, RouterLink } from '@angular/router';
 import { AppConfig } from '../../core/models/models';
 import { RETENTION } from '../../core/retention';
 import { ConfigService } from '../../core/services/config.service';
+import { SITE_URL, setCanonical } from '../../core/site';
 import { Brand } from '../../shared/brand';
 import { SiteFooter } from '../../shared/site-footer';
 import { ThemeToggle } from '../../shared/theme-toggle';
@@ -34,6 +36,7 @@ export class LegalPage {
   private configSvc = inject(ConfigService);
   private title = inject(Title);
   private meta = inject(Meta);
+  private doc = inject(DOCUMENT);
 
   protected kind = signal<LegalKind>('privacy');
   protected config = signal<AppConfig | null>(null);
@@ -52,18 +55,25 @@ export class LegalPage {
       privacy: {
         title: 'Privacy policy | ZenPDF',
         description: 'What ZenPDF stores, for how long, and who else sees it.',
+        path: 'legal/privacy',
       },
       terms: {
         title: 'Terms of service | ZenPDF',
         description: 'The terms you agree to by using ZenPDF.',
+        path: 'legal/terms',
       },
       about: {
         title: 'About ZenPDF — a free PDF workspace',
         description: 'What ZenPDF is, how it is paid for, and what it will not do.',
+        path: 'about',
       },
     }[kind];
     this.title.setTitle(meta.title);
     this.meta.updateTag({ name: 'description', content: meta.description });
+    // These three prerender and are in the sitemap, but shipped with no
+    // canonical at all — so the trailing-slash form and the bare form were two
+    // indexable URLs for one page.
+    setCanonical(this.doc, this.meta, `${SITE_URL}/${meta.path}`);
 
     this.configSvc.config().subscribe({
       next: (config) => this.config.set(config),

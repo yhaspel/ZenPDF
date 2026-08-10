@@ -10,6 +10,7 @@ import { JobsFacade } from '../../abstraction/jobs.facade';
 import { UploadFacade } from '../../abstraction/upload.facade';
 import { DocumentModel, Job } from '../../core/models/models';
 import { DocumentsService } from '../../core/services/documents.service';
+import { SITE_URL, setCanonical } from '../../core/site';
 import { ToolPageDef } from '../../core/tool-pages';
 import { saveBlob } from '../../shared/save-blob';
 import { AdSlot } from '../../shared/ad-slot';
@@ -128,25 +129,12 @@ export class ToolPage {
     this.meta.updateTag({ property: 'og:title', content: tool.title });
     this.meta.updateTag({ property: 'og:description', content: tool.metaDescription });
     this.meta.updateTag({ property: 'og:type', content: 'website' });
-    const canonical = `${this.origin()}/${tool.slug}`;
-    this.meta.updateTag({ property: 'og:url', content: canonical });
-    this.setCanonical(canonical);
+    // `SITE_URL`, never `document.location`: these pages are prerendered, where
+    // that is Angular's synthetic `http://ng-localhost` — which is what every
+    // canonical in the served HTML used to say.
+    const canonical = `${SITE_URL}/${tool.slug}`;
+    setCanonical(this.doc, this.meta, canonical);
     this.setJsonLd(tool, canonical);
-  }
-
-  private origin(): string {
-    const loc = this.doc.location;
-    return loc ? `${loc.protocol}//${loc.host}` : '';
-  }
-
-  private setCanonical(href: string): void {
-    let link = this.doc.querySelector<HTMLLinkElement>('link[rel="canonical"]');
-    if (!link) {
-      link = this.doc.createElement('link');
-      link.setAttribute('rel', 'canonical');
-      this.doc.head.appendChild(link);
-    }
-    link.setAttribute('href', href);
   }
 
   private setJsonLd(tool: ToolPageDef, canonical: string): void {

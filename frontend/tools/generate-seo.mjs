@@ -10,10 +10,14 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { buildRobots, buildSitemap, extractSlugs } from './seo.mjs';
+import { buildRobots, buildSitemap, extractSiteUrl, extractSlugs } from './seo.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const siteUrl = process.env['SITE_URL'] ?? undefined;
+// `core/site.ts` is the source of truth; `SITE_URL` in the environment is an
+// escape hatch for a preview host. There is no localhost fallback any more —
+// production shipped one for as long as these files have existed.
+const siteUrl =
+  process.env['SITE_URL'] || extractSiteUrl(readFileSync(resolve(root, 'src/app/core/site.ts'), 'utf8'));
 
 const slugs = extractSlugs(readFileSync(resolve(root, 'src/app/core/tool-pages.ts'), 'utf8'));
 if (slugs.length === 0) {

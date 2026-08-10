@@ -5,8 +5,10 @@ import {
   CONTENT_PAGES,
   buildRobots,
   buildSitemap,
+  extractSiteUrl,
   extractSlugs,
 } from '../../../tools/seo.mjs';
+import { SITE_URL } from './site';
 import { TOOL_SLUGS } from './tool-pages';
 
 /** Repo root, resolved from this spec rather than from the generator module. */
@@ -27,8 +29,37 @@ describe('generated SEO artifacts', () => {
     expect(extractSlugs(read('src/app/core/tool-pages.ts'))).toEqual(TOOL_SLUGS);
   });
 
+  it('the generator reads the same site origin the app imports', () => {
+    expect(extractSiteUrl(read('src/app/core/site.ts'))).toBe(SITE_URL);
+  });
+
   it('the committed sitemap matches what the route table generates', () => {
-    expect(read('public/sitemap.xml')).toBe(buildSitemap([...TOOL_SLUGS]));
+    expect(read('public/sitemap.xml')).toBe(buildSitemap([...TOOL_SLUGS], SITE_URL));
+  });
+
+  // The artifacts shipped to production for as long as they existed with
+  // `http://localhost:4200` in every <loc> and in the Sitemap: directive,
+  // because the generator's fallback was a developer default and nothing set
+  // SITE_URL in the Railway build. A sitemap whose URLs are on another host is
+  // rejected wholesale, so this is the assertion that would have caught it.
+  it('the artifacts name the real site, never localhost', () => {
+    for (const file of ['public/sitemap.xml', 'public/robots.txt']) {
+      expect(read(file)).not.toContain('localhost');
+      expect(read(file)).toContain(SITE_URL);
+    }
+  });
+
+  it('an absent site origin fails the build rather than defaulting', () => {
+    expect(() => buildSitemap([...TOOL_SLUGS], undefined)).toThrow();
+    expect(() => buildRobots('')).toThrow();
+  });
+
+  // `/verify` is RenderMode.Client on purpose (app.routes.server.ts), so a
+  // crawler following a sitemap entry for it gets the SPA shell — the landing
+  // page's title and H1 under a second URL.
+  it('does not advertise routes that are deliberately not prerendered', () => {
+    expect(CONTENT_PAGES).not.toContain('verify');
+    expect(read('public/sitemap.xml')).not.toContain('/verify<');
   });
 
   it('the sitemap lists every tool page and the landing page', () => {
@@ -53,7 +84,7 @@ describe('generated SEO artifacts', () => {
 
   it('robots.txt disallows /app/, /s/ and /api/ and points at the sitemap', () => {
     const robots = read('public/robots.txt');
-    expect(robots).toBe(buildRobots());
+    expect(robots).toBe(buildRobots(SITE_URL));
     expect(robots).toContain('Disallow: /app/');
     expect(robots).toContain('Disallow: /s/');
     expect(robots).toContain('Disallow: /api/');

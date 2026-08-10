@@ -1,8 +1,10 @@
+import { DOCUMENT } from '@angular/common';
 import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
 import { Meta, Title } from '@angular/platform-browser';
 import { RouterLink } from '@angular/router';
 
 import { EsignService } from '../../core/services/esign.service';
+import { SITE_URL, setCanonical } from '../../core/site';
 import { Brand } from '../../shared/brand';
 import { SiteFooter } from '../../shared/site-footer';
 import { ThemeToggle } from '../../shared/theme-toggle';
@@ -56,6 +58,7 @@ export class DisclosurePage {
   private esign = inject(EsignService);
   private title = inject(Title);
   private meta = inject(Meta);
+  private doc = inject(DOCUMENT);
 
   protected text = signal('');
   protected version = signal('');
@@ -68,6 +71,8 @@ export class DisclosurePage {
       content: 'The consent to use electronic records and signatures that every '
         + 'ZenPDF signer agrees to, with its version and fingerprint.',
     });
+    // Prerendered and listed in the sitemap, so it needs a canonical of its own.
+    setCanonical(this.doc, this.meta, `${SITE_URL}/legal/esign-disclosure`);
     this.esign.disclosure().subscribe({
       next: (body) => {
         this.text.set(body.text);

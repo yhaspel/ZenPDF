@@ -4,6 +4,7 @@ import { Meta, Title } from '@angular/platform-browser';
 import { RouterLink } from '@angular/router';
 
 import { AuthFacade } from '../../abstraction/auth.facade';
+import { SITE_URL, setCanonical } from '../../core/site';
 import { TOOL_PAGES } from '../../core/tool-pages';
 import { AdSlot } from '../../shared/ad-slot';
 import { Brand } from '../../shared/brand';
@@ -215,18 +216,9 @@ export class Landing {
     this.meta.updateTag({ property: 'og:description', content: description });
     this.meta.updateTag({ property: 'og:type', content: 'website' });
     this.meta.updateTag({ name: 'twitter:card', content: 'summary' });
-    const loc = this.doc.location;
-    if (loc) {
-      const canonical = `${loc.protocol}//${loc.host}/`;
-      this.meta.updateTag({ property: 'og:url', content: canonical });
-      let link = this.doc.querySelector<HTMLLinkElement>('link[rel="canonical"]');
-      if (!link) {
-        link = this.doc.createElement('link');
-        link.rel = 'canonical';
-        this.doc.head.appendChild(link);
-      }
-      link.href = canonical;
-    }
+    // `SITE_URL`, not `document.location`: this page is prerendered, where the
+    // location is Angular's synthetic `http://ng-localhost`.
+    setCanonical(this.doc, this.meta, `${SITE_URL}/`);
   }
 
   protected auth = inject(AuthFacade);

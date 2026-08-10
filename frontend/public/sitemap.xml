@@ -1,152 +1,147 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url>
-    <loc>http://localhost:4200/</loc>
+    <loc>https://zenpdf.up.railway.app/</loc>
     <changefreq>weekly</changefreq>
     <priority>1.0</priority>
   </url>
   <url>
-    <loc>http://localhost:4200/merge-pdf</loc>
+    <loc>https://zenpdf.up.railway.app/merge-pdf</loc>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>http://localhost:4200/split-pdf</loc>
+    <loc>https://zenpdf.up.railway.app/split-pdf</loc>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>http://localhost:4200/compress-pdf</loc>
+    <loc>https://zenpdf.up.railway.app/compress-pdf</loc>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>http://localhost:4200/rotate-pdf</loc>
+    <loc>https://zenpdf.up.railway.app/rotate-pdf</loc>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>http://localhost:4200/delete-pdf-pages</loc>
+    <loc>https://zenpdf.up.railway.app/delete-pdf-pages</loc>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>http://localhost:4200/extract-pdf-pages</loc>
+    <loc>https://zenpdf.up.railway.app/extract-pdf-pages</loc>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>http://localhost:4200/organize-pdf</loc>
+    <loc>https://zenpdf.up.railway.app/organize-pdf</loc>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>http://localhost:4200/annotate-pdf</loc>
+    <loc>https://zenpdf.up.railway.app/annotate-pdf</loc>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>http://localhost:4200/edit-pdf</loc>
+    <loc>https://zenpdf.up.railway.app/edit-pdf</loc>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>http://localhost:4200/watermark-pdf</loc>
+    <loc>https://zenpdf.up.railway.app/watermark-pdf</loc>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>http://localhost:4200/add-page-numbers</loc>
+    <loc>https://zenpdf.up.railway.app/add-page-numbers</loc>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>http://localhost:4200/fill-pdf-form</loc>
+    <loc>https://zenpdf.up.railway.app/fill-pdf-form</loc>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>http://localhost:4200/ocr-pdf</loc>
+    <loc>https://zenpdf.up.railway.app/ocr-pdf</loc>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>http://localhost:4200/pdf-to-word</loc>
+    <loc>https://zenpdf.up.railway.app/pdf-to-word</loc>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>http://localhost:4200/word-to-pdf</loc>
+    <loc>https://zenpdf.up.railway.app/word-to-pdf</loc>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>http://localhost:4200/jpg-to-pdf</loc>
+    <loc>https://zenpdf.up.railway.app/jpg-to-pdf</loc>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>http://localhost:4200/pdf-to-jpg</loc>
+    <loc>https://zenpdf.up.railway.app/pdf-to-jpg</loc>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>http://localhost:4200/html-to-pdf</loc>
+    <loc>https://zenpdf.up.railway.app/html-to-pdf</loc>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>http://localhost:4200/compare-pdf</loc>
+    <loc>https://zenpdf.up.railway.app/compare-pdf</loc>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>http://localhost:4200/repair-pdf</loc>
+    <loc>https://zenpdf.up.railway.app/repair-pdf</loc>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>http://localhost:4200/protect-pdf</loc>
+    <loc>https://zenpdf.up.railway.app/protect-pdf</loc>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>http://localhost:4200/unlock-pdf</loc>
+    <loc>https://zenpdf.up.railway.app/unlock-pdf</loc>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>http://localhost:4200/redact-pdf</loc>
+    <loc>https://zenpdf.up.railway.app/redact-pdf</loc>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>http://localhost:4200/sign-pdf</loc>
+    <loc>https://zenpdf.up.railway.app/sign-pdf</loc>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>http://localhost:4200/about</loc>
+    <loc>https://zenpdf.up.railway.app/about</loc>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>http://localhost:4200/legal/privacy</loc>
+    <loc>https://zenpdf.up.railway.app/legal/privacy</loc>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>http://localhost:4200/legal/terms</loc>
+    <loc>https://zenpdf.up.railway.app/legal/terms</loc>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>http://localhost:4200/legal/esign-disclosure</loc>
-    <changefreq>weekly</changefreq>
-    <priority>0.8</priority>
-  </url>
-  <url>
-    <loc>http://localhost:4200/verify</loc>
+    <loc>https://zenpdf.up.railway.app/legal/esign-disclosure</loc>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
