@@ -1,0 +1,142 @@
+# Launch handoff — production verification of 2026-08-10, and what is left for the owner
+
+A Cowork session ran the phase-10 verification it could do autonomously against
+the **live production deployment**. This file records what is now proven with
+evidence, the one defect it surfaced, and the remaining work only you can do —
+ordered, with the exact command or prompt for each. Companion docs:
+`docs/ops/railway-handoff-claude-cli.md` (H1–H3 prompts),
+`docs/10-launch-checklist.md` (the GATE), `development-plans/PROGRESS.md`
+(session log of this pass).
+
+## Verified today, with evidence
+
+- **Chrome smoke pass on production (your real browser).** Landing renders
+  (compact masthead, dark theme, zero console errors); `/sign-pdf` shows a
+  dropzone and **no login form anywhere**; a full guest merge ran end-to-end
+  through the UI — two files uploaded, MERGED stamp, download offered, 24 h
+  retention notice; `/legal/privacy` and `/verify` render with footer links.
+  Recording: `zenpdf-prod-smoke-2026-08-10.gif` in your Downloads.
+- **CSP verified in a real browser** (checklist "Domain and transport", last
+  box, minus the ceremony): the full ads-off policy is served by
+  `infra/railway/nginx.railway.conf` on every location, and content pages,
+  the workspace shell and the pdf.js machinery loaded with **zero CSP
+  violations** in the console. The ceremony could not be loaded (no signing
+  link can exist while SMTP is off) — same policy applies; re-check it when
+  SMTP lands.
+- **Guest job pipeline via the API, on production:** `fill_form`, `flatten`,
+  `encrypt` and `annotate_batch` all ran to `succeeded`; `/api/health/` green
+  before and after (db/redis/storage/gotenberg/workers all true).
+- **Byte-level proof of the outputs** (pikepdf/pypdf): filled values present
+  in the AcroForm (`full_name`, checkbox `/Yes`, `notes`); flatten removes
+  the fields and bakes the text; encryption is **AES-256 (R6)** with
+  print_lowres/highres/modify/extract all denied and **accessibility
+  preserved** (the flag the product refuses to restrict); the annotation file
+  carries `/Highlight`, `/Text` + `/Popup`, `/Square` in `/Annots`.
+- **Security posture, live:** `/admin/` answers **404** (locked door as
+  designed); the seed-admin **default credentials are rejected** (401 on
+  `admin@zenpdf.local` / `admin12345`); `SECRET_KEY` in production is the
+  freshly generated value from `RAILWAY-SECRETS.md`, not a dev default;
+  `/ads.txt` renders the honest no-sellers state; `robots.txt` correct.
+- **Guest isolation, live:** operations attempted against another
+  principal's document answered **404, never 403** — the isolation sweep's
+  contract, observed on production by accident (a mis-sent header) and
+  worth having seen.
+- **Compact landing is deployed.** `2062fb8` committed and pushed; auto-
+  deploy from `main` is live, and the masthead is what production serves.
+
+Evidence files for your five-minute viewer checks are on your Mac at
+**`_to_delete/qa-evidence-2026-08-10/`** (also delivered in the chat).
+
+## 🔴 New finding — the workspace viewer never loads the document (production)
+
+**Repro:** open any `/app/doc/<id>` as a guest in desktop Chrome.
+Metadata, versions, outline and all page thumbnails load (HTTP 200 each), but
+**no request for `…/content/` is ever made**, the pdf.js canvas stays blank,
+and the console stays completely silent. Reproduced across an SPA navigation
+*and* a hard reload. The tool-page funnel (upload → result → download) is
+unaffected, so phase-2B's primary flow still works — but "Open in workspace"
+hands a guest an empty page, and every workspace mode that needs a rendered
+page (organize, annotate, edit) is unusable in production.
+
+**Why nothing caught it:** the deploy report's by-hand check covered the
+landing and `/sign-pdf` only; the e2e suite has **never** run against the
+deployed build (H2/H3, still open); and the Human review queue already
+warned (row of 2026-08-02) that the suite asserts the viewer *element*, not
+that a page *drew* — this is that gap, live.
+
+**Next step:** run **H3** (`infra/test.sh --e2e` locally) and **H2**
+(`@smoke` against production) from
+`docs/ops/railway-handoff-claude-cli.md` — if the local run is green, the
+defect is production-specific (build/proxy/headers); if it is red locally,
+it came in with a recent commit. Either way, add the "a page actually drew"
+assertion the queue asked for, so it cannot return.
+
+## What is left for you — in order
+
+1. **Chase the viewer finding.** H3 then H2, prompts ready in
+   `docs/ops/railway-handoff-claude-cli.md`. This is the only *new* item
+   today and it belongs first: it is a real production defect on a core
+   surface.
+2. **H1 — prove the production signing certificate seals** (BLOCKING, gates
+   launch). The self-contained prompt is in the same handoff doc; it needs
+   your Mac (local stack + Mailpit + the p12).
+3. **Two decisions, both one-liners to record:**
+   - **SMTP on or off for launch.** Multi-party signing is unusable until
+     on. Recipe: `RAILWAY-SECRETS.md` (Gmail app password; ~10 min). SPF/
+     DKIM alignment comes later with the custom domain (phase 11 P1's
+     Cloudflare session covers the DNS records).
+   - **Certificate: stay self-signed for v1.** `RAILWAY-SECRETS.md` already
+     records this as the deliberate choice — copy that sentence into
+     `docs/10-launch-checklist.md` "Signing" and tick it, or reverse it.
+4. **Five minutes in Preview/Acrobat** with
+   `_to_delete/qa-evidence-2026-08-10/`:
+   - `annotated-unflattened.pdf` — highlight visible on the "highlighted"
+     line, sticky note opens with its text, rectangle frames its sentence.
+   - `form-filled.pdf` — name/notes in the fields, checkbox ticked, right
+     place and size. `form-flattened.pdf` — same values, no live fields.
+   - `protected-no-print.pdf` — opens without a password; **Print greyed
+     out / refused** (Preview is lax about permissions — Acrobat is the
+     honest judge here).
+   - The sealed-envelope check (P8) waits for H1 + SMTP.
+5. **Railway dashboard session (~10 min)** — my session had no API token
+   (the deploy token's value was never written to disk, which is correct):
+   - Set `TSA_URL=http://timestamp.digicert.com` on api + all three
+     workers + beat (checklist "Signing"; without it, seals stop verifying
+     when the cert expires).
+   - Confirm the **storage volume** has a daily backup schedule (Postgres
+     has one; the handoff flagged storage as unconfirmed).
+   - `SENTRY_DSN` when you want error reporting (wiring ships inert).
+   - Apply env-only changes with `serviceInstanceDeployV2`, not `redeploy`.
+6. **Worker recycle drill** (`docs/ops/queue-stuck.md`, the last open half
+   of the hostile-corpus criterion): start a long OCR as a guest, restart
+   `worker-heavy` mid-run from the dashboard, and confirm the job lands
+   `failed` with a readable message (the beat reaper sweeps every 5 min)
+   and the next job succeeds. **Or:** drop a Railway API token into the
+   chat and I will run and evidence it end-to-end.
+7. **Lighthouse on the deployed build** (last open `[~]` criterion):
+   `npx lighthouse https://zenpdf.up.railway.app/ --preset=desktop` for the
+   landing (PSI's anonymous quota was exhausted from my egress IP today; a
+   free PSI API key also unblocks me to do it). The dashboard run needs a
+   logged-in browser — I don't authenticate into accounts, so that run is
+   yours or waits for a session with you at the keyboard.
+8. **The suite runs only your Mac can do:** `infra/test.sh --e2e` green,
+   then three consecutive nightly `@full` runs (`docs/ops/release.md`), and
+   one `infra/perf/` locust run pointed at production with `PERF_EMAIL` set
+   (the p95 number the criterion still owes).
+9. **Restore drill, once** (`docs/ops/restore-drill.md`) — including the
+   audit-chain re-verification it insists on. I can walk it with you
+   against a scratch Railway environment when you have the token handy.
+10. **The twenty-minute screen-reader script**
+    (`docs/10-accessibility-screen-reader-script.md`) and **ten minutes
+    signing from a real phone** — the two judgements automation cannot
+    make.
+11. **Legal reviews ×3 (GATE):** Privacy + Terms, and the e-sign
+    disclosure (any change bumps `VERSION`). Add the phase-11 P4 check
+    while there: the privacy policy's advertising-cookie wording against
+    AdSense's required-content list (support.google.com/adsense/answer/1348695).
+12. **Then:** tick `docs/10-launch-checklist.md` through, clear the GATE
+    rows in PROGRESS's Human review queue, and tag `v1.0.0`.
+
+Independent of launch: phase 11 (`development-plans/phase-11-adsense-review.md`)
+starts the moment you buy the domain — its P1 Cloudflare session folds in the
+SPF/DKIM records from item 3.
