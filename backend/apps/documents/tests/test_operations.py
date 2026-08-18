@@ -85,6 +85,16 @@ def test_extract_as_new_document(api, uploaded_doc):
     assert len(job["result"]["documents"]) == 1
 
 
+def test_extract_separate_gives_one_document_per_page(api, uploaded_doc):
+    job = _op(api, uploaded_doc["id"], "extract_pages",
+              {"pages": [0, 2], "separate": True})
+    assert job["status"] == "succeeded"
+    ids = job["result"]["documents"]
+    assert len(ids) == 2
+    titles = [api.get(f"/api/documents/{i}/").json()["title"] for i in ids]
+    assert [t.split("—")[-1].strip() for t in titles] == ["page 1", "page 3"]
+
+
 def test_split_produces_documents(api, uploaded_doc):
     r = api.post(f"/api/documents/{uploaded_doc['id']}/operations/",
                  {"type": "split", "params": {"mode": "ranges", "ranges": "1,2-3"},

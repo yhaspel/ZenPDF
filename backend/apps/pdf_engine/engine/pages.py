@@ -245,6 +245,32 @@ def extract_pages(data: bytes, *, pages: list[int]) -> bytes:
         doc.close()
 
 
+def extract_pages_each(data: bytes, *, pages: list[int],
+                       base_title: str = "Document") -> list[dict]:
+    """Extract each selected page into its own PDF. Returns [{data, title}] (§10).
+
+    Titles carry the *source* page number, not the position in the selection:
+    "page 9" is the only name that still means something once the file is
+    downloaded next to forty others. Duplicates in the selection collapse —
+    asking for page 3 twice describes one page, and two identically-named files
+    holding the same page is a bug wearing a feature's clothes.
+    """
+    doc = _open(data)
+    try:
+        indices = _validate_indices(pages, doc.page_count)
+        seen: set[int] = set()
+        out = []
+        for i in indices:
+            if i in seen:
+                continue
+            seen.add(i)
+            out.append({"data": _subset_bytes(doc, [i]),
+                        "title": f"{base_title} — page {i + 1}"})
+        return out
+    finally:
+        doc.close()
+
+
 def merge(datas: list[bytes], *, titles: list[str] | None = None) -> bytes:
     """Concatenate PDFs; concatenate TOCs under per-document title parents."""
     if not datas or len(datas) < 2:

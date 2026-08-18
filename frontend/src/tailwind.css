@@ -12,6 +12,12 @@
    to point at. Both modes are complete: light in :root, dark under `.dark`.
 --------------------------------------------------------------------------- */
 :root {
+  /* Native controls — radios, checkboxes, scrollbars, the caret — take their
+     colours from this and nothing else. Without it the dark theme drew every
+     one of them in the light palette: an unchecked radio came out a solid white
+     disc, which is exactly what a *checked* one looks like. */
+  color-scheme: light;
+
   /* --- primitives: paper --- */
   --paper-0: #FFFDF7;
   --paper-50: #FBF8F1;
@@ -112,6 +118,7 @@
 
 /* --- semantic: dark ("night ink") --- */
 .dark {
+  color-scheme: dark;
   --color-bg: var(--night-900);
   --color-surface: var(--night-800);
   --color-surface-raised: var(--night-700);
