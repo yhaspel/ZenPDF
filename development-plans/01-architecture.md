@@ -185,7 +185,7 @@ All document mutations/derivations run as Jobs with `type` from this registry. P
 |---|---|---|---|
 | rotate_pages | 2 | PyMuPDF | pages[], degrees ∈ {90,180,270} |
 | delete_pages / duplicate_pages / reorder_pages | 2 | PyMuPDF | pages[] / pages[] / new_order[] |
-| extract_pages | 2 | PyMuPDF | pages[], as_new_document bool |
+| extract_pages | 2 | PyMuPDF | pages[], as_new_document bool, **separate bool** *(amended 2026-08-19, P2: one document per selected page — "pages 2, 9 and 40 as three files" rather than as one — titled `<source> — page N`, duplicates collapsed. It implies `as_new_document` and overrides it, because several files cannot be a new **version** of the one document they came from; the result is therefore `{documents: [...]}`, not `{document_id, version_id, seq}`.)* |
 | insert_blank | 2 | PyMuPDF | at_index, count, size |
 | insert_from_document | 2 | PyMuPDF | source_document_id, source_pages[], at_index |
 | split | 2 | PyMuPDF | mode ∈ {ranges, every_n, by_size_mb, by_bookmarks}, args → result: new documents |
