@@ -92,7 +92,11 @@
               <fieldset class="mt-5">
                 <legend class="cfield-label">What to produce</legend>
                 <div class="flex flex-col gap-2">
-                  <label class="cfield text-ink !mb-0 !flex items-start gap-2.5 !text-sm !font-normal"
+                  <!-- `!text-ink` like its neighbours: `label` in styles.scss is
+                       unlayered and beats every @layer utilities rule, so a plain
+                       `text-ink` loses and the row paints ink-muted — the same
+                       colour as its own sub-line. -->
+                  <label class="cfield !text-ink !mb-0 !flex items-start gap-2.5 !text-sm !font-normal"
                          [class.on]="extractMode() === 'together'">
                     <input type="radio" name="zen-extract-mode" class="mt-0.5"
                            [checked]="extractMode() === 'together'"
@@ -105,7 +109,7 @@
                       </span>
                     </span>
                   </label>
-                  <label class="cfield text-ink !mb-0 !flex items-start gap-2.5 !text-sm !font-normal"
+                  <label class="cfield !text-ink !mb-0 !flex items-start gap-2.5 !text-sm !font-normal"
                          [class.on]="extractMode() === 'separate'">
                     <input type="radio" name="zen-extract-mode" class="mt-0.5"
                            [checked]="extractMode() === 'separate'"
