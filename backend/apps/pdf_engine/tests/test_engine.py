@@ -152,6 +152,22 @@ def test_extract_pages(fixture_bytes):
     assert _pages(out) == 2
 
 
+def test_extract_pages_each_gives_one_document_per_page(fixture_bytes):
+    out = P.extract_pages_each(fixture_bytes("text.pdf"), pages=[0, 2], base_title="Report")
+    assert [i["title"] for i in out] == ["Report — page 1", "Report — page 3"]
+    assert [_pages(i["data"]) for i in out] == [1, 1]
+
+
+def test_extract_pages_each_collapses_duplicates(fixture_bytes):
+    out = P.extract_pages_each(fixture_bytes("text.pdf"), pages=[1, 1, 0])
+    assert [i["title"] for i in out] == ["Document — page 2", "Document — page 1"]
+
+
+def test_extract_pages_each_rejects_a_page_that_is_not_there(fixture_bytes):
+    with pytest.raises(PageOutOfRange):
+        P.extract_pages_each(fixture_bytes("text.pdf"), pages=[9])
+
+
 def test_insert_blank(fixture_bytes):
     out = P.insert_blank(fixture_bytes("text.pdf"), at_index=1, count=2, size="a4")
     assert _pages(out) == 5

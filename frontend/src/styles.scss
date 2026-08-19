@@ -340,7 +340,12 @@ select.input { cursor: pointer; }
 }
 .input-eye:hover { color: var(--color-ink); }
 .input-eye svg { width: 20px; height: 20px; }
-input[type="checkbox"] { width: 17px; height: 17px; accent-color: var(--color-accent); }
+/* Radios were missing here, so every one in the app — PDF form fields, and now
+   the extract tool's choice of result — rendered in the browser's blue, the one
+   colour the palette does not contain (§2, one accent). */
+input[type="checkbox"], input[type="radio"] {
+  width: 17px; height: 17px; accent-color: var(--color-accent);
+}
 input[type="range"] { accent-color: var(--color-accent); }
 input[type="color"] {
   border: var(--border-hairline) solid var(--color-border-strong);

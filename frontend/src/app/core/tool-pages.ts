@@ -202,7 +202,7 @@ export const TOOL_PAGES: ToolPageDef[] = [
       'Remove unwanted pages from a PDF and download the result. Free, no account, no watermark.',
     h1: 'Delete pages from a PDF',
     intro: [
-      'Remove pages you do not want. Upload the document, and ZenPDF gives you a copy without the first page — or open it in the workspace to pick exactly which pages go.',
+      'Remove pages you do not want. Upload the document, type the pages to drop — single numbers, ranges, or both, like 1, 3, 5-8 — and download the result. If you would rather pick them by eye, open the file in the workspace and click the page thumbnails instead.',
       'Deleting a page here creates a new version of the document rather than overwriting the original, so you can always go back to what you started with.',
       'This is the quickest way to drop a cover sheet, a blank page a scanner inserted, or an appendix that should not be shared.',
       'No account, no watermark, and guest files are deleted automatically within 24 hours.',
@@ -218,7 +218,7 @@ export const TOOL_PAGES: ToolPageDef[] = [
       },
       {
         q: 'Can I choose which pages to delete?',
-        a: 'Open the file in the workspace after uploading and select exactly the pages you want to remove.',
+        a: 'Yes. Type them into the Pages field — 1, 3, 5-8 — or open the file in the workspace and select the page thumbnails you want gone.',
       },
       { q: 'Is it free?', a: 'Yes, and no account is required.' },
     ],
@@ -235,18 +235,22 @@ export const TOOL_PAGES: ToolPageDef[] = [
     h1: 'Extract pages from a PDF',
     intro: [
       'Pull pages out of a PDF into a separate document, leaving the original untouched. Useful when you need to send one section of a long file and nothing else.',
-      'This page extracts the first page into a new document. To choose a different set, open the file in the workspace, select the pages, and extract from there.',
+      'Type the pages you want — single numbers, ranges, or both, like 1, 3, 5-8 — and choose whether they arrive as one PDF or as a separate PDF for each page. If you would rather pick them by eye, open the file in the workspace and click the page thumbnails instead.',
       'Extraction copies the pages rather than re-rendering them, so text stays selectable and image quality is unchanged.',
       'It works without an account. The extracted document is yours to download immediately.',
       'The extracted document is independent of the source once created. Changing one afterwards does not affect the other, so you can safely edit the extract — adding a header, redacting a figure — without touching the original.',
-      'Extraction is the right tool when the pages you need are scattered through a document rather than contiguous. Pick page 2, page 9 and page 40, and they arrive in a single new file in that order.',
+      'Extraction is the right tool when the pages you need are scattered through a document rather than contiguous. Ask for 9, 2, 40 and they arrive in a single new file in exactly that order — the order you type is the order you get, so a selection can reorder as it extracts.',
       'Like every other operation here, extraction copies page content rather than re-rendering it, so nothing degrades and the result is not watermarked.',
       'Form fields, annotations and links that live on an extracted page come across with it. Anything that pointed at a page you did not extract will no longer resolve, which is expected: the target is not in the new document.',
     ],
     faq: [
       {
         q: 'What is the difference between extracting and splitting?',
-        a: 'Splitting turns one document into many, one per page. Extracting takes the pages you choose and puts just those into a single new document.',
+        a: 'Splitting cuts the whole document up and keeps every page. Extracting takes only the pages you name and leaves the rest behind.',
+      },
+      {
+        q: 'How do I say which pages I want?',
+        a: 'Type them into the Pages field: single numbers, ranges, or a mix — 1, 3, 5-8. Then choose one PDF holding all of them, or a separate PDF for each page.',
       },
       {
         q: 'Does the original change?',

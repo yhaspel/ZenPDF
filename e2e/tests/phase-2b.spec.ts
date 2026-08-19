@@ -127,6 +127,37 @@ test('phase 2b: every tool page is reachable and self-describing', async ({ page
   expect(robots).toContain('Disallow: /api/');
 });
 
+test('phase 2b: extract takes the pages the visitor typed, together or apart', async ({ page }) => {
+  // Both page tools shipped hardcoded to page 1 — a plural promise acting on a
+  // single page. The selection is the feature; this is what guards it.
+  await page.goto('/extract-pdf-pages');
+  await page.locator('[data-test=file-input]').setInputFiles(path.join(FIXTURES, 'text.pdf'));
+  // No pages, no run: the CTA cannot start work on a selection that is not there.
+  await expect(page.locator('[data-test=tool-run]')).toBeDisabled();
+
+  await page.fill('[data-test=page-spec]', '1, 3');
+  await page.click('[data-test=tool-run]');
+  await expect(page.locator('[data-test=tool-result]')).toBeVisible({ timeout: 60_000 });
+  // Together: pages 1 and 3 of a 3-page fixture, in one document.
+  await expect(page.locator('[data-test=result-title]')).toHaveCount(1);
+
+  // Apart: the same selection as one file per page.
+  await page.click('[data-test=tool-again]');
+  await page.locator('[data-test=file-input]').setInputFiles(path.join(FIXTURES, 'text.pdf'));
+  await page.fill('[data-test=page-spec]', '1, 3');
+  await page.check('[data-test=extract-separate]');
+  await page.click('[data-test=tool-run]');
+  await expect(page.locator('[data-test=tool-result]')).toBeVisible({ timeout: 60_000 });
+  await expect(page.locator('[data-test=result-title]')).toHaveCount(2);
+
+  // A page the document does not have is refused with the count, not a stack trace.
+  await page.click('[data-test=tool-again]');
+  await page.locator('[data-test=file-input]').setInputFiles(path.join(FIXTURES, 'text.pdf'));
+  await page.fill('[data-test=page-spec]', '9');
+  await page.click('[data-test=tool-run]');
+  await expect(page.locator('[data-test=tool-error]')).toContainText('3 pages');
+});
+
 test('phase 2b: a guest completes split end-to-end with no login prompt', async ({ page }) => {
   await page.goto('/split-pdf');
   await page.locator('[data-test=file-input]').setInputFiles(path.join(FIXTURES, 'text.pdf'));

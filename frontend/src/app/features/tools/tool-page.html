@@ -59,6 +59,74 @@
             </p>
           }
 
+          <!-- Options row (§4): the pages this tool acts on are the visitor's
+               to choose, so the field sits between the file and the button. -->
+          @if (needsPages()) {
+            <div class="mt-6" data-test="page-select">
+              <label for="zen-pages">{{ pageFieldLabel() }}</label>
+              <!-- dir=ltr: "1, 3, 5-8" is a number spec, and bidi in an RTL
+                   locale would render it reversed ("5-8 ,3 ,1"). -->
+              <input
+                id="zen-pages"
+                type="text"
+                dir="ltr"
+                class="input"
+                [class.input-invalid]="!!pageError()"
+                [value]="pageSpec()"
+                (input)="onPageSpec($event)"
+                placeholder="1, 3, 5-8"
+                autocomplete="off"
+                spellcheck="false"
+                [attr.aria-invalid]="!!pageError()"
+                aria-describedby="zen-pages-hint zen-pages-error"
+                data-test="page-spec"
+              />
+              <p class="field-hint" id="zen-pages-hint">{{ pageFieldHint() }}</p>
+              <!-- Kept in the DOM so a screen reader announces the change (§3). -->
+              <p class="field-error" id="zen-pages-error" role="alert" data-test="page-spec-error">
+                {{ pageError() }}
+              </p>
+            </div>
+
+            @if (tool().kind === 'extract-pages') {
+              <fieldset class="mt-5">
+                <legend class="cfield-label">What to produce</legend>
+                <div class="flex flex-col gap-2">
+                  <!-- `!text-ink` like its neighbours: `label` in styles.scss is
+                       unlayered and beats every @layer utilities rule, so a plain
+                       `text-ink` loses and the row paints ink-muted — the same
+                       colour as its own sub-line. -->
+                  <label class="cfield !text-ink !mb-0 !flex items-start gap-2.5 !text-sm !font-normal"
+                         [class.on]="extractMode() === 'together'">
+                    <input type="radio" name="zen-extract-mode" class="mt-0.5"
+                           [checked]="extractMode() === 'together'"
+                           (change)="extractMode.set('together')"
+                           data-test="extract-together" />
+                    <span>
+                      One PDF with those pages
+                      <span class="faint block text-[12.5px]">
+                        In the order you typed them.
+                      </span>
+                    </span>
+                  </label>
+                  <label class="cfield !text-ink !mb-0 !flex items-start gap-2.5 !text-sm !font-normal"
+                         [class.on]="extractMode() === 'separate'">
+                    <input type="radio" name="zen-extract-mode" class="mt-0.5"
+                           [checked]="extractMode() === 'separate'"
+                           (change)="extractMode.set('separate')"
+                           data-test="extract-separate" />
+                    <span>
+                      A separate PDF for each page
+                      <span class="faint block text-[12.5px]">
+                        One file per page, each named after its page number.
+                      </span>
+                    </span>
+                  </label>
+                </div>
+              </fieldset>
+            }
+          }
+
           <button
             type="button"
             class="btn btn-primary btn-block mt-6"

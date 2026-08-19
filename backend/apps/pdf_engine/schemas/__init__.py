@@ -42,7 +42,11 @@ REORDER_PAGES = {
 EXTRACT_PAGES = {
     "type": "object",
     "required": ["pages"],
-    "properties": {"pages": _PAGES, "as_new_document": {"type": "boolean"}},
+    # `separate` splits the selection into one document per page — "pages 2, 9
+    # and 40 as three files" rather than as one. It implies `as_new_document`:
+    # several files cannot be a new *version* of the document they came from.
+    "properties": {"pages": _PAGES, "as_new_document": {"type": "boolean"},
+                   "separate": {"type": "boolean"}},
     "additionalProperties": False,
 }
 INSERT_BLANK = {

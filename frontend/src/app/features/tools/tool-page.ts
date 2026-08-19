@@ -9,6 +9,7 @@ import { GuestFacade } from '../../abstraction/guest.facade';
 import { JobsFacade } from '../../abstraction/jobs.facade';
 import { UploadFacade } from '../../abstraction/upload.facade';
 import { DocumentModel, Job } from '../../core/models/models';
+import { formatPages, parsePageSpec, toIndices, uniquePages } from '../../core/page-spec';
 import { DocumentsService } from '../../core/services/documents.service';
 import { SITE_URL, setCanonical } from '../../core/site';
 import { ToolPageDef } from '../../core/tool-pages';
@@ -23,6 +24,13 @@ type Phase = 'idle' | 'uploading' | 'running' | 'done' | 'error';
 
 /** Tools whose input is not a PDF, so it is parked and converted (phase-06). */
 const IMPORT_KINDS = new Set(['word-to-pdf', 'jpg-to-pdf', 'html-to-pdf']);
+
+/**
+ * Tools that act on a *chosen* set of pages, so the page field is part of the
+ * widget (§4, options row). Both shipped acting on page 1 and nothing else,
+ * which made each of them a one-page tool wearing a plural name.
+ */
+const PAGE_SELECT_KINDS = new Set(['extract-pages', 'delete-pages']);
 
 /**
  * A public, server-rendered tool page that **is** the tool (§21.6).
@@ -62,7 +70,35 @@ export class ToolPage {
   /** 0–100 when the polled job reports progress; null when it has none yet. */
   protected runningProgress = signal<number | null>(null);
 
-  protected readonly ready = computed(() => this.picked().length >= this.tool().minFiles);
+  /** What the visitor typed into the page field: "1, 3, 5-8". */
+  protected pageSpec = signal('');
+  /** Extract only: one file holding the selection, or one file per page. */
+  protected extractMode = signal<'together' | 'separate'>('together');
+  /**
+   * The uploaded document's page count, known only once it is uploaded — so a
+   * selection is checked against the real document at run time, and the hint
+   * can name the count on the next attempt.
+   */
+  protected pageCount = signal<number | null>(null);
+  /**
+   * The document the picked file already became. A refused selection — page 9
+   * of a 7-page file — is corrected and run again, and without this the same
+   * file was uploaded a second time: the visitor's bandwidth twice, and two
+   * copies against a guest's storage quota, for one attempt.
+   */
+  private uploaded = signal<{ file: File; doc: DocumentModel } | null>(null);
+
+  protected readonly needsPages = computed(() => PAGE_SELECT_KINDS.has(this.tool().kind));
+  protected readonly pageSelection = computed(() => parsePageSpec(this.pageSpec()));
+  /** The parse error, shown only once there is something to be wrong about. */
+  protected readonly pageError = computed(() => this.pageSelection().error);
+
+  protected readonly ready = computed(() => {
+    if (this.picked().length < this.tool().minFiles) return false;
+    if (!this.needsPages()) return true;
+    const selection = this.pageSelection();
+    return !selection.error && selection.pages.length > 0;
+  });
   protected readonly busy = computed(() =>
     ['uploading', 'running'].includes(this.phase()),
   );
@@ -114,7 +150,29 @@ export class ToolPage {
     }
     if (this.exportJob()) return 'Converted and ready to download.';
     const n = this.results().length;
+    if (this.needsPages()) {
+      // Say which pages, because the whole point of the change is that the
+      // visitor chose them: "Done." is what the tool said when it took page 1.
+      const chosen = uniquePages(this.pageSelection().pages);
+      const noun = chosen.length === 1 ? 'Page' : 'Pages';
+      const list = formatPages(chosen);
+      if (this.tool().kind === 'delete-pages') return `${noun} ${list} removed.`;
+      return n > 1 ? `${noun} ${list} — ${n} separate files.` : `${noun} ${list} extracted.`;
+    }
     return n > 1 ? `${n} files are ready.` : 'Done.';
+  });
+
+  /** The page field's label — the verb differs, the field does not. */
+  protected readonly pageFieldLabel = computed(() =>
+    this.tool().kind === 'delete-pages' ? 'Pages to delete' : 'Pages to extract',
+  );
+
+  /** Its hint, which names the real page count once a document has been read. */
+  protected readonly pageFieldHint = computed(() => {
+    const total = this.pageCount();
+    const how = 'Page numbers and ranges, in any order — 1, 3, 5-8.';
+    if (!total) return how;
+    return `${how} This PDF has ${total} ${total === 1 ? 'page' : 'pages'}.`;
   });
 
   constructor() {
@@ -173,6 +231,17 @@ export class ToolPage {
     this.picked.set(tool.multiple ? [...this.picked(), ...files] : files.slice(0, 1));
     this.error.set('');
     this.phase.set('idle');
+    // Both belonged to the file that was here before it.
+    this.pageCount.set(null);
+    this.uploaded.set(null);
+  }
+
+  onPageSpec(event: Event): void {
+    this.pageSpec.set((event.target as HTMLInputElement).value);
+    if (this.phase() === 'error') {
+      this.phase.set('idle');
+      this.error.set('');
+    }
   }
 
   removeFile(index: number): void {
@@ -200,12 +269,21 @@ export class ToolPage {
     const files = this.picked();
     let remaining = files.length;
 
+    // Re-running the same single file after a refused selection: it is already
+    // on the server, unchanged, and this session still owns it.
+    const already = this.uploaded();
+    if (already && this.needsPages() && files.length === 1 && files[0] === already.file) {
+      this.dispatch([already.doc]);
+      return;
+    }
+
     for (const file of files) {
       this.docsSvc.upload(file).subscribe({
         next: (event) => {
           const body = (event as { body?: DocumentModel }).body;
           if (body?.id) {
             uploaded.push(body);
+            if (this.needsPages() && files.length === 1) this.uploaded.set({ file, doc: body });
             if (--remaining === 0) this.dispatch(uploaded);
           }
         },
@@ -302,15 +380,18 @@ export class ToolPage {
       return;
     }
 
+    // The page tools run on what the visitor typed above the button. Their
+    // pages are checked against the document here rather than earlier, because
+    // this is the first moment its real page count is known.
+    if (this.needsPages()) {
+      this.dispatchPages(tool.kind, primary);
+      return;
+    }
+
     const single: Record<string, { type: string; params: unknown }> = {
       split: { type: 'split', params: { mode: 'every_n', every_n: 1 } },
       compress: { type: 'compress', params: { preset: 'balanced' } },
       rotate: { type: 'rotate_pages', params: { pages: this.allPages(primary), degrees: 90 } },
-      'delete-pages': { type: 'delete_pages', params: { pages: [0] } },
-      'extract-pages': {
-        type: 'extract_pages',
-        params: { pages: [0], as_new_document: true },
-      },
       // Phase 4's two one-shot tools run with sensible defaults here and offer
       // the workspace for anything finer.
       watermark: { type: 'watermark', params: { text: 'DRAFT', under: true, opacity: 0.25 } },
@@ -327,6 +408,62 @@ export class ToolPage {
         base_version_seq: primary.current_version?.seq ?? null,
       }),
       primary,
+    );
+  }
+
+  /**
+   * Extract and delete, on the pages the visitor chose (1-based on screen,
+   * 0-based over the wire — §8). A selection that reaches past the end of the
+   * document is refused here with the count in the sentence: the engine's own
+   * "page 11 out of range (0..6)" is true and useless.
+   */
+  private dispatchPages(kind: string, doc: DocumentModel): void {
+    const total = doc.page_count;
+    this.pageCount.set(total || null);
+    const pages = this.pageSelection().pages;
+    const beyond = total ? pages.filter((page) => page > total) : [];
+    if (beyond.length) {
+      this.phase.set('error');
+      this.error.set(
+        `This PDF has ${total} ${total === 1 ? 'page' : 'pages'}, so there is no page ` +
+          `${beyond[0]}. Change the selection and run it again.`,
+      );
+      return;
+    }
+    const base = doc.current_version?.seq ?? null;
+
+    if (kind === 'delete-pages') {
+      // Deleting is a set, not a sequence: asking twice for page 3 deletes one
+      // page, and the order it was typed in cannot matter.
+      const unique = uniquePages(pages).sort((a, b) => a - b);
+      if (total && unique.length >= total) {
+        this.phase.set('error');
+        this.error.set('That would delete every page, and a PDF has to keep at least one.');
+        return;
+      }
+      this.track(
+        this.docsSvc.operation(doc.id, {
+          type: 'delete_pages',
+          params: { pages: toIndices(unique) },
+          base_version_seq: base,
+        }),
+        doc,
+      );
+      return;
+    }
+
+    // Extract keeps the order it was given — "9, 2, 40" is a running order, not
+    // a set — and `separate` decides whether that is one file or one per page.
+    this.track(
+      this.docsSvc.operation(doc.id, {
+        type: 'extract_pages',
+        params: {
+          pages: toIndices(pages),
+          as_new_document: true,
+          separate: this.extractMode() === 'separate',
+        },
+        base_version_seq: base,
+      }),
     );
   }
 
@@ -361,10 +498,13 @@ export class ToolPage {
     }
     let remaining = target.length;
     const docs: DocumentModel[] = [];
-    for (const id of target) {
+    target.forEach((id, i) => {
       this.docsSvc.get(id).subscribe({
         next: (d) => {
-          docs.push(d);
+          // Slot, not push: the fetches race, and for "a separate PDF for each
+          // page" the rows must read in page order, not network order. Split's
+          // parts had the same race.
+          docs[i] = d;
           if (--remaining === 0) {
             this.results.set(docs);
             this.phase.set('done');
@@ -372,7 +512,7 @@ export class ToolPage {
         },
         error: (err) => this.fail(err),
       });
-    }
+    });
   }
 
   private trackExport(doc: DocumentModel, format: string, extra: object): void {
@@ -442,6 +582,10 @@ export class ToolPage {
   private fail(err: { error?: { error?: { message?: string } } }): void {
     this.phase.set('error');
     this.error.set(err?.error?.error?.message ?? 'Something went wrong. Try again.');
+    // The cached upload may be the reason — a guest session that expired takes
+    // its documents with it, and a cached id then 404s on every retry. Dropped,
+    // the next run starts clean with a fresh upload instead of failing forever.
+    this.uploaded.set(null);
   }
 
   download(doc: DocumentModel): void {
@@ -461,6 +605,11 @@ export class ToolPage {
     this.exportJob.set(null);
     this.error.set('');
     this.phase.set('idle');
+    // The selection stays — "do another one" is usually the same pages out of
+    // the next file — but the page count and the uploaded copy belonged to the
+    // file just finished.
+    this.pageCount.set(null);
+    this.uploaded.set(null);
   }
 
   sizeMb(bytes: number): string {

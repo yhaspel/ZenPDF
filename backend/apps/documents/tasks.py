@@ -275,8 +275,13 @@ def _save_export(job: Job, payload: dict) -> dict:
     }
 
 
+def _source_title(job) -> str:
+    """The source document's title, for naming files this job spawns from it."""
+    return getattr(getattr(job, "document", None), "title", "") or "Document"
+
+
 def _clean_copy_title(job) -> str:
-    base = getattr(getattr(job, "document", None), "title", "") or "Document"
+    base = _source_title(job)
     return f"{base} (redacted)"[:255]
 
 
@@ -373,6 +378,13 @@ def _apply_single(op, primary_bytes, params, source_bytes, *, job=None):
         pct = report.get("note") or f"-{int(report['ratio'] * 100)}%"
         return "version", data, f"Compressed ({pct})", report
     if t == "extract_pages":
+        if params.get("separate"):
+            # One file per page. Several documents can only ever be `documents`,
+            # so this ignores `as_new_document` rather than asking the caller to
+            # send a flag whose only valid value is True.
+            items = P.extract_pages_each(primary_bytes, pages=params["pages"],
+                                         base_title=_source_title(job))
+            return "documents", items, f"Extracted {len(items)} page(s) separately", None
         data = P.extract_pages(primary_bytes, pages=params["pages"])
         if params.get("as_new_document"):
             return "documents", [{"data": data, "title": "Extracted pages"}], "Extracted", None
