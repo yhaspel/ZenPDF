@@ -1,0 +1,1098 @@
+From 569e29c957632e86b492e61ca98816caa18be793 Mon Sep 17 00:00:00 2001
+From: "Claude (Cowork)" <noreply@anthropic.com>
+Date: Tue, 18 Aug 2026 15:55:07 +0000
+Subject: [PATCH] fix(tools): extract and delete act on the pages the visitor
+ chooses
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Both tool pages dispatched `pages: [0]` hardcoded, so "Extract PDF pages"
+extracted page one and nothing else, and "Delete pages" deleted page one —
+plural promises that could only ever act on a single page. The copy sent
+people to the workspace to pick pages, which is not what a tool page is for
+(§21.6: the page *is* the tool).
+
+Frontend: an options row on both pages — a page field taking numbers and
+ranges in any order (`1, 3, 5-8`), parsed by the new `core/page-spec.ts`
+(1-based on screen, 0-based over the wire, §8), CTA disabled until the
+selection parses. Extract adds a choice of result: one PDF holding the
+selection — typed order preserved, so a selection can reorder as it extracts
+— or a separate PDF per page. Two refusals never reach the engine: a page the
+document does not have (answered with the real page count) and a deletion that
+would empty the document. A corrected selection reuses the document already
+uploaded rather than sending the file twice; the cache is dropped on any
+operation failure, so an expired guest session self-heals with a fresh upload.
+Result rows land in page order rather than network order (split's parts had
+the same race), and the page field is dir=ltr so a future RTL locale reads
+"1, 3, 5-8" as typed.
+
+Backend: `extract_pages` gains `separate` (schema, `engine.pages.
+extract_pages_each`, `documents.tasks`), producing one document per page
+titled `<source> — page N`, duplicates collapsed. It implies
+`as_new_document`: several files cannot be a new version of one document.
+
+Design contract (gap rule): §3 gains the choice-row pattern — `.cfield` rows
+wrapping native radios, since `.seg` is a 36 px dense-toolbar control and this
+is a marketing surface with a 44 px floor — and §4's tool-page entry gains the
+options row. Also fixes a theming hole found while checking dark mode:
+`color-scheme` was never declared, so every native control rendered from the
+light palette in dark mode, where an unchecked radio came out as a solid white
+disc. Now `:root { color-scheme: light }` / `.dark { color-scheme: dark }`.
+
+Verified: 232 frontend unit tests (17 new), 676 backend tests in
+apps/pdf_engine + apps/documents (4 new; engine order preservation confirmed —
+extracting [2,0] yields pages 3,1), ruff + mypy + ng lint clean, build + 29
+prerendered routes + verify:prerender green, both pages screenshot-checked in
+light/dark at 1280 and 390 px plus RTL and the invalid-input state.
+data-test parity: 0 removed, 5 added.
+
+Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01F23Uqopf6y5UdmLDmxrMGx
+---
+ backend/apps/documents/tasks.py               |  14 +-
+ .../apps/documents/tests/test_operations.py   |  10 +
+ backend/apps/pdf_engine/engine/pages.py       |  26 +++
+ backend/apps/pdf_engine/schemas/__init__.py   |   6 +-
+ backend/apps/pdf_engine/tests/test_engine.py  |  16 ++
+ development-plans/PROGRESS.md                 |   8 +
+ docs/design/design-instructions.md            |   8 +-
+ e2e/tests/phase-2b.spec.ts                    |  31 +++
+ frontend/src/app/core/page-spec.spec.ts       |  55 +++++
+ frontend/src/app/core/page-spec.ts            |  79 +++++++
+ frontend/src/app/core/tool-pages.ts           |  14 +-
+ .../features/tools/tool-page-pages.spec.ts    | 205 ++++++++++++++++++
+ .../src/app/features/tools/tool-page.html     |  64 ++++++
+ frontend/src/app/features/tools/tool-page.ts  | 167 +++++++++++++-
+ frontend/src/styles.scss                      |   7 +-
+ frontend/src/tailwind.css                     |   7 +
+ 16 files changed, 698 insertions(+), 19 deletions(-)
+ create mode 100644 frontend/src/app/core/page-spec.spec.ts
+ create mode 100644 frontend/src/app/core/page-spec.ts
+ create mode 100644 frontend/src/app/features/tools/tool-page-pages.spec.ts
+
+diff --git a/backend/apps/documents/tasks.py b/backend/apps/documents/tasks.py
+index fc79fc4..5a6e37d 100644
+--- a/backend/apps/documents/tasks.py
++++ b/backend/apps/documents/tasks.py
+@@ -275,8 +275,13 @@ def _save_export(job: Job, payload: dict) -> dict:
+     }
+ 
+ 
++def _source_title(job) -> str:
++    """The source document's title, for naming files this job spawns from it."""
++    return getattr(getattr(job, "document", None), "title", "") or "Document"
++
++
+ def _clean_copy_title(job) -> str:
+-    base = getattr(getattr(job, "document", None), "title", "") or "Document"
++    base = _source_title(job)
+     return f"{base} (redacted)"[:255]
+ 
+ 
+@@ -373,6 +378,13 @@ def _apply_single(op, primary_bytes, params, source_bytes, *, job=None):
+         pct = report.get("note") or f"-{int(report['ratio'] * 100)}%"
+         return "version", data, f"Compressed ({pct})", report
+     if t == "extract_pages":
++        if params.get("separate"):
++            # One file per page. Several documents can only ever be `documents`,
++            # so this ignores `as_new_document` rather than asking the caller to
++            # send a flag whose only valid value is True.
++            items = P.extract_pages_each(primary_bytes, pages=params["pages"],
++                                         base_title=_source_title(job))
++            return "documents", items, f"Extracted {len(items)} page(s) separately", None
+         data = P.extract_pages(primary_bytes, pages=params["pages"])
+         if params.get("as_new_document"):
+             return "documents", [{"data": data, "title": "Extracted pages"}], "Extracted", None
+diff --git a/backend/apps/documents/tests/test_operations.py b/backend/apps/documents/tests/test_operations.py
+index 2ee4504..c94d103 100644
+--- a/backend/apps/documents/tests/test_operations.py
++++ b/backend/apps/documents/tests/test_operations.py
+@@ -85,6 +85,16 @@ def test_extract_as_new_document(api, uploaded_doc):
+     assert len(job["result"]["documents"]) == 1
+ 
+ 
++def test_extract_separate_gives_one_document_per_page(api, uploaded_doc):
++    job = _op(api, uploaded_doc["id"], "extract_pages",
++              {"pages": [0, 2], "separate": True})
++    assert job["status"] == "succeeded"
++    ids = job["result"]["documents"]
++    assert len(ids) == 2
++    titles = [api.get(f"/api/documents/{i}/").json()["title"] for i in ids]
++    assert [t.split("—")[-1].strip() for t in titles] == ["page 1", "page 3"]
++
++
+ def test_split_produces_documents(api, uploaded_doc):
+     r = api.post(f"/api/documents/{uploaded_doc['id']}/operations/",
+                  {"type": "split", "params": {"mode": "ranges", "ranges": "1,2-3"},
+diff --git a/backend/apps/pdf_engine/engine/pages.py b/backend/apps/pdf_engine/engine/pages.py
+index 3eb7e7f..5d6fc91 100644
+--- a/backend/apps/pdf_engine/engine/pages.py
++++ b/backend/apps/pdf_engine/engine/pages.py
+@@ -245,6 +245,32 @@ def extract_pages(data: bytes, *, pages: list[int]) -> bytes:
+         doc.close()
+ 
+ 
++def extract_pages_each(data: bytes, *, pages: list[int],
++                       base_title: str = "Document") -> list[dict]:
++    """Extract each selected page into its own PDF. Returns [{data, title}] (§10).
++
++    Titles carry the *source* page number, not the position in the selection:
++    "page 9" is the only name that still means something once the file is
++    downloaded next to forty others. Duplicates in the selection collapse —
++    asking for page 3 twice describes one page, and two identically-named files
++    holding the same page is a bug wearing a feature's clothes.
++    """
++    doc = _open(data)
++    try:
++        indices = _validate_indices(pages, doc.page_count)
++        seen: set[int] = set()
++        out = []
++        for i in indices:
++            if i in seen:
++                continue
++            seen.add(i)
++            out.append({"data": _subset_bytes(doc, [i]),
++                        "title": f"{base_title} — page {i + 1}"})
++        return out
++    finally:
++        doc.close()
++
++
+ def merge(datas: list[bytes], *, titles: list[str] | None = None) -> bytes:
+     """Concatenate PDFs; concatenate TOCs under per-document title parents."""
+     if not datas or len(datas) < 2:
+diff --git a/backend/apps/pdf_engine/schemas/__init__.py b/backend/apps/pdf_engine/schemas/__init__.py
+index cf1c344..fedd93f 100644
+--- a/backend/apps/pdf_engine/schemas/__init__.py
++++ b/backend/apps/pdf_engine/schemas/__init__.py
+@@ -42,7 +42,11 @@ REORDER_PAGES = {
+ EXTRACT_PAGES = {
+     "type": "object",
+     "required": ["pages"],
+-    "properties": {"pages": _PAGES, "as_new_document": {"type": "boolean"}},
++    # `separate` splits the selection into one document per page — "pages 2, 9
++    # and 40 as three files" rather than as one. It implies `as_new_document`:
++    # several files cannot be a new *version* of the document they came from.
++    "properties": {"pages": _PAGES, "as_new_document": {"type": "boolean"},
++                   "separate": {"type": "boolean"}},
+     "additionalProperties": False,
+ }
+ INSERT_BLANK = {
+diff --git a/backend/apps/pdf_engine/tests/test_engine.py b/backend/apps/pdf_engine/tests/test_engine.py
+index 6f757d6..5b18466 100644
+--- a/backend/apps/pdf_engine/tests/test_engine.py
++++ b/backend/apps/pdf_engine/tests/test_engine.py
+@@ -152,6 +152,22 @@ def test_extract_pages(fixture_bytes):
+     assert _pages(out) == 2
+ 
+ 
++def test_extract_pages_each_gives_one_document_per_page(fixture_bytes):
++    out = P.extract_pages_each(fixture_bytes("text.pdf"), pages=[0, 2], base_title="Report")
++    assert [i["title"] for i in out] == ["Report — page 1", "Report — page 3"]
++    assert [_pages(i["data"]) for i in out] == [1, 1]
++
++
++def test_extract_pages_each_collapses_duplicates(fixture_bytes):
++    out = P.extract_pages_each(fixture_bytes("text.pdf"), pages=[1, 1, 0])
++    assert [i["title"] for i in out] == ["Document — page 2", "Document — page 1"]
++
++
++def test_extract_pages_each_rejects_a_page_that_is_not_there(fixture_bytes):
++    with pytest.raises(PageOutOfRange):
++        P.extract_pages_each(fixture_bytes("text.pdf"), pages=[9])
++
++
+ def test_insert_blank(fixture_bytes):
+     out = P.insert_blank(fixture_bytes("text.pdf"), at_index=1, count=2, size="a4")
+     assert _pages(out) == 5
+diff --git a/development-plans/PROGRESS.md b/development-plans/PROGRESS.md
+index 196fd74..0b5d6e3 100644
+--- a/development-plans/PROGRESS.md
++++ b/development-plans/PROGRESS.md
+@@ -1094,6 +1094,14 @@ up from 178. Coverage `apps` 92 % (gate 85) and `pdf_engine` 92 % (gate 90).
+ 
+ _(Newest first.)_
+ 
++**2026-08-18 — Defect fix: the page tools acted on page 1 only (Cowork session, owner-reported)**
++
++- **What was wrong:** `/extract-pdf-pages` and `/delete-pdf-pages` dispatched `pages: [0]` hardcoded, so "Extract PDF pages" always extracted page one and "Delete pages" always deleted page one — plural promises that could act on a single page. The copy sent people to the workspace to choose pages, which is not what a tool page is for (§21.6: the page *is* the tool).
++- **Fix (frontend):** new options row on both tool pages — a page field taking numbers and ranges in any order (`1, 3, 5-8`), parsed by `core/page-spec.ts` (1-based on screen, 0-based over the wire per §8), with the CTA disabled until the selection parses. Extract adds a choice of result: one PDF holding the selection (typed order preserved — a selection can reorder as it extracts) or a separate PDF per page. Two refusals never reach the engine: a page the document does not have (answered with the real page count, learned at upload) and a deletion that would empty the document. A corrected selection reuses the already-uploaded document instead of uploading the file twice (dropped again on any operation failure, so an expired guest session self-heals); result rows land in page order, not network order (fixes the same race for split's parts); the page field is `dir="ltr"` so a future RTL locale reads "1, 3, 5-8" as typed.
++- **Fix (backend):** `extract_pages` gained `separate` (schema + `engine/pages.py: extract_pages_each` + `documents/tasks.py`), producing one document per page titled `<source> — page N` (duplicates collapse). `separate` implies `as_new_document`.
++- **Design contract amended** (gap rule): §3 gains the **choice-row** pattern (`.cfield` rows wrapping native radios — `.seg` is 36 px and this is a marketing surface with a 44 px floor) and §4's tool-page entry gains the **options row**. Also fixed a theming hole found while checking dark mode: `color-scheme` was never declared, so every native control — the new radios, the existing form-field radios, checkboxes, scrollbars — rendered from the light palette in dark mode (an unchecked radio came out a solid white disc). Now `:root { color-scheme: light }` / `.dark { color-scheme: dark }`, noted in §5.
++- **Verification:** frontend **232 unit tests** pass (17 new: 9 parser, 8 widget — dispatch params, both refusals, disabled CTA, upload reuse); backend `apps/pdf_engine` + `apps/documents` **676 passed** (4 new; the 5 failures are the sandbox's missing OCR/Ghostscript binaries, unrelated); ruff + mypy + `ng lint` clean; production build + 29 prerendered routes + `verify:prerender` green; both tool pages screenshot-verified in light/dark at 1280 and 390 px, plus RTL and the invalid-input state. e2e coverage added to `phase-2b.spec.ts` (not run — needs the full local stack).
++
+ **2026-08-10 — Production verification pass (Cowork session, owner-commissioned)**
+ 
+ - Chrome smoke on production (owner's real browser): landing (compact masthead live), `/sign-pdf` with **no login form**, `/legal/privacy`, `/verify` — all render, **zero console errors**; full guest merge through the UI (2 uploads -> MERGED stamp -> download offered). Recording in owner's Downloads (`zenpdf-prod-smoke-2026-08-10.gif`).
+diff --git a/docs/design/design-instructions.md b/docs/design/design-instructions.md
+index 9eff429..ef64a8b 100644
+--- a/docs/design/design-instructions.md
++++ b/docs/design/design-instructions.md
+@@ -140,7 +140,10 @@ Base: UI 500 15 px, min-height 44 px (compact `.btn-sm` 36 px, never under 32 px
+ - **Focus-visible (everything interactive)**: `outline: 2px solid var(--color-focus); outline-offset: 2px`.
+ 
+ ### Inputs & validation
+-Min-height 44 px, padding 0 14 px, radius 6 px, bg `--color-surface-raised`, 1 px `--color-border-strong`; placeholder `--color-ink-faint`; hover border `--color-ink-faint`; focus = focus ring (border transparent); disabled: bg `--color-bg`, dashed border, text `--color-ink-muted`. Invalid: border `--color-danger` + `aria-invalid` + error line 13 px `--color-danger` below (always in the DOM for screen readers where the code already does this). Hints 12.5 px `--color-ink-faint`. Password fields get a 44×44 px visibility toggle inside the field (eye icon) and an inline rules hint (defect D6). Checkboxes/ranges: `accent-color: var(--color-accent)`.
++Min-height 44 px, padding 0 14 px, radius 6 px, bg `--color-surface-raised`, 1 px `--color-border-strong`; placeholder `--color-ink-faint`; hover border `--color-ink-faint`; focus = focus ring (border transparent); disabled: bg `--color-bg`, dashed border, text `--color-ink-muted`. Invalid: border `--color-danger` + `aria-invalid` + error line 13 px `--color-danger` below (always in the DOM for screen readers where the code already does this). Hints 12.5 px `--color-ink-faint`. Password fields get a 44×44 px visibility toggle inside the field (eye icon) and an inline rules hint (defect D6). Checkboxes/radios/ranges: `accent-color: var(--color-accent)` — a radio in the browser's default blue is the one colour the palette does not contain.
++
++### Choice rows (`.cfield` as a radio/checkbox row)
++Where a choice needs a sentence of explanation, it is a stacked list of `.cfield` rows rather than a `.seg` — `.seg` is a 36 px dense-toolbar control and these appear on marketing and tool pages, where the floor is 44 px. Each row: `<label class="cfield">` wrapping a native `<input type=radio|checkbox>` (real form semantics, keyboard and screen reader for free) + a 14 px `--color-ink` line + an optional 12.5 px `--color-ink-faint` sub-line; padding 12/14, hairline `--color-border`, radius 6 px, bg `--color-surface-raised`. Selected row: `.on` (border `--color-accent`) — the radio dot alone is not enough of a signal at a glance. Group caption uses `.cfield-label` inside a `<fieldset>`/`<legend>`; rows sit 8 px apart.
+ 
+ ### Cards
+ - **Tool card (landing)**: icon (24 px, `--color-ink-muted`) + name (UI 500 15 px), padding 16/18, bg `--color-surface`, hairline border, radius 10 px. Hover: border `--color-ink-faint`, name `--color-ink-strong`. No sublabels — the group heading carries context (defect D4).
+@@ -198,7 +201,7 @@ Rendered pages and thumbnails sit on `--color-canvas-backdrop` and are pure whit
+ Every surface, including unmocked ones. Compose only from §3 components.
+ 
+ - **Landing `/`** *(mockups 01, 10 — superseded by the compact landing 2026-08-10, see `2026-08-10-compact-landing.md`; the contract wins)*: marketing header carrying the masthead h1 (§3) → filter row, 32 px under the header: type-to-filter input at start (max-width 380 px; filters the 24 cards by name/synonyms, hides empty groups, shows a calm empty line; pure client-side) + compact one-line folded-sheet trust strip at end (the three facts verbatim, 13 px muted, hairline separators; wraps under the filter on narrow viewports) → six kicker-headed groups (Organize 7 · Edit & annotate 4 · Convert & OCR 6 · Optimize & review 3 · Protect 3 · Sign 1) of icon+name tool cards, 3-up (2-up mobile) → landing ad frame → footer. There is no hero block. No other CTAs; the directory is the hero.
+-- **Tool page `/<slug>`** *(02, 03, 11)*: marketing header; 720 px column; existing H1 + meta description line; widget card = dropzone → picked-file rows (name, size, Remove ghost) → min-files hint when short → full-width primary CTA (existing `cta` text) → retention line. Running: the breath + counting copy replaces the CTA. Result: stamp + one-line summary, result rows (Download primary-sm, Open in workspace secondary-sm), retention line, tool-result ad frame, "Do another one" ghost, guest keep-note (hairline box, fact + register link). Below: existing intro paragraphs and FAQ (reading width), footer.
++- **Tool page `/<slug>`** *(02, 03, 11)*: marketing header; 720 px column; existing H1 + meta description line; widget card = dropzone → picked-file rows (name, size, Remove ghost) → min-files hint when short → **options row, where the tool has one** → full-width primary CTA (existing `cta` text) → retention line. **Options row (added 2026-08-18):** a tool whose result depends on a choice the visitor alone can make asks for it here — never by picking a default and hiding the choice in the workspace. It is composed only from §3 parts: a labelled `.input` with `.field-hint` and a permanently-present `.field-error` line, and `.cfield` choice rows for a mode. It is 24 px under the file rows, disables the CTA while the answer is empty or unparseable, and states the rule in the hint rather than after a failed run. Today: `/extract-pdf-pages` (pages + one-PDF/per-page) and `/delete-pdf-pages` (pages). Anything a tool can decide for itself stays decided — the options row is for the visitor's questions, not the engine's. Running: the breath + counting copy replaces the CTA. Result: stamp + one-line summary, result rows (Download primary-sm, Open in workspace secondary-sm), retention line, tool-result ad frame, "Do another one" ghost, guest keep-note (hairline box, fact + register link). Below: existing intro paragraphs and FAQ (reading width), footer.
+ - **Workspace `/app/doc/:id`** *(04, 05)*: the workspace bar (§3) is the **single owner of every editing affordance — defect D3**. The pdf.js (ngx-extended-pdf-viewer) toolbar is reduced by visibility config to exactly: **zoom out/in, zoom select, page up/down + page number, and find**. Hidden: pdf.js download, print, open-file, rotate, draw/ink editor, text editor, stamp editor, presentation, scrolling/spread menus, sidebar toggle (our rail replaces it) — rotate lives only in Organize, download only in our bar, annotation only in Annotate. View mode: left rail (Pages / Outline / History tabs), canvas center. Organize: toolbar row (N selected · Rotate · Delete · Duplicate · Extract · Insert blank · Crop · Scale · N-up · "Drag pages to reorder") over a 6-up thumbnail grid on the backdrop; selection = 2 px accent outline + corner seal tick. Annotate: left tool palette (16 existing tools, icon+label), colour/width/opacity (+font size, stamp picker contextually), custom stamp upload; center page bar (page nav, zoom, unsaved badge, Save primary-sm, Flatten secondary-sm); right comments rail. Dialogs (Split/Compress/Scale/N-up/Insert) per §3 modals. **First paint rule (defect D7): initial zoom fit-to-width, content centered, backdrop `--color-canvas-backdrop` — for every page size and for RTL documents; no small-and-clipped first render.**
+ - **Dashboard `/app/dashboard`** *(06)*: app header; three columns ≥ xl (sidebar 224 / main / rail 300). Sidebar cards: storage meter; folders (All + user folders + new-folder input); Starred / Trash toggles. Main: search + (when ≥2 selected) "Merge N" primary; dropzone (imports anything convertible — keep existing hint copy); import-from-URL row; converting/uploading transient rows; file-card grid 4-up (D2 rule in §3); Load more (secondary) + "Showing X of Y". Rail: dashboard ad frame. Mobile: one inline ad card after the third card (existing behavior). Claim banner (post-signup) = success-surface strip, "Got it" dismiss.
+ - **Sign request builder `/app/sign/new/:docId`** *(unmocked)*: workspace-style top bar (← back to the document, "Send for signature", doc title) + step dots 1–4 (filled dot = `--color-ink-strong`). Step 1 recipients: rows (email, name, role select, order number, ✕ ghost) + "Add someone" secondary + role explainer 11 px faint + "Next: place fields" primary. Step 2: left rail (recipient pills with per-recipient dot colors — recipient colors are content, exempt from the one-accent rule; field-type grid; Required checkbox) + page canvas with drag-to-place boxes. Step 3: message textarea, expiry/reminder number inputs. Step 4 review: recipient list, freeze note, email-verification gate (warning surface) when unverified, **"Send it" as a standard vermilion primary**.
+@@ -219,6 +222,7 @@ Every surface, including unmocked ones. Compose only from §3 components.
+ - `.dark` on `<html>`; semantic custom properties re-declared under `.dark` (see §2). Components never reference primitives or raw hex.
+ - **Toggle**: icon button (sun / moon / monitor at 20 px on the 1.5-stroke grid), ≥44 px hit target, in **every** header variant including ceremony and auth. Cycles Light → Dark → System (default System). `aria-label` announces current state ("Theme: Dark — change theme"). Persist under `localStorage["zenpdf.theme"]` with values `light|dark|system`.
+ - **FOUC prevention**: a classic, non-deferred `<head>` script (before any stylesheet paint) on the prerendered pages: read the key, resolve `system` via `matchMedia('(prefers-color-scheme: dark)')`, set the class synchronously. Also listen for system changes while `system` is active. It must be an **external same-origin file** (`public/theme-boot.js`), never an inline block — production serves `script-src 'self' 'wasm-unsafe-eval'`, so inline script is refused and the theme is silently never applied before hydration. For the same reason the production build sets `styles.inlineCritical: false`: Angular's critical-CSS inlining ships the stylesheet as `media="print"` with an inline `onload` handler to activate it, and that handler is an inline event handler the CSP also refuses — which left the entire non-critical stylesheet, `.dark` tokens included, inert in production. Neither may be reintroduced without adding a CSP hash for it.
++- **`color-scheme` follows the theme**: `:root { color-scheme: light }`, `.dark { color-scheme: dark }` (added 2026-08-18). Native controls — radio, checkbox, scrollbar, caret, autofill — read this and nothing in the token layer, so without it the dark theme drew them from the light palette: an unchecked radio rendered as a solid white disc, indistinguishable from a checked one.
+ - `<meta name="theme-color">` per mode: light `#F5F1E6`, dark `#171310` (swap on toggle; both emitted with `media` attrs for prerender).
+ - PDF canvas: backdrop `--color-canvas-backdrop` responds to mode; pages stay white; in dark mode add the hairline page border. The viewer shell (`ngx-extended-pdf-viewer` frame/toolbar) is restyled via its CSS variables/theme hooks to surface + ink tokens — shell and visibility rules only, no pixel re-skin of internals.
+ 
+diff --git a/e2e/tests/phase-2b.spec.ts b/e2e/tests/phase-2b.spec.ts
+index fddd5a1..6c65494 100644
+--- a/e2e/tests/phase-2b.spec.ts
++++ b/e2e/tests/phase-2b.spec.ts
+@@ -127,6 +127,37 @@ test('phase 2b: every tool page is reachable and self-describing', async ({ page
+   expect(robots).toContain('Disallow: /api/');
+ });
+ 
++test('phase 2b: extract takes the pages the visitor typed, together or apart', async ({ page }) => {
++  // Both page tools shipped hardcoded to page 1 — a plural promise acting on a
++  // single page. The selection is the feature; this is what guards it.
++  await page.goto('/extract-pdf-pages');
++  await page.locator('[data-test=file-input]').setInputFiles(path.join(FIXTURES, 'text.pdf'));
++  // No pages, no run: the CTA cannot start work on a selection that is not there.
++  await expect(page.locator('[data-test=tool-run]')).toBeDisabled();
++
++  await page.fill('[data-test=page-spec]', '1, 3');
++  await page.click('[data-test=tool-run]');
++  await expect(page.locator('[data-test=tool-result]')).toBeVisible({ timeout: 60_000 });
++  // Together: pages 1 and 3 of a 3-page fixture, in one document.
++  await expect(page.locator('[data-test=result-title]')).toHaveCount(1);
++
++  // Apart: the same selection as one file per page.
++  await page.click('[data-test=tool-again]');
++  await page.locator('[data-test=file-input]').setInputFiles(path.join(FIXTURES, 'text.pdf'));
++  await page.fill('[data-test=page-spec]', '1, 3');
++  await page.check('[data-test=extract-separate]');
++  await page.click('[data-test=tool-run]');
++  await expect(page.locator('[data-test=tool-result]')).toBeVisible({ timeout: 60_000 });
++  await expect(page.locator('[data-test=result-title]')).toHaveCount(2);
++
++  // A page the document does not have is refused with the count, not a stack trace.
++  await page.click('[data-test=tool-again]');
++  await page.locator('[data-test=file-input]').setInputFiles(path.join(FIXTURES, 'text.pdf'));
++  await page.fill('[data-test=page-spec]', '9');
++  await page.click('[data-test=tool-run]');
++  await expect(page.locator('[data-test=tool-error]')).toContainText('3 pages');
++});
++
+ test('phase 2b: a guest completes split end-to-end with no login prompt', async ({ page }) => {
+   await page.goto('/split-pdf');
+   await page.locator('[data-test=file-input]').setInputFiles(path.join(FIXTURES, 'text.pdf'));
+diff --git a/frontend/src/app/core/page-spec.spec.ts b/frontend/src/app/core/page-spec.spec.ts
+new file mode 100644
+index 0000000..2c19626
+--- /dev/null
++++ b/frontend/src/app/core/page-spec.spec.ts
+@@ -0,0 +1,55 @@
++import { formatPages, parsePageSpec, toIndices, uniquePages } from './page-spec';
++
++/**
++ * The extract and delete tools act on exactly what this returns, so every case
++ * here is a page somebody would otherwise have lost or received by mistake.
++ */
++describe('parsePageSpec', () => {
++  it('reads single pages, ranges and a mix of both', () => {
++    expect(parsePageSpec('3').pages).toEqual([3]);
++    expect(parsePageSpec('2-5').pages).toEqual([2, 3, 4, 5]);
++    expect(parsePageSpec('1, 3, 5-8').pages).toEqual([1, 3, 5, 6, 7, 8]);
++  });
++
++  it('forgives the separators people actually type', () => {
++    const expected = [1, 2, 3, 7];
++    expect(parsePageSpec('1 - 3, 7').pages).toEqual(expected);
++    expect(parsePageSpec('1–3 7').pages).toEqual(expected); // en dash, autocorrected
++    expect(parsePageSpec(' 1—3 ; 7 ').pages).toEqual(expected); // em dash
++  });
++
++  it('keeps the order it was given — the extract comes out that way', () => {
++    expect(parsePageSpec('9, 2, 40').pages).toEqual([9, 2, 40]);
++  });
++
++  it('treats empty text as unfinished, not wrong', () => {
++    expect(parsePageSpec('')).toEqual({ pages: [], error: null });
++    expect(parsePageSpec('   ')).toEqual({ pages: [], error: null });
++  });
++
++  it('explains what is wrong instead of guessing', () => {
++    expect(parsePageSpec('first two').error).toContain('not a page number');
++    expect(parsePageSpec('0').error).toContain('numbered from 1');
++    expect(parsePageSpec('8-5').error).toContain('runs backwards');
++    expect(parsePageSpec('1-99999').error).toContain('more pages');
++  });
++
++  it('reports no pages alongside an error, so nothing can run on half a spec', () => {
++    expect(parsePageSpec('1, 3, oops').pages).toEqual([]);
++  });
++});
++
++describe('page helpers', () => {
++  it('collapses repeats, first occurrence winning', () => {
++    expect(uniquePages([3, 1, 3, 1])).toEqual([3, 1]);
++  });
++
++  it('converts to the 0-based indices the API takes', () => {
++    expect(toIndices([1, 3, 8])).toEqual([0, 2, 7]);
++  });
++
++  it('summarises a selection back as runs', () => {
++    expect(formatPages([1, 3, 5, 6, 7, 8])).toBe('1, 3, 5–8');
++    expect(formatPages([4, 2, 3])).toBe('2–4');
++  });
++});
+diff --git a/frontend/src/app/core/page-spec.ts b/frontend/src/app/core/page-spec.ts
+new file mode 100644
+index 0000000..8cfc9a8
+--- /dev/null
++++ b/frontend/src/app/core/page-spec.ts
+@@ -0,0 +1,79 @@
++/**
++ * Parsing for the page selections a visitor types on a tool page — "1, 3, 5-8".
++ *
++ * Pure, framework-free and in `core/` because it is shared by the extract and
++ * delete tools and is the kind of thing that must be unit-tested rather than
++ * clicked through: an off-by-one here silently hands somebody the wrong page.
++ *
++ * Numbers here are 1-based, the way they are printed on the page and the way a
++ * person says them. The API is 0-based (§8), so `toIndices` is the single place
++ * that conversion happens.
++ */
++
++export interface PageSelection {
++  /** 1-based page numbers, in the order given. Empty when nothing was typed. */
++  pages: number[];
++  /** A sentence to show the user, or null when the text so far is fine. */
++  error: string | null;
++}
++
++/**
++ * Matches the schema's `maxItems` backstop (`_PAGES` in the backend). A
++ * selection cannot usefully exceed it, and expanding "1-999999999" client-side
++ * would hang the tab before the server ever got the chance to say no.
++ */
++const MAX_PAGES = 10000;
++
++/** All three dashes a keyboard or an autocorrect can produce. */
++const DASH = /\s*[-–—]\s*/g;
++
++export function parsePageSpec(raw: string): PageSelection {
++  const text = (raw ?? '').replace(DASH, '-').trim();
++  if (!text) return { pages: [], error: null };
++
++  const pages: number[] = [];
++  for (const part of text.split(/[,;\s]+/).filter(Boolean)) {
++    const match = /^(\d+)(?:-(\d+))?$/.exec(part);
++    if (!match) {
++      return { pages: [], error: `“${part}” is not a page number. Use numbers and ranges, like 1, 3, 5-8.` };
++    }
++    const from = Number(match[1]);
++    const to = match[2] === undefined ? from : Number(match[2]);
++    if (from < 1) {
++      return { pages: [], error: 'Pages are numbered from 1.' };
++    }
++    if (to < from) {
++      return { pages: [], error: `“${part}” runs backwards. Put the lower page first, like 5-8.` };
++    }
++    if (pages.length + (to - from + 1) > MAX_PAGES) {
++      return { pages: [], error: 'That is more pages than a document here can hold.' };
++    }
++    for (let page = from; page <= to; page++) pages.push(page);
++  }
++  return { pages, error: null };
++}
++
++/** The same pages with repeats dropped, first occurrence winning. */
++export function uniquePages(pages: number[]): number[] {
++  const seen = new Set<number>();
++  return pages.filter((page) => (seen.has(page) ? false : (seen.add(page), true)));
++}
++
++/** 1-based page numbers → the 0-based indices the API takes (§8). */
++export function toIndices(pages: number[]): number[] {
++  return pages.map((page) => page - 1);
++}
++
++/** "1, 3, 5-8" from a list of pages — for summarising a selection back. */
++export function formatPages(pages: number[]): string {
++  const sorted = uniquePages(pages).sort((a, b) => a - b);
++  const parts: string[] = [];
++  let start = 0;
++  while (start < sorted.length) {
++    let end = start;
++    while (end + 1 < sorted.length && sorted[end + 1] === sorted[end] + 1) end++;
++    parts.push(end === start ? `${sorted[start]}` : `${sorted[start]}–${sorted[end]}`);
++    start = end + 1;
++  }
++  return parts.join(', ');
++}
+diff --git a/frontend/src/app/core/tool-pages.ts b/frontend/src/app/core/tool-pages.ts
+index 6d88c5c..a1176c4 100644
+--- a/frontend/src/app/core/tool-pages.ts
++++ b/frontend/src/app/core/tool-pages.ts
+@@ -202,7 +202,7 @@ export const TOOL_PAGES: ToolPageDef[] = [
+       'Remove unwanted pages from a PDF and download the result. Free, no account, no watermark.',
+     h1: 'Delete pages from a PDF',
+     intro: [
+-      'Remove pages you do not want. Upload the document, and ZenPDF gives you a copy without the first page — or open it in the workspace to pick exactly which pages go.',
++      'Remove pages you do not want. Upload the document, type the pages to drop — single numbers, ranges, or both, like 1, 3, 5-8 — and download the result. If you would rather pick them by eye, open the file in the workspace and click the page thumbnails instead.',
+       'Deleting a page here creates a new version of the document rather than overwriting the original, so you can always go back to what you started with.',
+       'This is the quickest way to drop a cover sheet, a blank page a scanner inserted, or an appendix that should not be shared.',
+       'No account, no watermark, and guest files are deleted automatically within 24 hours.',
+@@ -218,7 +218,7 @@ export const TOOL_PAGES: ToolPageDef[] = [
+       },
+       {
+         q: 'Can I choose which pages to delete?',
+-        a: 'Open the file in the workspace after uploading and select exactly the pages you want to remove.',
++        a: 'Yes. Type them into the Pages field — 1, 3, 5-8 — or open the file in the workspace and select the page thumbnails you want gone.',
+       },
+       { q: 'Is it free?', a: 'Yes, and no account is required.' },
+     ],
+@@ -235,18 +235,22 @@ export const TOOL_PAGES: ToolPageDef[] = [
+     h1: 'Extract pages from a PDF',
+     intro: [
+       'Pull pages out of a PDF into a separate document, leaving the original untouched. Useful when you need to send one section of a long file and nothing else.',
+-      'This page extracts the first page into a new document. To choose a different set, open the file in the workspace, select the pages, and extract from there.',
++      'Type the pages you want — single numbers, ranges, or both, like 1, 3, 5-8 — and choose whether they arrive as one PDF or as a separate PDF for each page. If you would rather pick them by eye, open the file in the workspace and click the page thumbnails instead.',
+       'Extraction copies the pages rather than re-rendering them, so text stays selectable and image quality is unchanged.',
+       'It works without an account. The extracted document is yours to download immediately.',
+       'The extracted document is independent of the source once created. Changing one afterwards does not affect the other, so you can safely edit the extract — adding a header, redacting a figure — without touching the original.',
+-      'Extraction is the right tool when the pages you need are scattered through a document rather than contiguous. Pick page 2, page 9 and page 40, and they arrive in a single new file in that order.',
++      'Extraction is the right tool when the pages you need are scattered through a document rather than contiguous. Ask for 9, 2, 40 and they arrive in a single new file in exactly that order — the order you type is the order you get, so a selection can reorder as it extracts.',
+       'Like every other operation here, extraction copies page content rather than re-rendering it, so nothing degrades and the result is not watermarked.',
+       'Form fields, annotations and links that live on an extracted page come across with it. Anything that pointed at a page you did not extract will no longer resolve, which is expected: the target is not in the new document.',
+     ],
+     faq: [
+       {
+         q: 'What is the difference between extracting and splitting?',
+-        a: 'Splitting turns one document into many, one per page. Extracting takes the pages you choose and puts just those into a single new document.',
++        a: 'Splitting cuts the whole document up and keeps every page. Extracting takes only the pages you name and leaves the rest behind.',
++      },
++      {
++        q: 'How do I say which pages I want?',
++        a: 'Type them into the Pages field: single numbers, ranges, or a mix — 1, 3, 5-8. Then choose one PDF holding all of them, or a separate PDF for each page.',
+       },
+       {
+         q: 'Does the original change?',
+diff --git a/frontend/src/app/features/tools/tool-page-pages.spec.ts b/frontend/src/app/features/tools/tool-page-pages.spec.ts
+new file mode 100644
+index 0000000..3ee21ce
+--- /dev/null
++++ b/frontend/src/app/features/tools/tool-page-pages.spec.ts
+@@ -0,0 +1,205 @@
++import { provideHttpClient } from '@angular/common/http';
++import { provideHttpClientTesting } from '@angular/common/http/testing';
++import { TestBed } from '@angular/core/testing';
++import { By } from '@angular/platform-browser';
++import { provideRouter } from '@angular/router';
++import { Observable, of } from 'rxjs';
++
++import { GuestFacade } from '../../abstraction/guest.facade';
++import { JobsFacade } from '../../abstraction/jobs.facade';
++import { DocumentModel, Job } from '../../core/models/models';
++import { DocumentsService } from '../../core/services/documents.service';
++import { toolBySlug } from '../../core/tool-pages';
++import { UploadDropzone } from '../../shared/upload-dropzone';
++import { ToolPage } from './tool-page';
++
++/**
++ * The page tools, on the pages the visitor actually asked for.
++ *
++ * Both shipped with `pages: [0]` hardcoded: "Extract PDF pages" extracted page
++ * one and nothing else, and "Delete pages" deleted page one — a plural promise
++ * that could only ever act on a single page. These tests are the record of what
++ * the widget now sends, including the two refusals that must never reach the
++ * engine: a page the document does not have, and a selection that would empty
++ * it entirely.
++ */
++describe('Tool page — page selection', () => {
++  const PAGES = 7;
++  let sent: { id: string; body: { type: string; params: Record<string, unknown> } }[];
++  let uploads: number;
++
++  function doc(over: Partial<DocumentModel> = {}): DocumentModel {
++    return {
++      id: 'doc-1',
++      title: 'Report',
++      status: 'ready',
++      page_count: PAGES,
++      size_bytes: 1024,
++      is_encrypted: false,
++      starred: false,
++      folder: null,
++      metadata: {},
++      current_version: { id: 'v1', seq: 1 },
++      last_opened_at: null,
++      trashed_at: null,
++      created_at: '',
++      updated_at: '',
++      ...over,
++    } as DocumentModel;
++  }
++
++  const succeeded = {
++    id: 'job-1',
++    status: 'succeeded',
++    progress: 100,
++    result: { documents: ['out-1'] },
++  } as unknown as Job;
++
++  function configure() {
++    sent = [];
++    uploads = 0;
++    const docs: Partial<DocumentsService> = {
++      upload: () => {
++        uploads++;
++        return of({ body: doc() } as never) as Observable<never>;
++      },
++      get: (id: string) => of(doc({ id, title: 'Extracted pages' })),
++      operation: (id, body) => {
++        sent.push({ id, body: body as never });
++        return of(succeeded);
++      },
++    };
++    TestBed.configureTestingModule({
++      providers: [
++        provideHttpClient(),
++        provideHttpClientTesting(),
++        provideRouter([]),
++        { provide: DocumentsService, useValue: docs },
++        { provide: JobsFacade, useValue: { dispatch: (c$: Observable<Job>) => c$ } },
++        {
++          provide: GuestFacade,
++          useValue: { ensureSession: () => of(null), principal: () => 'guest' },
++        },
++      ],
++    });
++  }
++
++  /** A mounted tool page with a file already chosen and `spec` typed in. */
++  function widget(slug: string, spec: string) {
++    const fixture = TestBed.createComponent(ToolPage);
++    fixture.componentRef.setInput('tool', toolBySlug(slug));
++    fixture.detectChanges();
++
++    const dropzone = fixture.debugElement.query(By.directive(UploadDropzone));
++    dropzone.componentInstance.filesPicked.emit([new File(['%PDF'], 'report.pdf')]);
++    fixture.detectChanges();
++
++    const field: HTMLInputElement = fixture.nativeElement.querySelector('[data-test=page-spec]');
++    field.value = spec;
++    field.dispatchEvent(new Event('input'));
++    fixture.detectChanges();
++    return fixture;
++  }
++
++  function run(fixture: ReturnType<typeof widget>) {
++    fixture.nativeElement.querySelector('[data-test=tool-run]').click();
++    fixture.detectChanges();
++  }
++
++  afterEach(() => TestBed.resetTestingModule());
++
++  beforeEach(() => configure());
++
++  it('extracts the pages that were typed, 0-based over the wire', () => {
++    const fixture = widget('extract-pdf-pages', '3, 1, 5-6');
++    run(fixture);
++
++    expect(sent).toHaveLength(1);
++    expect(sent[0].body.type).toBe('extract_pages');
++    // Typed order preserved — the selection is a running order, not a set.
++    expect(sent[0].body.params).toEqual({
++      pages: [2, 0, 4, 5],
++      as_new_document: true,
++      separate: false,
++    });
++    // And the result says which pages, because the visitor chose them.
++    expect(fixture.nativeElement.querySelector('[data-test=tool-result]').textContent)
++      .toContain('Pages 1, 3, 5–6 extracted.');
++  });
++
++  it('asks for one file per page when that is the chosen result', () => {
++    const fixture = widget('extract-pdf-pages', '2, 4');
++    fixture.nativeElement.querySelector('[data-test=extract-separate]').click();
++    fixture.detectChanges();
++    run(fixture);
++
++    expect(sent[0].body.params['separate']).toBe(true);
++  });
++
++  it('refuses a page the document does not have, and says how many there are', () => {
++    const fixture = widget('extract-pdf-pages', '9');
++    run(fixture);
++
++    expect(sent).toHaveLength(0);
++    expect(fixture.nativeElement.querySelector('[data-test=tool-error]').textContent)
++      .toContain('7 pages');
++  });
++
++  it('deletes the pages that were typed, collapsed and in document order', () => {
++    run(widget('delete-pdf-pages', '3, 1, 3'));
++
++    expect(sent[0].body.type).toBe('delete_pages');
++    expect(sent[0].body.params).toEqual({ pages: [0, 2] });
++  });
++
++  it('refuses a deletion that would leave no pages at all', () => {
++    const fixture = widget('delete-pdf-pages', '1-7');
++    run(fixture);
++
++    expect(sent).toHaveLength(0);
++    expect(fixture.nativeElement.querySelector('[data-test=tool-error]').textContent)
++      .toContain('at least one');
++  });
++
++  it('keeps the button out of reach until the selection makes sense', () => {
++    const fixture = widget('extract-pdf-pages', '');
++    const button = () => fixture.nativeElement.querySelector('[data-test=tool-run]');
++    expect(button().disabled).toBe(true);
++
++    const field: HTMLInputElement = fixture.nativeElement.querySelector('[data-test=page-spec]');
++    field.value = 'the first two';
++    field.dispatchEvent(new Event('input'));
++    fixture.detectChanges();
++    expect(button().disabled).toBe(true);
++    expect(fixture.nativeElement.querySelector('[data-test=page-spec-error]').textContent)
++      .toContain('not a page number');
++
++    field.value = '2-4';
++    field.dispatchEvent(new Event('input'));
++    fixture.detectChanges();
++    expect(button().disabled).toBe(false);
++  });
++
++  it('does not upload the file a second time when a refused selection is corrected', () => {
++    const fixture = widget('extract-pdf-pages', '9');
++    run(fixture);
++    expect(uploads).toBe(1);
++    expect(sent).toHaveLength(0);
++
++    const field: HTMLInputElement = fixture.nativeElement.querySelector('[data-test=page-spec]');
++    field.value = '2';
++    field.dispatchEvent(new Event('input'));
++    fixture.detectChanges();
++    run(fixture);
++
++    expect(uploads).toBe(1);
++    expect(sent[0].body.params['pages']).toEqual([1]);
++  });
++
++  it('offers the page field only to the tools that act on a selection', () => {
++    const fixture = TestBed.createComponent(ToolPage);
++    fixture.componentRef.setInput('tool', toolBySlug('compress-pdf'));
++    fixture.detectChanges();
++    expect(fixture.nativeElement.querySelector('[data-test=page-select]')).toBeNull();
++  });
++});
+diff --git a/frontend/src/app/features/tools/tool-page.html b/frontend/src/app/features/tools/tool-page.html
+index 63b39da..ae902c5 100644
+--- a/frontend/src/app/features/tools/tool-page.html
++++ b/frontend/src/app/features/tools/tool-page.html
+@@ -59,6 +59,70 @@
+             </p>
+           }
+ 
++          <!-- Options row (§4): the pages this tool acts on are the visitor's
++               to choose, so the field sits between the file and the button. -->
++          @if (needsPages()) {
++            <div class="mt-6" data-test="page-select">
++              <label for="zen-pages">{{ pageFieldLabel() }}</label>
++              <!-- dir=ltr: "1, 3, 5-8" is a number spec, and bidi in an RTL
++                   locale would render it reversed ("5-8 ,3 ,1"). -->
++              <input
++                id="zen-pages"
++                type="text"
++                dir="ltr"
++                class="input"
++                [class.input-invalid]="!!pageError()"
++                [value]="pageSpec()"
++                (input)="onPageSpec($event)"
++                placeholder="1, 3, 5-8"
++                autocomplete="off"
++                spellcheck="false"
++                [attr.aria-invalid]="!!pageError()"
++                aria-describedby="zen-pages-hint zen-pages-error"
++                data-test="page-spec"
++              />
++              <p class="field-hint" id="zen-pages-hint">{{ pageFieldHint() }}</p>
++              <!-- Kept in the DOM so a screen reader announces the change (§3). -->
++              <p class="field-error" id="zen-pages-error" role="alert" data-test="page-spec-error">
++                {{ pageError() }}
++              </p>
++            </div>
++
++            @if (tool().kind === 'extract-pages') {
++              <fieldset class="mt-5">
++                <legend class="cfield-label">What to produce</legend>
++                <div class="flex flex-col gap-2">
++                  <label class="cfield text-ink !mb-0 !flex items-start gap-2.5 !text-sm !font-normal"
++                         [class.on]="extractMode() === 'together'">
++                    <input type="radio" name="zen-extract-mode" class="mt-0.5"
++                           [checked]="extractMode() === 'together'"
++                           (change)="extractMode.set('together')"
++                           data-test="extract-together" />
++                    <span>
++                      One PDF with those pages
++                      <span class="faint block text-[12.5px]">
++                        In the order you typed them.
++                      </span>
++                    </span>
++                  </label>
++                  <label class="cfield text-ink !mb-0 !flex items-start gap-2.5 !text-sm !font-normal"
++                         [class.on]="extractMode() === 'separate'">
++                    <input type="radio" name="zen-extract-mode" class="mt-0.5"
++                           [checked]="extractMode() === 'separate'"
++                           (change)="extractMode.set('separate')"
++                           data-test="extract-separate" />
++                    <span>
++                      A separate PDF for each page
++                      <span class="faint block text-[12.5px]">
++                        One file per page, each named after its page number.
++                      </span>
++                    </span>
++                  </label>
++                </div>
++              </fieldset>
++            }
++          }
++
+           <button
+             type="button"
+             class="btn btn-primary btn-block mt-6"
+diff --git a/frontend/src/app/features/tools/tool-page.ts b/frontend/src/app/features/tools/tool-page.ts
+index 5728f77..7647430 100644
+--- a/frontend/src/app/features/tools/tool-page.ts
++++ b/frontend/src/app/features/tools/tool-page.ts
+@@ -9,6 +9,7 @@ import { GuestFacade } from '../../abstraction/guest.facade';
+ import { JobsFacade } from '../../abstraction/jobs.facade';
+ import { UploadFacade } from '../../abstraction/upload.facade';
+ import { DocumentModel, Job } from '../../core/models/models';
++import { formatPages, parsePageSpec, toIndices, uniquePages } from '../../core/page-spec';
+ import { DocumentsService } from '../../core/services/documents.service';
+ import { SITE_URL, setCanonical } from '../../core/site';
+ import { ToolPageDef } from '../../core/tool-pages';
+@@ -24,6 +25,13 @@ type Phase = 'idle' | 'uploading' | 'running' | 'done' | 'error';
+ /** Tools whose input is not a PDF, so it is parked and converted (phase-06). */
+ const IMPORT_KINDS = new Set(['word-to-pdf', 'jpg-to-pdf', 'html-to-pdf']);
+ 
++/**
++ * Tools that act on a *chosen* set of pages, so the page field is part of the
++ * widget (§4, options row). Both shipped acting on page 1 and nothing else,
++ * which made each of them a one-page tool wearing a plural name.
++ */
++const PAGE_SELECT_KINDS = new Set(['extract-pages', 'delete-pages']);
++
+ /**
+  * A public, server-rendered tool page that **is** the tool (§21.6).
+  *
+@@ -62,7 +70,35 @@ export class ToolPage {
+   /** 0–100 when the polled job reports progress; null when it has none yet. */
+   protected runningProgress = signal<number | null>(null);
+ 
+-  protected readonly ready = computed(() => this.picked().length >= this.tool().minFiles);
++  /** What the visitor typed into the page field: "1, 3, 5-8". */
++  protected pageSpec = signal('');
++  /** Extract only: one file holding the selection, or one file per page. */
++  protected extractMode = signal<'together' | 'separate'>('together');
++  /**
++   * The uploaded document's page count, known only once it is uploaded — so a
++   * selection is checked against the real document at run time, and the hint
++   * can name the count on the next attempt.
++   */
++  protected pageCount = signal<number | null>(null);
++  /**
++   * The document the picked file already became. A refused selection — page 9
++   * of a 7-page file — is corrected and run again, and without this the same
++   * file was uploaded a second time: the visitor's bandwidth twice, and two
++   * copies against a guest's storage quota, for one attempt.
++   */
++  private uploaded = signal<{ file: File; doc: DocumentModel } | null>(null);
++
++  protected readonly needsPages = computed(() => PAGE_SELECT_KINDS.has(this.tool().kind));
++  protected readonly pageSelection = computed(() => parsePageSpec(this.pageSpec()));
++  /** The parse error, shown only once there is something to be wrong about. */
++  protected readonly pageError = computed(() => this.pageSelection().error);
++
++  protected readonly ready = computed(() => {
++    if (this.picked().length < this.tool().minFiles) return false;
++    if (!this.needsPages()) return true;
++    const selection = this.pageSelection();
++    return !selection.error && selection.pages.length > 0;
++  });
+   protected readonly busy = computed(() =>
+     ['uploading', 'running'].includes(this.phase()),
+   );
+@@ -114,9 +150,31 @@ export class ToolPage {
+     }
+     if (this.exportJob()) return 'Converted and ready to download.';
+     const n = this.results().length;
++    if (this.needsPages()) {
++      // Say which pages, because the whole point of the change is that the
++      // visitor chose them: "Done." is what the tool said when it took page 1.
++      const chosen = uniquePages(this.pageSelection().pages);
++      const noun = chosen.length === 1 ? 'Page' : 'Pages';
++      const list = formatPages(chosen);
++      if (this.tool().kind === 'delete-pages') return `${noun} ${list} removed.`;
++      return n > 1 ? `${noun} ${list} — ${n} separate files.` : `${noun} ${list} extracted.`;
++    }
+     return n > 1 ? `${n} files are ready.` : 'Done.';
+   });
+ 
++  /** The page field's label — the verb differs, the field does not. */
++  protected readonly pageFieldLabel = computed(() =>
++    this.tool().kind === 'delete-pages' ? 'Pages to delete' : 'Pages to extract',
++  );
++
++  /** Its hint, which names the real page count once a document has been read. */
++  protected readonly pageFieldHint = computed(() => {
++    const total = this.pageCount();
++    const how = 'Page numbers and ranges, in any order — 1, 3, 5-8.';
++    if (!total) return how;
++    return `${how} This PDF has ${total} ${total === 1 ? 'page' : 'pages'}.`;
++  });
++
+   constructor() {
+     // Runs on the server too, so the crawler sees the real title/meta.
+     queueMicrotask(() => this.applySeo());
+@@ -173,6 +231,17 @@ export class ToolPage {
+     this.picked.set(tool.multiple ? [...this.picked(), ...files] : files.slice(0, 1));
+     this.error.set('');
+     this.phase.set('idle');
++    // Both belonged to the file that was here before it.
++    this.pageCount.set(null);
++    this.uploaded.set(null);
++  }
++
++  onPageSpec(event: Event): void {
++    this.pageSpec.set((event.target as HTMLInputElement).value);
++    if (this.phase() === 'error') {
++      this.phase.set('idle');
++      this.error.set('');
++    }
+   }
+ 
+   removeFile(index: number): void {
+@@ -200,12 +269,21 @@ export class ToolPage {
+     const files = this.picked();
+     let remaining = files.length;
+ 
++    // Re-running the same single file after a refused selection: it is already
++    // on the server, unchanged, and this session still owns it.
++    const already = this.uploaded();
++    if (already && this.needsPages() && files.length === 1 && files[0] === already.file) {
++      this.dispatch([already.doc]);
++      return;
++    }
++
+     for (const file of files) {
+       this.docsSvc.upload(file).subscribe({
+         next: (event) => {
+           const body = (event as { body?: DocumentModel }).body;
+           if (body?.id) {
+             uploaded.push(body);
++            if (this.needsPages() && files.length === 1) this.uploaded.set({ file, doc: body });
+             if (--remaining === 0) this.dispatch(uploaded);
+           }
+         },
+@@ -302,15 +380,18 @@ export class ToolPage {
+       return;
+     }
+ 
++    // The page tools run on what the visitor typed above the button. Their
++    // pages are checked against the document here rather than earlier, because
++    // this is the first moment its real page count is known.
++    if (this.needsPages()) {
++      this.dispatchPages(tool.kind, primary);
++      return;
++    }
++
+     const single: Record<string, { type: string; params: unknown }> = {
+       split: { type: 'split', params: { mode: 'every_n', every_n: 1 } },
+       compress: { type: 'compress', params: { preset: 'balanced' } },
+       rotate: { type: 'rotate_pages', params: { pages: this.allPages(primary), degrees: 90 } },
+-      'delete-pages': { type: 'delete_pages', params: { pages: [0] } },
+-      'extract-pages': {
+-        type: 'extract_pages',
+-        params: { pages: [0], as_new_document: true },
+-      },
+       // Phase 4's two one-shot tools run with sensible defaults here and offer
+       // the workspace for anything finer.
+       watermark: { type: 'watermark', params: { text: 'DRAFT', under: true, opacity: 0.25 } },
+@@ -330,6 +411,62 @@ export class ToolPage {
+     );
+   }
+ 
++  /**
++   * Extract and delete, on the pages the visitor chose (1-based on screen,
++   * 0-based over the wire — §8). A selection that reaches past the end of the
++   * document is refused here with the count in the sentence: the engine's own
++   * "page 11 out of range (0..6)" is true and useless.
++   */
++  private dispatchPages(kind: string, doc: DocumentModel): void {
++    const total = doc.page_count;
++    this.pageCount.set(total || null);
++    const pages = this.pageSelection().pages;
++    const beyond = total ? pages.filter((page) => page > total) : [];
++    if (beyond.length) {
++      this.phase.set('error');
++      this.error.set(
++        `This PDF has ${total} ${total === 1 ? 'page' : 'pages'}, so there is no page ` +
++          `${beyond[0]}. Change the selection and run it again.`,
++      );
++      return;
++    }
++    const base = doc.current_version?.seq ?? null;
++
++    if (kind === 'delete-pages') {
++      // Deleting is a set, not a sequence: asking twice for page 3 deletes one
++      // page, and the order it was typed in cannot matter.
++      const unique = uniquePages(pages).sort((a, b) => a - b);
++      if (total && unique.length >= total) {
++        this.phase.set('error');
++        this.error.set('That would delete every page, and a PDF has to keep at least one.');
++        return;
++      }
++      this.track(
++        this.docsSvc.operation(doc.id, {
++          type: 'delete_pages',
++          params: { pages: toIndices(unique) },
++          base_version_seq: base,
++        }),
++        doc,
++      );
++      return;
++    }
++
++    // Extract keeps the order it was given — "9, 2, 40" is a running order, not
++    // a set — and `separate` decides whether that is one file or one per page.
++    this.track(
++      this.docsSvc.operation(doc.id, {
++        type: 'extract_pages',
++        params: {
++          pages: toIndices(pages),
++          as_new_document: true,
++          separate: this.extractMode() === 'separate',
++        },
++        base_version_seq: base,
++      }),
++    );
++  }
++
+   private allPages(doc: DocumentModel): number[] {
+     return Array.from({ length: Math.max(1, doc.page_count) }, (_, i) => i);
+   }
+@@ -361,10 +498,13 @@ export class ToolPage {
+     }
+     let remaining = target.length;
+     const docs: DocumentModel[] = [];
+-    for (const id of target) {
++    target.forEach((id, i) => {
+       this.docsSvc.get(id).subscribe({
+         next: (d) => {
+-          docs.push(d);
++          // Slot, not push: the fetches race, and for "a separate PDF for each
++          // page" the rows must read in page order, not network order. Split's
++          // parts had the same race.
++          docs[i] = d;
+           if (--remaining === 0) {
+             this.results.set(docs);
+             this.phase.set('done');
+@@ -372,7 +512,7 @@ export class ToolPage {
+         },
+         error: (err) => this.fail(err),
+       });
+-    }
++    });
+   }
+ 
+   private trackExport(doc: DocumentModel, format: string, extra: object): void {
+@@ -442,6 +582,10 @@ export class ToolPage {
+   private fail(err: { error?: { error?: { message?: string } } }): void {
+     this.phase.set('error');
+     this.error.set(err?.error?.error?.message ?? 'Something went wrong. Try again.');
++    // The cached upload may be the reason — a guest session that expired takes
++    // its documents with it, and a cached id then 404s on every retry. Dropped,
++    // the next run starts clean with a fresh upload instead of failing forever.
++    this.uploaded.set(null);
+   }
+ 
+   download(doc: DocumentModel): void {
+@@ -461,6 +605,11 @@ export class ToolPage {
+     this.exportJob.set(null);
+     this.error.set('');
+     this.phase.set('idle');
++    // The selection stays — "do another one" is usually the same pages out of
++    // the next file — but the page count and the uploaded copy belonged to the
++    // file just finished.
++    this.pageCount.set(null);
++    this.uploaded.set(null);
+   }
+ 
+   sizeMb(bytes: number): string {
+diff --git a/frontend/src/styles.scss b/frontend/src/styles.scss
+index 92e3da3..3697787 100644
+--- a/frontend/src/styles.scss
++++ b/frontend/src/styles.scss
+@@ -340,7 +340,12 @@ select.input { cursor: pointer; }
+ }
+ .input-eye:hover { color: var(--color-ink); }
+ .input-eye svg { width: 20px; height: 20px; }
+-input[type="checkbox"] { width: 17px; height: 17px; accent-color: var(--color-accent); }
++/* Radios were missing here, so every one in the app — PDF form fields, and now
++   the extract tool's choice of result — rendered in the browser's blue, the one
++   colour the palette does not contain (§2, one accent). */
++input[type="checkbox"], input[type="radio"] {
++  width: 17px; height: 17px; accent-color: var(--color-accent);
++}
+ input[type="range"] { accent-color: var(--color-accent); }
+ input[type="color"] {
+   border: var(--border-hairline) solid var(--color-border-strong);
+diff --git a/frontend/src/tailwind.css b/frontend/src/tailwind.css
+index 5a29e6c..e1ab1fe 100644
+--- a/frontend/src/tailwind.css
++++ b/frontend/src/tailwind.css
+@@ -12,6 +12,12 @@
+    to point at. Both modes are complete: light in :root, dark under `.dark`.
+ --------------------------------------------------------------------------- */
+ :root {
++  /* Native controls — radios, checkboxes, scrollbars, the caret — take their
++     colours from this and nothing else. Without it the dark theme drew every
++     one of them in the light palette: an unchecked radio came out a solid white
++     disc, which is exactly what a *checked* one looks like. */
++  color-scheme: light;
++
+   /* --- primitives: paper --- */
+   --paper-0: #FFFDF7;
+   --paper-50: #FBF8F1;
+@@ -112,6 +118,7 @@
+ 
+ /* --- semantic: dark ("night ink") --- */
+ .dark {
++  color-scheme: dark;
+   --color-bg: var(--night-900);
+   --color-surface: var(--night-800);
+   --color-surface-raised: var(--night-700);
+-- 
+2.43.0
+
