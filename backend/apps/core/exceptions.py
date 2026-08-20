@@ -166,7 +166,32 @@ def _extract_code(exc: Exception, response) -> str:
     }.get(status_code, "error")
 
 
-def _human_message(exc: Exception, data: Any) -> str:
+# What to say when the exception itself has nothing to say. `Http404` is the
+# common one: DRF turns it into a 404 *response* but the exception it hands the
+# handler has no `detail`, so every "not yours / already deleted / wrong id" in
+# the product used to reach the user as the words "An error occurred." — which
+# names nothing, suggests nothing, and is the first thing anyone sees when a
+# guest session has rolled over.
+_STATUS_MESSAGES = {
+    400: "That request was not something we could act on.",
+    401: "Please sign in again to continue.",
+    403: "You do not have access to that.",
+    404: "We could not find that. It may have been deleted, "
+         "or it may belong to a session that has ended.",
+    405: "That is not something this address can do.",
+    409: "Somebody else changed this document first. Reload and try again.",
+    410: "That is no longer available.",
+    413: "That file is larger than this tier allows.",
+    415: "We cannot read that kind of file.",
+    423: "That document is password-protected. Unlock it and try again.",
+    429: "You are going a little faster than the free tier allows. "
+         "Wait a moment and try again.",
+    500: "Something went wrong on our side. Nothing you have saved is affected.",
+    503: "ZenPDF is not answering right now. Nothing you have saved is affected.",
+}
+
+
+def _human_message(exc: Exception, data: Any, response=None) -> str:
     detail = getattr(exc, "detail", None)
     if isinstance(detail, str):
         return str(detail)
@@ -176,7 +201,8 @@ def _human_message(exc: Exception, data: Any) -> str:
         return str(detail[0])
     if isinstance(data, str):
         return data
-    return "An error occurred."
+    status_code = getattr(response, "status_code", 0)
+    return _STATUS_MESSAGES.get(int(status_code or 0), "An error occurred.")
 
 
 def zenpdf_exception_handler(exc, context):
@@ -205,7 +231,7 @@ def zenpdf_exception_handler(exc, context):
         details = {**details, **exc_details}
 
     code = _extract_code(exc, response)
-    message = _human_message(exc, original)
+    message = _human_message(exc, original, response)
 
     # Throttled carries a Retry-After header; surface wait in details.
     wait = getattr(exc, "wait", None)
