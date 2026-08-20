@@ -817,3 +817,35 @@ ngx-extended-pdf-viewer {
 }
 .dark .page-thumb { border-color: var(--color-border-strong); }
 .canvas-backdrop { background: var(--color-canvas-backdrop); }
+/* ---------- 19. Text drawn on the page (§4 "text on the page") ---------- */
+/* A text annotation has to look on screen like what the file will contain:
+   same box, same point size, same colour, wrapping the same way. The previous
+   badge-above-the-box treatment showed 24 characters in a 10px chip and left
+   the box itself empty, which read as "the text box does not work".
+   Colour comes from the annotation (it is the author's choice and it is baked
+   into the PDF), so it is set inline; everything structural is a token. */
+.page-text {
+  position: absolute;
+  margin: 0;
+  padding: 1px 2px;
+  border: 0;
+  overflow: hidden;
+  font-family: var(--font-ui);
+  line-height: 1.25;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--color-ink-strong);
+  background: transparent;
+}
+/* While typing: a hairline of the working colour and just enough backing to
+   stay legible over dense page content. The page raster underneath is paper,
+   so a paper-coloured wash is invisible on an empty area and readable on a
+   busy one — in both themes, because the page itself is white in both. */
+.page-text-editing {
+  resize: none;
+  outline: none;
+  background: rgb(255 255 255 / 0.92);
+  box-shadow: 0 0 0 1.5px var(--color-accent);
+  border-radius: 2px;
+  caret-color: var(--color-accent);
+}

@@ -75,6 +75,7 @@
           [attr.pointer-events]="tool() === 'select' && !item.locked ? 'all' : 'none'"
           [class.cursor-move]="tool() === 'select' && !item.locked"
           (pointerdown)="onItemPointerDown($event, item)"
+          (dblclick)="onItemDoubleClick($event, item)"
           data-test="overlay-item"
           [attr.data-item-id]="item.id"
           [attr.data-shape]="item.shape"
@@ -230,6 +231,42 @@
         [style.top.px]="pyv(item.rect.y)"
         data-test="overlay-label"
       >{{ item.label }}</span>
+    }
+
+    <!-- Text drawn where it will be in the file (design contract §4 "text on
+         the page"): same box, same point size, same colour. Editing happens in
+         the same box, so what you type is what you are looking at. -->
+    @if (item.page === page() && item.text !== undefined && item.rect) {
+      @if (editingId() === item.id && !readonlyMode()) {
+        <textarea
+          #textEditor
+          class="page-text page-text-editing"
+          [style.left.px]="px(item.rect.x)"
+          [style.top.px]="pyv(item.rect.y)"
+          [style.width.px]="px(item.rect.w)"
+          [style.height.px]="pyv(item.rect.h)"
+          [style.font-size.px]="fontPx(item)"
+          [style.color]="item.textColor ?? null"
+          [value]="item.text"
+          (keydown)="onTextKeyDown($event)"
+          (blur)="onTextBlur(item, $event)"
+          (pointerdown)="$event.stopPropagation()"
+          (dblclick)="$event.stopPropagation()"
+          [attr.aria-label]="'Text box on page ' + (page() + 1)"
+          data-test="overlay-text-editor"
+        ></textarea>
+      } @else {
+        <div
+          class="page-text pointer-events-none"
+          [style.left.px]="px(item.rect.x)"
+          [style.top.px]="pyv(item.rect.y)"
+          [style.width.px]="px(item.rect.w)"
+          [style.height.px]="pyv(item.rect.h)"
+          [style.font-size.px]="fontPx(item)"
+          [style.color]="item.textColor ?? null"
+          data-test="overlay-text"
+        >{{ item.text }}</div>
+      }
     }
   }
 </div>

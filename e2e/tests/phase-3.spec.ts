@@ -227,3 +227,61 @@ test('phase 3: crop is drawn on the overlay, not typed into a dialog', async ({ 
   await page.click('[data-test=apply-crop]');
   await expect(successToast(page, 'Cropped')).toBeVisible({ timeout: 60_000 });
 });
+
+/**
+ * A text box is text (2026-08-20).
+ *
+ * The words used to appear only in a 10 px badge above the box, truncated at 24
+ * characters, in the highlighter's yellow, with a 2 pt yellow frame around an
+ * empty rectangle — reported as "the text box is bold and doesn't show the text
+ * at all". They belong in the box, at their own size and colour, edited there.
+ * And markup is batched until Save, so it needs an undo of its own.
+ */
+test('phase 3: a text box shows its words on the page, and undo takes them back', async ({ page }) => {
+  await registerAndLogin(page, 'p3text');
+  await uploadFiles(page, ['text.pdf']);
+  await page.locator('[data-test=doc-card] [data-test=open-doc]').first().click();
+  await expect(page).toHaveURL(/\/app\/doc\//);
+
+  await page.click('[data-test=annotate-toggle]');
+  await expect(page.locator('[data-test=annotate-mode]')).toBeVisible();
+  await fitPage(page);
+
+  await page.click('[data-test=tool-free-text]');
+  await expect(page.locator('[data-test=free-text-hint]')).toBeVisible();
+  // The line-width slider is meaningless for text and is not offered.
+  await expect(page.locator('[data-test=annot-width]')).toHaveCount(0);
+  await expect(page.locator('[data-test=annot-undo]')).toBeDisabled();
+
+  await dragOnPage(page, [0.15, 0.55], [0.7, 0.65]);
+
+  // The caret is already in the box — no hunting for where to type.
+  const onPageEditor = page.locator('[data-test=overlay-text-editor]');
+  await expect(onPageEditor).toBeFocused();
+  const sentence = 'A sentence comfortably longer than twenty-four characters.';
+  await page.keyboard.type(sentence);
+  await page.keyboard.press('Escape');
+
+  // Drawn on the page, whole, and not as a badge.
+  await expect(page.locator('[data-test=overlay-text]')).toHaveText(sentence);
+  await expect(page.locator('[data-test=overlay-label]')).toHaveCount(0);
+
+  // One undo takes back the sentence, not one letter of it.
+  await page.click('[data-test=annot-undo]');
+  await expect(page.locator('[data-test=overlay-text]')).toHaveText('');
+  await page.click('[data-test=annot-redo]');
+  await expect(page.locator('[data-test=overlay-text]')).toHaveText(sentence);
+
+  // Double-click puts the caret back in the same box.
+  await page.click('[data-test=tool-select]');
+  await page.locator('[data-test=overlay-item]').last().dblclick();
+  await expect(page.locator('[data-test=overlay-text-editor]')).toBeFocused();
+  await page.keyboard.press('Escape');
+
+  // And it survives the round trip through the file.
+  await page.click('[data-test=annot-save]');
+  await expect(successToast(page, 'Annotations saved')).toBeVisible({ timeout: 60_000 });
+  await page.reload();
+  await page.click('[data-test=annotate-toggle]');
+  await expect(page.locator('[data-test=overlay-text]')).toHaveText(sentence);
+});

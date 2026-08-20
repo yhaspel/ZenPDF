@@ -65,6 +65,28 @@ const STANDARD_STAMPS = [
 
 const AUTOSAVE_MS = 30_000;
 
+/** The two working colours the palette moves between (design contract §3). */
+const HIGHLIGHT_COLOR = '#facc15';
+const INK_COLOR = '#332D24';
+
+/** Which colour a tool belongs to: translucent marker, or ink on the page. */
+type ToolFamily = 'markup' | 'ink';
+
+function familyOf(tool: AnnotateTool): ToolFamily {
+  return MARKUP.includes(tool as AnnotationType) ? 'markup' : 'ink';
+}
+
+/**
+ * The widest page that fits without making the browser scroll the whole app.
+ *
+ * 900 on a desk, the viewport less the page pane's padding on a phone. Guarded
+ * for prerender, where there is no window at all.
+ */
+function fitZoom(): number {
+  if (typeof window === 'undefined') return 900;
+  return Math.max(280, Math.min(900, window.innerWidth - 48));
+}
+
 function uuid(): string {
   const c = globalThis.crypto;
   if (c && 'randomUUID' in c) return c.randomUUID();
@@ -108,11 +130,32 @@ export class Annotate {
 
   protected page = signal(0);
   protected tool = signal<AnnotateTool>('select');
-  protected zoom = signal(900);
-  protected color = signal('#facc15');
+  /**
+   * Page width in pixels.
+   *
+   * Seeded from the viewport rather than fixed at 900: a phone is 390 px wide
+   * and a 900 px page does not fit in it, so the row grew, the document grew
+   * with it, and the whole workspace scrolled sideways with the mode nav off
+   * the edge. `zoomOut` stops at 450 by design, so the floor cannot come from
+   * the buttons — it has to be the starting value.
+   */
+  protected zoom = signal(fitZoom());
+  /**
+   * The working colour, remembered per family of tools.
+   *
+   * One shared swatch meant a text box inherited the highlighter's yellow —
+   * words drawn in #facc15 on white paper, which is what "the text box does
+   * not show anything" looked like from the outside. Highlighters are yellow;
+   * ink is ink; each family keeps whatever the user last chose for it.
+   */
+  private familyColors = signal<Record<ToolFamily, string>>({
+    markup: HIGHLIGHT_COLOR,
+    ink: INK_COLOR,
+  });
   protected strokeWidth = signal(2);
   protected fontSize = signal(12);
-  protected opacity = signal(0.7);
+  /** Opacity, remembered per family for the same reason colour is. */
+  private familyOpacity = signal<Record<ToolFamily, number>>({ markup: 0.7, ink: 1 });
   protected stampName = signal(STANDARD_STAMPS[0]);
   protected stampRef = signal<string | null>(null);
   protected busy = signal(false);
@@ -120,12 +163,25 @@ export class Annotate {
   protected lastSavedAt = signal<Date | null>(null);
   protected editingId = signal<string | null>(null);
   protected editingText = signal('');
+  /**
+   * The text box being typed into *on the page*.
+   *
+   * Separate from `editingId`, which drives the comments sidebar: a sticky
+   * note has no on-page text to edit, and a text box should not open a second
+   * editor in the margin while the caret is already on the page.
+   */
+  protected pageEditingId = signal<string | null>(null);
 
   protected readonly stamps = STANDARD_STAMPS;
 
+  protected readonly family = computed<ToolFamily>(() => familyOf(this.tool()));
+  protected readonly color = computed(() => this.familyColors()[this.family()]);
+  protected readonly opacity = computed(() => this.familyOpacity()[this.family()]);
   protected readonly gesture = computed<OverlayTool>(() => GESTURE[this.tool()]);
   protected readonly dirty = this.annotations.dirty;
   protected readonly words = computed(() => this.annotations.wordsFor(this.page()));
+  /** The current page's width in points — how a point size becomes pixels. */
+  protected readonly pageWidthPt = computed(() => this.annotations.pageWidthFor(this.page()));
 
   /** Annotations → overlay shapes. The overlay renders geometry, nothing else. */
   protected readonly overlayItems = computed<OverlayItem[]>(() =>
@@ -146,7 +202,10 @@ export class Annotate {
     // when a markup tool is active — a 300-page document must not pull 300
     // word lists to draw one rectangle.
     effect(() => {
-      if (this.gesture() !== 'text') return;
+      // Markup tools need the words themselves; the text-box tool needs only
+      // the page's own width in points, which arrives on the same payload and
+      // is what turns a point size into the right number of pixels.
+      if (this.gesture() !== 'text' && this.tool() !== 'free_text') return;
       this.annotations.loadWords(this.docId(), this.page(), this.currentSeq());
     });
 
@@ -156,6 +215,23 @@ export class Annotate {
         if (this.annotations.dirty() && !this.busy()) this.save(true);
       }, AUTOSAVE_MS);
       onCleanup(() => clearInterval(timer));
+    });
+
+    // ⌘Z / ⌘⇧Z, the way every other editor on the machine works. Skipped while
+    // a field has focus, where the browser's own undo is the right one.
+    effect((onCleanup) => {
+      if (!this.isBrowser) return;
+      const handler = (event: KeyboardEvent) => {
+        if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== 'z') return;
+        const el = document.activeElement as HTMLElement | null;
+        const tag = el?.tagName;
+        if (tag === 'INPUT' || tag === 'TEXTAREA' || el?.isContentEditable) return;
+        event.preventDefault();
+        if (event.shiftKey) this.redo();
+        else this.undo();
+      };
+      window.addEventListener('keydown', handler);
+      onCleanup(() => window.removeEventListener('keydown', handler));
     });
 
     // Unsaved-changes guard. Autosave makes the window small, but "small" is not
@@ -173,18 +249,26 @@ export class Annotate {
   }
 
   /**
-   * Switching tool re-suggests an opacity, it does not lock one in.
+   * Switching tool re-suggests colour and opacity, it does not lock them in.
    *
    * Translucency is what makes a highlight readable and what makes an arrow
-   * look like a mistake, so the two want different defaults — but forcing the
-   * value at creation time (the first cut of this) made the slider do nothing
-   * for eight of the fourteen tools.
+   * look like a mistake; the same is true of yellow ink. Both settings are
+   * therefore held per family and switch with the tool — and whatever the user
+   * chose for a family is still there when they come back to it.
    */
   protected setTool(next: AnnotateTool): void {
-    const wasMarkup = MARKUP.includes(this.tool() as AnnotationType);
-    const isMarkup = MARKUP.includes(next as AnnotationType);
-    if (wasMarkup !== isMarkup) this.opacity.set(isMarkup ? 0.7 : 1);
     this.tool.set(next);
+  }
+
+  /** Colour changes apply to the family in hand, not to every tool at once. */
+  protected setColor(value: string): void {
+    const family = this.family();
+    this.familyColors.update((colors) => ({ ...colors, [family]: value }));
+  }
+
+  protected setOpacity(value: number): void {
+    const family = this.family();
+    this.familyOpacity.update((values) => ({ ...values, [family]: value }));
   }
 
   // ------------------------------------------------------------------ //
@@ -238,7 +322,15 @@ export class Annotate {
       case 'note':
         return { ...base, fill: a.color ?? '#D8B25E', label: '❝' };
       case 'free_text':
-        return { ...base, label: (a.contents || 'Text').slice(0, 24) };
+        // No badge: the words go on the page, at their own size and colour,
+        // where the file will put them.
+        return {
+          ...base,
+          stroke: (a.width ?? 0) > 0 ? (a.color ?? '#332D24') : 'none',
+          text: a.contents ?? '',
+          fontSize: a.font_size ?? 12,
+          textColor: a.color ?? '#332D24',
+        };
       case 'stamp':
         return { ...base, label: a.stamp_name ?? 'Stamp' };
       case 'image_stamp':
@@ -300,8 +392,14 @@ export class Annotate {
       };
     }
     if (tool === 'free_text') {
-      annotation.contents = 'Text';
+      // Empty, not the word "Text": the caret lands in the box immediately, so
+      // placeholder prose would only have to be deleted. And no border — the
+      // shared line-width slider was giving every text box a 2pt frame in
+      // highlighter yellow, which is the "bold box with no text in it" people
+      // reported.
+      annotation.contents = '';
       annotation.font_size = this.fontSize();
+      annotation.width = 0;
     }
     if (tool === 'stamp') {
       annotation.stamp_name = this.stampName();
@@ -316,7 +414,11 @@ export class Annotate {
     }
 
     this.annotations.add(annotation);
-    if (tool === 'note' || tool === 'free_text') this.startEditing(annotation.id);
+    if (tool === 'free_text') {
+      this.pageEditingId.set(annotation.id);
+    } else if (tool === 'note') {
+      this.startEditing(annotation.id);
+    }
   }
 
   /**
@@ -356,6 +458,38 @@ export class Annotate {
 
   protected onSelectionChanged(id: string | null): void {
     this.annotations.select(id);
+  }
+
+  /** A double-click on a text box on the page puts the caret in it. */
+  protected onEditRequested(id: string): void {
+    this.annotations.select(id);
+    this.pageEditingId.set(id);
+  }
+
+  protected onPageTextChanged(change: { id: string; text: string }): void {
+    this.annotations.update(change.id, { contents: change.text });
+  }
+
+  protected onPageEditingEnded(): void {
+    // An empty box left behind is litter — nothing to see, nothing to save,
+    // and impossible to select again once it has no border.
+    const id = this.pageEditingId();
+    this.pageEditingId.set(null);
+    if (!id) return;
+    const item = this.annotations.all().find((a) => a.id === id);
+    if (item?.type === 'free_text' && !(item.contents ?? '').trim()) {
+      this.annotations.remove(id);
+    }
+  }
+
+  protected undo(): void {
+    this.pageEditingId.set(null);
+    this.annotations.undo();
+  }
+
+  protected redo(): void {
+    this.pageEditingId.set(null);
+    this.annotations.redo();
   }
 
   protected async onDeleteRequested(id: string): Promise<void> {
@@ -588,7 +722,7 @@ export class Annotate {
   }
 
   protected zoomOut(): void {
-    this.zoom.update((z) => Math.max(450, z - 150));
+    this.zoom.update((z) => Math.max(Math.min(450, fitZoom()), z - 150));
   }
 
   protected trackAnnotation = (_: number, a: Annotation): string => a.id;

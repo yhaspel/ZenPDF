@@ -1,6 +1,6 @@
-<div class="flex min-h-0 flex-1" data-test="annotate-mode">
+<div class="ws-panes" data-test="annotate-mode">
   <!-- Tool palette -->
-  <aside class="border-border bg-surface flex w-52 shrink-0 flex-col gap-3 overflow-y-auto border-e p-3 text-sm">
+  <aside class="ws-rail ws-rail-start w-52 gap-3 overflow-y-auto p-3 text-sm">
     <div>
       <p class="kicker mb-1">Tools</p>
       <div class="grid grid-cols-2 gap-1">
@@ -60,25 +60,30 @@
 
     <div>
       <label for="annot-colour" class="kicker">Colour</label>
-      <input id="annot-colour" type="color" [ngModel]="color()" (ngModelChange)="color.set($event)"
+      <input id="annot-colour" type="color" [ngModel]="color()" (ngModelChange)="setColor($event)"
              class="mt-1 h-8 w-full cursor-pointer" data-test="annot-color" />
     </div>
-    <div>
-      <label for="annot-width" class="kicker">
-        Line width — {{ strokeWidth() }}
-      </label>
-      <input id="annot-width" type="range" min="1" max="12" [ngModel]="strokeWidth()" (ngModelChange)="strokeWidth.set(+$event)"
-             class="w-full" data-test="annot-width" />
-    </div>
+    @if (tool() !== 'free_text') {
+      <div>
+        <label for="annot-width" class="kicker">
+          Line width — {{ strokeWidth() }}
+        </label>
+        <input id="annot-width" type="range" min="1" max="12" [ngModel]="strokeWidth()" (ngModelChange)="strokeWidth.set(+$event)"
+               class="w-full" data-test="annot-width" />
+      </div>
+    }
     <div>
       <label for="annot-opacity" class="kicker">
         Opacity — {{ (opacity() * 100).toFixed(0) }}%
       </label>
-      <input id="annot-opacity" type="range" min="0.1" max="1" step="0.1" [ngModel]="opacity()" (ngModelChange)="opacity.set(+$event)"
+      <input id="annot-opacity" type="range" min="0.1" max="1" step="0.1" [ngModel]="opacity()" (ngModelChange)="setOpacity(+$event)"
              class="w-full" data-test="annot-opacity" />
     </div>
 
     @if (tool() === 'free_text') {
+      <p class="faint text-[11px]" data-test="free-text-hint">
+        Drag a box on the page and type in it. Double-click a box to edit it again.
+      </p>
       <div>
         <label for="annot-font-size" class="kicker">
           Font size — {{ fontSize() }}pt
@@ -121,7 +126,7 @@
   </aside>
 
   <!-- Page + overlay -->
-  <main class="canvas-backdrop flex min-h-0 flex-1 flex-col">
+  <main class="canvas-backdrop ws-pane-main">
     <div class="border-border bg-surface flex items-center gap-2 border-b px-4 py-2 text-sm">
       <button (click)="prevPage()" [disabled]="page() === 0"
               class="btn btn-ghost btn-sm" data-test="annot-prev">‹</button>
@@ -133,6 +138,12 @@
       <button (click)="zoomOut()" class="btn btn-ghost btn-sm" data-test="annot-zoom-out">−</button>
       <span class="muted text-xs">{{ zoom() }}px</span>
       <button (click)="zoomIn()" class="btn btn-ghost btn-sm" data-test="annot-zoom-in">+</button>
+
+      <span class="bg-border mx-2 h-4 w-px"></span>
+      <button (click)="undo()" [disabled]="!annotations.canUndo()"
+              class="btn btn-ghost btn-sm" title="Undo (⌘Z)" data-test="annot-undo">Undo</button>
+      <button (click)="redo()" [disabled]="!annotations.canRedo()"
+              class="btn btn-ghost btn-sm" title="Redo (⇧⌘Z)" data-test="annot-redo">Redo</button>
 
       <div class="ms-auto flex items-center gap-2">
         @if (dirty()) {
@@ -158,23 +169,28 @@
           [page]="page()"
           [version]="currentSeq() ?? undefined"
           [renderWidth]="zoom()"
+          [pageWidthPt]="pageWidthPt()"
           [items]="overlayItems()"
           [tool]="gesture()"
           [words]="words()"
           [selectedId]="annotations.selectedId()"
+          [editingId]="pageEditingId()"
           [drawStroke]="color()"
           [drawWidth]="strokeWidth()"
           (created)="onCreated($event)"
           (geometryChanged)="onGeometryChanged($event)"
           (selectionChanged)="onSelectionChanged($event)"
           (deleteRequested)="onDeleteRequested($event)"
+          (editRequested)="onEditRequested($event)"
+          (textChanged)="onPageTextChanged($event)"
+          (editingEnded)="onPageEditingEnded()"
         />
       </div>
     </div>
   </main>
 
   <!-- Comments sidebar -->
-  <aside class="border-border bg-surface flex w-64 shrink-0 flex-col border-s" data-test="comments-sidebar">
+  <aside class="ws-rail ws-rail-end w-64" data-test="comments-sidebar">
     <div class="border-border flex items-center justify-between border-b px-3 py-2">
       <span class="text-ink text-sm font-medium">
         Comments

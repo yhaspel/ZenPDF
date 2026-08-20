@@ -73,6 +73,15 @@ export class PageOverlay {
   readonly words = input<OverlayWord[]>([]);
   readonly selectedId = input<string | null>(null);
   readonly readonlyMode = input(false);
+  /**
+   * The page's width in PDF points, so a point size becomes the right number
+   * of pixels. 595 (A4) is the fallback for the moment before the page's own
+   * measurements have been fetched — being 3% out on a Letter page for one
+   * frame is invisible; guessing pixels for points is not.
+   */
+  readonly pageWidthPt = input(595);
+  /** Which item is being typed into, if any. */
+  readonly editingId = input<string | null>(null);
   /** Stroke/fill applied to the in-progress shape, so drawing previews truthfully. */
   readonly drawStroke = input('#e11d48');
   readonly drawFill = input<string | null>(null);
@@ -82,9 +91,14 @@ export class PageOverlay {
   readonly geometryChanged = output<OverlayGeometryChange>();
   readonly selectionChanged = output<string | null>();
   readonly deleteRequested = output<string>();
+  /** A double-click on something that carries text: put a caret in it. */
+  readonly editRequested = output<string>();
+  readonly textChanged = output<{ id: string; text: string }>();
+  readonly editingEnded = output<void>();
 
   private docsSvc = inject(DocumentsService);
   private surface = viewChild<ElementRef<HTMLDivElement>>('surface');
+  private textEditor = viewChild<ElementRef<HTMLTextAreaElement>>('textEditor');
 
   protected imageUrl = signal<string | null>(null);
   /** Natural page aspect (height / width), so the box matches the raster exactly. */
@@ -142,6 +156,14 @@ export class PageOverlay {
       this.page();
       this.pending.set([]);
       this.drag.set(null);
+    });
+    // A box you have just drawn should already have the caret in it — asking
+    // the user to hunt for where to type is what made the tool feel broken.
+    effect(() => {
+      const editor = this.textEditor()?.nativeElement;
+      if (!editor || document.activeElement === editor) return;
+      editor.focus();
+      editor.setSelectionRange(editor.value.length, editor.value.length);
     });
   }
 
@@ -482,6 +504,50 @@ export class PageOverlay {
     }
     if ((event.key === 'Delete' || event.key === 'Backspace') && this.selectedId()) {
       this.deleteRequested.emit(this.selectedId()!);
+      event.preventDefault();
+    }
+  }
+
+  // ------------------------------------------------------------------ //
+  // Text drawn on the page
+  // ------------------------------------------------------------------ //
+  /** A point size in the file, as pixels at the current zoom. */
+  protected fontPx(item: OverlayItem): number {
+    const pt = item.fontSize ?? 12;
+    return Math.max(4, (pt / this.pageWidthPt()) * this.renderWidth());
+  }
+
+  /** Double-click inside a text item starts editing it, the way a caret works
+   *  everywhere else. Only with the select tool: while a draw tool is armed a
+   *  double-click is two draws, not an edit. */
+  protected onItemDoubleClick(event: MouseEvent, item: OverlayItem): void {
+    if (this.readonlyMode() || item.locked) return;
+    if (this.tool() !== 'select' || item.text === undefined) return;
+    event.stopPropagation();
+    event.preventDefault();
+    this.editRequested.emit(item.id);
+  }
+
+  /**
+   * Commit on blur, not on every keystroke.
+   *
+   * The textarea already shows what is being typed, at the size and colour the
+   * file will use, so there is nothing to gain from pushing each character
+   * through the model — and one commit per sitting is what makes one ⌘Z undo
+   * a sentence rather than a letter.
+   */
+  protected onTextBlur(item: OverlayItem, event: Event): void {
+    const value = (event.target as HTMLTextAreaElement).value;
+    if (value !== item.text) this.textChanged.emit({ id: item.id, text: value });
+    this.editingEnded.emit();
+  }
+
+  /** Escape and ⌘/Ctrl+Enter both mean "done"; plain Enter is a new line,
+   *  because a text box on a page is a paragraph, not a form field. */
+  protected onTextKeyDown(event: KeyboardEvent): void {
+    event.stopPropagation();
+    if (event.key === 'Escape' || (event.key === 'Enter' && (event.metaKey || event.ctrlKey))) {
+      (event.target as HTMLTextAreaElement).blur();
       event.preventDefault();
     }
   }

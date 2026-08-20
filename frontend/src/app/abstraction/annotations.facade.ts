@@ -21,6 +21,13 @@ import { JobsFacade } from './jobs.facade';
  * independent objects addressed by stable ids, so re-applying them to a fresher
  * version is well-defined (a conflicting delete simply becomes a no-op).
  */
+/** One point in the undo history: everything local, nothing from the file. */
+interface Snapshot {
+  drafts: Map<string, Annotation>;
+  removed: Set<string>;
+  selectedId: string | null;
+}
+
 @Injectable({ providedIn: 'root' })
 export class AnnotationsFacade {
   private docsSvc = inject(DocumentsService);
@@ -30,6 +37,8 @@ export class AnnotationsFacade {
   private _drafts = signal<Map<string, Annotation>>(new Map());
   private _removed = signal<Set<string>>(new Set());
   private _words = signal<Map<number, WordBox[]>>(new Map());
+  /** Page width in PDF points, per page — the scale a point size is drawn at. */
+  private _pageWidths = signal<Map<number, number>>(new Map());
   private _selectedId = signal<string | null>(null);
   private _loading = signal(false);
 
@@ -46,6 +55,22 @@ export class AnnotationsFacade {
    */
   private saving = new Set<string>();
 
+  /**
+   * Undo history for the *local* stores only (phase-03 §"Save model UX").
+   *
+   * `saved` is the file's own state and is never edited here, so a snapshot of
+   * `drafts` + `removed` is the whole of what a person can undo — and undoing
+   * is therefore exact, not a replayed inverse of each operation. Every
+   * mutating call pushes one entry, and a gesture (a drag, a typed sentence
+   * committed on blur) is one call, so one ⌘Z is one visible change.
+   */
+  private past: Snapshot[] = [];
+  private future: Snapshot[] = [];
+  private _canUndo = signal(false);
+  private _canRedo = signal(false);
+
+  readonly canUndo = this._canUndo.asReadonly();
+  readonly canRedo = this._canRedo.asReadonly();
   readonly selectedId = this._selectedId.asReadonly();
   readonly loading = this._loading.asReadonly();
 
@@ -92,6 +117,11 @@ export class AnnotationsFacade {
 
   wordsFor(page: number): WordBox[] {
     return this._words().get(page) ?? [];
+  }
+
+  /** The page's own width in points, once known. A4 until then. */
+  pageWidthFor(page: number): number {
+    return this._pageWidths().get(page) ?? 595;
   }
 
   // ------------------------------------------------------------------ //
@@ -144,6 +174,9 @@ export class AnnotationsFacade {
     this.docsSvc.textWords(docId, page, version).subscribe({
       next: (res) => {
         this._words.update((map) => new Map(map).set(page, res.words));
+        if (res.width) {
+          this._pageWidths.update((map) => new Map(map).set(page, res.width));
+        }
       },
       error: () => {
         this._words.update((map) => new Map(map).set(page, []));
@@ -154,12 +187,14 @@ export class AnnotationsFacade {
   /** A new version invalidates every cached word list and every saved annot. */
   resetForVersion(): void {
     this._words.set(new Map());
+    this._pageWidths.set(new Map());
   }
 
   // ------------------------------------------------------------------ //
   // Editing
   // ------------------------------------------------------------------ //
   add(annotation: Annotation): void {
+    this.remember();
     this._drafts.update((map) => new Map(map).set(annotation.id, annotation));
     this._selectedId.set(annotation.id);
   }
@@ -167,10 +202,12 @@ export class AnnotationsFacade {
   update(id: string, patch: Partial<Annotation>): void {
     const current = this.all().find((a) => a.id === id);
     if (!current) return;
+    this.remember();
     this._drafts.update((map) => new Map(map).set(id, { ...current, ...patch, id }));
   }
 
   remove(id: string): void {
+    this.remember();
     this._removed.update((set) => new Set(set).add(id));
     this._drafts.update((map) => {
       const next = new Map(map);
@@ -181,6 +218,7 @@ export class AnnotationsFacade {
   }
 
   removeAll(): void {
+    this.remember();
     this._removed.update((set) => {
       const next = new Set(set);
       for (const a of this.all()) next.add(a.id);
@@ -192,6 +230,57 @@ export class AnnotationsFacade {
 
   select(id: string | null): void {
     this._selectedId.set(id);
+  }
+
+  // ------------------------------------------------------------------ //
+  // Undo / redo
+  // ------------------------------------------------------------------ //
+  /** Snapshot the current local state before changing it. */
+  private remember(): void {
+    this.past.push(this.snapshot());
+    // A session is one sitting; a hundred steps is more than anyone reaches
+    // for and keeps the memory cost of a long markup session bounded.
+    if (this.past.length > 100) this.past.shift();
+    this.future = [];
+    this.syncHistory();
+  }
+
+  private snapshot(): Snapshot {
+    return {
+      drafts: new Map(this._drafts()),
+      removed: new Set(this._removed()),
+      selectedId: this._selectedId(),
+    };
+  }
+
+  private restore(state: Snapshot): void {
+    this._drafts.set(state.drafts);
+    this._removed.set(state.removed);
+    this._selectedId.set(
+      state.selectedId && this.all().some((a) => a.id === state.selectedId)
+        ? state.selectedId
+        : null,
+    );
+    this.syncHistory();
+  }
+
+  private syncHistory(): void {
+    this._canUndo.set(this.past.length > 0);
+    this._canRedo.set(this.future.length > 0);
+  }
+
+  undo(): void {
+    const previous = this.past.pop();
+    if (!previous) return;
+    this.future.push(this.snapshot());
+    this.restore(previous);
+  }
+
+  redo(): void {
+    const next = this.future.pop();
+    if (!next) return;
+    this.past.push(this.snapshot());
+    this.restore(next);
   }
 
   // ------------------------------------------------------------------ //
@@ -252,10 +341,14 @@ export class AnnotationsFacade {
   }
 
   clear(): void {
+    this.past = [];
+    this.future = [];
+    this.syncHistory();
     this._saved.set([]);
     this._drafts.set(new Map());
     this._removed.set(new Set());
     this._words.set(new Map());
+    this._pageWidths.set(new Map());
     this._selectedId.set(null);
     this.saving = new Set();
   }
