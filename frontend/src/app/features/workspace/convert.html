@@ -1,5 +1,5 @@
-<div class="flex min-h-0 flex-1" data-test="convert-mode">
-  <aside class="border-border bg-surface flex w-72 shrink-0 flex-col gap-4 overflow-y-auto border-e p-3 text-sm">
+<div class="ws-panes" data-test="convert-mode">
+  <aside class="ws-rail ws-rail-start w-72 gap-4 overflow-y-auto p-3 text-sm">
     <!-- OCR -->
     <section class="flex flex-col gap-2" data-test="ocr-panel">
       <h3 class="kicker">
@@ -128,7 +128,7 @@
     </section>
   </aside>
 
-  <main class="canvas-backdrop flex min-h-0 flex-1 items-center justify-center p-8">
+  <main class="canvas-backdrop ws-pane-main items-center justify-center p-8">
     <!-- ink-muted rather than -faint: this is instruction, not decoration, and
          ink-muted keeps ≥4.5:1 on the canvas backdrop in both modes. -->
     <div class="muted max-w-md text-center text-sm">

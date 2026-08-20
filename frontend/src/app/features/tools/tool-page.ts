@@ -612,7 +612,18 @@ export class ToolPage {
     this.uploaded.set(null);
   }
 
-  sizeMb(bytes: number): string {
-    return (bytes / 1048576).toFixed(1);
+  /**
+   * A file's size, in the unit that tells you something about it.
+   *
+   * Everything was rendered in megabytes to one decimal, so a 40 KB signature
+   * page, a 900 KB contract and an empty file all read "0.0 MB" — the size
+   * line said nothing at all for most of what people actually upload here.
+   */
+  fileSize(bytes: number): string {
+    if (!Number.isFinite(bytes) || bytes < 0) return '';
+    if (bytes < 1024) return `${Math.max(bytes, 0)} B`;
+    if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+    const mb = bytes / 1048576;
+    return `${mb < 10 ? mb.toFixed(1) : Math.round(mb)} MB`;
   }
 }

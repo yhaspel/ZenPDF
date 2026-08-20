@@ -45,6 +45,11 @@
                 data-test="protect-toggle">Protect</button>
       </nav>
       <span class="border-border h-5 shrink-0 border-s" aria-hidden="true"></span>
+      <button (click)="undoLastChange()" [disabled]="!canUndoVersion() || busy()"
+              class="btn btn-ghost btn-sm" data-test="undo-version"
+              [title]="canUndoVersion()
+                ? 'Undo the last change — back to v' + ((viewer.currentSeq() ?? 1) - 1)
+                : 'Nothing to undo yet'">Undo</button>
       <button (click)="dialog.set('split')" class="btn btn-ghost btn-sm" data-test="tool-split">Split</button>
       <button (click)="dialog.set('compress')" class="btn btn-ghost btn-sm" data-test="tool-compress">Compress</button>
       <button (click)="download()" class="btn btn-secondary btn-sm" data-test="download">Download</button>
@@ -158,9 +163,9 @@
         (conflict)="onAnnotationConflict()"
       />
     } @else {
-    <div class="flex min-h-0 flex-1">
+    <div class="ws-panes">
       <!-- Left rail: Pages / Outline / History (§4 view mode) -->
-      <aside class="border-border bg-surface flex w-56 shrink-0 flex-col border-e">
+      <aside class="ws-rail ws-rail-start w-56">
         <div class="seg border-border gap-0 border-b px-1 py-1">
           <button class="flex-1 justify-center" [class.seg-active]="leftTab() === 'thumbs'"
                   [attr.aria-pressed]="leftTab() === 'thumbs'"
@@ -228,7 +233,7 @@
       </aside>
 
       <!-- Center: the desk. Pages are white paper on the backdrop (§3). -->
-      <main class="canvas-backdrop flex min-h-0 flex-1 flex-col">
+      <main class="canvas-backdrop ws-pane-main">
         @if (mode() === 'view') {
           <div class="border-border bg-surface flex items-center gap-2 border-b px-4 py-2">
             <input [ngModel]="searchQuery()" (ngModelChange)="searchQuery.set($event)" (keyup.enter)="doSearch()"
@@ -246,6 +251,7 @@
                    download in the workspace bar, annotation in Annotate.
                    D7: first paint is fit-to-width, centered, on the backdrop. -->
               <ngx-extended-pdf-viewer
+                [useInlineScripts]="false"
                 [src]="contentUrl()"
                 [httpHeaders]="authHeaders()"
                 [page]="page()"
@@ -386,18 +392,32 @@
       </div>
     </div>
   }
-} @else if (viewer.loading()) {
-  <div class="flex h-full flex-col items-center justify-center gap-3" data-test="workspace-loading"
-       role="status" aria-live="polite">
-    <app-spinner />
-    <p class="muted text-sm">Opening your document…</p>
-  </div>
 } @else {
+  <!-- Neither of the branches below has a workspace bar, and the app shell
+       hides its own header inside /app/doc/:id — so both of them used to render
+       with no brand, no theme toggle and no way out of the screen at all, at
+       the moment the person is least able to guess what happened. This is the
+       smallest bar that is still a header (design contract §3). -->
+  <div class="flex h-full min-h-0 flex-1 flex-col">
+    <div class="ws-bar" data-test="workspace-bar-minimal">
+      <a routerLink="/" class="ws-back" data-test="back" aria-label="Back to the tools">←</a>
+      <app-brand [size]="20" />
+      <span class="ms-auto"></span>
+      <app-theme-toggle />
+    </div>
+    <app-guest-banner />
+
+    @if (viewer.loading()) {
+      <div class="flex min-h-0 flex-1 flex-col items-center justify-center gap-3"
+           data-test="workspace-loading" role="status" aria-live="polite">
+        <app-spinner />
+        <p class="muted text-sm">Opening your document…</p>
+      </div>
+    } @else {
   <!-- The branch that did not exist. A stale or foreign /app/doc/:id, a 500,
        or a dropped connection used to leave a white screen with nothing on it
-       and no way back — at the moment the person is least able to guess what
-       happened. -->
-  <div class="flex h-full flex-col items-center justify-center gap-4 px-6 text-center"
+       and no way back. -->
+  <div class="flex min-h-0 flex-1 flex-col items-center justify-center gap-4 px-6 text-center"
        data-test="workspace-error" role="alert">
     <svg class="ti text-ink-faint" viewBox="0 0 24 24" aria-hidden="true">
       <path d="M6.5 3.5h7l4 4v13h-11z" />
@@ -410,6 +430,14 @@
       <p class="muted max-w-md text-sm">
         Guest files are deleted automatically. Anything you do now starts a fresh session.
       </p>
+    } @else if (viewer.error()?.code === 'throttled') {
+      <!-- A throttle is a pause, not a breakage, and the server said how long.
+           Saying so — and holding the button until then — is the difference
+           between "this is broken" and "this is busy". -->
+      <p class="muted max-w-md text-sm" data-test="workspace-throttled">
+        You are going a little faster than the free tier allows. Nothing is lost —
+        your document is still here.
+      </p>
     }
     <div class="flex items-center gap-3">
       <!-- Retrying an expired guest session can only fail the same way: the
@@ -418,8 +446,11 @@
            dropped connection — is worth one. -->
       @if (viewer.error()?.code !== 'guest_expired') {
         <button type="button" (click)="retryLoad()"
+                [disabled]="retryIn() > 0"
                 class="btn btn-secondary"
-                data-test="workspace-retry">Try again</button>
+                data-test="workspace-retry">
+          {{ retryIn() > 0 ? 'Try again in ' + retryIn() + 's' : 'Try again' }}
+        </button>
       }
       <!-- A guest has no dashboard: /app/dashboard is account-gated, so this
            handed somebody who was *just* told "anything you do now starts a
@@ -431,5 +462,7 @@
         {{ auth.isAuthenticated() ? 'Back to dashboard' : 'Upload a file' }}
       </a>
     </div>
+  </div>
+    }
   </div>
 }
