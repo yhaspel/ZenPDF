@@ -1,7 +1,13 @@
-import { HttpErrorResponse, HttpInterceptorFn, HttpResponse } from '@angular/common/http';
+import {
+  HttpContextToken,
+  HttpErrorResponse,
+  HttpEvent,
+  HttpInterceptorFn,
+  HttpResponse,
+} from '@angular/common/http';
 import { inject } from '@angular/core';
 import { Router } from '@angular/router';
-import { catchError, switchMap, tap, throwError } from 'rxjs';
+import { Observable, catchError, of, switchMap, tap, throwError } from 'rxjs';
 
 import { GuestFacade } from '../../abstraction/guest.facade';
 import { AuthService } from '../services/auth.service';
@@ -9,6 +15,12 @@ import { GuestTokenService } from '../services/guest-token.service';
 import { TokenService } from '../services/token.service';
 
 export const GUEST_HEADER = 'X-Guest-Token';
+
+/**
+ * Marks a request that has already been replayed on a fresh guest session, so
+ * a server that keeps answering `guest_expired` cannot put us in a loop.
+ */
+export const GUEST_RETRIED = new HttpContextToken<boolean>(() => false);
 
 /**
  * The signing ceremony and the verification page carry **no** credential
@@ -71,6 +83,44 @@ export const authInterceptor: HttpInterceptorFn = (req, next) => {
     outgoing = req.clone({ setHeaders: { [GUEST_HEADER]: guestToken } });
   }
 
+  /**
+   * One attempt to put the guest back on their feet.
+   *
+   * Three cases, and only the last one is worth telling them about:
+   * a token that was already replaced (a late verdict about a credential we no
+   * longer hold — just replay), a token that really did expire (mint and
+   * replay), and a replay that failed anyway (the work is genuinely gone, so
+   * say so).
+   */
+  function recoverGuestSession(err: HttpErrorResponse): Observable<HttpEvent<unknown>> {
+    if (req.context.get(GUEST_RETRIED)) {
+      guests.noteSessionExpired();
+      return throwError(() => err);
+    }
+    const outcome = guests.onSessionExpired(guestToken);
+    const fresh = outcome === 'superseded' ? of(null) : guests.ensureSession();
+    return fresh.pipe(
+      switchMap(() => {
+        const token = guestTokens.token;
+        if (!token || token === guestToken) {
+          guests.noteSessionExpired();
+          return throwError(() => err);
+        }
+        return next(
+          req.clone({
+            setHeaders: { [GUEST_HEADER]: token },
+            context: req.context.set(GUEST_RETRIED, true),
+          }),
+        ).pipe(
+          catchError((retryErr: HttpErrorResponse) => {
+            guests.noteSessionExpired();
+            return throwError(() => retryErr);
+          }),
+        );
+      }),
+    );
+  }
+
   return next(outgoing).pipe(
     tap((event) => {
       if (event instanceof HttpResponse) {
@@ -83,12 +133,12 @@ export const authInterceptor: HttpInterceptorFn = (req, next) => {
     catchError((err: HttpErrorResponse) => {
       const code = err.error?.error?.code;
 
-      // A guest session ended. Clearing the token means the next write mints a
-      // fresh one; an inline notice explains it. Redirecting a guest to a login
-      // form would reinstate exactly the wall this phase removes (§21.5).
+      // A guest session ended. Recover in place: start a fresh session and
+      // replay the request once, so somebody who comes back a day later just
+      // carries on instead of meeting a dead screen. Redirecting a guest to a
+      // login form would reinstate exactly the wall this phase removes (§21.5).
       if (err.status === 410 && code === 'guest_expired') {
-        guests.onSessionExpired();
-        return throwError(() => err);
+        return recoverGuestSession(err);
       }
 
       // An account-only feature. Surfaced as an inline upgrade prompt that
@@ -102,7 +152,7 @@ export const authInterceptor: HttpInterceptorFn = (req, next) => {
       if (err.status === 401 && !isAuthEndpoint(req.url)) {
         if (!access) {
           if (guestToken) {
-            guests.onSessionExpired();
+            return recoverGuestSession(err);
           }
           return throwError(() => err);
         }

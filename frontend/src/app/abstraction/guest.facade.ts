@@ -1,5 +1,5 @@
 import { Injectable, computed, inject, signal } from '@angular/core';
-import { Observable, catchError, of, tap } from 'rxjs';
+import { Observable, catchError, finalize, of, shareReplay, tap } from 'rxjs';
 
 import { AppConfig, GuestState, TierLimits } from '../core/models/models';
 import { ConfigService } from '../core/services/config.service';
@@ -28,6 +28,8 @@ export class GuestFacade {
   private _expiredNotice = signal(false);
   /** The message from the last `account_required`, rendered as an upgrade prompt. */
   private _accountRequired = signal<string | null>(null);
+  /** The mint in flight, shared by every caller that asked while it was open. */
+  private minting: Observable<unknown> | null = null;
 
   readonly guest = this._guest.asReadonly();
   readonly limits = this._limits.asReadonly();
@@ -64,10 +66,21 @@ export class GuestFacade {
     if (this.principal() !== null) {
       return of(null);
     }
-    return this.configSvc.mintGuestSession().pipe(
+    // One mint, however many callers. Serialising *inside* the facade is what
+    // makes the guarantee hold when the callers are not a single tool page but
+    // a handful of requests that all came back `guest_expired` at once: each
+    // one used to mint its own session, and the last capture won — stranding
+    // whatever the earlier ones had already written.
+    if (this.minting) {
+      return this.minting;
+    }
+    this.minting = this.configSvc.mintGuestSession().pipe(
       tap(() => this._hasToken.set(this.guestTokens.hasToken)),
       catchError(() => of(null)),
+      finalize(() => { this.minting = null; }),
+      shareReplay({ bufferSize: 1, refCount: false }),
     );
+    return this.minting;
   }
 
   loadConfig(): void {
@@ -90,12 +103,40 @@ export class GuestFacade {
 
   /**
    * A guest 401/410 means "your session ended", not "log in" (§21.5).
-   * Drop the dead token so the next write mints a fresh one, and say so inline.
+   *
+   * `deadToken` is the credential the failing request actually carried. It
+   * matters because responses do not arrive in the order they were sent: two
+   * `/api/config/` calls made with a token that had expired overnight would
+   * both come back 410 — and the second one, landing *after* the tool page had
+   * already minted a fresh session and uploaded a file into it, wiped the new
+   * token. The visitor was then holding a document nothing could open, on a
+   * screen that said only "An error occurred." Ignoring a verdict about a
+   * credential we no longer hold is what stops that.
+   *
+   * Returns `'superseded'` when the dead token has already been replaced —
+   * the caller can simply retry — and `'cleared'` when this call really did
+   * end the current session.
    */
-  onSessionExpired(): void {
+  onSessionExpired(deadToken?: string | null): 'superseded' | 'cleared' {
+    if (deadToken && this.guestTokens.token !== deadToken) {
+      return 'superseded';
+    }
     this.guestTokens.clear();
     this._hasToken.set(false);
     this._guest.set(null);
+    return 'cleared';
+  }
+
+  /**
+   * Say the session ended, once the recovery has been tried and failed.
+   *
+   * Separated from `onSessionExpired` so that the ordinary case — somebody
+   * comes back the next morning, their token is a day old, the next thing they
+   * do quietly starts a new session — shows no banner at all. The notice is for
+   * the case that actually lost something: work that was open when the session
+   * died and cannot be fetched again.
+   */
+  noteSessionExpired(): void {
     this._expiredNotice.set(true);
   }
 
