@@ -361,7 +361,11 @@ export class ToolPage {
     // Hand straight to the workspace, opened on the right mode — still with no
     // login anywhere in the path.
     const interactive: Partial<Record<typeof tool.kind, Record<string, string>>> = {
-      organize: {},
+      // Every other entry here names the mode its tool exists for. `organize`
+      // was the one that did not, so "Organize pages" — the tool whose whole
+      // subject is the page grid — dropped the visitor into the reading view
+      // with the grid one unexplained click away.
+      organize: { mode: 'organize' },
       annotate: { mode: 'annotate' },
       edit: { mode: 'edit' },
       'fill-form': { mode: 'forms' },

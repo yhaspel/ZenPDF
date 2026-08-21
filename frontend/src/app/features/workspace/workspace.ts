@@ -189,10 +189,14 @@ export class Workspace {
     // page lands the guest directly in the markup tools (§21.6: the page must
     // *be* the tool, with no login prompt anywhere in the path).
     this.route.queryParamMap.pipe(takeUntilDestroyed()).subscribe((params) => {
+      // Every mode the bar offers, not a subset: `organize` and `view` were
+      // missing, so `/app/doc/:id?mode=organize` quietly rendered the reading
+      // view — and `/organize-pdf`, the tool whose entire subject is the page
+      // grid, had no way to ask for it.
       const mode = params.get('mode');
-      if (mode === 'annotate' || mode === 'edit' || mode === 'forms'
-          || mode === 'convert' || mode === 'compare' || mode === 'protect'
-          || mode === 'sign') {
+      if (mode === 'view' || mode === 'organize' || mode === 'annotate' || mode === 'edit'
+          || mode === 'forms' || mode === 'convert' || mode === 'compare'
+          || mode === 'protect' || mode === 'sign') {
         this.mode.set(mode);
       }
       // `/redact-pdf` and `/unlock-pdf` land on the same mode but on a
