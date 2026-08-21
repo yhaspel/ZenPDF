@@ -235,7 +235,7 @@
       <!-- Center: the desk. Pages are white paper on the backdrop (§3). -->
       <main class="canvas-backdrop ws-pane-main">
         @if (mode() === 'view') {
-          <div class="border-border bg-surface flex items-center gap-2 border-b px-4 py-2">
+          <div class="border-border bg-surface flex flex-wrap items-center gap-2 border-b px-4 py-2">
             <input [ngModel]="searchQuery()" (ngModelChange)="searchQuery.set($event)" (keyup.enter)="doSearch()"
                    placeholder="Find in document…" name="s"
                    class="input !min-h-9 w-64 text-sm" data-test="find-input" />
