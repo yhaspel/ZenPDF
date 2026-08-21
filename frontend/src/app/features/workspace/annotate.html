@@ -127,7 +127,7 @@
 
   <!-- Page + overlay -->
   <main class="canvas-backdrop ws-pane-main">
-    <div class="border-border bg-surface flex items-center gap-2 border-b px-4 py-2 text-sm">
+    <div class="border-border bg-surface flex flex-wrap items-center gap-2 border-b px-4 py-2 text-sm">
       <button (click)="prevPage()" [disabled]="page() === 0"
               class="btn btn-ghost btn-sm" data-test="annot-prev">‹</button>
       <span class="muted" data-test="annot-page">Page {{ page() + 1 }} / {{ pageCount() }}</span>

@@ -200,6 +200,8 @@ Every workspace mode is the same three-part figure: a start rail, the page, some
 
 **Below `md` the panes stack.** A 390 px phone cannot hold a 208 px rail, a page and a 256 px rail: rails become full-width sections above and below the page, each capped at `34vh` and scrolling within it, hairlines turning to block edges. Every control stays reachable — nothing is hidden at a breakpoint, because a control you cannot reach on a phone is a dead affordance with extra steps. The **page's own render width is seeded from the viewport** (`min(900, innerWidth − 48)`), not fixed, so the first paint fits.
 
+**In-pane toolbars wrap; they never overflow.** The row above each pane (page nav, zoom, undo/redo, the save cluster; the organize operations; the find bar) carries `flex-wrap` — as the organize toolbar always has. Only one of the seven did, and Annotate's needs 609 px against a 390 px phone, so the row spilled and dragged the *document* sideways with it; Chrome then widened its layout viewport to 609 and drew the whole app at about 64 %. Wrapping rather than scrolling, because these rows end in Save — a primary action that must not be hidden off an edge. The workspace bar is the deliberate exception: it scrolls (§3 headers), because nine mode buttons wrapped would push the page down on every screen.
+
 ### Text on the page (`.page-text`) *(added 2026-08-20)*
 A text annotation is drawn **inside its own rectangle**, in the annotation's colour, at its point size converted against the page's real width in points (`fontSize / pageWidthPt × renderWidth`) — never as a badge outside the box, and never truncated. Wrapping is `pre-wrap` + `overflow-wrap: anywhere`, line-height 1.25, clipped to the rect.
 
