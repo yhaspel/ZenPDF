@@ -199,4 +199,83 @@ describe('AnnotationsFacade', () => {
     });
     expect(facade.wordsFor(0)).toEqual([]);
   });
+  describe('undo and redo', () => {
+    const box = (id: string, contents: string): Annotation => ({
+      id, page: 0, type: 'free_text', rect: { x: 0.1, y: 0.1, w: 0.4, h: 0.05 },
+      contents, font_size: 12, width: 0,
+    });
+
+    it('takes back a draft, and puts it back', () => {
+      expect(facade.canUndo()).toBe(false);
+      facade.add(box('t1', 'hello'));
+      expect(facade.count()).toBe(1);
+      expect(facade.canUndo()).toBe(true);
+
+      facade.undo();
+      expect(facade.count()).toBe(0);
+      expect(facade.canUndo()).toBe(false);
+      expect(facade.canRedo()).toBe(true);
+
+      facade.redo();
+      expect(facade.count()).toBe(1);
+      expect(facade.all()[0].contents).toBe('hello');
+    });
+
+    it('takes back an edit without taking back the shape', () => {
+      facade.add(box('t1', ''));
+      facade.update('t1', { contents: 'a whole sentence' });
+      expect(facade.all()[0].contents).toBe('a whole sentence');
+
+      facade.undo();
+      expect(facade.count()).toBe(1);
+      expect(facade.all()[0].contents).toBe('');
+    });
+
+    it('brings back something deleted, including one the file already had', () => {
+      loadWith([HIGHLIGHT]);
+      facade.remove('a1');
+      expect(facade.count()).toBe(0);
+      // A delete of a saved annotation is a real op — undoing it must un-arm it.
+      expect(facade.ops()).toEqual([{ action: 'delete', annotation: { id: 'a1' } }]);
+
+      facade.undo();
+      expect(facade.count()).toBe(1);
+      expect(facade.ops()).toEqual([]);
+    });
+
+    it('undoes a clear-all in one step', () => {
+      loadWith([HIGHLIGHT]);
+      facade.add(box('t1', 'note to self'));
+      facade.removeAll();
+      expect(facade.count()).toBe(0);
+
+      facade.undo();
+      expect(facade.count()).toBe(2);
+    });
+
+    it('drops the redo branch once something new is drawn', () => {
+      facade.add(box('t1', 'one'));
+      facade.undo();
+      expect(facade.canRedo()).toBe(true);
+      facade.add(box('t2', 'two'));
+      expect(facade.canRedo()).toBe(false);
+    });
+
+    it('starts a new document with no history to walk into', () => {
+      facade.add(box('t1', 'one'));
+      facade.clear();
+      expect(facade.canUndo()).toBe(false);
+      expect(facade.canRedo()).toBe(false);
+    });
+  });
+
+  it('learns the page width in points from the text layer', () => {
+    expect(facade.pageWidthFor(0)).toBe(595);
+    facade.loadWords('doc-1', 0, 2);
+    http.expectOne((r) => r.url.endsWith('/documents/doc-1/text-words/')).flush({
+      page: 0, width: 612, height: 792, rotation: 0, has_text: true, words: [],
+    });
+    // Letter, not A4 — a 12pt text box must not be drawn at A4's scale.
+    expect(facade.pageWidthFor(0)).toBe(612);
+  });
 });

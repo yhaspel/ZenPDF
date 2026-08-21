@@ -216,7 +216,7 @@
               }
             </div>
             <p class="faint mt-1 text-xs">
-              {{ doc.page_count }} pages · {{ sizeMb(doc.size_bytes) }} MB
+              {{ doc.page_count }} pages · {{ fileSize(doc.size_bytes) }}
               @if (doc.is_encrypted) { · <svg class="ti" style="width:13px;height:13px;vertical-align:-2px;display:inline" viewBox="0 0 24 24" aria-hidden="true"><rect x="5.5" y="10.5" width="13" height="9.5" rx="1.5"/><path d="M8.5 10.5V8a3.5 3.5 0 0 1 7 0v2.5"/><path d="M12 14.2v2.3"/></svg> }
             </p>
           </div>

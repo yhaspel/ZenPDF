@@ -1,6 +1,6 @@
-<div class="flex min-h-0 flex-1" data-test="forms-mode">
+<div class="ws-panes" data-test="forms-mode">
   <!-- Left: panel -->
-  <aside class="border-border bg-surface flex w-72 shrink-0 flex-col overflow-y-auto border-e text-sm">
+  <aside class="ws-rail ws-rail-start w-72 overflow-y-auto text-sm">
     <div class="seg border-border gap-0 border-b px-1 py-1">
       <button class="flex-1 justify-center" [class.seg-active]="tab() === 'fill'" [attr.aria-pressed]="tab() === 'fill'"
               (click)="tab.set('fill')" data-test="tab-fill">Fill in</button>
@@ -244,7 +244,7 @@
   </aside>
 
   <!-- Right: the page -->
-  <main class="canvas-backdrop flex min-h-0 flex-1 flex-col">
+  <main class="canvas-backdrop ws-pane-main">
     <div class="border-border bg-surface flex items-center gap-2 border-b px-4 py-2 text-sm">
       @if (tab() === 'build') {
         <button (click)="prevPage()" [disabled]="page() === 0"
@@ -263,6 +263,7 @@
         @if (src()) {
           <!-- PDF.js renders the real widgets; `formData` reports them by field name. -->
           <ngx-extended-pdf-viewer
+            [useInlineScripts]="false"
             [src]="src()"
             [httpHeaders]="httpHeaders()"
             [formData]="viewerData()"

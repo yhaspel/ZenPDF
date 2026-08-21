@@ -51,6 +51,9 @@ MIDDLEWARE = [
     # the header comes back even on a response some other middleware short-
     # circuits (§10.4).
     "apps.core.logging.RequestCorrelationMiddleware",
+    # Outermost of the response-stamping pair: it must see the final response,
+    # including the error envelopes DRF builds deep inside the stack (§9).
+    "apps.core.middleware.ApiCacheControlMiddleware",
     # Refuses the admin from anywhere not on the allowlist, before the login
     # form is ever rendered (§17).
     "apps.core.middleware.AdminIPAllowlistMiddleware",

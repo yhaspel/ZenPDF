@@ -55,13 +55,31 @@ describe('GuestFacade', () => {
     expect(facade.principal()).toBeNull();
   });
 
-  it('clears the token and shows an inline notice when the session expires', () => {
+  it('clears the token when the session expires', () => {
     facade.captureToken('raw-guest-token');
-    facade.onSessionExpired();
+    expect(facade.onSessionExpired()).toBe('cleared');
     expect(guestTokens.token).toBeNull();
     expect(facade.principal()).toBeNull();
+    // No banner yet: the interceptor starts a fresh session and replays the
+    // request first, and only says so if that recovery fails too (§21.5).
+    expect(facade.expiredNotice()).toBe(false);
+    facade.noteSessionExpired();
     // Inline notice, never a redirect to a login form (§21.5).
     expect(facade.expiredNotice()).toBe(true);
+  });
+
+  it('ignores a verdict about a token it has already replaced', () => {
+    // Two requests go out on a token that expired overnight. The first 410
+    // clears it and a fresh session is minted; the second 410 arrives after
+    // that and used to wipe the *new* token, stranding whatever had been
+    // uploaded into it behind a bare "An error occurred."
+    facade.captureToken('stale-token');
+    expect(facade.onSessionExpired('stale-token')).toBe('cleared');
+    facade.captureToken('fresh-token');
+    expect(facade.onSessionExpired('stale-token')).toBe('superseded');
+    expect(guestTokens.token).toBe('fresh-token');
+    expect(facade.principal()).toBe('guest');
+    expect(facade.expiredNotice()).toBe(false);
   });
 
   it('discards the token after a claim', () => {

@@ -312,7 +312,20 @@ export class Dashboard {
     });
   }
 
+  /** Megabytes, for the quota line where megabytes are the unit. */
   sizeMb(bytes: number): string {
     return (bytes / 1048576).toFixed(1);
+  }
+
+  /**
+   * A file's size in the unit that tells you something about it — a 40 KB
+   * page and an empty file both read "0.0 MB" in the library list.
+   */
+  fileSize(bytes: number): string {
+    if (!Number.isFinite(bytes) || bytes < 0) return '';
+    if (bytes < 1024) return `${Math.max(bytes, 0)} B`;
+    if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+    const mb = bytes / 1048576;
+    return `${mb < 10 ? mb.toFixed(1) : Math.round(mb)} MB`;
   }
 }

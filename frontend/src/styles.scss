@@ -726,7 +726,48 @@ input[type="color"] {
   min-height: 52px;
   background: var(--color-surface);
   border-block-end: var(--border-hairline) solid var(--color-border);
+  /* The bar carries a title, nine mode buttons and four actions. On a phone
+     that is wider than the screen, and because nothing stopped it the *page*
+     grew instead: the whole workspace scrolled sideways, the mode nav sat off
+     the right edge, and there was no way to reach Annotate at all. The bar
+     scrolls inside itself now; the page never does. */
+  max-width: 100%;
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
+  scrollbar-width: none;
 }
+.ws-bar::-webkit-scrollbar { display: none; }
+.ws-bar > * { flex-shrink: 0; }
+@media (max-width: 767px) {
+  .ws-bar { gap: 8px; padding-inline: 10px; }
+}
+/* The workspace's pane layout (§4 workspace — phone rule).
+
+   Three panes on a desk: a rail, the page, sometimes a second rail. A 390 px
+   phone cannot hold 208 px + a page + 256 px, and nothing said so — so the
+   row simply overflowed and the *page* scrolled sideways, which put the mode
+   nav (View / Organize / Edit / Annotate …) off the right edge with no way to
+   reach it. Below `md` the panes stack instead: rails become full-width
+   sections above and below the page, each scrolling within a share of the
+   height, and every control stays reachable. */
+.ws-panes { display: flex; min-height: 0; flex: 1 1 0%; }
+.ws-pane-main { display: flex; min-width: 0; min-height: 0; flex: 1 1 0%; flex-direction: column; }
+.ws-rail { display: flex; flex-direction: column; flex-shrink: 0; background: var(--color-surface); }
+.ws-rail-start { border-inline-end: var(--border-hairline) solid var(--color-border); }
+.ws-rail-end { border-inline-start: var(--border-hairline) solid var(--color-border); }
+@media (max-width: 767px) {
+  .ws-panes { flex-direction: column; }
+  .ws-rail { width: 100%; max-height: 34vh; overflow-y: auto; }
+  .ws-rail-start {
+    border-inline-end: 0;
+    border-block-end: var(--border-hairline) solid var(--color-border);
+  }
+  .ws-rail-end {
+    border-inline-start: 0;
+    border-block-start: var(--border-hairline) solid var(--color-border);
+  }
+}
+
 .ws-back {
   color: var(--color-ink-muted);
   text-decoration: none;
@@ -800,6 +841,29 @@ ngx-extended-pdf-viewer {
   --progressBar-bg-color: var(--color-border);
   --scrollbar-color: var(--color-border-strong);
   --scrollbar-bg-color: transparent;
+  /* Native controls inside the viewer — the zoom <select> and the page field —
+     were drawn by the OS from the light palette in both themes, which put a
+     white dropdown with a system border in the middle of a dark toolbar. */
+  color-scheme: light;
+}
+.dark ngx-extended-pdf-viewer { color-scheme: dark; }
+
+/* The zoom dropdown and the page box are the only two controls D3 leaves in
+   the pdf.js toolbar, so they are the only two that have to look like ours. */
+ngx-extended-pdf-viewer #scaleSelect,
+ngx-extended-pdf-viewer #pageNumber {
+  font: 500 12.5px/1 var(--font-ui);
+  color: var(--color-ink);
+  background: var(--color-surface-raised);
+  border: var(--border-hairline) solid var(--color-border-strong);
+  border-radius: var(--radius-1);
+  min-height: 28px;
+  padding-inline: 8px;
+}
+ngx-extended-pdf-viewer #scaleSelect:focus-visible,
+ngx-extended-pdf-viewer #pageNumber:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 1px;
 }
 
 /* ---------- 18. Rendered PDF paper (§3) ---------- */
@@ -817,3 +881,36 @@ ngx-extended-pdf-viewer {
 }
 .dark .page-thumb { border-color: var(--color-border-strong); }
 .canvas-backdrop { background: var(--color-canvas-backdrop); }
+
+/* ---------- 19. Text drawn on the page (§4 "text on the page") ---------- */
+/* A text annotation has to look on screen like what the file will contain:
+   same box, same point size, same colour, wrapping the same way. The previous
+   badge-above-the-box treatment showed 24 characters in a 10px chip and left
+   the box itself empty, which read as "the text box does not work".
+   Colour comes from the annotation (it is the author's choice and it is baked
+   into the PDF), so it is set inline; everything structural is a token. */
+.page-text {
+  position: absolute;
+  margin: 0;
+  padding: 1px 2px;
+  border: 0;
+  overflow: hidden;
+  font-family: var(--font-ui);
+  line-height: 1.25;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--color-ink-strong);
+  background: transparent;
+}
+/* While typing: a hairline of the working colour and just enough backing to
+   stay legible over dense page content. The page raster underneath is paper,
+   so a paper-coloured wash is invisible on an empty area and readable on a
+   busy one — in both themes, because the page itself is white in both. */
+.page-text-editing {
+  resize: none;
+  outline: none;
+  background: rgb(255 255 255 / 0.92);
+  box-shadow: 0 0 0 1.5px var(--color-accent);
+  border-radius: 2px;
+  caret-color: var(--color-accent);
+}

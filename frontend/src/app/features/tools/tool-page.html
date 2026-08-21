@@ -38,7 +38,7 @@
                   </svg>
                   <span class="min-w-0 flex-1 truncate text-[14.5px]">
                     {{ file.name }}
-                    <span class="faint">({{ sizeMb(file.size) }}&nbsp;MB)</span>
+                    <span class="faint">({{ fileSize(file.size) }})</span>
                   </span>
                   <button
                     type="button"
@@ -192,7 +192,7 @@
                   </svg>
                   <span class="min-w-0 flex-1 truncate text-[14.5px]" data-test="result-title">
                     {{ doc.title }}.pdf
-                    <span class="faint">({{ sizeMb(doc.size_bytes) }}&nbsp;MB)</span>
+                    <span class="faint">({{ fileSize(doc.size_bytes) }})</span>
                   </span>
                   <button
                     type="button"

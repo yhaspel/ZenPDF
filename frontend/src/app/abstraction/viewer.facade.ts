@@ -10,6 +10,12 @@ export interface ViewerError {
   /** The §6 machine code, where the server sent one. */
   code: string;
   message: string;
+  /**
+   * Seconds the server asked us to wait, for the one failure here that is not
+   * a failure: a throttle. Without it the screen offered a "Try again" button
+   * whose only possible outcome, pressed immediately, was the same message.
+   */
+  retryAfter?: number;
 }
 
 /**
@@ -24,7 +30,12 @@ function describe(error: unknown): ViewerError {
   const response = error as HttpErrorResponse;
   const envelope = response?.error?.error;
   if (envelope?.message) {
-    return { code: String(envelope.code ?? ''), message: String(envelope.message) };
+    const wait = Number(envelope.details?.retry_after_seconds);
+    return {
+      code: String(envelope.code ?? ''),
+      message: String(envelope.message),
+      ...(Number.isFinite(wait) && wait > 0 ? { retryAfter: Math.ceil(wait) } : {}),
+    };
   }
   if (response?.status === 404) {
     return { code: 'not_found', message: 'That document could not be found.' };

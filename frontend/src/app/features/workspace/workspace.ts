@@ -1,5 +1,6 @@
 import { CdkDrag, CdkDragDrop, CdkDropList, moveItemInArray } from '@angular/cdk/drag-drop';
-import { ChangeDetectionStrategy, Component, DestroyRef, computed, effect, inject, signal } from '@angular/core';
+import { isPlatformBrowser } from '@angular/common';
+import { ChangeDetectionStrategy, Component, DestroyRef, PLATFORM_ID, computed, effect, inject, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
@@ -48,6 +49,12 @@ type Dialog = null | 'split' | 'scale' | 'nup' | 'compress' | 'insert';
     Brand, GuestBanner, ThemeToggle,
   ],
   templateUrl: './workspace.html',
+  // The host is a flex item of the shell's `main`, and it was not saying so:
+  // an inline element with `height: auto` around a child asking for `h-full`
+  // is circular, so the whole workspace sized itself to its content. On a
+  // 900px screen the reading pane came out 318px tall with 400px of empty
+  // backdrop under it, in every mode.
+  host: { class: 'flex min-h-0 flex-1 flex-col' },
 })
 export class Workspace {
   protected viewer = inject(ViewerFacade);
@@ -162,6 +169,16 @@ export class Workspace {
   });
 
   constructor() {
+    // Arm the countdown whenever a throttle arrives, and let it run down.
+    effect((onCleanup) => {
+      const wait = this.viewer.error()?.retryAfter ?? 0;
+      this.retryIn.set(wait);
+      if (!wait || !this.isBrowser) return;
+      const timer = setInterval(() => {
+        this.retryIn.update((left) => (left > 0 ? left - 1 : 0));
+      }, 1000);
+      onCleanup(() => clearInterval(timer));
+    });
     // Angular reuses this component across /app/doc/:id navigations (split and
     // extract land on a new document), so track the param, not a snapshot.
     this.route.paramMap.pipe(takeUntilDestroyed()).subscribe((params) => {
@@ -238,6 +255,15 @@ export class Workspace {
     const id = this.route.snapshot.paramMap.get('id');
     if (id) this.viewer.load(id);
   }
+
+  /**
+   * Seconds left on a throttle, counted down so the button becomes true.
+   *
+   * A throttle is a pause, not a breakage: the server said exactly how long,
+   * and offering "Try again" before then is offering the same failure again.
+   */
+  protected readonly retryIn = signal(0);
+  private isBrowser = isPlatformBrowser(inject(PLATFORM_ID));
 
   /**
    * The viewer could not fetch the document (L10).
@@ -323,6 +349,24 @@ export class Workspace {
   }
 
   // --- versions ---
+  /**
+   * Undo the last change to the file.
+   *
+   * Every edit here is a server op that appends a version, so "undo" already
+   * existed — buried three clicks deep as "Revert to this" on a row of the
+   * History tab, which is not where anybody looks after a mistake. This is the
+   * same operation with the name people expect, in the bar that owns every
+   * editing affordance (§4 workspace, D3). It is itself a new version, so it
+   * can be undone in turn, which is why it does not stop to ask.
+   */
+  protected readonly canUndoVersion = computed(() => (this.viewer.currentSeq() ?? 1) > 1);
+
+  protected undoLastChange(): void {
+    const seq = this.viewer.currentSeq();
+    if (!seq || seq < 2) return;
+    this.revert(seq - 1);
+  }
+
   revert(seq: number): void {
     this.busy.set(true);
     // Track the revert job to completion (viewer.revert only creates it).

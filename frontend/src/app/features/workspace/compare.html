@@ -1,5 +1,5 @@
-<div class="flex min-h-0 flex-1" data-test="compare-mode">
-  <aside class="border-border bg-surface flex w-72 shrink-0 flex-col gap-3 overflow-y-auto border-e p-3 text-sm">
+<div class="ws-panes" data-test="compare-mode">
+  <aside class="ws-rail ws-rail-start w-72 gap-3 overflow-y-auto p-3 text-sm">
     <h3 class="kicker">
       Compare with
     </h3>
@@ -73,7 +73,7 @@
     }
   </aside>
 
-  <main class="canvas-backdrop flex min-h-0 flex-1 flex-col">
+  <main class="canvas-backdrop ws-pane-main">
     <div class="border-border bg-surface flex items-center gap-2 border-b px-4 py-2 text-sm">
       <button (click)="prevPage()" [disabled]="page() === 0"
               class="btn btn-ghost btn-sm" data-test="compare-prev">‹</button>

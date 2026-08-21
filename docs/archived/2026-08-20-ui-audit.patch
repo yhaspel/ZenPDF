@@ -1,0 +1,2932 @@
+From 4afa06bfdc6faf293f6d3ede87a445ec76f5fa61 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Thu, 20 Aug 2026 13:06:49 +0000
+Subject: [PATCH 1/6] fix(api): a browser must never replay an answer meant for
+ another principal
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Every `/api/` response is principal-specific and none of them said so. With no
+`Cache-Control` header the decision fell to the browser's heuristics — and
+Chrome will happily store a `410 Gone`, keyed on the URL plus `Vary`
+(`Accept, origin`; the credential is not in it).
+
+That is the whole of why the site stopped working for returning visitors. A
+guest token expires after 24 h. The next `GET /api/config/` answers 410. Chrome
+caches it. From then on *every* `/api/config/` in that browser answers 410 from
+cache, whatever token is sent — so the client cleared each fresh session the
+moment it created one, uploads landed in sessions nothing could read, and the
+workspace showed "An error occurred." A cached 404 for a document does the
+same thing in miniature.
+
+So: an error is never stored. A success keeps whatever the view chose — a page
+raster pinned to a version is worth caching — and gets `private, no-store` when
+the view expressed no opinion.
+
+And the message itself. `Http404` reaches the DRF handler with no `detail` at
+all, so every "not yours / already deleted / wrong id" in the product arrived
+as the words "An error occurred.", which names nothing and suggests nothing.
+Each status now has a sentence a person can act on.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01Y58KHCbQzb6yAzQv9a6xbQ
+---
+ backend/apps/core/exceptions.py             | 32 +++++++++-
+ backend/apps/core/middleware.py             | 36 ++++++++++-
+ backend/apps/core/tests/test_api_caching.py | 71 +++++++++++++++++++++
+ backend/config/settings/base.py             |  3 +
+ 4 files changed, 138 insertions(+), 4 deletions(-)
+ create mode 100644 backend/apps/core/tests/test_api_caching.py
+
+diff --git a/backend/apps/core/exceptions.py b/backend/apps/core/exceptions.py
+index fe8dcbc..f08e85d 100644
+--- a/backend/apps/core/exceptions.py
++++ b/backend/apps/core/exceptions.py
+@@ -166,7 +166,32 @@ def _extract_code(exc: Exception, response) -> str:
+     }.get(status_code, "error")
+ 
+ 
+-def _human_message(exc: Exception, data: Any) -> str:
++# What to say when the exception itself has nothing to say. `Http404` is the
++# common one: DRF turns it into a 404 *response* but the exception it hands the
++# handler has no `detail`, so every "not yours / already deleted / wrong id" in
++# the product used to reach the user as the words "An error occurred." — which
++# names nothing, suggests nothing, and is the first thing anyone sees when a
++# guest session has rolled over.
++_STATUS_MESSAGES = {
++    400: "That request was not something we could act on.",
++    401: "Please sign in again to continue.",
++    403: "You do not have access to that.",
++    404: "We could not find that. It may have been deleted, "
++         "or it may belong to a session that has ended.",
++    405: "That is not something this address can do.",
++    409: "Somebody else changed this document first. Reload and try again.",
++    410: "That is no longer available.",
++    413: "That file is larger than this tier allows.",
++    415: "We cannot read that kind of file.",
++    423: "That document is password-protected. Unlock it and try again.",
++    429: "You are going a little faster than the free tier allows. "
++         "Wait a moment and try again.",
++    500: "Something went wrong on our side. Nothing you have saved is affected.",
++    503: "ZenPDF is not answering right now. Nothing you have saved is affected.",
++}
++
++
++def _human_message(exc: Exception, data: Any, response=None) -> str:
+     detail = getattr(exc, "detail", None)
+     if isinstance(detail, str):
+         return str(detail)
+@@ -176,7 +201,8 @@ def _human_message(exc: Exception, data: Any) -> str:
+         return str(detail[0])
+     if isinstance(data, str):
+         return data
+-    return "An error occurred."
++    status_code = getattr(response, "status_code", 0)
++    return _STATUS_MESSAGES.get(int(status_code or 0), "An error occurred.")
+ 
+ 
+ def zenpdf_exception_handler(exc, context):
+@@ -205,7 +231,7 @@ def zenpdf_exception_handler(exc, context):
+         details = {**details, **exc_details}
+ 
+     code = _extract_code(exc, response)
+-    message = _human_message(exc, original)
++    message = _human_message(exc, original, response)
+ 
+     # Throttled carries a Retry-After header; surface wait in details.
+     wait = getattr(exc, "wait", None)
+diff --git a/backend/apps/core/middleware.py b/backend/apps/core/middleware.py
+index 828388b..6ee4b8a 100644
+--- a/backend/apps/core/middleware.py
++++ b/backend/apps/core/middleware.py
+@@ -1,4 +1,4 @@
+-"""Guest-token response plumbing (01-architecture.md §21.2).
++"""Response plumbing for the API (01-architecture.md §21.2, §9).
+ 
+ A guest session is minted lazily inside a write view. The raw token exists for
+ exactly one response and must reach the client on it. Doing that in middleware
+@@ -10,6 +10,40 @@ from __future__ import annotations
+ from .authentication import GUEST_TOKEN_HEADER
+ 
+ 
++class ApiCacheControlMiddleware:
++    """Stop the browser storing API answers it must not replay.
++
++    Every `/api/` response is principal-specific: the same URL answers one way
++    for a guest, another for the account that claimed that guest, another for
++    nobody. None of them carried a `Cache-Control` header, so the decision fell
++    to the browser's heuristics — and Chrome will happily store a `410 Gone`,
++    keyed on the URL plus `Vary` (`Accept, origin`; the credential is not in
++    it). One guest token going stale overnight was therefore enough to make
++    `GET /api/config/` answer 410 *from cache* for every token minted
++    afterwards: the app cleared each fresh session the moment it was created,
++    and the visitor was left uploading files into a session nothing could read.
++    The same trap applies to a cached `404` for a document that has since been
++    re-created under a new session.
++
++    So: an error is never stored. A success keeps whatever the view chose —
++    `private, max-age=…` on a thumbnail pinned to a version is exactly right —
++    and gets `private, no-store` when the view expressed no opinion.
++    """
++
++    def __init__(self, get_response):
++        self.get_response = get_response
++
++    def __call__(self, request):
++        response = self.get_response(request)
++        if not request.path.startswith("/api/"):
++            return response
++        if response.status_code >= 400:
++            response["Cache-Control"] = "no-store"
++        elif not response.has_header("Cache-Control"):
++            response["Cache-Control"] = "private, no-store"
++        return response
++
++
+ class GuestTokenMiddleware:
+     def __init__(self, get_response):
+         self.get_response = get_response
+diff --git a/backend/apps/core/tests/test_api_caching.py b/backend/apps/core/tests/test_api_caching.py
+new file mode 100644
+index 0000000..24fa44b
+--- /dev/null
++++ b/backend/apps/core/tests/test_api_caching.py
+@@ -0,0 +1,71 @@
++"""No browser may replay an API answer meant for a different principal (§9, §21.2).
++
++The bug this covers took the whole product down for anybody who came back the
++next day. A guest token expires after 24 h; the first `GET /api/config/` made
++with it answers `410 guest_expired`; that response carried no `Cache-Control`,
++so Chrome stored it heuristically, keyed on the URL and `Vary: Accept, origin`
++— which does not include the credential. Every later request to that URL was
++then answered 410 *from cache*, with a token minted seconds earlier, so the
++client cleared each fresh session as fast as it created one. Uploads landed in
++sessions nothing could read, and the workspace showed "An error occurred."
++"""
++import pytest
++
++pytestmark = pytest.mark.django_db
++
++
++def test_an_api_error_is_never_stored(anon):
++    """A 410 or 404 is about *this* credential, and must not outlive it."""
++    from apps.core.models import GuestSession
++
++    session, raw = GuestSession.mint(ip="127.0.0.1")
++    session.expire_now()
++    r = anon.get("/api/config/", HTTP_X_GUEST_TOKEN=raw)
++    assert r.status_code == 410
++    assert r["Cache-Control"] == "no-store"
++
++    missing = anon.get("/api/documents/00000000-0000-0000-0000-000000000000/")
++    assert missing.status_code == 404
++    assert missing["Cache-Control"] == "no-store"
++
++
++def test_a_successful_api_answer_is_private_and_unstored_by_default(anon):
++    r = anon.get("/api/config/")
++    assert r.status_code == 200
++    assert r["Cache-Control"] == "private, no-store"
++
++
++def test_a_view_that_chose_its_own_caching_keeps_it(anon, fixture_bytes):
++    """A page raster is pinned to a version and is worth caching — the rule is
++    "never store an error", not "never cache anything"."""
++    from django.core.files.uploadedfile import SimpleUploadedFile
++
++    up = anon.post(
++        "/api/documents/",
++        {"file": SimpleUploadedFile("a.pdf", fixture_bytes("text.pdf"), content_type="application/pdf")},
++        format="multipart",
++    )
++    assert up.status_code == 201
++    token = up["X-Guest-Token"]
++    doc_id = up.json()["id"]
++    thumb = anon.get(f"/api/documents/{doc_id}/pages/0/thumbnail/", HTTP_X_GUEST_TOKEN=token)
++    assert thumb.status_code == 200
++    assert "max-age" in thumb["Cache-Control"]
++    assert thumb["Cache-Control"].startswith("private")
++
++
++def test_a_page_outside_the_api_is_left_alone(anon):
++    """The middleware is scoped to `/api/`; the SPA's own caching is nginx's."""
++    r = anon.get("/api/health/")
++    assert r["Cache-Control"] == "private, no-store"
++
++
++def test_a_missing_thing_says_something_a_person_can_act_on(api):
++    """`Http404` reaches the handler with no `detail` at all, so every "not
++    yours / already deleted / wrong id" used to arrive as the words "An error
++    occurred." — which names nothing and suggests nothing."""
++    r = api.get("/api/documents/00000000-0000-0000-0000-000000000000/")
++    assert r.status_code == 404
++    message = r.json()["error"]["message"]
++    assert message != "An error occurred."
++    assert "could not find" in message.lower()
+diff --git a/backend/config/settings/base.py b/backend/config/settings/base.py
+index 57e9bfb..df26354 100644
+--- a/backend/config/settings/base.py
++++ b/backend/config/settings/base.py
+@@ -51,6 +51,9 @@ MIDDLEWARE = [
+     # the header comes back even on a response some other middleware short-
+     # circuits (§10.4).
+     "apps.core.logging.RequestCorrelationMiddleware",
++    # Outermost of the response-stamping pair: it must see the final response,
++    # including the error envelopes DRF builds deep inside the stack (§9).
++    "apps.core.middleware.ApiCacheControlMiddleware",
+     # Refuses the admin from anywhere not on the allowlist, before the login
+     # form is ever rendered (§17).
+     "apps.core.middleware.AdminIPAllowlistMiddleware",
+-- 
+2.43.0
+
+
+From 7366225ce128b147511cb5e52a032f32775fac99 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Thu, 20 Aug 2026 13:07:09 +0000
+Subject: [PATCH 2/6] fix(guest): a dead token must not take the live session
+ down with it
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Two things went wrong together, and both of them ended at the same bare screen.
+
+Responses do not arrive in the order they were sent. Two `/api/config/` calls
+made with a token that had expired overnight both came back 410 — and the
+second one, landing *after* the tool page had already minted a fresh session
+and uploaded a file into it, cleared the new token. The visitor was left
+holding a document that nothing could open. `onSessionExpired` now takes the
+credential the failing request actually carried and ignores a verdict about one
+it no longer holds.
+
+And a guest whose session has simply rolled over should not have to notice.
+`guest_expired` now starts a fresh session and replays the request once, so
+somebody coming back the next morning just carries on. The banner is kept for
+the case that really lost something: a replay that failed too. One replay,
+never a loop — the retry is marked in the request context.
+
+While here: `ensureSession()` shares one mint between every caller that asked
+while it was open. Serialising it in the facade is what makes the §21.2
+guarantee hold when the callers are not one tool page but a handful of requests
+that all came back `guest_expired` at once.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01Y58KHCbQzb6yAzQv9a6xbQ
+---
+ .../src/app/abstraction/guest.facade.spec.ts  | 22 +++++-
+ frontend/src/app/abstraction/guest.facade.ts  | 49 +++++++++++--
+ .../app/core/interceptors/auth.interceptor.ts | 66 ++++++++++++++---
+ .../interceptors/guest.interceptor.spec.ts    | 72 +++++++++++++++++--
+ 4 files changed, 189 insertions(+), 20 deletions(-)
+
+diff --git a/frontend/src/app/abstraction/guest.facade.spec.ts b/frontend/src/app/abstraction/guest.facade.spec.ts
+index cd50f16..c8099d8 100644
+--- a/frontend/src/app/abstraction/guest.facade.spec.ts
++++ b/frontend/src/app/abstraction/guest.facade.spec.ts
+@@ -55,15 +55,33 @@ describe('GuestFacade', () => {
+     expect(facade.principal()).toBeNull();
+   });
+ 
+-  it('clears the token and shows an inline notice when the session expires', () => {
++  it('clears the token when the session expires', () => {
+     facade.captureToken('raw-guest-token');
+-    facade.onSessionExpired();
++    expect(facade.onSessionExpired()).toBe('cleared');
+     expect(guestTokens.token).toBeNull();
+     expect(facade.principal()).toBeNull();
++    // No banner yet: the interceptor starts a fresh session and replays the
++    // request first, and only says so if that recovery fails too (§21.5).
++    expect(facade.expiredNotice()).toBe(false);
++    facade.noteSessionExpired();
+     // Inline notice, never a redirect to a login form (§21.5).
+     expect(facade.expiredNotice()).toBe(true);
+   });
+ 
++  it('ignores a verdict about a token it has already replaced', () => {
++    // Two requests go out on a token that expired overnight. The first 410
++    // clears it and a fresh session is minted; the second 410 arrives after
++    // that and used to wipe the *new* token, stranding whatever had been
++    // uploaded into it behind a bare "An error occurred."
++    facade.captureToken('stale-token');
++    expect(facade.onSessionExpired('stale-token')).toBe('cleared');
++    facade.captureToken('fresh-token');
++    expect(facade.onSessionExpired('stale-token')).toBe('superseded');
++    expect(guestTokens.token).toBe('fresh-token');
++    expect(facade.principal()).toBe('guest');
++    expect(facade.expiredNotice()).toBe(false);
++  });
++
+   it('discards the token after a claim', () => {
+     // Without this the browser keeps writing into a claimed session that
+     // guest_purge deletes within 72 h — losing a logged-in user's files.
+diff --git a/frontend/src/app/abstraction/guest.facade.ts b/frontend/src/app/abstraction/guest.facade.ts
+index c46f1aa..02e615c 100644
+--- a/frontend/src/app/abstraction/guest.facade.ts
++++ b/frontend/src/app/abstraction/guest.facade.ts
+@@ -1,5 +1,5 @@
+ import { Injectable, computed, inject, signal } from '@angular/core';
+-import { Observable, catchError, of, tap } from 'rxjs';
++import { Observable, catchError, finalize, of, shareReplay, tap } from 'rxjs';
+ 
+ import { AppConfig, GuestState, TierLimits } from '../core/models/models';
+ import { ConfigService } from '../core/services/config.service';
+@@ -28,6 +28,8 @@ export class GuestFacade {
+   private _expiredNotice = signal(false);
+   /** The message from the last `account_required`, rendered as an upgrade prompt. */
+   private _accountRequired = signal<string | null>(null);
++  /** The mint in flight, shared by every caller that asked while it was open. */
++  private minting: Observable<unknown> | null = null;
+ 
+   readonly guest = this._guest.asReadonly();
+   readonly limits = this._limits.asReadonly();
+@@ -64,10 +66,21 @@ export class GuestFacade {
+     if (this.principal() !== null) {
+       return of(null);
+     }
+-    return this.configSvc.mintGuestSession().pipe(
++    // One mint, however many callers. Serialising *inside* the facade is what
++    // makes the guarantee hold when the callers are not a single tool page but
++    // a handful of requests that all came back `guest_expired` at once: each
++    // one used to mint its own session, and the last capture won — stranding
++    // whatever the earlier ones had already written.
++    if (this.minting) {
++      return this.minting;
++    }
++    this.minting = this.configSvc.mintGuestSession().pipe(
+       tap(() => this._hasToken.set(this.guestTokens.hasToken)),
+       catchError(() => of(null)),
++      finalize(() => { this.minting = null; }),
++      shareReplay({ bufferSize: 1, refCount: false }),
+     );
++    return this.minting;
+   }
+ 
+   loadConfig(): void {
+@@ -90,12 +103,40 @@ export class GuestFacade {
+ 
+   /**
+    * A guest 401/410 means "your session ended", not "log in" (§21.5).
+-   * Drop the dead token so the next write mints a fresh one, and say so inline.
++   *
++   * `deadToken` is the credential the failing request actually carried. It
++   * matters because responses do not arrive in the order they were sent: two
++   * `/api/config/` calls made with a token that had expired overnight would
++   * both come back 410 — and the second one, landing *after* the tool page had
++   * already minted a fresh session and uploaded a file into it, wiped the new
++   * token. The visitor was then holding a document nothing could open, on a
++   * screen that said only "An error occurred." Ignoring a verdict about a
++   * credential we no longer hold is what stops that.
++   *
++   * Returns `'superseded'` when the dead token has already been replaced —
++   * the caller can simply retry — and `'cleared'` when this call really did
++   * end the current session.
+    */
+-  onSessionExpired(): void {
++  onSessionExpired(deadToken?: string | null): 'superseded' | 'cleared' {
++    if (deadToken && this.guestTokens.token !== deadToken) {
++      return 'superseded';
++    }
+     this.guestTokens.clear();
+     this._hasToken.set(false);
+     this._guest.set(null);
++    return 'cleared';
++  }
++
++  /**
++   * Say the session ended, once the recovery has been tried and failed.
++   *
++   * Separated from `onSessionExpired` so that the ordinary case — somebody
++   * comes back the next morning, their token is a day old, the next thing they
++   * do quietly starts a new session — shows no banner at all. The notice is for
++   * the case that actually lost something: work that was open when the session
++   * died and cannot be fetched again.
++   */
++  noteSessionExpired(): void {
+     this._expiredNotice.set(true);
+   }
+ 
+diff --git a/frontend/src/app/core/interceptors/auth.interceptor.ts b/frontend/src/app/core/interceptors/auth.interceptor.ts
+index 2c2a801..d0b550f 100644
+--- a/frontend/src/app/core/interceptors/auth.interceptor.ts
++++ b/frontend/src/app/core/interceptors/auth.interceptor.ts
+@@ -1,7 +1,13 @@
+-import { HttpErrorResponse, HttpInterceptorFn, HttpResponse } from '@angular/common/http';
++import {
++  HttpContextToken,
++  HttpErrorResponse,
++  HttpEvent,
++  HttpInterceptorFn,
++  HttpResponse,
++} from '@angular/common/http';
+ import { inject } from '@angular/core';
+ import { Router } from '@angular/router';
+-import { catchError, switchMap, tap, throwError } from 'rxjs';
++import { Observable, catchError, of, switchMap, tap, throwError } from 'rxjs';
+ 
+ import { GuestFacade } from '../../abstraction/guest.facade';
+ import { AuthService } from '../services/auth.service';
+@@ -10,6 +16,12 @@ import { TokenService } from '../services/token.service';
+ 
+ export const GUEST_HEADER = 'X-Guest-Token';
+ 
++/**
++ * Marks a request that has already been replayed on a fresh guest session, so
++ * a server that keeps answering `guest_expired` cannot put us in a loop.
++ */
++export const GUEST_RETRIED = new HttpContextToken<boolean>(() => false);
++
+ /**
+  * The signing ceremony and the verification page carry **no** credential
+  * (phase-08): the token in the URL is the whole capability, and attaching this
+@@ -71,6 +83,44 @@ export const authInterceptor: HttpInterceptorFn = (req, next) => {
+     outgoing = req.clone({ setHeaders: { [GUEST_HEADER]: guestToken } });
+   }
+ 
++  /**
++   * One attempt to put the guest back on their feet.
++   *
++   * Three cases, and only the last one is worth telling them about:
++   * a token that was already replaced (a late verdict about a credential we no
++   * longer hold — just replay), a token that really did expire (mint and
++   * replay), and a replay that failed anyway (the work is genuinely gone, so
++   * say so).
++   */
++  function recoverGuestSession(err: HttpErrorResponse): Observable<HttpEvent<unknown>> {
++    if (req.context.get(GUEST_RETRIED)) {
++      guests.noteSessionExpired();
++      return throwError(() => err);
++    }
++    const outcome = guests.onSessionExpired(guestToken);
++    const fresh = outcome === 'superseded' ? of(null) : guests.ensureSession();
++    return fresh.pipe(
++      switchMap(() => {
++        const token = guestTokens.token;
++        if (!token || token === guestToken) {
++          guests.noteSessionExpired();
++          return throwError(() => err);
++        }
++        return next(
++          req.clone({
++            setHeaders: { [GUEST_HEADER]: token },
++            context: req.context.set(GUEST_RETRIED, true),
++          }),
++        ).pipe(
++          catchError((retryErr: HttpErrorResponse) => {
++            guests.noteSessionExpired();
++            return throwError(() => retryErr);
++          }),
++        );
++      }),
++    );
++  }
++
+   return next(outgoing).pipe(
+     tap((event) => {
+       if (event instanceof HttpResponse) {
+@@ -83,12 +133,12 @@ export const authInterceptor: HttpInterceptorFn = (req, next) => {
+     catchError((err: HttpErrorResponse) => {
+       const code = err.error?.error?.code;
+ 
+-      // A guest session ended. Clearing the token means the next write mints a
+-      // fresh one; an inline notice explains it. Redirecting a guest to a login
+-      // form would reinstate exactly the wall this phase removes (§21.5).
++      // A guest session ended. Recover in place: start a fresh session and
++      // replay the request once, so somebody who comes back a day later just
++      // carries on instead of meeting a dead screen. Redirecting a guest to a
++      // login form would reinstate exactly the wall this phase removes (§21.5).
+       if (err.status === 410 && code === 'guest_expired') {
+-        guests.onSessionExpired();
+-        return throwError(() => err);
++        return recoverGuestSession(err);
+       }
+ 
+       // An account-only feature. Surfaced as an inline upgrade prompt that
+@@ -102,7 +152,7 @@ export const authInterceptor: HttpInterceptorFn = (req, next) => {
+       if (err.status === 401 && !isAuthEndpoint(req.url)) {
+         if (!access) {
+           if (guestToken) {
+-            guests.onSessionExpired();
++            return recoverGuestSession(err);
+           }
+           return throwError(() => err);
+         }
+diff --git a/frontend/src/app/core/interceptors/guest.interceptor.spec.ts b/frontend/src/app/core/interceptors/guest.interceptor.spec.ts
+index 3f70139..2f64f26 100644
+--- a/frontend/src/app/core/interceptors/guest.interceptor.spec.ts
++++ b/frontend/src/app/core/interceptors/guest.interceptor.spec.ts
+@@ -89,20 +89,76 @@ describe('authInterceptor — guest credential', () => {
+     req.flush({ id: '1' });
+   });
+ 
+-  it('clears the token on guest_expired and does not attempt a refresh', () => {
+-    guestTokens.set('guest-abc');
+-    http.get('/api/documents/').subscribe({ error: () => { /* the assertion is below */ } });
++  it('starts a fresh session on guest_expired and replays the request', () => {
++    // The returning visitor: yesterday's token, today's first click. Nothing
++    // about that is worth a banner — it just has to work.
++    guestTokens.set('stale-token');
++    let body: unknown = null;
++    http.get('/api/documents/').subscribe({ next: (r) => (body = r) });
+     httpMock.expectOne('/api/documents/').flush(
+       { error: { code: 'guest_expired', message: 'gone', details: {} } },
+       { status: 410, statusText: 'Gone' },
+     );
+ 
+-    expect(guestTokens.token).toBeNull();
+-    expect(guests.expiredNotice()).toBe(true);
++    httpMock
++      .expectOne('/api/guest/session/')
++      .flush({ id: 'g1' }, { headers: { 'X-Guest-Token': 'fresh-token' } });
++
++    const replay = httpMock.expectOne('/api/documents/');
++    expect(replay.request.headers.get('X-Guest-Token')).toBe('fresh-token');
++    replay.flush({ count: 0, results: [] });
++
++    expect(body).toEqual({ count: 0, results: [] });
++    expect(guestTokens.token).toBe('fresh-token');
++    // No banner: nothing was lost that the visitor had in front of them.
++    expect(guests.expiredNotice()).toBe(false);
+     // No refresh call: that path belongs to a JWT principal alone.
+     httpMock.expectNone('/api/auth/refresh/');
+   });
+ 
++  it('replays on the current token when the dead one was already replaced', () => {
++    // Two requests went out on the stale token; the second verdict lands after
++    // a fresh session already exists. Acting on it wiped the new token and
++    // stranded the document that had just been uploaded into it.
++    guestTokens.set('stale-token');
++    http.get('/api/documents/').subscribe({ error: () => undefined });
++    const first = httpMock.expectOne('/api/documents/');
++    guestTokens.set('fresh-token');
++    first.flush(
++      { error: { code: 'guest_expired', message: 'gone', details: {} } },
++      { status: 410, statusText: 'Gone' },
++    );
++
++    httpMock.expectNone('/api/guest/session/');
++    const replay = httpMock.expectOne('/api/documents/');
++    expect(replay.request.headers.get('X-Guest-Token')).toBe('fresh-token');
++    replay.flush({ count: 0, results: [] });
++
++    expect(guestTokens.token).toBe('fresh-token');
++    expect(guests.expiredNotice()).toBe(false);
++  });
++
++  it('says the session ended when the replay fails too, and stops there', () => {
++    guestTokens.set('stale-token');
++    http.get('/api/documents/doc-1/').subscribe({ error: () => undefined });
++    httpMock.expectOne('/api/documents/doc-1/').flush(
++      { error: { code: 'guest_expired', message: 'gone', details: {} } },
++      { status: 410, statusText: 'Gone' },
++    );
++    httpMock
++      .expectOne('/api/guest/session/')
++      .flush({ id: 'g1' }, { headers: { 'X-Guest-Token': 'fresh-token' } });
++    // The document belonged to the session that died — it is not coming back.
++    httpMock.expectOne('/api/documents/doc-1/').flush(
++      { error: { code: 'guest_expired', message: 'gone', details: {} } },
++      { status: 410, statusText: 'Gone' },
++    );
++
++    // One replay, never a loop.
++    httpMock.expectNone('/api/documents/doc-1/');
++    expect(guests.expiredNotice()).toBe(true);
++  });
++
+   it('does not redirect a guest to the login form on 401', () => {
+     guestTokens.set('guest-abc');
+     http.get('/api/documents/').subscribe({ error: () => { /* the assertion is below */ } });
+@@ -112,7 +168,11 @@ describe('authInterceptor — guest credential', () => {
+ 
+     // A guest 401 means "your session ended" — never the login wall (§21.5).
+     httpMock.expectNone('/api/auth/refresh/');
+-    expect(guests.expiredNotice()).toBe(true);
++    httpMock
++      .expectOne('/api/guest/session/')
++      .flush({ id: 'g1' }, { headers: { 'X-Guest-Token': 'fresh-token' } });
++    httpMock.expectOne('/api/documents/').flush({ count: 0, results: [] });
++    expect(guests.expiredNotice()).toBe(false);
+   });
+ 
+   it('surfaces account_required as an upgrade prompt', () => {
+-- 
+2.43.0
+
+
+From 1735e0af3c1858ab49a830d14b4e9c18de870027 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Thu, 20 Aug 2026 13:07:31 +0000
+Subject: [PATCH 3/6] =?UTF-8?q?feat(annotate):=20a=20text=20box=20is=20tex?=
+ =?UTF-8?q?t=20=E2=80=94=20on=20the=20page,=20edited=20there,=20and=20undo?=
+ =?UTF-8?q?able?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Reported as "the text box is bold, doesn't show the text at all", and that is
+exactly what it was. A text annotation drew an empty rectangle with a 2 pt
+frame in the highlighter's yellow, and put its words in a 10 px badge floating
+above the box, truncated at 24 characters. The text itself was only editable in
+a textarea in the far right sidebar. Nothing about that says "text box".
+
+Now the words are drawn inside their own rectangle, in the annotation's colour,
+at its point size converted against the page's real width in points — so what
+is on screen is what will be in the file. The caret lands in the box the moment
+it is drawn, and a double-click puts it back. Typing commits on blur, not per
+keystroke, so one undo takes back a sentence rather than a letter. An empty box
+is removed instead of being left on the page as an invisible rectangle.
+
+The colour and opacity are now held per tool family — highlighter yellow at 70%
+for markup, ink at 100% for everything else — each remembering what the user
+last chose for it. One shared swatch is how a text box came to be drawn in
+#facc15. The line-width slider is gone for text, where it only ever produced
+that frame, and a text box is created with no border at all.
+
+And undo, which did not exist anywhere. Markup is batched locally until Save,
+so the local stores are exactly what a person can undo: a snapshot per gesture,
+Undo/Redo in the page bar, ⌘Z and ⇧⌘Z, skipped while a field has focus so the
+browser's own undo wins inside the editor.
+
+Verified end to end against the live API: draw, type, save, download — the
+downloaded file carries a /FreeText annotation with the text, in 0.2 0.176
+0.141 rg at 12 pt.
+
+Design contract §3 gains "Text on the page"; §4 records Annotate's undo.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01Y58KHCbQzb6yAzQv9a6xbQ
+---
+ docs/design/design-instructions.md            |   9 +-
+ e2e/tests/phase-3.spec.ts                     |  58 +++++++
+ .../abstraction/annotations.facade.spec.ts    |  79 +++++++++
+ .../src/app/abstraction/annotations.facade.ts |  93 ++++++++++
+ .../src/app/features/workspace/annotate.html  |  42 +++--
+ .../src/app/features/workspace/annotate.ts    | 164 ++++++++++++++++--
+ .../app/shared/page-overlay/overlay-model.ts  |  13 ++
+ .../app/shared/page-overlay/page-overlay.html |  37 ++++
+ .../shared/page-overlay/page-overlay.spec.ts  | 128 ++++++++++++++
+ .../app/shared/page-overlay/page-overlay.ts   |  66 +++++++
+ frontend/src/styles.scss                      |  32 ++++
+ 11 files changed, 692 insertions(+), 29 deletions(-)
+
+diff --git a/docs/design/design-instructions.md b/docs/design/design-instructions.md
+index ef64a8b..bee831f 100644
+--- a/docs/design/design-instructions.md
++++ b/docs/design/design-instructions.md
+@@ -194,6 +194,13 @@ Hairline top, centered, 12.5 px faint; exactly the five existing links — About
+ ### PDF thumbnails & canvas
+ Rendered pages and thumbnails sit on `--color-canvas-backdrop` and are pure white with `--color-page-shadow` (1 px hairline in dark mode so a white page reads as intentional, floating paper). Thumbnails radius 2 px.
+ 
++### Text on the page (`.page-text`) *(added 2026-08-20)*
++A text annotation is drawn **inside its own rectangle**, in the annotation's colour, at its point size converted against the page's real width in points (`fontSize / pageWidthPt × renderWidth`) — never as a badge outside the box, and never truncated. Wrapping is `pre-wrap` + `overflow-wrap: anywhere`, line-height 1.25, clipped to the rect.
++
++Editing happens in the same box: `.page-text-editing` swaps the drawn text for a textarea of identical metrics, focused on creation and on double-click, with a 1.5 px `--color-accent` ring, an accent caret and a paper-coloured wash (the page raster underneath is white in both themes, so the wash is invisible on empty paper and readable over dense content). It commits **on blur**, not per keystroke, so one undo takes back a sentence. `Esc` and `⌘/Ctrl+Enter` end editing; plain `Enter` is a new line. A box left empty is removed rather than left on the page as an invisible, unselectable rectangle.
++
++The working colour and opacity are held **per tool family** — `markup` (highlighter yellow, 70%) and `ink` (`#332D24`, 100%) — and switch with the tool, each family remembering whatever the user last chose for it. One shared swatch is what drew text boxes in highlighter yellow with a 2 pt yellow frame.
++
+ ---
+ 
+ ## 4. Screen guidance
+@@ -202,7 +209,7 @@ Every surface, including unmocked ones. Compose only from §3 components.
+ 
+ - **Landing `/`** *(mockups 01, 10 — superseded by the compact landing 2026-08-10, see `2026-08-10-compact-landing.md`; the contract wins)*: marketing header carrying the masthead h1 (§3) → filter row, 32 px under the header: type-to-filter input at start (max-width 380 px; filters the 24 cards by name/synonyms, hides empty groups, shows a calm empty line; pure client-side) + compact one-line folded-sheet trust strip at end (the three facts verbatim, 13 px muted, hairline separators; wraps under the filter on narrow viewports) → six kicker-headed groups (Organize 7 · Edit & annotate 4 · Convert & OCR 6 · Optimize & review 3 · Protect 3 · Sign 1) of icon+name tool cards, 3-up (2-up mobile) → landing ad frame → footer. There is no hero block. No other CTAs; the directory is the hero.
+ - **Tool page `/<slug>`** *(02, 03, 11)*: marketing header; 720 px column; existing H1 + meta description line; widget card = dropzone → picked-file rows (name, size, Remove ghost) → min-files hint when short → **options row, where the tool has one** → full-width primary CTA (existing `cta` text) → retention line. **Options row (added 2026-08-18):** a tool whose result depends on a choice the visitor alone can make asks for it here — never by picking a default and hiding the choice in the workspace. It is composed only from §3 parts: a labelled `.input` with `.field-hint` and a permanently-present `.field-error` line, and `.cfield` choice rows for a mode. It is 24 px under the file rows, disables the CTA while the answer is empty or unparseable, and states the rule in the hint rather than after a failed run. Today: `/extract-pdf-pages` (pages + one-PDF/per-page) and `/delete-pdf-pages` (pages). Anything a tool can decide for itself stays decided — the options row is for the visitor's questions, not the engine's. Running: the breath + counting copy replaces the CTA. Result: stamp + one-line summary, result rows (Download primary-sm, Open in workspace secondary-sm), retention line, tool-result ad frame, "Do another one" ghost, guest keep-note (hairline box, fact + register link). Below: existing intro paragraphs and FAQ (reading width), footer.
+-- **Workspace `/app/doc/:id`** *(04, 05)*: the workspace bar (§3) is the **single owner of every editing affordance — defect D3**. The pdf.js (ngx-extended-pdf-viewer) toolbar is reduced by visibility config to exactly: **zoom out/in, zoom select, page up/down + page number, and find**. Hidden: pdf.js download, print, open-file, rotate, draw/ink editor, text editor, stamp editor, presentation, scrolling/spread menus, sidebar toggle (our rail replaces it) — rotate lives only in Organize, download only in our bar, annotation only in Annotate. View mode: left rail (Pages / Outline / History tabs), canvas center. Organize: toolbar row (N selected · Rotate · Delete · Duplicate · Extract · Insert blank · Crop · Scale · N-up · "Drag pages to reorder") over a 6-up thumbnail grid on the backdrop; selection = 2 px accent outline + corner seal tick. Annotate: left tool palette (16 existing tools, icon+label), colour/width/opacity (+font size, stamp picker contextually), custom stamp upload; center page bar (page nav, zoom, unsaved badge, Save primary-sm, Flatten secondary-sm); right comments rail. Dialogs (Split/Compress/Scale/N-up/Insert) per §3 modals. **First paint rule (defect D7): initial zoom fit-to-width, content centered, backdrop `--color-canvas-backdrop` — for every page size and for RTL documents; no small-and-clipped first render.**
++- **Workspace `/app/doc/:id`** *(04, 05)*: the workspace bar (§3) is the **single owner of every editing affordance — defect D3**. The pdf.js (ngx-extended-pdf-viewer) toolbar is reduced by visibility config to exactly: **zoom out/in, zoom select, page up/down + page number, and find**. Hidden: pdf.js download, print, open-file, rotate, draw/ink editor, text editor, stamp editor, presentation, scrolling/spread menus, sidebar toggle (our rail replaces it) — rotate lives only in Organize, download only in our bar, annotation only in Annotate. View mode: left rail (Pages / Outline / History tabs), canvas center. Organize: toolbar row (N selected · Rotate · Delete · Duplicate · Extract · Insert blank · Crop · Scale · N-up · "Drag pages to reorder") over a 6-up thumbnail grid on the backdrop; selection = 2 px accent outline + corner seal tick. Annotate: left tool palette (16 existing tools, icon+label), colour/width/opacity (+font size, stamp picker contextually), custom stamp upload; center page bar (page nav, zoom, unsaved badge, Save primary-sm, Flatten secondary-sm); right comments rail. Dialogs (Split/Compress/Scale/N-up/Insert) per §3 modals. Annotate carries **Undo / Redo** in its page bar (⌘Z / ⇧⌘Z, skipped while a field has focus): markup is batched locally until Save, so it needs an undo of its own. **First paint rule (defect D7): initial zoom fit-to-width, content centered, backdrop `--color-canvas-backdrop` — for every page size and for RTL documents; no small-and-clipped first render.**
+ - **Dashboard `/app/dashboard`** *(06)*: app header; three columns ≥ xl (sidebar 224 / main / rail 300). Sidebar cards: storage meter; folders (All + user folders + new-folder input); Starred / Trash toggles. Main: search + (when ≥2 selected) "Merge N" primary; dropzone (imports anything convertible — keep existing hint copy); import-from-URL row; converting/uploading transient rows; file-card grid 4-up (D2 rule in §3); Load more (secondary) + "Showing X of Y". Rail: dashboard ad frame. Mobile: one inline ad card after the third card (existing behavior). Claim banner (post-signup) = success-surface strip, "Got it" dismiss.
+ - **Sign request builder `/app/sign/new/:docId`** *(unmocked)*: workspace-style top bar (← back to the document, "Send for signature", doc title) + step dots 1–4 (filled dot = `--color-ink-strong`). Step 1 recipients: rows (email, name, role select, order number, ✕ ghost) + "Add someone" secondary + role explainer 11 px faint + "Next: place fields" primary. Step 2: left rail (recipient pills with per-recipient dot colors — recipient colors are content, exempt from the one-accent rule; field-type grid; Required checkbox) + page canvas with drag-to-place boxes. Step 3: message textarea, expiry/reminder number inputs. Step 4 review: recipient list, freeze note, email-verification gate (warning surface) when unverified, **"Send it" as a standard vermilion primary**.
+ - **Sign request list `/app/sign`** *(unmocked)*: 768 px column; ← Documents; h1 "Sent for signature"; request rows (title, envelope code faint, status badge, recipient chips). Empty state sheet: "Nothing sent yet. Open a document and choose 'Send for signature'."
+diff --git a/e2e/tests/phase-3.spec.ts b/e2e/tests/phase-3.spec.ts
+index 21db1fd..993707a 100644
+--- a/e2e/tests/phase-3.spec.ts
++++ b/e2e/tests/phase-3.spec.ts
+@@ -227,3 +227,61 @@ test('phase 3: crop is drawn on the overlay, not typed into a dialog', async ({
+   await page.click('[data-test=apply-crop]');
+   await expect(successToast(page, 'Cropped')).toBeVisible({ timeout: 60_000 });
+ });
++
++/**
++ * A text box is text (2026-08-20).
++ *
++ * The words used to appear only in a 10 px badge above the box, truncated at 24
++ * characters, in the highlighter's yellow, with a 2 pt yellow frame around an
++ * empty rectangle — reported as "the text box is bold and doesn't show the text
++ * at all". They belong in the box, at their own size and colour, edited there.
++ * And markup is batched until Save, so it needs an undo of its own.
++ */
++test('phase 3: a text box shows its words on the page, and undo takes them back', async ({ page }) => {
++  await registerAndLogin(page, 'p3text');
++  await uploadFiles(page, ['text.pdf']);
++  await page.locator('[data-test=doc-card] [data-test=open-doc]').first().click();
++  await expect(page).toHaveURL(/\/app\/doc\//);
++
++  await page.click('[data-test=annotate-toggle]');
++  await expect(page.locator('[data-test=annotate-mode]')).toBeVisible();
++  await fitPage(page);
++
++  await page.click('[data-test=tool-free-text]');
++  await expect(page.locator('[data-test=free-text-hint]')).toBeVisible();
++  // The line-width slider is meaningless for text and is not offered.
++  await expect(page.locator('[data-test=annot-width]')).toHaveCount(0);
++  await expect(page.locator('[data-test=annot-undo]')).toBeDisabled();
++
++  await dragOnPage(page, [0.15, 0.55], [0.7, 0.65]);
++
++  // The caret is already in the box — no hunting for where to type.
++  const onPageEditor = page.locator('[data-test=overlay-text-editor]');
++  await expect(onPageEditor).toBeFocused();
++  const sentence = 'A sentence comfortably longer than twenty-four characters.';
++  await page.keyboard.type(sentence);
++  await page.keyboard.press('Escape');
++
++  // Drawn on the page, whole, and not as a badge.
++  await expect(page.locator('[data-test=overlay-text]')).toHaveText(sentence);
++  await expect(page.locator('[data-test=overlay-label]')).toHaveCount(0);
++
++  // One undo takes back the sentence, not one letter of it.
++  await page.click('[data-test=annot-undo]');
++  await expect(page.locator('[data-test=overlay-text]')).toHaveText('');
++  await page.click('[data-test=annot-redo]');
++  await expect(page.locator('[data-test=overlay-text]')).toHaveText(sentence);
++
++  // Double-click puts the caret back in the same box.
++  await page.click('[data-test=tool-select]');
++  await page.locator('[data-test=overlay-item]').last().dblclick();
++  await expect(page.locator('[data-test=overlay-text-editor]')).toBeFocused();
++  await page.keyboard.press('Escape');
++
++  // And it survives the round trip through the file.
++  await page.click('[data-test=annot-save]');
++  await expect(successToast(page, 'Annotations saved')).toBeVisible({ timeout: 60_000 });
++  await page.reload();
++  await page.click('[data-test=annotate-toggle]');
++  await expect(page.locator('[data-test=overlay-text]')).toHaveText(sentence);
++});
+diff --git a/frontend/src/app/abstraction/annotations.facade.spec.ts b/frontend/src/app/abstraction/annotations.facade.spec.ts
+index eb42ac1..3a9d178 100644
+--- a/frontend/src/app/abstraction/annotations.facade.spec.ts
++++ b/frontend/src/app/abstraction/annotations.facade.spec.ts
+@@ -199,4 +199,83 @@ describe('AnnotationsFacade', () => {
+     });
+     expect(facade.wordsFor(0)).toEqual([]);
+   });
++  describe('undo and redo', () => {
++    const box = (id: string, contents: string): Annotation => ({
++      id, page: 0, type: 'free_text', rect: { x: 0.1, y: 0.1, w: 0.4, h: 0.05 },
++      contents, font_size: 12, width: 0,
++    });
++
++    it('takes back a draft, and puts it back', () => {
++      expect(facade.canUndo()).toBe(false);
++      facade.add(box('t1', 'hello'));
++      expect(facade.count()).toBe(1);
++      expect(facade.canUndo()).toBe(true);
++
++      facade.undo();
++      expect(facade.count()).toBe(0);
++      expect(facade.canUndo()).toBe(false);
++      expect(facade.canRedo()).toBe(true);
++
++      facade.redo();
++      expect(facade.count()).toBe(1);
++      expect(facade.all()[0].contents).toBe('hello');
++    });
++
++    it('takes back an edit without taking back the shape', () => {
++      facade.add(box('t1', ''));
++      facade.update('t1', { contents: 'a whole sentence' });
++      expect(facade.all()[0].contents).toBe('a whole sentence');
++
++      facade.undo();
++      expect(facade.count()).toBe(1);
++      expect(facade.all()[0].contents).toBe('');
++    });
++
++    it('brings back something deleted, including one the file already had', () => {
++      loadWith([HIGHLIGHT]);
++      facade.remove('a1');
++      expect(facade.count()).toBe(0);
++      // A delete of a saved annotation is a real op — undoing it must un-arm it.
++      expect(facade.ops()).toEqual([{ action: 'delete', annotation: { id: 'a1' } }]);
++
++      facade.undo();
++      expect(facade.count()).toBe(1);
++      expect(facade.ops()).toEqual([]);
++    });
++
++    it('undoes a clear-all in one step', () => {
++      loadWith([HIGHLIGHT]);
++      facade.add(box('t1', 'note to self'));
++      facade.removeAll();
++      expect(facade.count()).toBe(0);
++
++      facade.undo();
++      expect(facade.count()).toBe(2);
++    });
++
++    it('drops the redo branch once something new is drawn', () => {
++      facade.add(box('t1', 'one'));
++      facade.undo();
++      expect(facade.canRedo()).toBe(true);
++      facade.add(box('t2', 'two'));
++      expect(facade.canRedo()).toBe(false);
++    });
++
++    it('starts a new document with no history to walk into', () => {
++      facade.add(box('t1', 'one'));
++      facade.clear();
++      expect(facade.canUndo()).toBe(false);
++      expect(facade.canRedo()).toBe(false);
++    });
++  });
++
++  it('learns the page width in points from the text layer', () => {
++    expect(facade.pageWidthFor(0)).toBe(595);
++    facade.loadWords('doc-1', 0, 2);
++    http.expectOne((r) => r.url.endsWith('/documents/doc-1/text-words/')).flush({
++      page: 0, width: 612, height: 792, rotation: 0, has_text: true, words: [],
++    });
++    // Letter, not A4 — a 12pt text box must not be drawn at A4's scale.
++    expect(facade.pageWidthFor(0)).toBe(612);
++  });
+ });
+diff --git a/frontend/src/app/abstraction/annotations.facade.ts b/frontend/src/app/abstraction/annotations.facade.ts
+index 3eddc79..36c3394 100644
+--- a/frontend/src/app/abstraction/annotations.facade.ts
++++ b/frontend/src/app/abstraction/annotations.facade.ts
+@@ -21,6 +21,13 @@ import { JobsFacade } from './jobs.facade';
+  * independent objects addressed by stable ids, so re-applying them to a fresher
+  * version is well-defined (a conflicting delete simply becomes a no-op).
+  */
++/** One point in the undo history: everything local, nothing from the file. */
++interface Snapshot {
++  drafts: Map<string, Annotation>;
++  removed: Set<string>;
++  selectedId: string | null;
++}
++
+ @Injectable({ providedIn: 'root' })
+ export class AnnotationsFacade {
+   private docsSvc = inject(DocumentsService);
+@@ -30,6 +37,8 @@ export class AnnotationsFacade {
+   private _drafts = signal<Map<string, Annotation>>(new Map());
+   private _removed = signal<Set<string>>(new Set());
+   private _words = signal<Map<number, WordBox[]>>(new Map());
++  /** Page width in PDF points, per page — the scale a point size is drawn at. */
++  private _pageWidths = signal<Map<number, number>>(new Map());
+   private _selectedId = signal<string | null>(null);
+   private _loading = signal(false);
+ 
+@@ -46,6 +55,22 @@ export class AnnotationsFacade {
+    */
+   private saving = new Set<string>();
+ 
++  /**
++   * Undo history for the *local* stores only (phase-03 §"Save model UX").
++   *
++   * `saved` is the file's own state and is never edited here, so a snapshot of
++   * `drafts` + `removed` is the whole of what a person can undo — and undoing
++   * is therefore exact, not a replayed inverse of each operation. Every
++   * mutating call pushes one entry, and a gesture (a drag, a typed sentence
++   * committed on blur) is one call, so one ⌘Z is one visible change.
++   */
++  private past: Snapshot[] = [];
++  private future: Snapshot[] = [];
++  private _canUndo = signal(false);
++  private _canRedo = signal(false);
++
++  readonly canUndo = this._canUndo.asReadonly();
++  readonly canRedo = this._canRedo.asReadonly();
+   readonly selectedId = this._selectedId.asReadonly();
+   readonly loading = this._loading.asReadonly();
+ 
+@@ -94,6 +119,11 @@ export class AnnotationsFacade {
+     return this._words().get(page) ?? [];
+   }
+ 
++  /** The page's own width in points, once known. A4 until then. */
++  pageWidthFor(page: number): number {
++    return this._pageWidths().get(page) ?? 595;
++  }
++
+   // ------------------------------------------------------------------ //
+   // Loading
+   // ------------------------------------------------------------------ //
+@@ -144,6 +174,9 @@ export class AnnotationsFacade {
+     this.docsSvc.textWords(docId, page, version).subscribe({
+       next: (res) => {
+         this._words.update((map) => new Map(map).set(page, res.words));
++        if (res.width) {
++          this._pageWidths.update((map) => new Map(map).set(page, res.width));
++        }
+       },
+       error: () => {
+         this._words.update((map) => new Map(map).set(page, []));
+@@ -154,12 +187,14 @@ export class AnnotationsFacade {
+   /** A new version invalidates every cached word list and every saved annot. */
+   resetForVersion(): void {
+     this._words.set(new Map());
++    this._pageWidths.set(new Map());
+   }
+ 
+   // ------------------------------------------------------------------ //
+   // Editing
+   // ------------------------------------------------------------------ //
+   add(annotation: Annotation): void {
++    this.remember();
+     this._drafts.update((map) => new Map(map).set(annotation.id, annotation));
+     this._selectedId.set(annotation.id);
+   }
+@@ -167,10 +202,12 @@ export class AnnotationsFacade {
+   update(id: string, patch: Partial<Annotation>): void {
+     const current = this.all().find((a) => a.id === id);
+     if (!current) return;
++    this.remember();
+     this._drafts.update((map) => new Map(map).set(id, { ...current, ...patch, id }));
+   }
+ 
+   remove(id: string): void {
++    this.remember();
+     this._removed.update((set) => new Set(set).add(id));
+     this._drafts.update((map) => {
+       const next = new Map(map);
+@@ -181,6 +218,7 @@ export class AnnotationsFacade {
+   }
+ 
+   removeAll(): void {
++    this.remember();
+     this._removed.update((set) => {
+       const next = new Set(set);
+       for (const a of this.all()) next.add(a.id);
+@@ -194,6 +232,57 @@ export class AnnotationsFacade {
+     this._selectedId.set(id);
+   }
+ 
++  // ------------------------------------------------------------------ //
++  // Undo / redo
++  // ------------------------------------------------------------------ //
++  /** Snapshot the current local state before changing it. */
++  private remember(): void {
++    this.past.push(this.snapshot());
++    // A session is one sitting; a hundred steps is more than anyone reaches
++    // for and keeps the memory cost of a long markup session bounded.
++    if (this.past.length > 100) this.past.shift();
++    this.future = [];
++    this.syncHistory();
++  }
++
++  private snapshot(): Snapshot {
++    return {
++      drafts: new Map(this._drafts()),
++      removed: new Set(this._removed()),
++      selectedId: this._selectedId(),
++    };
++  }
++
++  private restore(state: Snapshot): void {
++    this._drafts.set(state.drafts);
++    this._removed.set(state.removed);
++    this._selectedId.set(
++      state.selectedId && this.all().some((a) => a.id === state.selectedId)
++        ? state.selectedId
++        : null,
++    );
++    this.syncHistory();
++  }
++
++  private syncHistory(): void {
++    this._canUndo.set(this.past.length > 0);
++    this._canRedo.set(this.future.length > 0);
++  }
++
++  undo(): void {
++    const previous = this.past.pop();
++    if (!previous) return;
++    this.future.push(this.snapshot());
++    this.restore(previous);
++  }
++
++  redo(): void {
++    const next = this.future.pop();
++    if (!next) return;
++    this.past.push(this.snapshot());
++    this.restore(next);
++  }
++
+   // ------------------------------------------------------------------ //
+   // Saving — one job per session
+   // ------------------------------------------------------------------ //
+@@ -252,10 +341,14 @@ export class AnnotationsFacade {
+   }
+ 
+   clear(): void {
++    this.past = [];
++    this.future = [];
++    this.syncHistory();
+     this._saved.set([]);
+     this._drafts.set(new Map());
+     this._removed.set(new Set());
+     this._words.set(new Map());
++    this._pageWidths.set(new Map());
+     this._selectedId.set(null);
+     this.saving = new Set();
+   }
+diff --git a/frontend/src/app/features/workspace/annotate.html b/frontend/src/app/features/workspace/annotate.html
+index 633b1d8..64f2bf7 100644
+--- a/frontend/src/app/features/workspace/annotate.html
++++ b/frontend/src/app/features/workspace/annotate.html
+@@ -1,6 +1,6 @@
+-<div class="flex min-h-0 flex-1" data-test="annotate-mode">
++<div class="ws-panes" data-test="annotate-mode">
+   <!-- Tool palette -->
+-  <aside class="border-border bg-surface flex w-52 shrink-0 flex-col gap-3 overflow-y-auto border-e p-3 text-sm">
++  <aside class="ws-rail ws-rail-start w-52 gap-3 overflow-y-auto p-3 text-sm">
+     <div>
+       <p class="kicker mb-1">Tools</p>
+       <div class="grid grid-cols-2 gap-1">
+@@ -60,25 +60,30 @@
+ 
+     <div>
+       <label for="annot-colour" class="kicker">Colour</label>
+-      <input id="annot-colour" type="color" [ngModel]="color()" (ngModelChange)="color.set($event)"
++      <input id="annot-colour" type="color" [ngModel]="color()" (ngModelChange)="setColor($event)"
+              class="mt-1 h-8 w-full cursor-pointer" data-test="annot-color" />
+     </div>
+-    <div>
+-      <label for="annot-width" class="kicker">
+-        Line width — {{ strokeWidth() }}
+-      </label>
+-      <input id="annot-width" type="range" min="1" max="12" [ngModel]="strokeWidth()" (ngModelChange)="strokeWidth.set(+$event)"
+-             class="w-full" data-test="annot-width" />
+-    </div>
++    @if (tool() !== 'free_text') {
++      <div>
++        <label for="annot-width" class="kicker">
++          Line width — {{ strokeWidth() }}
++        </label>
++        <input id="annot-width" type="range" min="1" max="12" [ngModel]="strokeWidth()" (ngModelChange)="strokeWidth.set(+$event)"
++               class="w-full" data-test="annot-width" />
++      </div>
++    }
+     <div>
+       <label for="annot-opacity" class="kicker">
+         Opacity — {{ (opacity() * 100).toFixed(0) }}%
+       </label>
+-      <input id="annot-opacity" type="range" min="0.1" max="1" step="0.1" [ngModel]="opacity()" (ngModelChange)="opacity.set(+$event)"
++      <input id="annot-opacity" type="range" min="0.1" max="1" step="0.1" [ngModel]="opacity()" (ngModelChange)="setOpacity(+$event)"
+              class="w-full" data-test="annot-opacity" />
+     </div>
+ 
+     @if (tool() === 'free_text') {
++      <p class="faint text-[11px]" data-test="free-text-hint">
++        Drag a box on the page and type in it. Double-click a box to edit it again.
++      </p>
+       <div>
+         <label for="annot-font-size" class="kicker">
+           Font size — {{ fontSize() }}pt
+@@ -121,7 +126,7 @@
+   </aside>
+ 
+   <!-- Page + overlay -->
+-  <main class="canvas-backdrop flex min-h-0 flex-1 flex-col">
++  <main class="canvas-backdrop ws-pane-main">
+     <div class="border-border bg-surface flex items-center gap-2 border-b px-4 py-2 text-sm">
+       <button (click)="prevPage()" [disabled]="page() === 0"
+               class="btn btn-ghost btn-sm" data-test="annot-prev">‹</button>
+@@ -134,6 +139,12 @@
+       <span class="muted text-xs">{{ zoom() }}px</span>
+       <button (click)="zoomIn()" class="btn btn-ghost btn-sm" data-test="annot-zoom-in">+</button>
+ 
++      <span class="bg-border mx-2 h-4 w-px"></span>
++      <button (click)="undo()" [disabled]="!annotations.canUndo()"
++              class="btn btn-ghost btn-sm" title="Undo (⌘Z)" data-test="annot-undo">Undo</button>
++      <button (click)="redo()" [disabled]="!annotations.canRedo()"
++              class="btn btn-ghost btn-sm" title="Redo (⇧⌘Z)" data-test="annot-redo">Redo</button>
++
+       <div class="ms-auto flex items-center gap-2">
+         @if (dirty()) {
+           <span class="badge badge-warning" data-test="annot-dirty">
+@@ -158,23 +169,28 @@
+           [page]="page()"
+           [version]="currentSeq() ?? undefined"
+           [renderWidth]="zoom()"
++          [pageWidthPt]="pageWidthPt()"
+           [items]="overlayItems()"
+           [tool]="gesture()"
+           [words]="words()"
+           [selectedId]="annotations.selectedId()"
++          [editingId]="pageEditingId()"
+           [drawStroke]="color()"
+           [drawWidth]="strokeWidth()"
+           (created)="onCreated($event)"
+           (geometryChanged)="onGeometryChanged($event)"
+           (selectionChanged)="onSelectionChanged($event)"
+           (deleteRequested)="onDeleteRequested($event)"
++          (editRequested)="onEditRequested($event)"
++          (textChanged)="onPageTextChanged($event)"
++          (editingEnded)="onPageEditingEnded()"
+         />
+       </div>
+     </div>
+   </main>
+ 
+   <!-- Comments sidebar -->
+-  <aside class="border-border bg-surface flex w-64 shrink-0 flex-col border-s" data-test="comments-sidebar">
++  <aside class="ws-rail ws-rail-end w-64" data-test="comments-sidebar">
+     <div class="border-border flex items-center justify-between border-b px-3 py-2">
+       <span class="text-ink text-sm font-medium">
+         Comments
+diff --git a/frontend/src/app/features/workspace/annotate.ts b/frontend/src/app/features/workspace/annotate.ts
+index 6113d58..b6898b7 100644
+--- a/frontend/src/app/features/workspace/annotate.ts
++++ b/frontend/src/app/features/workspace/annotate.ts
+@@ -65,6 +65,28 @@ const STANDARD_STAMPS = [
+ 
+ const AUTOSAVE_MS = 30_000;
+ 
++/** The two working colours the palette moves between (design contract §3). */
++const HIGHLIGHT_COLOR = '#facc15';
++const INK_COLOR = '#332D24';
++
++/** Which colour a tool belongs to: translucent marker, or ink on the page. */
++type ToolFamily = 'markup' | 'ink';
++
++function familyOf(tool: AnnotateTool): ToolFamily {
++  return MARKUP.includes(tool as AnnotationType) ? 'markup' : 'ink';
++}
++
++/**
++ * The widest page that fits without making the browser scroll the whole app.
++ *
++ * 900 on a desk, the viewport less the page pane's padding on a phone. Guarded
++ * for prerender, where there is no window at all.
++ */
++function fitZoom(): number {
++  if (typeof window === 'undefined') return 900;
++  return Math.max(280, Math.min(900, window.innerWidth - 48));
++}
++
+ function uuid(): string {
+   const c = globalThis.crypto;
+   if (c && 'randomUUID' in c) return c.randomUUID();
+@@ -108,11 +130,32 @@ export class Annotate {
+ 
+   protected page = signal(0);
+   protected tool = signal<AnnotateTool>('select');
+-  protected zoom = signal(900);
+-  protected color = signal('#facc15');
++  /**
++   * Page width in pixels.
++   *
++   * Seeded from the viewport rather than fixed at 900: a phone is 390 px wide
++   * and a 900 px page does not fit in it, so the row grew, the document grew
++   * with it, and the whole workspace scrolled sideways with the mode nav off
++   * the edge. `zoomOut` stops at 450 by design, so the floor cannot come from
++   * the buttons — it has to be the starting value.
++   */
++  protected zoom = signal(fitZoom());
++  /**
++   * The working colour, remembered per family of tools.
++   *
++   * One shared swatch meant a text box inherited the highlighter's yellow —
++   * words drawn in #facc15 on white paper, which is what "the text box does
++   * not show anything" looked like from the outside. Highlighters are yellow;
++   * ink is ink; each family keeps whatever the user last chose for it.
++   */
++  private familyColors = signal<Record<ToolFamily, string>>({
++    markup: HIGHLIGHT_COLOR,
++    ink: INK_COLOR,
++  });
+   protected strokeWidth = signal(2);
+   protected fontSize = signal(12);
+-  protected opacity = signal(0.7);
++  /** Opacity, remembered per family for the same reason colour is. */
++  private familyOpacity = signal<Record<ToolFamily, number>>({ markup: 0.7, ink: 1 });
+   protected stampName = signal(STANDARD_STAMPS[0]);
+   protected stampRef = signal<string | null>(null);
+   protected busy = signal(false);
+@@ -120,12 +163,25 @@ export class Annotate {
+   protected lastSavedAt = signal<Date | null>(null);
+   protected editingId = signal<string | null>(null);
+   protected editingText = signal('');
++  /**
++   * The text box being typed into *on the page*.
++   *
++   * Separate from `editingId`, which drives the comments sidebar: a sticky
++   * note has no on-page text to edit, and a text box should not open a second
++   * editor in the margin while the caret is already on the page.
++   */
++  protected pageEditingId = signal<string | null>(null);
+ 
+   protected readonly stamps = STANDARD_STAMPS;
+ 
++  protected readonly family = computed<ToolFamily>(() => familyOf(this.tool()));
++  protected readonly color = computed(() => this.familyColors()[this.family()]);
++  protected readonly opacity = computed(() => this.familyOpacity()[this.family()]);
+   protected readonly gesture = computed<OverlayTool>(() => GESTURE[this.tool()]);
+   protected readonly dirty = this.annotations.dirty;
+   protected readonly words = computed(() => this.annotations.wordsFor(this.page()));
++  /** The current page's width in points — how a point size becomes pixels. */
++  protected readonly pageWidthPt = computed(() => this.annotations.pageWidthFor(this.page()));
+ 
+   /** Annotations → overlay shapes. The overlay renders geometry, nothing else. */
+   protected readonly overlayItems = computed<OverlayItem[]>(() =>
+@@ -146,7 +202,10 @@ export class Annotate {
+     // when a markup tool is active — a 300-page document must not pull 300
+     // word lists to draw one rectangle.
+     effect(() => {
+-      if (this.gesture() !== 'text') return;
++      // Markup tools need the words themselves; the text-box tool needs only
++      // the page's own width in points, which arrives on the same payload and
++      // is what turns a point size into the right number of pixels.
++      if (this.gesture() !== 'text' && this.tool() !== 'free_text') return;
+       this.annotations.loadWords(this.docId(), this.page(), this.currentSeq());
+     });
+ 
+@@ -158,6 +217,23 @@ export class Annotate {
+       onCleanup(() => clearInterval(timer));
+     });
+ 
++    // ⌘Z / ⌘⇧Z, the way every other editor on the machine works. Skipped while
++    // a field has focus, where the browser's own undo is the right one.
++    effect((onCleanup) => {
++      if (!this.isBrowser) return;
++      const handler = (event: KeyboardEvent) => {
++        if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== 'z') return;
++        const el = document.activeElement as HTMLElement | null;
++        const tag = el?.tagName;
++        if (tag === 'INPUT' || tag === 'TEXTAREA' || el?.isContentEditable) return;
++        event.preventDefault();
++        if (event.shiftKey) this.redo();
++        else this.undo();
++      };
++      window.addEventListener('keydown', handler);
++      onCleanup(() => window.removeEventListener('keydown', handler));
++    });
++
+     // Unsaved-changes guard. Autosave makes the window small, but "small" is not
+     // "none" — closing the tab 5 s after a change must still warn.
+     effect((onCleanup) => {
+@@ -173,20 +249,28 @@ export class Annotate {
+   }
+ 
+   /**
+-   * Switching tool re-suggests an opacity, it does not lock one in.
++   * Switching tool re-suggests colour and opacity, it does not lock them in.
+    *
+    * Translucency is what makes a highlight readable and what makes an arrow
+-   * look like a mistake, so the two want different defaults — but forcing the
+-   * value at creation time (the first cut of this) made the slider do nothing
+-   * for eight of the fourteen tools.
++   * look like a mistake; the same is true of yellow ink. Both settings are
++   * therefore held per family and switch with the tool — and whatever the user
++   * chose for a family is still there when they come back to it.
+    */
+   protected setTool(next: AnnotateTool): void {
+-    const wasMarkup = MARKUP.includes(this.tool() as AnnotationType);
+-    const isMarkup = MARKUP.includes(next as AnnotationType);
+-    if (wasMarkup !== isMarkup) this.opacity.set(isMarkup ? 0.7 : 1);
+     this.tool.set(next);
+   }
+ 
++  /** Colour changes apply to the family in hand, not to every tool at once. */
++  protected setColor(value: string): void {
++    const family = this.family();
++    this.familyColors.update((colors) => ({ ...colors, [family]: value }));
++  }
++
++  protected setOpacity(value: number): void {
++    const family = this.family();
++    this.familyOpacity.update((values) => ({ ...values, [family]: value }));
++  }
++
+   // ------------------------------------------------------------------ //
+   // Mapping
+   // ------------------------------------------------------------------ //
+@@ -238,7 +322,15 @@ export class Annotate {
+       case 'note':
+         return { ...base, fill: a.color ?? '#D8B25E', label: '❝' };
+       case 'free_text':
+-        return { ...base, label: (a.contents || 'Text').slice(0, 24) };
++        // No badge: the words go on the page, at their own size and colour,
++        // where the file will put them.
++        return {
++          ...base,
++          stroke: (a.width ?? 0) > 0 ? (a.color ?? '#332D24') : 'none',
++          text: a.contents ?? '',
++          fontSize: a.font_size ?? 12,
++          textColor: a.color ?? '#332D24',
++        };
+       case 'stamp':
+         return { ...base, label: a.stamp_name ?? 'Stamp' };
+       case 'image_stamp':
+@@ -300,8 +392,14 @@ export class Annotate {
+       };
+     }
+     if (tool === 'free_text') {
+-      annotation.contents = 'Text';
++      // Empty, not the word "Text": the caret lands in the box immediately, so
++      // placeholder prose would only have to be deleted. And no border — the
++      // shared line-width slider was giving every text box a 2pt frame in
++      // highlighter yellow, which is the "bold box with no text in it" people
++      // reported.
++      annotation.contents = '';
+       annotation.font_size = this.fontSize();
++      annotation.width = 0;
+     }
+     if (tool === 'stamp') {
+       annotation.stamp_name = this.stampName();
+@@ -316,7 +414,11 @@ export class Annotate {
+     }
+ 
+     this.annotations.add(annotation);
+-    if (tool === 'note' || tool === 'free_text') this.startEditing(annotation.id);
++    if (tool === 'free_text') {
++      this.pageEditingId.set(annotation.id);
++    } else if (tool === 'note') {
++      this.startEditing(annotation.id);
++    }
+   }
+ 
+   /**
+@@ -358,6 +460,38 @@ export class Annotate {
+     this.annotations.select(id);
+   }
+ 
++  /** A double-click on a text box on the page puts the caret in it. */
++  protected onEditRequested(id: string): void {
++    this.annotations.select(id);
++    this.pageEditingId.set(id);
++  }
++
++  protected onPageTextChanged(change: { id: string; text: string }): void {
++    this.annotations.update(change.id, { contents: change.text });
++  }
++
++  protected onPageEditingEnded(): void {
++    // An empty box left behind is litter — nothing to see, nothing to save,
++    // and impossible to select again once it has no border.
++    const id = this.pageEditingId();
++    this.pageEditingId.set(null);
++    if (!id) return;
++    const item = this.annotations.all().find((a) => a.id === id);
++    if (item?.type === 'free_text' && !(item.contents ?? '').trim()) {
++      this.annotations.remove(id);
++    }
++  }
++
++  protected undo(): void {
++    this.pageEditingId.set(null);
++    this.annotations.undo();
++  }
++
++  protected redo(): void {
++    this.pageEditingId.set(null);
++    this.annotations.redo();
++  }
++
+   protected async onDeleteRequested(id: string): Promise<void> {
+     this.annotations.remove(id);
+   }
+@@ -588,7 +722,7 @@ export class Annotate {
+   }
+ 
+   protected zoomOut(): void {
+-    this.zoom.update((z) => Math.max(450, z - 150));
++    this.zoom.update((z) => Math.max(Math.min(450, fitZoom()), z - 150));
+   }
+ 
+   protected trackAnnotation = (_: number, a: Annotation): string => a.id;
+diff --git a/frontend/src/app/shared/page-overlay/overlay-model.ts b/frontend/src/app/shared/page-overlay/overlay-model.ts
+index 89f8a2f..00f1275 100644
+--- a/frontend/src/app/shared/page-overlay/overlay-model.ts
++++ b/frontend/src/app/shared/page-overlay/overlay-model.ts
+@@ -47,6 +47,19 @@ export interface OverlayItem {
+   width?: number;
+   /** Short badge drawn at the top-left corner (field name, "REDACT", …). */
+   label?: string;
++  /**
++   * Text drawn *inside* the rectangle, the way the file will show it.
++   *
++   * A text box whose words only appeared in a 10px badge above the box — and
++   * truncated at 24 characters — is not a text box; it is an empty rectangle
++   * with a tooltip. Anything that carries `text` renders as text on the page
++   * and can be edited there.
++   */
++  text?: string;
++  /** Point size of `text`, converted against the page width at render time. */
++  fontSize?: number;
++  /** Colour of `text`. Separate from `stroke`: the border may be off. */
++  textColor?: string;
+   /** Opaque payload owned by the feature that created the item. */
+   data?: Record<string, unknown>;
+   locked?: boolean;
+diff --git a/frontend/src/app/shared/page-overlay/page-overlay.html b/frontend/src/app/shared/page-overlay/page-overlay.html
+index 3645e2f..f161891 100644
+--- a/frontend/src/app/shared/page-overlay/page-overlay.html
++++ b/frontend/src/app/shared/page-overlay/page-overlay.html
+@@ -75,6 +75,7 @@
+           [attr.pointer-events]="tool() === 'select' && !item.locked ? 'all' : 'none'"
+           [class.cursor-move]="tool() === 'select' && !item.locked"
+           (pointerdown)="onItemPointerDown($event, item)"
++          (dblclick)="onItemDoubleClick($event, item)"
+           data-test="overlay-item"
+           [attr.data-item-id]="item.id"
+           [attr.data-shape]="item.shape"
+@@ -231,5 +232,41 @@
+         data-test="overlay-label"
+       >{{ item.label }}</span>
+     }
++
++    <!-- Text drawn where it will be in the file (design contract §4 "text on
++         the page"): same box, same point size, same colour. Editing happens in
++         the same box, so what you type is what you are looking at. -->
++    @if (item.page === page() && item.text !== undefined && item.rect) {
++      @if (editingId() === item.id && !readonlyMode()) {
++        <textarea
++          #textEditor
++          class="page-text page-text-editing"
++          [style.left.px]="px(item.rect.x)"
++          [style.top.px]="pyv(item.rect.y)"
++          [style.width.px]="px(item.rect.w)"
++          [style.height.px]="pyv(item.rect.h)"
++          [style.font-size.px]="fontPx(item)"
++          [style.color]="item.textColor ?? null"
++          [value]="item.text"
++          (keydown)="onTextKeyDown($event)"
++          (blur)="onTextBlur(item, $event)"
++          (pointerdown)="$event.stopPropagation()"
++          (dblclick)="$event.stopPropagation()"
++          [attr.aria-label]="'Text box on page ' + (page() + 1)"
++          data-test="overlay-text-editor"
++        ></textarea>
++      } @else {
++        <div
++          class="page-text pointer-events-none"
++          [style.left.px]="px(item.rect.x)"
++          [style.top.px]="pyv(item.rect.y)"
++          [style.width.px]="px(item.rect.w)"
++          [style.height.px]="pyv(item.rect.h)"
++          [style.font-size.px]="fontPx(item)"
++          [style.color]="item.textColor ?? null"
++          data-test="overlay-text"
++        >{{ item.text }}</div>
++      }
++    }
+   }
+ </div>
+diff --git a/frontend/src/app/shared/page-overlay/page-overlay.spec.ts b/frontend/src/app/shared/page-overlay/page-overlay.spec.ts
+index 40c1a45..283fc16 100644
+--- a/frontend/src/app/shared/page-overlay/page-overlay.spec.ts
++++ b/frontend/src/app/shared/page-overlay/page-overlay.spec.ts
+@@ -140,3 +140,131 @@ describe('PageOverlay', () => {
+     });
+   });
+ });
++
++/**
++ * Text drawn on the page, not in a badge above it.
++ *
++ * A text box whose words only appeared in a 10px chip — truncated at 24
++ * characters, with the box itself left empty — is the defect this covers: the
++ * words go in the box, at the size and colour the file will use, and the box
++ * is where they are edited.
++ */
++describe('PageOverlay — text on the page', () => {
++  let fixture: ComponentFixture<PageOverlay>;
++
++  const textItem = (over: Partial<OverlayItem> = {}): OverlayItem => ({
++    id: 'a1',
++    page: 0,
++    shape: 'rect',
++    rect: { x: 0.1, y: 0.1, w: 0.5, h: 0.1 },
++    text: 'Hello on the page',
++    fontSize: 24,
++    textColor: '#332D24',
++    ...over,
++  });
++
++  beforeEach(() => {
++    TestBed.configureTestingModule({
++      imports: [PageOverlay],
++      providers: [provideHttpClient(), provideHttpClientTesting()],
++    });
++    fixture = TestBed.createComponent(PageOverlay);
++    fixture.componentRef.setInput('docId', 'doc-1');
++    fixture.componentRef.setInput('renderWidth', 595);
++    fixture.detectChanges();
++  });
++
++  function html(): HTMLElement {
++    return fixture.nativeElement as HTMLElement;
++  }
++
++  it('renders the whole text inside the item, not a truncated badge', () => {
++    fixture.componentRef.setInput('items', [textItem({
++      text: 'A sentence comfortably longer than twenty-four characters.',
++    })]);
++    fixture.detectChanges();
++
++    const drawn = html().querySelector('[data-test=overlay-text]');
++    expect(drawn?.textContent).toBe('A sentence comfortably longer than twenty-four characters.');
++    expect(html().querySelector('[data-test=overlay-label]')).toBeNull();
++  });
++
++  it('converts the point size against the page width, at any zoom', () => {
++    fixture.componentRef.setInput('items', [textItem()]);
++    fixture.detectChanges();
++    const at595 = (html().querySelector('[data-test=overlay-text]') as HTMLElement).style.fontSize;
++    // 24pt on a 595pt page rendered 595px wide is 24px.
++    expect(at595).toBe('24px');
++
++    fixture.componentRef.setInput('renderWidth', 1190);
++    fixture.detectChanges();
++    const at1190 = (html().querySelector('[data-test=overlay-text]') as HTMLElement).style.fontSize;
++    expect(at1190).toBe('48px');
++  });
++
++  it('honours the page it is actually measuring', () => {
++    fixture.componentRef.setInput('items', [textItem()]);
++    // A page twice as wide in points draws the same point size half as large.
++    fixture.componentRef.setInput('pageWidthPt', 1190);
++    fixture.detectChanges();
++    expect((html().querySelector('[data-test=overlay-text]') as HTMLElement).style.fontSize)
++      .toBe('12px');
++  });
++
++  it('swaps the drawn text for an editor on the item being edited', () => {
++    fixture.componentRef.setInput('items', [textItem()]);
++    fixture.componentRef.setInput('editingId', 'a1');
++    fixture.detectChanges();
++
++    const editor = html().querySelector<HTMLTextAreaElement>('[data-test=overlay-text-editor]');
++    expect(editor).toBeTruthy();
++    expect(editor!.value).toBe('Hello on the page');
++    expect(html().querySelector('[data-test=overlay-text]')).toBeNull();
++  });
++
++  it('commits once, on blur — so one undo takes back a sentence', () => {
++    fixture.componentRef.setInput('items', [textItem()]);
++    fixture.componentRef.setInput('editingId', 'a1');
++    fixture.detectChanges();
++
++    const changes: { id: string; text: string }[] = [];
++    let ended = 0;
++    fixture.componentInstance.textChanged.subscribe((c) => changes.push(c));
++    fixture.componentInstance.editingEnded.subscribe(() => (ended += 1));
++
++    const editor = html().querySelector<HTMLTextAreaElement>('[data-test=overlay-text-editor]')!;
++    editor.value = 'Typed';
++    editor.dispatchEvent(new Event('input'));
++    expect(changes).toEqual([]);
++
++    editor.dispatchEvent(new Event('blur'));
++    expect(changes).toEqual([{ id: 'a1', text: 'Typed' }]);
++    expect(ended).toBe(1);
++  });
++
++  it('does not offer an editor in read-only mode', () => {
++    fixture.componentRef.setInput('items', [textItem()]);
++    fixture.componentRef.setInput('editingId', 'a1');
++    fixture.componentRef.setInput('readonlyMode', true);
++    fixture.detectChanges();
++    expect(html().querySelector('[data-test=overlay-text-editor]')).toBeNull();
++    expect(html().querySelector('[data-test=overlay-text]')).toBeTruthy();
++  });
++
++  it('asks to edit on a double-click, but only with the select tool', () => {
++    fixture.componentRef.setInput('items', [textItem()]);
++    fixture.componentRef.setInput('tool', 'rect');
++    fixture.detectChanges();
++    const asked: string[] = [];
++    fixture.componentInstance.editRequested.subscribe((id) => asked.push(id));
++
++    const group = html().querySelector('[data-test=overlay-item]')!;
++    group.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
++    expect(asked).toEqual([]);
++
++    fixture.componentRef.setInput('tool', 'select');
++    fixture.detectChanges();
++    group.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
++    expect(asked).toEqual(['a1']);
++  });
++});
+diff --git a/frontend/src/app/shared/page-overlay/page-overlay.ts b/frontend/src/app/shared/page-overlay/page-overlay.ts
+index 4fb61c7..a79d213 100644
+--- a/frontend/src/app/shared/page-overlay/page-overlay.ts
++++ b/frontend/src/app/shared/page-overlay/page-overlay.ts
+@@ -73,6 +73,15 @@ export class PageOverlay {
+   readonly words = input<OverlayWord[]>([]);
+   readonly selectedId = input<string | null>(null);
+   readonly readonlyMode = input(false);
++  /**
++   * The page's width in PDF points, so a point size becomes the right number
++   * of pixels. 595 (A4) is the fallback for the moment before the page's own
++   * measurements have been fetched — being 3% out on a Letter page for one
++   * frame is invisible; guessing pixels for points is not.
++   */
++  readonly pageWidthPt = input(595);
++  /** Which item is being typed into, if any. */
++  readonly editingId = input<string | null>(null);
+   /** Stroke/fill applied to the in-progress shape, so drawing previews truthfully. */
+   readonly drawStroke = input('#e11d48');
+   readonly drawFill = input<string | null>(null);
+@@ -82,9 +91,14 @@ export class PageOverlay {
+   readonly geometryChanged = output<OverlayGeometryChange>();
+   readonly selectionChanged = output<string | null>();
+   readonly deleteRequested = output<string>();
++  /** A double-click on something that carries text: put a caret in it. */
++  readonly editRequested = output<string>();
++  readonly textChanged = output<{ id: string; text: string }>();
++  readonly editingEnded = output<void>();
+ 
+   private docsSvc = inject(DocumentsService);
+   private surface = viewChild<ElementRef<HTMLDivElement>>('surface');
++  private textEditor = viewChild<ElementRef<HTMLTextAreaElement>>('textEditor');
+ 
+   protected imageUrl = signal<string | null>(null);
+   /** Natural page aspect (height / width), so the box matches the raster exactly. */
+@@ -143,6 +157,14 @@ export class PageOverlay {
+       this.pending.set([]);
+       this.drag.set(null);
+     });
++    // A box you have just drawn should already have the caret in it — asking
++    // the user to hunt for where to type is what made the tool feel broken.
++    effect(() => {
++      const editor = this.textEditor()?.nativeElement;
++      if (!editor || document.activeElement === editor) return;
++      editor.focus();
++      editor.setSelectionRange(editor.value.length, editor.value.length);
++    });
+   }
+ 
+   private revoke(): void {
+@@ -486,6 +508,50 @@ export class PageOverlay {
+     }
+   }
+ 
++  // ------------------------------------------------------------------ //
++  // Text drawn on the page
++  // ------------------------------------------------------------------ //
++  /** A point size in the file, as pixels at the current zoom. */
++  protected fontPx(item: OverlayItem): number {
++    const pt = item.fontSize ?? 12;
++    return Math.max(4, (pt / this.pageWidthPt()) * this.renderWidth());
++  }
++
++  /** Double-click inside a text item starts editing it, the way a caret works
++   *  everywhere else. Only with the select tool: while a draw tool is armed a
++   *  double-click is two draws, not an edit. */
++  protected onItemDoubleClick(event: MouseEvent, item: OverlayItem): void {
++    if (this.readonlyMode() || item.locked) return;
++    if (this.tool() !== 'select' || item.text === undefined) return;
++    event.stopPropagation();
++    event.preventDefault();
++    this.editRequested.emit(item.id);
++  }
++
++  /**
++   * Commit on blur, not on every keystroke.
++   *
++   * The textarea already shows what is being typed, at the size and colour the
++   * file will use, so there is nothing to gain from pushing each character
++   * through the model — and one commit per sitting is what makes one ⌘Z undo
++   * a sentence rather than a letter.
++   */
++  protected onTextBlur(item: OverlayItem, event: Event): void {
++    const value = (event.target as HTMLTextAreaElement).value;
++    if (value !== item.text) this.textChanged.emit({ id: item.id, text: value });
++    this.editingEnded.emit();
++  }
++
++  /** Escape and ⌘/Ctrl+Enter both mean "done"; plain Enter is a new line,
++   *  because a text box on a page is a paragraph, not a form field. */
++  protected onTextKeyDown(event: KeyboardEvent): void {
++    event.stopPropagation();
++    if (event.key === 'Escape' || (event.key === 'Enter' && (event.metaKey || event.ctrlKey))) {
++      (event.target as HTMLTextAreaElement).blur();
++      event.preventDefault();
++    }
++  }
++
+   protected trackItem = (_: number, item: OverlayItem): string => item.id;
+   protected trackWord = (_: number, word: OverlayWord): number => word.i;
+ }
+diff --git a/frontend/src/styles.scss b/frontend/src/styles.scss
+index 3697787..2e074a2 100644
+--- a/frontend/src/styles.scss
++++ b/frontend/src/styles.scss
+@@ -817,3 +817,35 @@ ngx-extended-pdf-viewer {
+ }
+ .dark .page-thumb { border-color: var(--color-border-strong); }
+ .canvas-backdrop { background: var(--color-canvas-backdrop); }
++/* ---------- 19. Text drawn on the page (§4 "text on the page") ---------- */
++/* A text annotation has to look on screen like what the file will contain:
++   same box, same point size, same colour, wrapping the same way. The previous
++   badge-above-the-box treatment showed 24 characters in a 10px chip and left
++   the box itself empty, which read as "the text box does not work".
++   Colour comes from the annotation (it is the author's choice and it is baked
++   into the PDF), so it is set inline; everything structural is a token. */
++.page-text {
++  position: absolute;
++  margin: 0;
++  padding: 1px 2px;
++  border: 0;
++  overflow: hidden;
++  font-family: var(--font-ui);
++  line-height: 1.25;
++  white-space: pre-wrap;
++  overflow-wrap: anywhere;
++  color: var(--color-ink-strong);
++  background: transparent;
++}
++/* While typing: a hairline of the working colour and just enough backing to
++   stay legible over dense page content. The page raster underneath is paper,
++   so a paper-coloured wash is invisible on an empty area and readable on a
++   busy one — in both themes, because the page itself is white in both. */
++.page-text-editing {
++  resize: none;
++  outline: none;
++  background: rgb(255 255 255 / 0.92);
++  box-shadow: 0 0 0 1.5px var(--color-accent);
++  border-radius: 2px;
++  caret-color: var(--color-accent);
++}
+-- 
+2.43.0
+
+
+From 161758b809fbf42f6c12089b0d92096ce9deb713 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Thu, 20 Aug 2026 13:07:50 +0000
+Subject: [PATCH 4/6] fix(workspace): the viewer that never loaded, and a
+ screen that never fitted
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Four things, all of them why the workspace looked broken.
+
+**The viewer never started in production.** ngx-extended-pdf-viewer feature-
+detects the browser by injecting an inline `<script>`, and our CSP is
+`script-src 'self'` — so it was refused, the viewer never initialised, and
+`/api/documents/{id}/content/` was never requested at all. Blank pane, no
+console error anyone had noticed. The library ships an external
+`op-chaining-support.js` for exactly this case; `[useInlineScripts]="false"`
+takes it. And behind that, nginx served pdf.js's own `.mjs` modules as
+`application/octet-stream` — stock `mime.types` knows neither `.mjs` nor
+`.wasm` — which `X-Content-Type-Options: nosniff` (rightly) makes fatal for a
+module script. Both configs pin the type now.
+
+**The workspace never filled the screen.** Its host is a flex item of the
+shell's `main` and was not saying so, so a child asking for `h-full` inside a
+host with `height: auto` was circular: on a 900 px screen the reading pane came
+out 318 px tall with 400 px of empty backdrop under it, in every mode.
+
+**On a phone it was unusable.** A 390 px viewport cannot hold a 208 px rail, a
+page and a 256 px rail; nothing said so, so the row overflowed, the page grew
+with it and the mode nav — View, Organize, Edit, Annotate — sat off the right
+edge with no way to reach it. The panes stack below `md` (`.ws-panes` /
+`.ws-rail` / `.ws-pane-main`), the bar scrolls inside itself, and the annotate
+page seeds its width from the viewport instead of a fixed 900.
+
+**And the failure screens had no header at all.** The shell hides its own
+header inside `/app/doc/:id` and the loading and error branches have no
+workspace bar, so a stranded visitor got a sentence in the middle of nothing —
+no brand, no theme toggle, no way out. They carry a minimal bar now. A throttle
+is no longer dressed as a breakage either: it says what it is and holds the
+retry button for the number of seconds the server asked for.
+
+Two smaller things while in here: an Undo in the workspace bar, which is the
+version-level revert that was previously buried three clicks deep in the
+History tab; and file sizes in the unit that says something — a 40 KB page and
+an empty file both read "0.0 MB".
+
+Design contract §3 gains the pane spec and amends the workspace-bar and
+loading/error entries; §4 records the height rule.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01Y58KHCbQzb6yAzQv9a6xbQ
+---
+ docs/design/design-instructions.md            | 10 ++-
+ frontend/nginx.conf                           | 36 ++++++++++
+ frontend/src/app/abstraction/viewer.facade.ts | 13 +++-
+ .../src/app/features/dashboard/dashboard.html |  2 +-
+ .../src/app/features/dashboard/dashboard.ts   | 13 ++++
+ .../src/app/features/tools/tool-page.html     |  4 +-
+ frontend/src/app/features/tools/tool-page.ts  | 15 ++++-
+ .../src/app/features/workspace/compare.html   |  6 +-
+ .../src/app/features/workspace/convert.html   |  6 +-
+ frontend/src/app/features/workspace/edit.html |  6 +-
+ .../src/app/features/workspace/forms.html     |  7 +-
+ .../src/app/features/workspace/protect.html   |  6 +-
+ frontend/src/app/features/workspace/sign.html |  6 +-
+ .../src/app/features/workspace/workspace.html | 59 +++++++++++++----
+ .../src/app/features/workspace/workspace.ts   | 46 ++++++++++++-
+ frontend/src/styles.scss                      | 65 +++++++++++++++++++
+ infra/railway/nginx.railway.conf              | 36 ++++++++++
+ 17 files changed, 296 insertions(+), 40 deletions(-)
+
+diff --git a/docs/design/design-instructions.md b/docs/design/design-instructions.md
+index bee831f..589adc9 100644
+--- a/docs/design/design-instructions.md
++++ b/docs/design/design-instructions.md
+@@ -182,7 +182,8 @@ Tabs Draw / Type / Upload as `.seg` pills. Canvas: pure white (`#FFFFFF` — it
+ ### Headers (all variants carry the theme toggle, 44×44 px)
+ - **Marketing** (`/`, `/<slug>`, legal): 65 px, `--color-surface`, hairline bottom; brand start; nav end: contextual links (exactly today's: My files ⁄ Log in + Create free account ⁄ register) + toggle. On `/` only, the brand is followed by the page's `<h1>` as a masthead motto: display 500 16 px `--color-ink-muted`, hairline inline-start divider, exact text "Every PDF tool, no account needed"; below `lg` it wraps to a second 13.5 px header line so it stays visible at every viewport (compact landing, 2026-08-10).
+ - **App shell**: same bar; nav = Documents, Settings, user email (plain text), Log out, toggle. Active route: ink-strong + 500.
+-- **Workspace bar** (replaces app header inside `/app/doc/:id`): ← back, 20 px seal, document title (click to rename, as today), `vN · N pages` meta, then the `.seg` mode nav (View · Organize · Edit · Annotate · Forms · Convert · Compare · Sign · Protect), divider, Split and Compress (ghost), Download (secondary), toggle.
++- **Workspace bar** (replaces app header inside `/app/doc/:id`): ← back, 20 px seal, document title (click to rename, as today), `vN · N pages` meta, then the `.seg` mode nav (View · Organize · Edit · Annotate · Forms · Convert · Compare · Sign · Protect), divider, **Undo (ghost)**, Split and Compress (ghost), Download (secondary), toggle. *Undo (added 2026-08-20)* reverts the document to the version before the current one — the same operation as History's "Revert to this", under the name people look for, since every edit here appends a version; disabled at v1, no confirm (it appends a version of its own and is undoable in turn). **The bar scrolls inside itself** (`overflow-x: auto`, no visible scrollbar, children never shrink) and never widens the page: below `md` its content is wider than the viewport, and letting the page grow instead put the mode nav off the right edge with no way to reach it.
++- **Loading / error workspace** (`/app/doc/:id` before the document resolves, or when it cannot): the app shell hides its own header inside `/app/doc/:id`, so these two states carry a **minimal workspace bar** — ← back to the tools, brand, theme toggle — and the guest banner. Never a screen with no header on it at all.
+ - **Ceremony / auth**: minimal — brand, (envelope code in ceremony), toggle. Nothing else.
+ 
+ ### Guest & consent banners
+@@ -194,6 +195,11 @@ Hairline top, centered, 12.5 px faint; exactly the five existing links — About
+ ### PDF thumbnails & canvas
+ Rendered pages and thumbnails sit on `--color-canvas-backdrop` and are pure white with `--color-page-shadow` (1 px hairline in dark mode so a white page reads as intentional, floating paper). Thumbnails radius 2 px.
+ 
++### Workspace panes (`.ws-panes` / `.ws-rail` / `.ws-pane-main`) *(added 2026-08-20)*
++Every workspace mode is the same three-part figure: a start rail, the page, sometimes an end rail. `.ws-panes` is the row; `.ws-rail` a rail (`--color-surface`, hairline on the inline edge that faces the page — `.ws-rail-start` / `.ws-rail-end` — width set per mode as today); `.ws-pane-main` the page pane, which **must** carry `min-width: 0` so a wide page scrolls inside its own pane rather than widening the row.
++
++**Below `md` the panes stack.** A 390 px phone cannot hold a 208 px rail, a page and a 256 px rail: rails become full-width sections above and below the page, each capped at `34vh` and scrolling within it, hairlines turning to block edges. Every control stays reachable — nothing is hidden at a breakpoint, because a control you cannot reach on a phone is a dead affordance with extra steps. The **page's own render width is seeded from the viewport** (`min(900, innerWidth − 48)`), not fixed, so the first paint fits.
++
+ ### Text on the page (`.page-text`) *(added 2026-08-20)*
+ A text annotation is drawn **inside its own rectangle**, in the annotation's colour, at its point size converted against the page's real width in points (`fontSize / pageWidthPt × renderWidth`) — never as a badge outside the box, and never truncated. Wrapping is `pre-wrap` + `overflow-wrap: anywhere`, line-height 1.25, clipped to the rect.
+ 
+@@ -209,7 +215,7 @@ Every surface, including unmocked ones. Compose only from §3 components.
+ 
+ - **Landing `/`** *(mockups 01, 10 — superseded by the compact landing 2026-08-10, see `2026-08-10-compact-landing.md`; the contract wins)*: marketing header carrying the masthead h1 (§3) → filter row, 32 px under the header: type-to-filter input at start (max-width 380 px; filters the 24 cards by name/synonyms, hides empty groups, shows a calm empty line; pure client-side) + compact one-line folded-sheet trust strip at end (the three facts verbatim, 13 px muted, hairline separators; wraps under the filter on narrow viewports) → six kicker-headed groups (Organize 7 · Edit & annotate 4 · Convert & OCR 6 · Optimize & review 3 · Protect 3 · Sign 1) of icon+name tool cards, 3-up (2-up mobile) → landing ad frame → footer. There is no hero block. No other CTAs; the directory is the hero.
+ - **Tool page `/<slug>`** *(02, 03, 11)*: marketing header; 720 px column; existing H1 + meta description line; widget card = dropzone → picked-file rows (name, size, Remove ghost) → min-files hint when short → **options row, where the tool has one** → full-width primary CTA (existing `cta` text) → retention line. **Options row (added 2026-08-18):** a tool whose result depends on a choice the visitor alone can make asks for it here — never by picking a default and hiding the choice in the workspace. It is composed only from §3 parts: a labelled `.input` with `.field-hint` and a permanently-present `.field-error` line, and `.cfield` choice rows for a mode. It is 24 px under the file rows, disables the CTA while the answer is empty or unparseable, and states the rule in the hint rather than after a failed run. Today: `/extract-pdf-pages` (pages + one-PDF/per-page) and `/delete-pdf-pages` (pages). Anything a tool can decide for itself stays decided — the options row is for the visitor's questions, not the engine's. Running: the breath + counting copy replaces the CTA. Result: stamp + one-line summary, result rows (Download primary-sm, Open in workspace secondary-sm), retention line, tool-result ad frame, "Do another one" ghost, guest keep-note (hairline box, fact + register link). Below: existing intro paragraphs and FAQ (reading width), footer.
+-- **Workspace `/app/doc/:id`** *(04, 05)*: the workspace bar (§3) is the **single owner of every editing affordance — defect D3**. The pdf.js (ngx-extended-pdf-viewer) toolbar is reduced by visibility config to exactly: **zoom out/in, zoom select, page up/down + page number, and find**. Hidden: pdf.js download, print, open-file, rotate, draw/ink editor, text editor, stamp editor, presentation, scrolling/spread menus, sidebar toggle (our rail replaces it) — rotate lives only in Organize, download only in our bar, annotation only in Annotate. View mode: left rail (Pages / Outline / History tabs), canvas center. Organize: toolbar row (N selected · Rotate · Delete · Duplicate · Extract · Insert blank · Crop · Scale · N-up · "Drag pages to reorder") over a 6-up thumbnail grid on the backdrop; selection = 2 px accent outline + corner seal tick. Annotate: left tool palette (16 existing tools, icon+label), colour/width/opacity (+font size, stamp picker contextually), custom stamp upload; center page bar (page nav, zoom, unsaved badge, Save primary-sm, Flatten secondary-sm); right comments rail. Dialogs (Split/Compress/Scale/N-up/Insert) per §3 modals. Annotate carries **Undo / Redo** in its page bar (⌘Z / ⇧⌘Z, skipped while a field has focus): markup is batched locally until Save, so it needs an undo of its own. **First paint rule (defect D7): initial zoom fit-to-width, content centered, backdrop `--color-canvas-backdrop` — for every page size and for RTL documents; no small-and-clipped first render.**
++- **Workspace `/app/doc/:id`** *(04, 05)*: the workspace bar (§3) is the **single owner of every editing affordance — defect D3**. The pdf.js (ngx-extended-pdf-viewer) toolbar is reduced by visibility config to exactly: **zoom out/in, zoom select, page up/down + page number, and find**. Hidden: pdf.js download, print, open-file, rotate, draw/ink editor, text editor, stamp editor, presentation, scrolling/spread menus, sidebar toggle (our rail replaces it) — rotate lives only in Organize, download only in our bar, annotation only in Annotate. View mode: left rail (Pages / Outline / History tabs), canvas center. Organize: toolbar row (N selected · Rotate · Delete · Duplicate · Extract · Insert blank · Crop · Scale · N-up · "Drag pages to reorder") over a 6-up thumbnail grid on the backdrop; selection = 2 px accent outline + corner seal tick. Annotate: left tool palette (16 existing tools, icon+label), colour/width/opacity (+font size, stamp picker contextually), custom stamp upload; center page bar (page nav, zoom, unsaved badge, Save primary-sm, Flatten secondary-sm); right comments rail. Dialogs (Split/Compress/Scale/N-up/Insert) per §3 modals. **First paint rule (defect D7): initial zoom fit-to-width, content centered, backdrop `--color-canvas-backdrop` — for every page size and for RTL documents; no small-and-clipped first render.** The workspace **fills the viewport height**: its host is a flex item of the shell's `main` (`flex min-h-0 flex-1 flex-col`), because a host with `height: auto` around a child asking for `h-full` is circular and sized the whole screen to its content. Panes and the phone rule per §3 workspace panes. Annotate also carries **Undo / Redo** in its page bar (⌘Z / ⇧⌘Z, skipped while a field has focus): markup is batched locally until Save, so it needs an undo of its own, separate from the bar's version-level Undo.
+ - **Dashboard `/app/dashboard`** *(06)*: app header; three columns ≥ xl (sidebar 224 / main / rail 300). Sidebar cards: storage meter; folders (All + user folders + new-folder input); Starred / Trash toggles. Main: search + (when ≥2 selected) "Merge N" primary; dropzone (imports anything convertible — keep existing hint copy); import-from-URL row; converting/uploading transient rows; file-card grid 4-up (D2 rule in §3); Load more (secondary) + "Showing X of Y". Rail: dashboard ad frame. Mobile: one inline ad card after the third card (existing behavior). Claim banner (post-signup) = success-surface strip, "Got it" dismiss.
+ - **Sign request builder `/app/sign/new/:docId`** *(unmocked)*: workspace-style top bar (← back to the document, "Send for signature", doc title) + step dots 1–4 (filled dot = `--color-ink-strong`). Step 1 recipients: rows (email, name, role select, order number, ✕ ghost) + "Add someone" secondary + role explainer 11 px faint + "Next: place fields" primary. Step 2: left rail (recipient pills with per-recipient dot colors — recipient colors are content, exempt from the one-accent rule; field-type grid; Required checkbox) + page canvas with drag-to-place boxes. Step 3: message textarea, expiry/reminder number inputs. Step 4 review: recipient list, freeze note, email-verification gate (warning surface) when unverified, **"Send it" as a standard vermilion primary**.
+ - **Sign request list `/app/sign`** *(unmocked)*: 768 px column; ← Documents; h1 "Sent for signature"; request rows (title, envelope code faint, status badge, recipient chips). Empty state sheet: "Nothing sent yet. Open a document and choose 'Send for signature'."
+diff --git a/frontend/nginx.conf b/frontend/nginx.conf
+index bd32827..5807986 100644
+--- a/frontend/nginx.conf
++++ b/frontend/nginx.conf
+@@ -99,6 +99,42 @@ server {
+         proxy_set_header X-Forwarded-Proto $scheme;
+     }
+ 
++    # pdf.js ships as ES modules (`viewer-*.mjs`, `pdf.worker-*.mjs`) and a
++    # WebAssembly blob. nginx's stock mime.types knows neither extension, so
++    # both were served as `application/octet-stream` — and with
++    # `X-Content-Type-Options: nosniff` (rightly) set, Chrome refuses to
++    # execute a module script or stream-compile a wasm module with the wrong
++    # type. That is why the workspace viewer never fetched a document in
++    # production and failed silently. An empty `types {}` plus `default_type`
++    # pins the answer regardless of what the base image's map contains.
++    location ~* \.mjs$ {
++        types { }
++        default_type text/javascript;
++        expires 1y;
++        add_header Cache-Control "public, immutable" always;
++        add_header X-Content-Type-Options "nosniff" always;
++        add_header Referrer-Policy "same-origin" always;
++        add_header X-Frame-Options "DENY" always;
++        add_header Strict-Transport-Security "max-age=63072000; includeSubDomains" always;
++        add_header Content-Security-Policy "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; worker-src 'self' blob:; child-src 'self' blob:; manifest-src 'self'" always;
++        add_header Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=(), usb=()" always;
++        try_files $uri =404;
++    }
++
++    location ~* \.wasm$ {
++        types { }
++        default_type application/wasm;
++        expires 1y;
++        add_header Cache-Control "public, immutable" always;
++        add_header X-Content-Type-Options "nosniff" always;
++        add_header Referrer-Policy "same-origin" always;
++        add_header X-Frame-Options "DENY" always;
++        add_header Strict-Transport-Security "max-age=63072000; includeSubDomains" always;
++        add_header Content-Security-Policy "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; worker-src 'self' blob:; child-src 'self' blob:; manifest-src 'self'" always;
++        add_header Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=(), usb=()" always;
++        try_files $uri =404;
++    }
++
+     # Hashed build output: immutable, so a returning visitor pays for nothing
+     # they already have. `index.html` is deliberately *not* in here.
+     location ~* \.(js|css|woff2?|png|jpg|jpeg|svg|ico)$ {
+diff --git a/frontend/src/app/abstraction/viewer.facade.ts b/frontend/src/app/abstraction/viewer.facade.ts
+index 2e881f6..db62f9a 100644
+--- a/frontend/src/app/abstraction/viewer.facade.ts
++++ b/frontend/src/app/abstraction/viewer.facade.ts
+@@ -10,6 +10,12 @@ export interface ViewerError {
+   /** The §6 machine code, where the server sent one. */
+   code: string;
+   message: string;
++  /**
++   * Seconds the server asked us to wait, for the one failure here that is not
++   * a failure: a throttle. Without it the screen offered a "Try again" button
++   * whose only possible outcome, pressed immediately, was the same message.
++   */
++  retryAfter?: number;
+ }
+ 
+ /**
+@@ -24,7 +30,12 @@ function describe(error: unknown): ViewerError {
+   const response = error as HttpErrorResponse;
+   const envelope = response?.error?.error;
+   if (envelope?.message) {
+-    return { code: String(envelope.code ?? ''), message: String(envelope.message) };
++    const wait = Number(envelope.details?.retry_after_seconds);
++    return {
++      code: String(envelope.code ?? ''),
++      message: String(envelope.message),
++      ...(Number.isFinite(wait) && wait > 0 ? { retryAfter: Math.ceil(wait) } : {}),
++    };
+   }
+   if (response?.status === 404) {
+     return { code: 'not_found', message: 'That document could not be found.' };
+diff --git a/frontend/src/app/features/dashboard/dashboard.html b/frontend/src/app/features/dashboard/dashboard.html
+index 3b442a3..49ea657 100644
+--- a/frontend/src/app/features/dashboard/dashboard.html
++++ b/frontend/src/app/features/dashboard/dashboard.html
+@@ -216,7 +216,7 @@
+               }
+             </div>
+             <p class="faint mt-1 text-xs">
+-              {{ doc.page_count }} pages · {{ sizeMb(doc.size_bytes) }} MB
++              {{ doc.page_count }} pages · {{ fileSize(doc.size_bytes) }}
+               @if (doc.is_encrypted) { · <svg class="ti" style="width:13px;height:13px;vertical-align:-2px;display:inline" viewBox="0 0 24 24" aria-hidden="true"><rect x="5.5" y="10.5" width="13" height="9.5" rx="1.5"/><path d="M8.5 10.5V8a3.5 3.5 0 0 1 7 0v2.5"/><path d="M12 14.2v2.3"/></svg> }
+             </p>
+           </div>
+diff --git a/frontend/src/app/features/dashboard/dashboard.ts b/frontend/src/app/features/dashboard/dashboard.ts
+index 186f9a7..7505c3b 100644
+--- a/frontend/src/app/features/dashboard/dashboard.ts
++++ b/frontend/src/app/features/dashboard/dashboard.ts
+@@ -312,7 +312,20 @@ export class Dashboard {
+     });
+   }
+ 
++  /** Megabytes, for the quota line where megabytes are the unit. */
+   sizeMb(bytes: number): string {
+     return (bytes / 1048576).toFixed(1);
+   }
++
++  /**
++   * A file's size in the unit that tells you something about it — a 40 KB
++   * page and an empty file both read "0.0 MB" in the library list.
++   */
++  fileSize(bytes: number): string {
++    if (!Number.isFinite(bytes) || bytes < 0) return '';
++    if (bytes < 1024) return `${Math.max(bytes, 0)} B`;
++    if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
++    const mb = bytes / 1048576;
++    return `${mb < 10 ? mb.toFixed(1) : Math.round(mb)} MB`;
++  }
+ }
+diff --git a/frontend/src/app/features/tools/tool-page.html b/frontend/src/app/features/tools/tool-page.html
+index af11f6e..a41afe9 100644
+--- a/frontend/src/app/features/tools/tool-page.html
++++ b/frontend/src/app/features/tools/tool-page.html
+@@ -38,7 +38,7 @@
+                   </svg>
+                   <span class="min-w-0 flex-1 truncate text-[14.5px]">
+                     {{ file.name }}
+-                    <span class="faint">({{ sizeMb(file.size) }}&nbsp;MB)</span>
++                    <span class="faint">({{ fileSize(file.size) }})</span>
+                   </span>
+                   <button
+                     type="button"
+@@ -192,7 +192,7 @@
+                   </svg>
+                   <span class="min-w-0 flex-1 truncate text-[14.5px]" data-test="result-title">
+                     {{ doc.title }}.pdf
+-                    <span class="faint">({{ sizeMb(doc.size_bytes) }}&nbsp;MB)</span>
++                    <span class="faint">({{ fileSize(doc.size_bytes) }})</span>
+                   </span>
+                   <button
+                     type="button"
+diff --git a/frontend/src/app/features/tools/tool-page.ts b/frontend/src/app/features/tools/tool-page.ts
+index 7647430..205daa3 100644
+--- a/frontend/src/app/features/tools/tool-page.ts
++++ b/frontend/src/app/features/tools/tool-page.ts
+@@ -612,7 +612,18 @@ export class ToolPage {
+     this.uploaded.set(null);
+   }
+ 
+-  sizeMb(bytes: number): string {
+-    return (bytes / 1048576).toFixed(1);
++  /**
++   * A file's size, in the unit that tells you something about it.
++   *
++   * Everything was rendered in megabytes to one decimal, so a 40 KB signature
++   * page, a 900 KB contract and an empty file all read "0.0 MB" — the size
++   * line said nothing at all for most of what people actually upload here.
++   */
++  fileSize(bytes: number): string {
++    if (!Number.isFinite(bytes) || bytes < 0) return '';
++    if (bytes < 1024) return `${Math.max(bytes, 0)} B`;
++    if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
++    const mb = bytes / 1048576;
++    return `${mb < 10 ? mb.toFixed(1) : Math.round(mb)} MB`;
+   }
+ }
+diff --git a/frontend/src/app/features/workspace/compare.html b/frontend/src/app/features/workspace/compare.html
+index e214928..fd8f38b 100644
+--- a/frontend/src/app/features/workspace/compare.html
++++ b/frontend/src/app/features/workspace/compare.html
+@@ -1,5 +1,5 @@
+-<div class="flex min-h-0 flex-1" data-test="compare-mode">
+-  <aside class="border-border bg-surface flex w-72 shrink-0 flex-col gap-3 overflow-y-auto border-e p-3 text-sm">
++<div class="ws-panes" data-test="compare-mode">
++  <aside class="ws-rail ws-rail-start w-72 gap-3 overflow-y-auto p-3 text-sm">
+     <h3 class="kicker">
+       Compare with
+     </h3>
+@@ -73,7 +73,7 @@
+     }
+   </aside>
+ 
+-  <main class="canvas-backdrop flex min-h-0 flex-1 flex-col">
++  <main class="canvas-backdrop ws-pane-main">
+     <div class="border-border bg-surface flex items-center gap-2 border-b px-4 py-2 text-sm">
+       <button (click)="prevPage()" [disabled]="page() === 0"
+               class="btn btn-ghost btn-sm" data-test="compare-prev">‹</button>
+diff --git a/frontend/src/app/features/workspace/convert.html b/frontend/src/app/features/workspace/convert.html
+index e6124d9..a6dcc22 100644
+--- a/frontend/src/app/features/workspace/convert.html
++++ b/frontend/src/app/features/workspace/convert.html
+@@ -1,5 +1,5 @@
+-<div class="flex min-h-0 flex-1" data-test="convert-mode">
+-  <aside class="border-border bg-surface flex w-72 shrink-0 flex-col gap-4 overflow-y-auto border-e p-3 text-sm">
++<div class="ws-panes" data-test="convert-mode">
++  <aside class="ws-rail ws-rail-start w-72 gap-4 overflow-y-auto p-3 text-sm">
+     <!-- OCR -->
+     <section class="flex flex-col gap-2" data-test="ocr-panel">
+       <h3 class="kicker">
+@@ -128,7 +128,7 @@
+     </section>
+   </aside>
+ 
+-  <main class="canvas-backdrop flex min-h-0 flex-1 items-center justify-center p-8">
++  <main class="canvas-backdrop ws-pane-main items-center justify-center p-8">
+     <!-- ink-muted rather than -faint: this is instruction, not decoration, and
+          ink-muted keeps ≥4.5:1 on the canvas backdrop in both modes. -->
+     <div class="muted max-w-md text-center text-sm">
+diff --git a/frontend/src/app/features/workspace/edit.html b/frontend/src/app/features/workspace/edit.html
+index bc6388b..a402935 100644
+--- a/frontend/src/app/features/workspace/edit.html
++++ b/frontend/src/app/features/workspace/edit.html
+@@ -1,6 +1,6 @@
+-<div class="flex min-h-0 flex-1" data-test="edit-mode">
++<div class="ws-panes" data-test="edit-mode">
+   <!-- Left: tool panel -->
+-  <aside class="border-border bg-surface flex w-64 shrink-0 flex-col overflow-y-auto border-e text-sm">
++  <aside class="ws-rail ws-rail-start w-64 overflow-y-auto text-sm">
+     <div class="seg border-border gap-0 border-b px-1 py-1">
+       <button class="flex-1 justify-center" [class.seg-active]="tab() === 'edit'" [attr.aria-pressed]="tab() === 'edit'"
+               (click)="tab.set('edit')" data-test="tab-edit">Edit</button>
+@@ -326,7 +326,7 @@
+   </aside>
+ 
+   <!-- Right: the page -->
+-  <main class="canvas-backdrop flex min-h-0 flex-1 flex-col">
++  <main class="canvas-backdrop ws-pane-main">
+     <div class="border-border bg-surface flex items-center gap-2 border-b px-4 py-2 text-sm">
+       <button (click)="prevPage()" [disabled]="page() === 0"
+               class="btn btn-ghost btn-sm" data-test="edit-prev">‹</button>
+diff --git a/frontend/src/app/features/workspace/forms.html b/frontend/src/app/features/workspace/forms.html
+index 5a69957..9669f0c 100644
+--- a/frontend/src/app/features/workspace/forms.html
++++ b/frontend/src/app/features/workspace/forms.html
+@@ -1,6 +1,6 @@
+-<div class="flex min-h-0 flex-1" data-test="forms-mode">
++<div class="ws-panes" data-test="forms-mode">
+   <!-- Left: panel -->
+-  <aside class="border-border bg-surface flex w-72 shrink-0 flex-col overflow-y-auto border-e text-sm">
++  <aside class="ws-rail ws-rail-start w-72 overflow-y-auto text-sm">
+     <div class="seg border-border gap-0 border-b px-1 py-1">
+       <button class="flex-1 justify-center" [class.seg-active]="tab() === 'fill'" [attr.aria-pressed]="tab() === 'fill'"
+               (click)="tab.set('fill')" data-test="tab-fill">Fill in</button>
+@@ -244,7 +244,7 @@
+   </aside>
+ 
+   <!-- Right: the page -->
+-  <main class="canvas-backdrop flex min-h-0 flex-1 flex-col">
++  <main class="canvas-backdrop ws-pane-main">
+     <div class="border-border bg-surface flex items-center gap-2 border-b px-4 py-2 text-sm">
+       @if (tab() === 'build') {
+         <button (click)="prevPage()" [disabled]="page() === 0"
+@@ -263,6 +263,7 @@
+         @if (src()) {
+           <!-- PDF.js renders the real widgets; `formData` reports them by field name. -->
+           <ngx-extended-pdf-viewer
++            [useInlineScripts]="false"
+             [src]="src()"
+             [httpHeaders]="httpHeaders()"
+             [formData]="viewerData()"
+diff --git a/frontend/src/app/features/workspace/protect.html b/frontend/src/app/features/workspace/protect.html
+index 3c41610..af64650 100644
+--- a/frontend/src/app/features/workspace/protect.html
++++ b/frontend/src/app/features/workspace/protect.html
+@@ -1,6 +1,6 @@
+-<div class="flex min-h-0 flex-1" data-test="protect-mode">
++<div class="ws-panes" data-test="protect-mode">
+   <!-- Left: panel -->
+-  <aside class="border-border bg-surface flex w-80 shrink-0 flex-col overflow-y-auto border-e text-sm">
++  <aside class="ws-rail ws-rail-start w-80 overflow-y-auto text-sm">
+     <div class="seg border-border gap-0 border-b px-1 py-1">
+       <button class="flex-1 justify-center" [class.seg-active]="tab() === 'protect'"
+               [attr.aria-pressed]="tab() === 'protect'"
+@@ -316,7 +316,7 @@
+   </aside>
+ 
+   <!-- Right: the page -->
+-  <main class="canvas-backdrop flex min-h-0 flex-1 flex-col">
++  <main class="canvas-backdrop ws-pane-main">
+     <div class="border-border bg-surface flex items-center gap-2 border-b px-4 py-2 text-sm">
+       <button (click)="prevPage()" [disabled]="page() === 0"
+               class="btn btn-ghost btn-sm" data-test="protect-prev">‹</button>
+diff --git a/frontend/src/app/features/workspace/sign.html b/frontend/src/app/features/workspace/sign.html
+index bdef0e1..1b3ded7 100644
+--- a/frontend/src/app/features/workspace/sign.html
++++ b/frontend/src/app/features/workspace/sign.html
+@@ -1,5 +1,5 @@
+-<div class="flex min-h-0 flex-1" data-test="sign-mode">
+-  <aside class="border-border bg-surface flex w-80 shrink-0 flex-col overflow-y-auto border-e text-sm">
++<div class="ws-panes" data-test="sign-mode">
++  <aside class="ws-rail ws-rail-start w-80 overflow-y-auto text-sm">
+     <div class="flex flex-col gap-3 p-3">
+       <p class="muted text-xs">
+         Draw or type your signature, then click where it goes on the page.
+@@ -74,7 +74,7 @@
+     </div>
+   </aside>
+ 
+-  <main class="canvas-backdrop flex min-h-0 flex-1 flex-col">
++  <main class="canvas-backdrop ws-pane-main">
+     <div class="border-border bg-surface flex items-center gap-2 border-b px-4 py-2 text-sm">
+       <button (click)="prevPage()" [disabled]="page() === 0"
+               class="btn btn-ghost btn-sm" data-test="sign-prev">‹</button>
+diff --git a/frontend/src/app/features/workspace/workspace.html b/frontend/src/app/features/workspace/workspace.html
+index faa22fb..30917fa 100644
+--- a/frontend/src/app/features/workspace/workspace.html
++++ b/frontend/src/app/features/workspace/workspace.html
+@@ -45,6 +45,11 @@
+                 data-test="protect-toggle">Protect</button>
+       </nav>
+       <span class="border-border h-5 shrink-0 border-s" aria-hidden="true"></span>
++      <button (click)="undoLastChange()" [disabled]="!canUndoVersion() || busy()"
++              class="btn btn-ghost btn-sm" data-test="undo-version"
++              [title]="canUndoVersion()
++                ? 'Undo the last change — back to v' + ((viewer.currentSeq() ?? 1) - 1)
++                : 'Nothing to undo yet'">Undo</button>
+       <button (click)="dialog.set('split')" class="btn btn-ghost btn-sm" data-test="tool-split">Split</button>
+       <button (click)="dialog.set('compress')" class="btn btn-ghost btn-sm" data-test="tool-compress">Compress</button>
+       <button (click)="download()" class="btn btn-secondary btn-sm" data-test="download">Download</button>
+@@ -158,9 +163,9 @@
+         (conflict)="onAnnotationConflict()"
+       />
+     } @else {
+-    <div class="flex min-h-0 flex-1">
++    <div class="ws-panes">
+       <!-- Left rail: Pages / Outline / History (§4 view mode) -->
+-      <aside class="border-border bg-surface flex w-56 shrink-0 flex-col border-e">
++      <aside class="ws-rail ws-rail-start w-56">
+         <div class="seg border-border gap-0 border-b px-1 py-1">
+           <button class="flex-1 justify-center" [class.seg-active]="leftTab() === 'thumbs'"
+                   [attr.aria-pressed]="leftTab() === 'thumbs'"
+@@ -228,7 +233,7 @@
+       </aside>
+ 
+       <!-- Center: the desk. Pages are white paper on the backdrop (§3). -->
+-      <main class="canvas-backdrop flex min-h-0 flex-1 flex-col">
++      <main class="canvas-backdrop ws-pane-main">
+         @if (mode() === 'view') {
+           <div class="border-border bg-surface flex items-center gap-2 border-b px-4 py-2">
+             <input [ngModel]="searchQuery()" (ngModelChange)="searchQuery.set($event)" (keyup.enter)="doSearch()"
+@@ -246,6 +251,7 @@
+                    download in the workspace bar, annotation in Annotate.
+                    D7: first paint is fit-to-width, centered, on the backdrop. -->
+               <ngx-extended-pdf-viewer
++                [useInlineScripts]="false"
+                 [src]="contentUrl()"
+                 [httpHeaders]="authHeaders()"
+                 [page]="page()"
+@@ -386,18 +392,32 @@
+       </div>
+     </div>
+   }
+-} @else if (viewer.loading()) {
+-  <div class="flex h-full flex-col items-center justify-center gap-3" data-test="workspace-loading"
+-       role="status" aria-live="polite">
+-    <app-spinner />
+-    <p class="muted text-sm">Opening your document…</p>
+-  </div>
+ } @else {
++  <!-- Neither of the branches below has a workspace bar, and the app shell
++       hides its own header inside /app/doc/:id — so both of them used to render
++       with no brand, no theme toggle and no way out of the screen at all, at
++       the moment the person is least able to guess what happened. This is the
++       smallest bar that is still a header (design contract §3). -->
++  <div class="flex h-full min-h-0 flex-1 flex-col">
++    <div class="ws-bar" data-test="workspace-bar-minimal">
++      <a routerLink="/" class="ws-back" data-test="back" aria-label="Back to the tools">←</a>
++      <app-brand [size]="20" />
++      <span class="ms-auto"></span>
++      <app-theme-toggle />
++    </div>
++    <app-guest-banner />
++
++    @if (viewer.loading()) {
++      <div class="flex min-h-0 flex-1 flex-col items-center justify-center gap-3"
++           data-test="workspace-loading" role="status" aria-live="polite">
++        <app-spinner />
++        <p class="muted text-sm">Opening your document…</p>
++      </div>
++    } @else {
+   <!-- The branch that did not exist. A stale or foreign /app/doc/:id, a 500,
+        or a dropped connection used to leave a white screen with nothing on it
+-       and no way back — at the moment the person is least able to guess what
+-       happened. -->
+-  <div class="flex h-full flex-col items-center justify-center gap-4 px-6 text-center"
++       and no way back. -->
++  <div class="flex min-h-0 flex-1 flex-col items-center justify-center gap-4 px-6 text-center"
+        data-test="workspace-error" role="alert">
+     <svg class="ti text-ink-faint" viewBox="0 0 24 24" aria-hidden="true">
+       <path d="M6.5 3.5h7l4 4v13h-11z" />
+@@ -410,6 +430,14 @@
+       <p class="muted max-w-md text-sm">
+         Guest files are deleted automatically. Anything you do now starts a fresh session.
+       </p>
++    } @else if (viewer.error()?.code === 'throttled') {
++      <!-- A throttle is a pause, not a breakage, and the server said how long.
++           Saying so — and holding the button until then — is the difference
++           between "this is broken" and "this is busy". -->
++      <p class="muted max-w-md text-sm" data-test="workspace-throttled">
++        You are going a little faster than the free tier allows. Nothing is lost —
++        your document is still here.
++      </p>
+     }
+     <div class="flex items-center gap-3">
+       <!-- Retrying an expired guest session can only fail the same way: the
+@@ -418,8 +446,11 @@
+            dropped connection — is worth one. -->
+       @if (viewer.error()?.code !== 'guest_expired') {
+         <button type="button" (click)="retryLoad()"
++                [disabled]="retryIn() > 0"
+                 class="btn btn-secondary"
+-                data-test="workspace-retry">Try again</button>
++                data-test="workspace-retry">
++          {{ retryIn() > 0 ? 'Try again in ' + retryIn() + 's' : 'Try again' }}
++        </button>
+       }
+       <!-- A guest has no dashboard: /app/dashboard is account-gated, so this
+            handed somebody who was *just* told "anything you do now starts a
+@@ -432,4 +463,6 @@
+       </a>
+     </div>
+   </div>
++    }
++  </div>
+ }
+diff --git a/frontend/src/app/features/workspace/workspace.ts b/frontend/src/app/features/workspace/workspace.ts
+index 93816a8..b57c9a7 100644
+--- a/frontend/src/app/features/workspace/workspace.ts
++++ b/frontend/src/app/features/workspace/workspace.ts
+@@ -1,5 +1,6 @@
+ import { CdkDrag, CdkDragDrop, CdkDropList, moveItemInArray } from '@angular/cdk/drag-drop';
+-import { ChangeDetectionStrategy, Component, DestroyRef, computed, effect, inject, signal } from '@angular/core';
++import { isPlatformBrowser } from '@angular/common';
++import { ChangeDetectionStrategy, Component, DestroyRef, PLATFORM_ID, computed, effect, inject, signal } from '@angular/core';
+ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+ import { FormsModule } from '@angular/forms';
+ import { ActivatedRoute, Router, RouterLink } from '@angular/router';
+@@ -48,6 +49,12 @@ type Dialog = null | 'split' | 'scale' | 'nup' | 'compress' | 'insert';
+     Brand, GuestBanner, ThemeToggle,
+   ],
+   templateUrl: './workspace.html',
++  // The host is a flex item of the shell's `main`, and it was not saying so:
++  // an inline element with `height: auto` around a child asking for `h-full`
++  // is circular, so the whole workspace sized itself to its content. On a
++  // 900px screen the reading pane came out 318px tall with 400px of empty
++  // backdrop under it, in every mode.
++  host: { class: 'flex min-h-0 flex-1 flex-col' },
+ })
+ export class Workspace {
+   protected viewer = inject(ViewerFacade);
+@@ -162,6 +169,16 @@ export class Workspace {
+   });
+ 
+   constructor() {
++    // Arm the countdown whenever a throttle arrives, and let it run down.
++    effect((onCleanup) => {
++      const wait = this.viewer.error()?.retryAfter ?? 0;
++      this.retryIn.set(wait);
++      if (!wait || !this.isBrowser) return;
++      const timer = setInterval(() => {
++        this.retryIn.update((left) => (left > 0 ? left - 1 : 0));
++      }, 1000);
++      onCleanup(() => clearInterval(timer));
++    });
+     // Angular reuses this component across /app/doc/:id navigations (split and
+     // extract land on a new document), so track the param, not a snapshot.
+     this.route.paramMap.pipe(takeUntilDestroyed()).subscribe((params) => {
+@@ -239,6 +256,15 @@ export class Workspace {
+     if (id) this.viewer.load(id);
+   }
+ 
++  /**
++   * Seconds left on a throttle, counted down so the button becomes true.
++   *
++   * A throttle is a pause, not a breakage: the server said exactly how long,
++   * and offering "Try again" before then is offering the same failure again.
++   */
++  protected readonly retryIn = signal(0);
++  private isBrowser = isPlatformBrowser(inject(PLATFORM_ID));
++
+   /**
+    * The viewer could not fetch the document (L10).
+    *
+@@ -323,6 +349,24 @@ export class Workspace {
+   }
+ 
+   // --- versions ---
++  /**
++   * Undo the last change to the file.
++   *
++   * Every edit here is a server op that appends a version, so "undo" already
++   * existed — buried three clicks deep as "Revert to this" on a row of the
++   * History tab, which is not where anybody looks after a mistake. This is the
++   * same operation with the name people expect, in the bar that owns every
++   * editing affordance (§4 workspace, D3). It is itself a new version, so it
++   * can be undone in turn, which is why it does not stop to ask.
++   */
++  protected readonly canUndoVersion = computed(() => (this.viewer.currentSeq() ?? 1) > 1);
++
++  protected undoLastChange(): void {
++    const seq = this.viewer.currentSeq();
++    if (!seq || seq < 2) return;
++    this.revert(seq - 1);
++  }
++
+   revert(seq: number): void {
+     this.busy.set(true);
+     // Track the revert job to completion (viewer.revert only creates it).
+diff --git a/frontend/src/styles.scss b/frontend/src/styles.scss
+index 2e074a2..7178eaf 100644
+--- a/frontend/src/styles.scss
++++ b/frontend/src/styles.scss
+@@ -726,7 +726,48 @@ input[type="color"] {
+   min-height: 52px;
+   background: var(--color-surface);
+   border-block-end: var(--border-hairline) solid var(--color-border);
++  /* The bar carries a title, nine mode buttons and four actions. On a phone
++     that is wider than the screen, and because nothing stopped it the *page*
++     grew instead: the whole workspace scrolled sideways, the mode nav sat off
++     the right edge, and there was no way to reach Annotate at all. The bar
++     scrolls inside itself now; the page never does. */
++  max-width: 100%;
++  overflow-x: auto;
++  overscroll-behavior-inline: contain;
++  scrollbar-width: none;
++}
++.ws-bar::-webkit-scrollbar { display: none; }
++.ws-bar > * { flex-shrink: 0; }
++@media (max-width: 767px) {
++  .ws-bar { gap: 8px; padding-inline: 10px; }
++}
++/* The workspace's pane layout (§4 workspace — phone rule).
++
++   Three panes on a desk: a rail, the page, sometimes a second rail. A 390 px
++   phone cannot hold 208 px + a page + 256 px, and nothing said so — so the
++   row simply overflowed and the *page* scrolled sideways, which put the mode
++   nav (View / Organize / Edit / Annotate …) off the right edge with no way to
++   reach it. Below `md` the panes stack instead: rails become full-width
++   sections above and below the page, each scrolling within a share of the
++   height, and every control stays reachable. */
++.ws-panes { display: flex; min-height: 0; flex: 1 1 0%; }
++.ws-pane-main { display: flex; min-width: 0; min-height: 0; flex: 1 1 0%; flex-direction: column; }
++.ws-rail { display: flex; flex-direction: column; flex-shrink: 0; background: var(--color-surface); }
++.ws-rail-start { border-inline-end: var(--border-hairline) solid var(--color-border); }
++.ws-rail-end { border-inline-start: var(--border-hairline) solid var(--color-border); }
++@media (max-width: 767px) {
++  .ws-panes { flex-direction: column; }
++  .ws-rail { width: 100%; max-height: 34vh; overflow-y: auto; }
++  .ws-rail-start {
++    border-inline-end: 0;
++    border-block-end: var(--border-hairline) solid var(--color-border);
++  }
++  .ws-rail-end {
++    border-inline-start: 0;
++    border-block-start: var(--border-hairline) solid var(--color-border);
++  }
+ }
++
+ .ws-back {
+   color: var(--color-ink-muted);
+   text-decoration: none;
+@@ -800,6 +841,29 @@ ngx-extended-pdf-viewer {
+   --progressBar-bg-color: var(--color-border);
+   --scrollbar-color: var(--color-border-strong);
+   --scrollbar-bg-color: transparent;
++  /* Native controls inside the viewer — the zoom <select> and the page field —
++     were drawn by the OS from the light palette in both themes, which put a
++     white dropdown with a system border in the middle of a dark toolbar. */
++  color-scheme: light;
++}
++.dark ngx-extended-pdf-viewer { color-scheme: dark; }
++
++/* The zoom dropdown and the page box are the only two controls D3 leaves in
++   the pdf.js toolbar, so they are the only two that have to look like ours. */
++ngx-extended-pdf-viewer #scaleSelect,
++ngx-extended-pdf-viewer #pageNumber {
++  font: 500 12.5px/1 var(--font-ui);
++  color: var(--color-ink);
++  background: var(--color-surface-raised);
++  border: var(--border-hairline) solid var(--color-border-strong);
++  border-radius: var(--radius-1);
++  min-height: 28px;
++  padding-inline: 8px;
++}
++ngx-extended-pdf-viewer #scaleSelect:focus-visible,
++ngx-extended-pdf-viewer #pageNumber:focus-visible {
++  outline: 2px solid var(--color-accent);
++  outline-offset: 1px;
+ }
+ 
+ /* ---------- 18. Rendered PDF paper (§3) ---------- */
+@@ -817,6 +881,7 @@ ngx-extended-pdf-viewer {
+ }
+ .dark .page-thumb { border-color: var(--color-border-strong); }
+ .canvas-backdrop { background: var(--color-canvas-backdrop); }
++
+ /* ---------- 19. Text drawn on the page (§4 "text on the page") ---------- */
+ /* A text annotation has to look on screen like what the file will contain:
+    same box, same point size, same colour, wrapping the same way. The previous
+diff --git a/infra/railway/nginx.railway.conf b/infra/railway/nginx.railway.conf
+index 7e85b56..ee75e9f 100644
+--- a/infra/railway/nginx.railway.conf
++++ b/infra/railway/nginx.railway.conf
+@@ -69,6 +69,42 @@ server {
+         proxy_set_header X-Forwarded-Proto https;
+     }
+ 
++    # pdf.js ships as ES modules (`viewer-*.mjs`, `pdf.worker-*.mjs`) and a
++    # WebAssembly blob. nginx's stock mime.types knows neither extension, so
++    # both were served as `application/octet-stream` — and with
++    # `X-Content-Type-Options: nosniff` (rightly) set, Chrome refuses to
++    # execute a module script or stream-compile a wasm module with the wrong
++    # type. That is why the workspace viewer never fetched a document in
++    # production and failed silently. An empty `types {}` plus `default_type`
++    # pins the answer regardless of what the base image's map contains.
++    location ~* \.mjs$ {
++        types { }
++        default_type text/javascript;
++        expires 1y;
++        add_header Cache-Control "public, immutable" always;
++        add_header X-Content-Type-Options "nosniff" always;
++        add_header Referrer-Policy "same-origin" always;
++        add_header X-Frame-Options "DENY" always;
++        add_header Strict-Transport-Security "max-age=63072000; includeSubDomains" always;
++        add_header Content-Security-Policy "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; worker-src 'self' blob:; child-src 'self' blob:; manifest-src 'self'" always;
++        add_header Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=(), usb=()" always;
++        try_files $uri =404;
++    }
++
++    location ~* \.wasm$ {
++        types { }
++        default_type application/wasm;
++        expires 1y;
++        add_header Cache-Control "public, immutable" always;
++        add_header X-Content-Type-Options "nosniff" always;
++        add_header Referrer-Policy "same-origin" always;
++        add_header X-Frame-Options "DENY" always;
++        add_header Strict-Transport-Security "max-age=63072000; includeSubDomains" always;
++        add_header Content-Security-Policy "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; worker-src 'self' blob:; child-src 'self' blob:; manifest-src 'self'" always;
++        add_header Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=(), usb=()" always;
++        try_files $uri =404;
++    }
++
+     location ~* \.(js|css|woff2?|png|jpg|jpeg|svg|ico)$ {
+         expires 1y;
+         add_header Cache-Control "public, immutable" always;
+-- 
+2.43.0
+
+
+From d197c59f1a68160b9cae8891a0f96d3e30771828 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Thu, 20 Aug 2026 13:12:37 +0000
+Subject: [PATCH 5/6] fix(tools): merge in the order the visitor added the
+ files
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+`/merge-pdf` tells the visitor on its own page that "page order follows the
+order you add the files", and then did not do that. The uploads run
+concurrently and each result was recorded with `push`, so `document_ids` went
+out in the order the *network* finished — and `tasks.py` merges strictly
+positionally. Add a 20 MB chapter and then a 200 KB cover and the cover merged
+second, differently on a different connection. `/compare-pdf` shares the call
+and can invert the diff the same way.
+
+A slot per file, filled at the file's own index. The test gates the two uploads
+so the second finishes first, which is the case that was silently wrong.
+
+Recorded as known-not-fixed on 2026-08-19; it is a one-line ordering bug in a
+headline tool, so it is fixed here rather than carried further.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01Y58KHCbQzb6yAzQv9a6xbQ
+---
+ .../features/tools/tool-page-order.spec.ts    | 104 ++++++++++++++++++
+ frontend/src/app/features/tools/tool-page.ts  |  20 +++-
+ 2 files changed, 119 insertions(+), 5 deletions(-)
+ create mode 100644 frontend/src/app/features/tools/tool-page-order.spec.ts
+
+diff --git a/frontend/src/app/features/tools/tool-page-order.spec.ts b/frontend/src/app/features/tools/tool-page-order.spec.ts
+new file mode 100644
+index 0000000..3e60b1c
+--- /dev/null
++++ b/frontend/src/app/features/tools/tool-page-order.spec.ts
+@@ -0,0 +1,104 @@
++import { provideHttpClient } from '@angular/common/http';
++import { provideHttpClientTesting } from '@angular/common/http/testing';
++import { TestBed } from '@angular/core/testing';
++import { By } from '@angular/platform-browser';
++import { provideRouter } from '@angular/router';
++import { Observable, Subject, of } from 'rxjs';
++
++import { GuestFacade } from '../../abstraction/guest.facade';
++import { JobsFacade } from '../../abstraction/jobs.facade';
++import { DocumentModel, Job } from '../../core/models/models';
++import { DocumentsService } from '../../core/services/documents.service';
++import { toolBySlug } from '../../core/tool-pages';
++import { UploadDropzone } from '../../shared/upload-dropzone';
++import { ToolPage } from './tool-page';
++
++/**
++ * "Page order follows the order you add the files" — the promise `/merge-pdf`
++ * makes on its own page.
++ *
++ * The uploads run concurrently and the first cut recorded each result with
++ * `push`, so `document_ids` reached the server in the order the *network*
++ * finished. `tasks.py` merges strictly positionally: add a 20 MB chapter and
++ * then a 200 KB cover and the cover merged second, differently on a different
++ * connection. `/compare-pdf` shares the call and can invert the diff.
++ */
++describe('Tool page — the order the visitor chose', () => {
++  let sent: { type: string; params: Record<string, unknown> }[];
++  let gates: Subject<unknown>[];
++
++  function doc(id: string): DocumentModel {
++    return {
++      id, title: id, status: 'ready', page_count: 1, size_bytes: 1,
++      is_encrypted: false, starred: false, folder: null, metadata: {},
++      current_version: { id: 'v1', seq: 1 }, last_opened_at: null,
++      trashed_at: null, created_at: '', updated_at: '',
++    } as DocumentModel;
++  }
++
++  beforeEach(() => {
++    sent = [];
++    gates = [];
++    let n = 0;
++    const docs: Partial<DocumentsService> = {
++      // Each upload waits on its own gate, so the test decides who finishes
++      // first — which is the whole point.
++      upload: () => {
++        const index = n++;
++        const gate = new Subject<unknown>();
++        gates[index] = gate;
++        return gate.asObservable() as Observable<never>;
++      },
++      get: (id: string) => of(doc(id)),
++      crossOperation: (body) => {
++        sent.push(body as never);
++        return of({ id: 'job-1', status: 'succeeded', progress: 100,
++                    result: { documents: ['out'] } } as unknown as Job);
++      },
++    };
++    TestBed.configureTestingModule({
++      providers: [
++        provideHttpClient(),
++        provideHttpClientTesting(),
++        provideRouter([]),
++        { provide: DocumentsService, useValue: docs },
++        { provide: JobsFacade, useValue: { dispatch: (c$: Observable<Job>) => c$ } },
++        {
++          provide: GuestFacade,
++          useValue: { ensureSession: () => of(null), principal: () => 'guest' },
++        },
++      ],
++    });
++  });
++
++  it('sends the files in the order they were added, not the order they landed', () => {
++    const fixture = TestBed.createComponent(ToolPage);
++    fixture.componentRef.setInput('tool', toolBySlug('merge-pdf'));
++    fixture.detectChanges();
++
++    const dropzone = fixture.debugElement.query(By.directive(UploadDropzone));
++    dropzone.componentInstance.filesPicked.emit([
++      new File(['%PDF'], 'chapter.pdf'),
++      new File(['%PDF'], 'cover.pdf'),
++    ]);
++    fixture.detectChanges();
++
++    const cta: HTMLButtonElement =
++      fixture.nativeElement.querySelector('[data-test=tool-run]');
++    expect(cta.disabled).toBe(false);
++    cta.click();
++    fixture.detectChanges();
++
++    expect(gates.length).toBe(2);
++    // The small second file comes back first, as it would on any real network.
++    gates[1].next({ body: doc('cover') });
++    gates[1].complete();
++    gates[0].next({ body: doc('chapter') });
++    gates[0].complete();
++    fixture.detectChanges();
++
++    expect(sent.length).toBe(1);
++    expect(sent[0].type).toBe('merge');
++    expect(sent[0].params['document_ids']).toEqual(['chapter', 'cover']);
++  });
++});
+diff --git a/frontend/src/app/features/tools/tool-page.ts b/frontend/src/app/features/tools/tool-page.ts
+index 205daa3..48a9490 100644
+--- a/frontend/src/app/features/tools/tool-page.ts
++++ b/frontend/src/app/features/tools/tool-page.ts
+@@ -265,8 +265,18 @@ export class ToolPage {
+   }
+ 
+   private uploadAll(): void {
+-    const uploaded: DocumentModel[] = [];
+     const files = this.picked();
++    /**
++     * A slot per file, filled at the file's own index.
++     *
++     * The uploads run concurrently and `push` recorded whichever *finished*
++     * first, so `document_ids` went to the server in network order — and
++     * `tasks.py` merges strictly positionally. Add a 20 MB chapter and then a
++     * 200 KB cover and the cover merged second, non-deterministically, against
++     * the promise this very page makes: "Page order follows the order you add
++     * the files." `/compare` shared the race, where it can invert the diff.
++     */
++    const uploaded: (DocumentModel | null)[] = files.map(() => null);
+     let remaining = files.length;
+ 
+     // Re-running the same single file after a refused selection: it is already
+@@ -277,19 +287,19 @@ export class ToolPage {
+       return;
+     }
+ 
+-    for (const file of files) {
++    files.forEach((file, index) => {
+       this.docsSvc.upload(file).subscribe({
+         next: (event) => {
+           const body = (event as { body?: DocumentModel }).body;
+           if (body?.id) {
+-            uploaded.push(body);
++            uploaded[index] = body;
+             if (this.needsPages() && files.length === 1) this.uploaded.set({ file, doc: body });
+-            if (--remaining === 0) this.dispatch(uploaded);
++            if (--remaining === 0) this.dispatch(uploaded.filter((d): d is DocumentModel => !!d));
+           }
+         },
+         error: (err) => this.fail(err),
+       });
+-    }
++    });
+   }
+ 
+   /**
+-- 
+2.43.0
+
+
+From 961343182059eb087f272fa1b1855d8cb68a68fb Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Thu, 20 Aug 2026 13:14:52 +0000
+Subject: [PATCH 6/6] docs(progress): the UI audit, and the handoff that lands
+ it
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+The 2026-08-10 queue row — "production workspace viewer never loads the
+document" — is closed with its root cause, and two follow-ups take its place:
+nothing still asserts that a page actually *drew* (which is why the defect
+survived ten days of green checks), and the phone workspace is now a rescue
+rather than a designed layout.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01Y58KHCbQzb6yAzQv9a6xbQ
+---
+ development-plans/PROGRESS.md       |  26 ++++-
+ docs/handoff/2026-08-20-ui-audit.md | 152 ++++++++++++++++++++++++++++
+ 2 files changed, 177 insertions(+), 1 deletion(-)
+ create mode 100644 docs/handoff/2026-08-20-ui-audit.md
+
+diff --git a/development-plans/PROGRESS.md b/development-plans/PROGRESS.md
+index 7b081b4..7ee6479 100644
+--- a/development-plans/PROGRESS.md
++++ b/development-plans/PROGRESS.md
+@@ -1088,12 +1088,36 @@ up from 178. Coverage `apps` 92 % (gate 85) and `pdf_engine` 92 % (gate 90).
+ | 2026-08-02 | **A stale `base_version_seq` after every save — one race behind several "memory" flakes.** Measured on `main` as well as on this branch (2 of 6 runs red on `main`, in isolation, on a settled stack), so it is pre-existing and not from the retention work. Root cause is in the job row, not the environment: `edit_text` succeeds → `trackReload` fires the toast and calls `viewer.reload()`, which refetches the document *asynchronously*; anything dispatched before that `GET` lands still carries the old `base_version_seq`, and the worker refuses it with `version_conflict` ("The document changed since you loaded it"). Confirmed by reading the failed rows rather than the console: across a full suite run **every** failed job was `version_conflict`, and not only `find_replace` — `page_numbers` and `set_metadata` too, and it takes `phase-3:43` (annotate) down as well as `phase-4:33`. In the product it self-heals — `handleFailure` shows "Document changed — refreshed" and reloads — so this is a real but recoverable annoyance for a user who acts quickly after saving. The fix is to take the new `seq` from the job result the save already returns instead of waiting for the refetch — `trackReload` has the job in hand, but the mode components (`edit`, `forms`, `convert`, `sign`, `annotate`) emit a bare `(saved)` and would each need to carry it. Not bundled here: six feature components, none of which this change touches. | 8 | No | ⬜ |
+ | 2026-08-02 | **The p95 number itself.** `infra/perf/` produces one, but against a four-document library on a laptop — 3–76 ms against a 150 ms budget, which proves the shape and not the figure. Run it against the deployed host with `PERF_EMAIL` pointed at a real account before ticking §10.2. | 10 | No | ⬜ |
+ | 2026-07-31 | **Ad-revenue assumption unvalidated** — the whole strategy rests on organic tool-page traffic converting to ad impressions at a viable RPM. Worth a sanity check against real AdSense figures for utility sites before committing further engineering to the ad path. | 9 | No | ⬜ |
+-| 2026-08-10 | **Production workspace viewer never loads the document.** `/app/doc/<id>` as a guest in desktop Chrome: metadata, versions, outline and all thumbnails answer 200, **no `.../content/` request is ever made**, the pdf.js canvas stays blank and the console stays silent — reproduced across SPA navigation and a hard reload. Tool-page funnel (upload -> result -> download) unaffected. This is the 2026-08-02 "nothing asserts a page drew" row, live in production. Chase: H3 local gate, then H2 `@smoke` vs production (`docs/ops/railway-handoff-claude-cli.md`); whichever way it falls, add the page-actually-drew assertion so it cannot return. | 1/10 | No | ⬜ |
++| 2026-08-10 | **Production workspace viewer never loads the document.** `/app/doc/<id>` as a guest in desktop Chrome: metadata, versions, outline and all thumbnails answer 200, **no `.../content/` request is ever made**, the pdf.js canvas stays blank and the console stays silent — reproduced across SPA navigation and a hard reload. Tool-page funnel (upload -> result -> download) unaffected. This is the 2026-08-02 "nothing asserts a page drew" row, live in production. Chase: H3 local gate, then H2 `@smoke` vs production (`docs/ops/railway-handoff-claude-cli.md`); whichever way it falls, add the page-actually-drew assertion so it cannot return. | 1/10 | No | ✔ **Root-caused and fixed 2026-08-20** — two blockers, both production-only, which is why the console stayed silent locally. (a) ngx-extended-pdf-viewer feature-detects the browser by injecting an **inline `<script>`**; `script-src 'self'` refuses it, so the viewer never initialised and therefore never asked for the document. `[useInlineScripts]="false"` takes the library's own external `op-chaining-support.js` instead. (b) nginx served pdf.js's `.mjs` modules as `application/octet-stream` (stock `mime.types` knows neither `.mjs` nor `.wasm`), which `nosniff` makes fatal for a module script — both configs pin the type now. Verified in a production-faithful harness: `viewer-*.min.mjs`, `pdf.worker-*.min.mjs` and `/api/documents/{id}/content/` all 200 and the page draws. **The page-actually-drew assertion is still owed** — see the new row below. |
++| 2026-08-20 | **Nothing still asserts that a page actually drew.** The viewer defect above was invisible for ten days because every check stopped at "the request returned 200". The e2e suite should open a document in View mode and assert a non-blank canvas (a `pageRendered` event, or a canvas whose pixels are not uniform), and the production smoke should do the same. Both blockers found on 2026-08-20 would have failed such an assertion immediately. | 1/10 | No | ⬜ |
++| 2026-08-20 | **The workspace on a phone is stacked, not designed.** Below `md` the rails now become full-width sections above and below the page (§3 workspace panes) — which makes every control reachable and stops the page scrolling sideways, but it is a rescue, not a phone layout. A designed treatment would probably make the rails drawers with a persistent bottom bar. Worth a designer's eye before any mobile push. | 10 | No | ⬜ |
+ 
+ ## Session log
+ 
+ _(Newest first.)_
+ 
++**2026-08-20 — Full UI audit + production bug hunt (Cowork). Four fixes, none deployed yet.**
++
++Owner's report: "most features do not work in production", and locally "edit features need to be reworked — in annotate, the text box is bold, doesn't show the text at all; no clear undo button for edits." Both were reproduced and both are fixed; the work is a `git format-patch` on `00ccb52` awaiting `git am` + push (see the handoff below).
++
++**Method.** Production was driven in the owner's own Chrome, and then reproduced in the cloud sandbox by serving the real production bundle from a local server that copies Railway's MIME map, CSP and `nosniff` **and proxies `/api` to the live API** — a debuggable production. Playwright cannot reach the internet from the sandbox but it can reach localhost, so every finding below was reproduced, fixed and re-verified in a real browser against the real backend.
++
++**1 — `GET /api/config/` answered `410` from the browser cache, for every token, for ever.** *(the headline defect)* Guest tokens expire after 24 h. The first request with a stale one answers `410 guest_expired`. That response carried **no `Cache-Control`**, so Chrome stored it heuristically, keyed on URL + `Vary` (`Accept, origin` — the credential is not in it). Every later `/api/config/` in that browser was then answered 410 *from cache*, with tokens minted seconds earlier: the client cleared each fresh session as fast as it created one, uploads landed in sessions nothing could read, and `/app/doc/<id>` showed "An error occurred." Proven by counting requests at the proxy — the server saw **one** 410; the browser replayed it five times. Fixed with `ApiCacheControlMiddleware`: an error is never stored, a success keeps whatever the view chose and otherwise gets `private, no-store`.
++
++**2 — a late `410` wiped a live session.** Two `/api/config/` calls made with the same expired token both come back 410, and the second landed *after* a fresh session had been minted and a file uploaded into it. `onSessionExpired` now takes the credential the failing request carried and ignores a verdict about one it no longer holds. On top of that, `guest_expired` now mints a fresh session and **replays the request once**, so a returning visitor simply carries on; the banner is kept for the case that really lost something.
++
++**3 — the workspace viewer never loaded in production, and nobody could see why.** Two independent blockers, both invisible locally. (a) ngx-extended-pdf-viewer feature-detects the browser with an **inline `<script>`**, which `script-src 'self'` refuses — so the viewer never initialised and `…/content/` was never requested at all (the open defect recorded 2026-08-10). `[useInlineScripts]="false"` takes the library's own external `op-chaining-support.js` instead. (b) nginx served pdf.js's `.mjs` modules as `application/octet-stream` — stock `mime.types` knows neither `.mjs` nor `.wasm` — which `nosniff` (rightly) makes fatal for a module script. Both nginx configs pin the type. **Verified:** `viewer-*.min.mjs`, `pdf.worker-*.min.mjs` and `/api/documents/{id}/content/` all 200, page drawn, zero console errors.
++
++**4 — the text box, and undo.** A `free_text` annotation drew an empty rectangle with a 2 pt frame in the highlighter's yellow and put its words in a 10 px badge floating above the box, truncated at 24 characters, editable only in the right sidebar — exactly "bold, doesn't show the text at all". Text is now drawn inside its own rect at its own point size and colour (converted against the page's real width in points), edited in place with the caret already in it, committed on blur. Colour and opacity are held per tool family so text is ink, not highlighter. And Undo/Redo (⌘Z / ⇧⌘Z) in the annotate bar over a snapshot-per-gesture history, plus a version-level **Undo** in the workspace bar — the revert that was previously three clicks deep in the History tab. **Verified end to end:** typed, saved, downloaded; the file carries `/FreeText` with the text at `0.2 0.176 0.141 rg /Helv 12`.
++
++**Also found and fixed.** The workspace never filled the screen (host was not declaring itself a flex item — a 900 px screen gave a 318 px reading pane in every mode). It was unusable on a phone: 208 px rail + page + 256 px rail overflowed 390 px, the page scrolled sideways and the mode nav sat off the right edge — panes stack below `md` now and the bar scrolls inside itself. The loading and error screens had no header at all. A `429` was dressed as a fatal error; it now says what it is and holds the retry for the seconds the server named. `Http404` reached the client as the literal words "An error occurred." File sizes were rendered only in megabytes, so a 40 KB page read "0.0 MB". And `/merge-pdf` sent `document_ids` in network order, against its own promise — the known-not-fixed item from 2026-08-19.
++
++**Swept, working.** All 24 tool pages run end to end against the live API (upload → job → result/workspace), light and dark, zero console errors, zero 4xx; landing, legal, verify, auth, dashboard and 404 all render with an h1 and no errors; RTL mirrors correctly including Hebrew in a text box; `data-test` parity 0 removed / 9 added.
++
++**Gate.** `ng lint` clean · **250 unit tests** (18 new) · build + 29 prerendered routes + `verify:prerender` green · ruff + mypy clean (173 files) · backend suite diffed against baseline — **no new failures** (the sandbox's usual OCR / Ghostscript / unpaper / admin-allowlist absences are unchanged), 5 new backend tests. e2e spec extended for the text box; **e2e not run** — it needs the full local stack, which the sandbox cannot host.
++
++**➡ Handoff.** Six commits (five fixes + this record) exist only as **`.zen-ui-audit-2026-08-20.patch` in the repo root on the Mac** (the sandbox cannot push to `yhaspel/ZenPDF`); the prompt that drives it is committed at `docs/handoff/2026-08-20-ui-audit.md`. Apply with `git am`, re-run the gate locally, push — the push is the deploy. No migrations, no new npm dependencies, no env changes. **The nginx change means the `web` service must rebuild**; `infra/railway/**` is in its watch patterns, so a push does it.
++
+ **2026-08-19 — The page-tools fix shipped to production (PR #14, #15)**
+ 
+ - **Landed:** the 2026-08-18 patch below, applied verbatim, plus the plan itself archived at `docs/archived/2026-08-18-extract-delete-page-selection.patch`. Local gate on the full stack: ruff + mypy clean (172 source files), `apps/pdf_engine` + `apps/documents` **689 passed**, `ng lint` clean, **232 unit tests**, build + **29 prerendered routes** + `verify:prerender` green. Two pytest failures (`test_an_html_file_becomes_a_pdf`, `test_ten_pages_finish_inside_the_budget`) were a Gotenberg timeout and an OCR wall-clock budget losing the race to a concurrent production build; both pass in isolation and neither touches the changed code.
+diff --git a/docs/handoff/2026-08-20-ui-audit.md b/docs/handoff/2026-08-20-ui-audit.md
+new file mode 100644
+index 0000000..ae07f56
+--- /dev/null
++++ b/docs/handoff/2026-08-20-ui-audit.md
+@@ -0,0 +1,152 @@
++# Handoff — UI audit + production bug hunt (2026-08-20)
++
++**For:** Claude CLI, run locally on the Mac, in `~/Documents/Claude/Projects/ZenPDF`.
++**What it does:** applies six commits that already exist as a patch, re-runs the full local
++gate, and pushes — the push is the deploy (Railway auto-deploys `main`).
++
++The work was done in a Cowork cloud session that **cannot push to `yhaspel/ZenPDF`**, so it is
++delivered as a `git format-patch`. Everything below is one prompt; paste it into Claude CLI.
++
++---
++
++## The one-shot prompt
++
++```text
++You are picking up a finished piece of work on ZenPDF and getting it onto production.
++Read AGENTS.md first, then development-plans/PROGRESS.md's newest session log entry
++(2026-08-20) — it is the record of what this patch does and why.
++
++Context you need up front:
++- The repo is at ~/Documents/Claude/Projects/ZenPDF and `main` is at 00ccb52.
++- Six commits are waiting in `.zen-ui-audit-2026-08-20.patch` in the repo root.
++  They were authored against 00ccb52 and have been proven to `git am` cleanly onto it
++  and reproduce the exact reviewed tree.
++- A push to `main` IS the deploy. Six Railway services build from the repo; watch
++  patterns mean `frontend/**` rebuilds `web`, `backend/**` rebuilds the Django five,
++  and `infra/railway/**` rebuilds both. THIS PATCH TOUCHES ALL THREE — in particular
++  `infra/railway/nginx.railway.conf`, and the nginx change is load-bearing: without it
++  the PDF viewer stays blank in production.
++- No migrations. No new npm or pip dependencies. No environment variables to set.
++- Local env quirks: `.env` overrides API_PORT=8010 and DB_PORT=15432; Angular 22 needs
++  Node >= 22.22.3.
++
++Do this, and stop at the first step that does not come out clean:
++
++1. Apply the patch.
++     cd ~/Documents/Claude/Projects/ZenPDF
++     git status --porcelain          # must be clean before you start; if it is not, stop and tell me
++     git checkout main && git pull --ff-only
++     git am .zen-ui-audit-2026-08-20.patch
++   If `git am` fails, run `git am --abort` and stop — do not hand-resolve. Tell me what
++   conflicted; the patch is regenerable.
++
++2. Read the diff before you trust it. `git log --oneline -6` then `git show --stat` each
++   commit. Six commits, in this order:
++     - fix(api): a browser must never replay an answer meant for another principal
++     - fix(guest): a dead token must not take the live session down with it
++     - feat(annotate): a text box is text — on the page, edited there, and undoable
++     - fix(workspace): the viewer that never loaded, and a screen that never fitted
++     - fix(tools): merge in the order the visitor added the files
++     - docs(progress): the UI audit, and the handoff that lands it
++   Each message states the defect and the reasoning. If any of them describes something
++   you disagree with after reading the code, say so before pushing.
++
++3. Bring the stack up and run the full gate. This is the part the cloud session could not
++   do, and it is the reason this handoff exists.
++     ./infra/up.sh
++     ./infra/test.sh --e2e
++   Expect: ruff + mypy clean; the backend suite green (it needs the OCR language packs,
++   Ghostscript and unpaper that only the containers have — those are the five failures a
++   sandbox always shows and they must NOT appear here); `ng lint` clean; 250 frontend unit
++   tests; the Playwright suite green.
++
++   The e2e suite is the specific thing this patch has never been run against. Two specs
++   matter most:
++     - e2e/tests/phase-3.spec.ts — includes a NEW test, "a text box shows its words on the
++       page, and undo takes them back". It was written against the new behaviour and has
++       never executed. If it fails, read it before changing anything: it may be the test
++       that is wrong about a selector, or it may be a real defect.
++     - the phase-2 and phase-4/5 specs touch the workspace layout, which this patch
++       changed (panes, host flex class). A failure there is likely a real regression.
++
++4. Verify the two things the patch is actually for, by hand, on the local stack:
++   a. Open a document and switch to View. The page must DRAW. Then check the network
++      panel: `/assets/viewer-*.min.mjs` and `/assets/pdf.worker-*.min.mjs` must be served
++      as `text/javascript` (not `application/octet-stream`), and
++      `/api/documents/<id>/content/` must be requested. If the canvas is blank, the nginx
++      change did not take — rebuild the web container rather than guessing.
++   b. In Annotate, pick "Text box", drag a box, type a sentence. The words must appear
++      INSIDE the box in dark ink at the size shown in the Font size slider — not in a
++      small badge above it, not in yellow. Press Escape, then Undo in the page bar: the
++      sentence goes. Redo: it comes back. Save, download, and confirm the text is in the
++      file.
++
++5. Push.
++     git push origin main
++   Then watch the deploy. Do not walk away from it: `web` and the Django services both
++   rebuild, and the nginx config is in the web image.
++
++6. Verify in production, at https://zenpdf.up.railway.app, in a REAL browser — and start
++   from a genuinely cold state, because the defect this patch fixes lives in the browser
++   cache. Either use a fresh profile or, in DevTools, Application → Clear storage → Clear
++   site data. Then:
++   a. `curl -sI https://zenpdf.up.railway.app/assets/pdf.worker-6.0.1169.min.mjs | grep -i content-type`
++      must say `text/javascript`.
++   b. `curl -s -D - -X POST https://zenpdf.up.railway.app/api/guest/session/ -o /dev/null | grep -i cache-control`
++      must say `private, no-store`. And an error must say `no-store`:
++      `curl -s -D - https://zenpdf.up.railway.app/api/documents/00000000-0000-0000-0000-000000000000/ -o /dev/null | grep -i cache-control`
++   c. Upload a PDF at /annotate-pdf, land in the workspace, switch to View — the page
++      draws, with no console errors.
++   d. The returning-visitor case, which is the whole point. In DevTools console on the
++      site, run `localStorage.setItem('zen_guest','definitely-not-a-real-token')`, then
++      reload and upload a file at /annotate-pdf. It must simply work: one 410, one
++      `POST /api/guest/session/`, then 200s, and NO "Your guest session ended" banner and
++      no "An error occurred." screen.
++   e. Open `/app/doc/00000000-0000-0000-0000-000000000000`. The message must now be
++      "We could not find that. It may have been deleted, or it may belong to a session
++      that has ended." — not "An error occurred." — and the screen must have a header
++      with the brand and the theme toggle on it.
++
++7. Record what happened. Append a short entry to development-plans/PROGRESS.md's session
++   log saying the patch landed, what the e2e run found, and what production verification
++   showed. Close the two 2026-08-20 rows in the Human review queue only if you actually
++   did them. Commit that as `docs(progress): the UI audit landed` and push.
++   Then delete `.zen-ui-audit-2026-08-20.patch` from the repo root.
++
++Two things NOT to do:
++- Do not "simplify" NUM_PROXIES back to 2. It is 3 by measurement (see the railway memory
++  and docs/ops/); at 2 every client collapses into one throttle bucket.
++- Do not run git through any file-bridge tool. Run it in a normal terminal. A previous
++  session stranded .git/index.lock that way and the repo refused writes until it was
++  moved aside.
++
++If anything in step 3, 4 or 6 fails, stop and tell me exactly what you saw before
++changing code. This patch has been verified against the live API from a production-
++faithful harness, but never against the full local stack, and never in a real browser
++after a deploy — those are precisely the two gaps you are here to close.
++```
++
++---
++
++## What is in the patch, in one line each
++
++| Commit | Defect |
++|---|---|
++| `fix(api)` | API responses carried no `Cache-Control`, so Chrome heuristically cached a `410 guest_expired` and replayed it for every later token — the site could never start a working session again in that browser. Also: `Http404` reached users as the literal words "An error occurred." |
++| `fix(guest)` | A late-arriving 410 about an already-replaced token wiped the live session. And `guest_expired` now mints a fresh session and replays the request once, so a returning visitor just carries on. |
++| `feat(annotate)` | A text box drew an empty yellow-framed rectangle and put its words in a truncated 10 px badge above it. Text now renders and is edited inside the box; colour and opacity are per tool family; Undo/Redo added (⌘Z / ⇧⌘Z). |
++| `fix(workspace)` | The viewer never loaded in production (CSP refused the library's inline script; nginx served `.mjs` as `application/octet-stream` under `nosniff`). The workspace never filled the screen. It overflowed on a phone. Loading and error screens had no header. A 429 was dressed as a fatal error. Plus a version-level Undo and human-readable file sizes. |
++| `fix(tools)` | `/merge-pdf` sent `document_ids` in network order, against its own promise that page order follows the order you add the files. |
++
++## What was verified, and what was not
++
++**Verified** (cloud session, against the live production API through a harness that copies
++Railway's MIME map, CSP and `nosniff`): all 24 tool pages run end to end; the viewer loads
++and draws; the returning-visitor recovery; the text box round-trips into a real `/FreeText`
++annotation in a downloaded PDF; light, dark, 390 px and RTL; `data-test` parity 0 removed /
++9 added; `ng lint`, 250 unit tests, build + 29 prerendered routes + `verify:prerender`,
++ruff, mypy, and the backend suite diffed against baseline with no new failures.
++
++**Not verified, and why:** the Playwright e2e suite (needs the full local stack — the cloud
++sandbox has no outbound network for Chromium), and the deployed result itself. Steps 3, 4
++and 6 above are exactly those gaps.
+-- 
+2.43.0
+

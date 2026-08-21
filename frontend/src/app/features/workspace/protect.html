@@ -1,6 +1,6 @@
-<div class="flex min-h-0 flex-1" data-test="protect-mode">
+<div class="ws-panes" data-test="protect-mode">
   <!-- Left: panel -->
-  <aside class="border-border bg-surface flex w-80 shrink-0 flex-col overflow-y-auto border-e text-sm">
+  <aside class="ws-rail ws-rail-start w-80 overflow-y-auto text-sm">
     <div class="seg border-border gap-0 border-b px-1 py-1">
       <button class="flex-1 justify-center" [class.seg-active]="tab() === 'protect'"
               [attr.aria-pressed]="tab() === 'protect'"
@@ -316,7 +316,7 @@
   </aside>
 
   <!-- Right: the page -->
-  <main class="canvas-backdrop flex min-h-0 flex-1 flex-col">
+  <main class="canvas-backdrop ws-pane-main">
     <div class="border-border bg-surface flex items-center gap-2 border-b px-4 py-2 text-sm">
       <button (click)="prevPage()" [disabled]="page() === 0"
               class="btn btn-ghost btn-sm" data-test="protect-prev">‹</button>

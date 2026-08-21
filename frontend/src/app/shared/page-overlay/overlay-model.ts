@@ -47,6 +47,19 @@ export interface OverlayItem {
   width?: number;
   /** Short badge drawn at the top-left corner (field name, "REDACT", …). */
   label?: string;
+  /**
+   * Text drawn *inside* the rectangle, the way the file will show it.
+   *
+   * A text box whose words only appeared in a 10px badge above the box — and
+   * truncated at 24 characters — is not a text box; it is an empty rectangle
+   * with a tooltip. Anything that carries `text` renders as text on the page
+   * and can be edited there.
+   */
+  text?: string;
+  /** Point size of `text`, converted against the page width at render time. */
+  fontSize?: number;
+  /** Colour of `text`. Separate from `stroke`: the border may be off. */
+  textColor?: string;
   /** Opaque payload owned by the feature that created the item. */
   data?: Record<string, unknown>;
   locked?: boolean;

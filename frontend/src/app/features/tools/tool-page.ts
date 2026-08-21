@@ -265,8 +265,18 @@ export class ToolPage {
   }
 
   private uploadAll(): void {
-    const uploaded: DocumentModel[] = [];
     const files = this.picked();
+    /**
+     * A slot per file, filled at the file's own index.
+     *
+     * The uploads run concurrently and `push` recorded whichever *finished*
+     * first, so `document_ids` went to the server in network order — and
+     * `tasks.py` merges strictly positionally. Add a 20 MB chapter and then a
+     * 200 KB cover and the cover merged second, non-deterministically, against
+     * the promise this very page makes: "Page order follows the order you add
+     * the files." `/compare` shared the race, where it can invert the diff.
+     */
+    const uploaded: (DocumentModel | null)[] = files.map(() => null);
     let remaining = files.length;
 
     // Re-running the same single file after a refused selection: it is already
@@ -277,19 +287,19 @@ export class ToolPage {
       return;
     }
 
-    for (const file of files) {
+    files.forEach((file, index) => {
       this.docsSvc.upload(file).subscribe({
         next: (event) => {
           const body = (event as { body?: DocumentModel }).body;
           if (body?.id) {
-            uploaded.push(body);
+            uploaded[index] = body;
             if (this.needsPages() && files.length === 1) this.uploaded.set({ file, doc: body });
-            if (--remaining === 0) this.dispatch(uploaded);
+            if (--remaining === 0) this.dispatch(uploaded.filter((d): d is DocumentModel => !!d));
           }
         },
         error: (err) => this.fail(err),
       });
-    }
+    });
   }
 
   /**
@@ -612,7 +622,18 @@ export class ToolPage {
     this.uploaded.set(null);
   }
 
-  sizeMb(bytes: number): string {
-    return (bytes / 1048576).toFixed(1);
+  /**
+   * A file's size, in the unit that tells you something about it.
+   *
+   * Everything was rendered in megabytes to one decimal, so a 40 KB signature
+   * page, a 900 KB contract and an empty file all read "0.0 MB" — the size
+   * line said nothing at all for most of what people actually upload here.
+   */
+  fileSize(bytes: number): string {
+    if (!Number.isFinite(bytes) || bytes < 0) return '';
+    if (bytes < 1024) return `${Math.max(bytes, 0)} B`;
+    if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+    const mb = bytes / 1048576;
+    return `${mb < 10 ? mb.toFixed(1) : Math.round(mb)} MB`;
   }
 }

@@ -89,18 +89,74 @@ describe('authInterceptor — guest credential', () => {
     req.flush({ id: '1' });
   });
 
-  it('clears the token on guest_expired and does not attempt a refresh', () => {
-    guestTokens.set('guest-abc');
-    http.get('/api/documents/').subscribe({ error: () => { /* the assertion is below */ } });
+  it('starts a fresh session on guest_expired and replays the request', () => {
+    // The returning visitor: yesterday's token, today's first click. Nothing
+    // about that is worth a banner — it just has to work.
+    guestTokens.set('stale-token');
+    let body: unknown = null;
+    http.get('/api/documents/').subscribe({ next: (r) => (body = r) });
     httpMock.expectOne('/api/documents/').flush(
       { error: { code: 'guest_expired', message: 'gone', details: {} } },
       { status: 410, statusText: 'Gone' },
     );
 
-    expect(guestTokens.token).toBeNull();
-    expect(guests.expiredNotice()).toBe(true);
+    httpMock
+      .expectOne('/api/guest/session/')
+      .flush({ id: 'g1' }, { headers: { 'X-Guest-Token': 'fresh-token' } });
+
+    const replay = httpMock.expectOne('/api/documents/');
+    expect(replay.request.headers.get('X-Guest-Token')).toBe('fresh-token');
+    replay.flush({ count: 0, results: [] });
+
+    expect(body).toEqual({ count: 0, results: [] });
+    expect(guestTokens.token).toBe('fresh-token');
+    // No banner: nothing was lost that the visitor had in front of them.
+    expect(guests.expiredNotice()).toBe(false);
     // No refresh call: that path belongs to a JWT principal alone.
     httpMock.expectNone('/api/auth/refresh/');
+  });
+
+  it('replays on the current token when the dead one was already replaced', () => {
+    // Two requests went out on the stale token; the second verdict lands after
+    // a fresh session already exists. Acting on it wiped the new token and
+    // stranded the document that had just been uploaded into it.
+    guestTokens.set('stale-token');
+    http.get('/api/documents/').subscribe({ error: () => undefined });
+    const first = httpMock.expectOne('/api/documents/');
+    guestTokens.set('fresh-token');
+    first.flush(
+      { error: { code: 'guest_expired', message: 'gone', details: {} } },
+      { status: 410, statusText: 'Gone' },
+    );
+
+    httpMock.expectNone('/api/guest/session/');
+    const replay = httpMock.expectOne('/api/documents/');
+    expect(replay.request.headers.get('X-Guest-Token')).toBe('fresh-token');
+    replay.flush({ count: 0, results: [] });
+
+    expect(guestTokens.token).toBe('fresh-token');
+    expect(guests.expiredNotice()).toBe(false);
+  });
+
+  it('says the session ended when the replay fails too, and stops there', () => {
+    guestTokens.set('stale-token');
+    http.get('/api/documents/doc-1/').subscribe({ error: () => undefined });
+    httpMock.expectOne('/api/documents/doc-1/').flush(
+      { error: { code: 'guest_expired', message: 'gone', details: {} } },
+      { status: 410, statusText: 'Gone' },
+    );
+    httpMock
+      .expectOne('/api/guest/session/')
+      .flush({ id: 'g1' }, { headers: { 'X-Guest-Token': 'fresh-token' } });
+    // The document belonged to the session that died — it is not coming back.
+    httpMock.expectOne('/api/documents/doc-1/').flush(
+      { error: { code: 'guest_expired', message: 'gone', details: {} } },
+      { status: 410, statusText: 'Gone' },
+    );
+
+    // One replay, never a loop.
+    httpMock.expectNone('/api/documents/doc-1/');
+    expect(guests.expiredNotice()).toBe(true);
   });
 
   it('does not redirect a guest to the login form on 401', () => {
@@ -112,7 +168,11 @@ describe('authInterceptor — guest credential', () => {
 
     // A guest 401 means "your session ended" — never the login wall (§21.5).
     httpMock.expectNone('/api/auth/refresh/');
-    expect(guests.expiredNotice()).toBe(true);
+    httpMock
+      .expectOne('/api/guest/session/')
+      .flush({ id: 'g1' }, { headers: { 'X-Guest-Token': 'fresh-token' } });
+    httpMock.expectOne('/api/documents/').flush({ count: 0, results: [] });
+    expect(guests.expiredNotice()).toBe(false);
   });
 
   it('surfaces account_required as an upgrade prompt', () => {
