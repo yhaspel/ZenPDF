@@ -1,5 +1,31 @@
 # Phase 12 — CLI handoff
 
+> **EXECUTED — 2026-08-21.** Every step below was carried out on the owner's Mac and the
+> phase is closed. Merged as **PR #20** (`ec8a33e`); the record, with the numbers the gate
+> actually produced, is the Phase 12 section and the session-log entry in
+> `development-plans/PROGRESS.md`. Kept here verbatim as the prompt that was run — nothing
+> in it has been edited after the fact.
+>
+> Three things it did not predict, all recorded in PROGRESS:
+>
+> 1. **`§1`'s host commands do not work on this machine.** Node is 25.2.1, which ships its
+>    own `localStorage` global; `token.service.ts` guards on `typeof localStorage ===
+>    'undefined'`, so a host `ng test` fails 108 tests and a host `ng build` fails every
+>    prerendered route. The gate was run inside the pinned-Node `web` container — which is
+>    what `infra/test.sh` does anyway — and the guard is now a queue row.
+> 2. **`e2e/tests/phase-12.spec.ts` failed all three specs** the first time it was ever
+>    run, and §1's warning was right: all three were test problems, not product problems.
+>    Each acted before Angular's zoneless change detection had rendered the frame the
+>    previous action caused. Verified by hand in a browser first, then the spec was made to
+>    wait on observable state rather than race it.
+> 3. **§4's self-review found two real defects** in the phase's own code: Protect, Sign and
+>    the request builder declared `aria-keyshortcuts="Control+Z Meta+Z"` on buttons with no
+>    handler behind them, and six `menuTargetId` signals were written and never read. Both
+>    fixed in the same PR.
+>
+> `phase-2b:130`, which §1 lists as a known pre-existing failure, **passed** — it was the
+> stale Celery worker recorded on 2026-08-21, and `infra/up.sh` restarts the workers.
+
 **For Claude Code, running on the owner's Mac, in `~/Documents/Claude/Projects/ZenPDF`.**
 
 Phase 12 is **implemented and verified** — the code is already in the working tree on `main`. What is left is everything a cloud session cannot do: run the parts of the gate that need the full local stack, commit, push, open a PR, review it, merge it, and come back to a clean `main`. Work through this file top to bottom and do not skip a step because the previous one looked fine.
@@ -16,7 +42,7 @@ Uncommitted changes on `main`, nothing else. Nothing is staged; there is no patc
 
 ```
 development-plans/phase-12-usability-add-ons.md
-development-plans/phase-12-cli-handoff.md          ← this file
+docs/archived/2026-08-21-phase-12-cli-handoff.md   ← this file (archived after execution)
 e2e/tests/phase-12.spec.ts
 frontend/src/app/shared/history.ts
 frontend/src/app/shared/history.spec.ts
