@@ -1124,6 +1124,25 @@ up from 178. Coverage `apps` 92 % (gate 85) and `pdf_engine` 92 % (gate 90).
 
 ## Session log
 
+**2026-08-21 — Independent production audit of Phase 12 (Cowork session)**
+
+Commissioned after the CLI handoff closed the phase: *test and validate everything related to phase 12 in production*. The CLI session's own smoke was deliberately **not** treated as evidence — every claim was re-gathered against the live service. Full report: `docs/reviews/2026-08-21-phase-12-production-audit.md`, written to the fixed-checklist-first discipline, with each claim labelled Verified / Inferred / Unverified.
+
+**20 of 20 checks passed; 2 areas Unverified rather than passed.**
+
+**The deployed bundle is provably the committed one.** SHA-256 of the files production serves equals the Mac's HEAD build byte for byte — `main-ZV5ZVVU6.js` = `12d8b751…48f5559` and `chunk-5V6BAQ5R.js` (the whole overlay/menu/keyboard layer) = `7109aad3…011373e`. 46 chunks were fetched from production and grepped: every phase-12 symbol is there.
+
+**All six defects are closed on production, measured rather than eyeballed.** A right-click moves the selected mark **0.00 px** and changes no selection (D-A). Clicking a redaction area leaves it there and outlines it, and the panel now reads *"Select one to move or remove it."* (D-C). A signature placement can be selected, listed, ✕-removed and restored by `sign-undo` (D-B). On a document taken to v3 by two real saves, one Undo makes the button read *"back to **v1**"* — the defect version would have read "back to v3" — with Redo offering v3 (D-D). The menu opens, closes and opens again (D-E). Three clicks on a mark followed by one Undo removed the **mark**, so the clicks contributed no history (D-F).
+
+**Numbers.** Nudge is **1.50 px per press on a 600 px page** — 0.25 % exactly — and **15.00 px** with Shift; the clamp lands `selection.right === page.right === 996.0` with the live region reading *"At the edge of the page"*. Menu rows are 44 px in both themes. ⌘C ⌘V offsets by 12 × 17 px (2 % = 12.0). The sheet is 15 rows and Esc returns focus to `shortcuts-open`. In dark the computed colours are the contract's: body `#171310`, menu `#26201A`, the danger entry `#E08296`. At 390 px `scrollWidth === clientWidth === 390` in both themes. **Zero console errors and zero warnings across six browser sessions.**
+
+**The CLI review's own finding, confirmed fixed in production.** All four of Protect, Sign, Forms and Edit carry `aria-keyshortcuts="Control+Z Meta+Z"` *and* respond to it: Protect 1→0 areas and back, Sign 1→0 placements, Forms "Save 1 field change(s)" → "Save 0", Edit's staged-edit button enabled → disabled.
+
+**Unverified, not passed:** the sign **request builder** (`/app/sign/new/:docId` is account-gated and no account was created on the live service) and multi-party signing (SMTP off). Both are unit-tested; that is an inference and is labelled as one.
+
+**Method note.** Chromium in the cloud sandbox cannot use its egress proxy — every direct navigation is `ERR_CONNECTION_RESET` — so the browser was pointed at a transparent reverse proxy forwarding to `zenpdf.up.railway.app`, with response headers including the CSP passed through unchanged. Production's own bytes, production's live API; TLS and edge routing were checked separately by `curl`. Three checks failed on first measurement and **all three were faults in the audit harness, not the product** (reading state in the same tick as the keypress; measuring the wrong element on a two-mark page; asserting something weaker than the criterion) — recorded in the report rather than quietly re-run, because that is the same species of mistake the e2e spec hit.
+
+
 **2026-08-21 — Phase 12: undo/redo, keyboard and right-click (Cowork session, owner-commissioned)**
 
 Owner's ask: a right-click menu on the thing under the pointer, keyboard shortcuts (copy/paste, undo/redo, "and other features as you see fit"), and Undo/Redo visible in every edit and annotate feature — planned, adversarially reviewed, then implemented autonomously, with the CLI work deferred to a handoff.

@@ -1,8 +1,8 @@
-# Handoff — A designed phone workspace: drawers and a bottom bar instead of a stack (2026-08-21)
+# Handoff — A designed phone workspace: drawers and a bottom bar instead of a stack (2026-08-21, revision 2 after Phase 12)
 
 **For:** Claude CLI on the Mac in `~/Documents/Claude/Projects/ZenPDF`.
 **Branch:** `feat/mobile-workspace`. **Depends on:** `handoff-to-cli-workspace-debt-batch.md` merged (shared pane templates).
-**Source of truth:** PROGRESS Human review queue row "The workspace on a phone is stacked, not designed" (2026-08-20, still open after the 08-21 repair); `docs/design/design-instructions.md` §3 workspace panes / workspace bar; `docs/reviews/status-review-2026-08-21.md` §3.3 and L9 (at 390 px every mode is 390 wide — the overflow is fixed; the *layout* is the rescue).
+**Source of truth:** PROGRESS Human review queue row "The workspace on a phone is stacked, not designed" (2026-08-20, still open after the 08-21 repair and after Phase 12); `docs/design/design-instructions.md` §3 workspace panes / workspace bar / **Context menu** (Phase 12) and §4 (per-mode Undo/Redo, nudging); `development-plans/phase-12-usability-add-ons.md` §1 D8 (every right-click action must also be reachable from a rail — your drawers are those rails on a phone); `docs/reviews/status-review-2026-08-21.md` §3.3 and L9/§0 (at 390 px every mode is 390 wide after Phase 12 too — the overflow is fixed; the *layout* is the rescue).
 **Deploys on merge?** Yes — frontend.
 
 ---
@@ -37,14 +37,20 @@ In docs/design/design-instructions.md §3/§4, specify the phone workspace (< `m
 - **Bottom bar** (persistent, safe-area aware): the mode `.seg` becomes a horizontally
   scrollable row of icon+label buttons at the bottom (≥ 44 px targets, `aria-pressed`,
   contract focus ring), with Save/primary action of the active mode docked at its end
-  where the pane has one. Spec heights, tokens (`bg-surface`, hairline `border-line`,
-  shadow token), the scrim.
+  where the pane has one, and **the mode's Undo/Redo pair** (Phase 12 put one in every
+  editing surface's page bar; on a phone they belong in the bar, not in a drawer). Spec
+  heights, tokens (`bg-surface`, hairline `border-line`, shadow token), the scrim. The
+  workspace bar's own version Undo/Redo and the Shortcuts button move into the overflow
+  of the top bar — a shortcuts sheet is keyboard-only by nature and need not be
+  prominent on a phone.
 - **Drawers:** the left rail (thumbnails/outline/history) and the right rail (the mode's
   panel) open as bottom sheets / side drawers over the page — one at a time — with a
   handle, a title, Escape/scrim-tap to close, focus trapped while open (CDK), body scroll
   locked, `prefers-reduced-motion` honoured (no slide when reduced). Spec which mode
   opens its panel drawer by default (annotate: palette as a compact bottom row rather
-  than a drawer — decide and write it down), and where comments/history live.
+  than a drawer — decide and write it down), and where comments/history and Phase 12's
+  Areas/Placements/Fields lists live (they are the touch-reachable equivalent of the
+  right-click menu — D8 — so they must stay one tap away).
 - **Page first:** the page fills the viewport width at fit-to-width on first paint (D7
   already says so for desktop — confirm it holds at 390 and say so).
 - **Workspace bar** at the top shrinks to back · title · meta; mode nav moves to the
@@ -86,7 +92,7 @@ green — the ceremony is not in scope and must not change.
 ## 4. Gate
 
 `npm test`, `ng lint`, `npm run build && npm run verify:prerender`,
-`./infra/test.sh --e2e` fully green; data-test parity (additive only); Lighthouse
+`./infra/test.sh --e2e` fully green (63 + your new specs; unit baseline 396); data-test parity (additive only); Lighthouse
 a11y ≥ 90 on `/app/doc/<id>` at the mobile preset (local build).
 
 ## 5. UI testing via the Chrome MCP tools — this prompt is mostly this

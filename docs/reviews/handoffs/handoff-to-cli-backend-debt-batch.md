@@ -1,7 +1,7 @@
-# Handoff — Backend debt batch: the counters that can lie, the append that fails silently, the reconciler that never existed, and the proxy count nobody writes down (2026-08-21)
+# Handoff — Backend debt batch: the counters that can lie, the append that fails silently, the reconciler that never existed, and the proxy count nobody writes down (2026-08-21, revision 2 after Phase 12)
 
 **For:** Claude CLI on the Mac in `~/Documents/Claude/Projects/ZenPDF`.
-**Branch:** `fix/backend-debt-2026-08`. **Depends on:** `handoff-to-cli-e2e-gate-hardening.md` merged (so the gate restarts workers and refuses skipped suites).
+**Branch:** `fix/backend-debt-2026-08`. **Depends on:** `handoff-to-cli-e2e-gate-hardening.md` merged (so the gate restarts workers, refuses skipped suites, and host-side `ng test`/`ng build` work on this node-25 Mac).
 **Source of truth:** `docs/reviews/status-review-2026-08-21.md` §3.2 items 11–12, §3.3, §5.1 item 4; PROGRESS Human review queue rows: "`record_password_failure`'s incr-then-set fallback can lose a count" (2026-08-04), "The concurrency-slot race is closed on Postgres and unprovable on SQLite" (2026-08-04), "`usage_recompute` has never existed" (2026-08-02), "A completed signature can silently fail to land on the source document" (2026-08-02), "Account-side cleanup of `uploads/…` image assets" (2026-08-01), "A document under a signature request outlives the 30-day trash promise" (2026-08-02), plus the two rows the docs-reconciliation prompt added for `NUM_PROXIES` and `@api_unavailable`.
 **Deploys on merge?** Yes — `backend/**` rebuilds the Django five; `infra/railway/**` rebuilds everything.
 
@@ -135,9 +135,10 @@ document under a request (create one via the API in the spec setup).
 ## 9. Gate
 
 `ruff`, `mypy`, `manage.py check`, `makemigrations --check`, `spectacular --fail-on-warn`;
-backend coverage gates (apps ≥ 85 %, pdf_engine ≥ 90 %); `npm test`, `ng lint`, build +
-verify:prerender; `./infra/test.sh --pg --e2e` fully green on the restarted stack
-(including your new `@PG_ONLY` test). Migrations idempotent from zero
+backend coverage gates (apps ≥ 85 %, pdf_engine ≥ 90 %); `npm test` (396 + yours), `ng lint`,
+build + verify:prerender; `./infra/test.sh --pg --e2e` fully green on the restarted stack
+(63 + your new specs, including your new `@PG_ONLY` test). Phase 12 changed no backend
+file, so the 1061 / 4 baseline from 2026-08-21 still stands. Migrations idempotent from zero
 (`./infra/reset.sh --yes && ./infra/up.sh` → applied; second `up.sh` → "No migrations to
 apply").
 

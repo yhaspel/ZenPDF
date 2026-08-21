@@ -1,4 +1,4 @@
-# Handoff — H1: prove the production signing certificate actually seals (2026-08-21)
+# Handoff — H1: prove the production signing certificate actually seals (2026-08-21, revision 2 — unchanged by Phase 12 except this header)
 
 **For:** Claude CLI on the Mac in `~/Documents/Claude/Projects/ZenPDF` — it needs the local Docker stack, Mailpit, and the production `.p12` at `infra/certs/prod/zenpdf-prod.p12` (gitignored; password in `infra/certs/prod/RAILWAY-SECRETS.md`).
 **Branch:** `docs/h1-seal-proof`. **Depends on:** `handoff-to-cli-e2e-gate-hardening.md` merged (repo-relative cert path resolution in tests; worker restart in the gate).

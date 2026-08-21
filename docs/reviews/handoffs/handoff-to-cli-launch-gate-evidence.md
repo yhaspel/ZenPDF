@@ -1,4 +1,4 @@
-# Handoff — Launch-gate evidence an agent can produce: Lighthouse on the deployed build, three recorded full runs, `@smoke` against production, and the p95 number (2026-08-21)
+# Handoff — Launch-gate evidence an agent can produce: Lighthouse on the deployed build, three recorded full runs, `@smoke` against production, and the p95 number (2026-08-21, revision 2 after Phase 12)
 
 **For:** Claude CLI on the Mac in `~/Documents/Claude/Projects/ZenPDF`.
 **Branch:** `docs/launch-gate-evidence`. **Depends on:** `handoff-to-cli-e2e-gate-hardening.md` merged (the page-drew smoke and the worker restart are part of the evidence).
@@ -46,7 +46,9 @@ factor — say what the trace shows, do not round up). Commit the JSON (not the 
 On the restarted stack, run `./infra/test.sh --pg --e2e` three times back to back, each
 from a fresh `./infra/reset.sh --yes && ./infra/up.sh` (worker restart is now inside
 test.sh). Record each run's numbers and duration in PROGRESS. Criterion: three
-consecutive fully green runs. If a flake appears, do NOT re-run it away: record it,
+consecutive fully green runs of the whole suite (63 tests at `f34800f`; the Phase-12 gate
+on 2026-08-21 was 63/63 once — that counts as run one only if you re-run from the same
+commit; otherwise start at one). If a flake appears, do NOT re-run it away: record it,
 reproduce it in isolation 5×, and either fix it (if it is a test bug — in this branch) or
 file it with the failure output (if it is product) and say the criterion is not met. The
 2026-08-02 row's `phase-3:43` flake should be gone after the e2e-gate-hardening prompt;

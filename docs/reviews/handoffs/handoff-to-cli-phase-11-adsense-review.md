@@ -1,7 +1,7 @@
-# Handoff — Phase 11, the half that needs no domain: contact, identity, twelve guides, the floors, and a one-line cutover (2026-08-21)
+# Handoff — Phase 11, the half that needs no domain: contact, identity, twelve guides, the floors, and a one-line cutover (2026-08-21, revision 2 after Phase 12)
 
 **For:** Claude CLI on the Mac in `~/Documents/Claude/Projects/ZenPDF`.
-**Branch:** `feat/phase-11-guides-and-contact`. **Depends on:** `handoff-to-cli-docs-reconciliation.md` merged (it fixes the design contract's sanctioned-additions sentence, which this phase amends again).
+**Branch:** `feat/phase-11-guides-and-contact`. **Depends on:** `handoff-to-cli-docs-reconciliation.md` merged (it rewrites the design contract's sanctioned-additions sentence into the real dated list, which this phase extends) and `handoff-to-cli-e2e-gate-hardening.md` merged (host-side `ng test`/`ng build` on this node-25 Mac).
 **Source of truth:** `development-plans/phase-11-adsense-review.md` (the work order — 11B, 11C in full; 11A only as parameterisation), `docs/reviews/status-review-2026-08-21.md` §2 (Phase 11 row) and §5; PROGRESS status table row 11.
 **Deploys on merge?** Yes — frontend (`web` rebuilds). The new pages go live on the Railway host immediately; that is fine — they are honest content with ads dark.
 
@@ -37,9 +37,10 @@ owner-gated and which criteria this branch can and cannot tick.
 ## 1. First commit — the contract amendment (gap rule: spec before UI)
 
 docs/design/design-instructions.md, exactly the four sites the phase banner names:
-- grounding (:5): sanctioned additions now include `/contact`, `/guides`, `/guides/<slug>`
-  (the docs-reconciliation change already raised the count to four; make it six and
-  list them);
+- grounding (:5): the dated list of sanctioned additions (as rewritten by the
+  docs-reconciliation prompt — theme toggle, landing filter, the Undo/Redo family, Phase
+  12's context menu, shortcuts sheet and rail lists) gains `/contact`, `/guides` and
+  `/guides/<slug>`;
 - §3 Footer: the seven-link set (About · Privacy · Terms · E-sign disclosure · Verify a
   signed PDF · Contact · Guides) — order, separators, wrap behaviour at 390 px; the
   **ceremony footer stays verbatim** and the legal pages' in-page crosslink row is
@@ -104,6 +105,8 @@ Follow the work order literally; the traps it already names are real:
   canonical, `"@type":"Article"`; `/guides` and `/contact` prerendered; still green for
   the 24 tool pages. Expect "Prerendered 43 static routes" (29 + 12 + 2) — confirm the
   arithmetic against your route files rather than trusting this number.
+- New UI on these pages must respect Phase 12's contract rules: no single-character
+  keyboard shortcuts (§6), and any menu uses the §3 Context menu spec (44 px rows).
 
 ## 4. Tool-page top-up, then the floors
 
@@ -143,7 +146,7 @@ guide's related-tool links resolve; `/guides/does-not-exist` → 404 page with H
 (assert the response status); `/contact` has a `mailto:` and no form; `phase-10-a11y.spec.ts`
 extended to scan `/contact`, `/guides` and one guide (zero serious/critical). Gate:
 `npm test`, `ng lint`, `npm run build && npm run verify:prerender`, `./infra/test.sh --e2e`
-fully green; data-test parity additive only; Lighthouse on the built bundle served
+fully green (63 + your new specs; unit baseline 396); data-test parity additive only; Lighthouse on the built bundle served
 locally for landing, one tool page, one guide (≥ 90 SEO/a11y/best-practices) — paste the
 scores.
 

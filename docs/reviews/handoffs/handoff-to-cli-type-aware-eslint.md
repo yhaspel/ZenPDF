@@ -1,4 +1,4 @@
-# Handoff — Type-aware ESLint: the 198 findings, the `apiError()` helper, and a gate that keeps it clean (2026-08-21)
+# Handoff — Type-aware ESLint: the 198 findings, the `apiError()` helper, and a gate that keeps it clean (2026-08-21, revision 2 after Phase 12)
 
 **For:** Claude CLI on the Mac in `~/Documents/Claude/Projects/ZenPDF`.
 **Branch:** `chore/type-aware-eslint`. **Depends on:** `handoff-to-cli-workspace-debt-batch.md` and `handoff-to-cli-mobile-workspace.md` merged (fewer moving files; the sweep touches ~28 call sites).
@@ -28,7 +28,8 @@ PROGRESS session-log entry; the row → 🔵.
 Enable `typescript-eslint`'s type-checked config (`recommendedTypeChecked` or the stricter
 `strictTypeChecked` — try both, report both counts) with `parserOptions.projectService`
 and run `npx ng lint`. Paste the count by rule into PROGRESS. The row predicted 198 with
-one root cause (`HttpErrorResponse.error: any`); confirm or correct it.
+one root cause (`HttpErrorResponse.error: any`) — measured before Phase 12 added ~5 000
+lines of frontend; confirm or correct it on today's tree.
 
 Rules that stay on (non-negotiable): `no-floating-promises`, `no-misused-promises`,
 `no-unsafe-member-access`/`no-unsafe-assignment` (the `error: any` family),
@@ -56,7 +57,7 @@ get sync wrappers.
 
 ## 4. Nothing changed — prove it
 
-- `npm test` green; `ng lint` clean under the new config; `npm run build` produces a
+- `npm test` green (396 + yours); `ng lint` clean under the new config; `npm run build` produces a
   bundle — compare `dist/zenpdf-web/browser/main-*.js` size before/after (±2 %) and
   `verify:prerender` green.
 - `./infra/test.sh --e2e` fully green on the restarted stack.

@@ -1,8 +1,8 @@
-# Handoff — Record reconciliation: make the docs say what the code does (2026-08-21)
+# Handoff — Record reconciliation: make the docs say what the code does (2026-08-21, revision 2 after Phase 12)
 
 **For:** Claude CLI, run locally on the Mac in `~/Documents/Claude/Projects/ZenPDF`.
 **Branch:** `docs/reconcile-2026-08-21`. **Depends on:** nothing — run this first.
-**Source of truth:** `docs/reviews/status-review-2026-08-21.md` §3 (discrepancies) and §6 (document catalogue + contradictions).
+**Source of truth:** `docs/reviews/status-review-2026-08-21.md` (revision 2) §3 (discrepancies, with the `f34800f` line numbers in the *(rev 2)* note) and §6 (document catalogue + contradictions).
 **Deploys on merge?** No — `docs/**` is outside every Railway watch pattern.
 
 Paste everything in the block below into `claude`.
@@ -12,31 +12,33 @@ Paste everything in the block below into `claude`.
 ```text
 You are reconciling ZenPDF's written record with its verified state. Read, in this order:
 AGENTS.md; docs/reviews/status-review-2026-08-21.md (all of it — it is the spec for this
-work, and §3/§6 list every statement you will change with a line number); the newest three
+work; §3 lists every statement you will change, and its *(rev 2)* note re-maps the line
+numbers to the current PROGRESS.md at f34800f); the Phase-12 section and the newest three
 session-log entries of development-plans/PROGRESS.md. Do not change application code,
 tests, templates, styles or infra in this prompt — if you find a code defect, file a Human
 review queue row instead.
 
-## 0. Preflight — commit what the review left uncommitted
+## 0. Preflight — commit what the two review sessions left uncommitted
 
     cd ~/Documents/Claude/Projects/ZenPDF
     git status --porcelain
 
-The Cowork session that wrote the review could not push, so it left these in the working
-tree, uncommitted: the folder rename `docs/review/` → `docs/reviews/` (git sees deletes +
-adds), `docs/reviews/status-review-2026-08-21.md`, `docs/reviews/handoffs/*.md` (this
-prompt among them), and edited references in `AGENTS.md` and
-`development-plans/PROGRESS.md`. If `git status` shows anything ELSE, stop and tell me.
+Expected, and nothing else: `M docs/reviews/status-review-2026-08-21.md` (revision 2),
+`M docs/reviews/handoffs/*.md` (the nine prompts + README, revised after Phase 12), and
+`?? docs/reviews/2026-08-21-phase-12-production-audit.md` (an independent Phase-12
+production audit written at 15:17 UTC by another session). If `git status` shows anything
+ELSE — or if `.git/index.lock` exists (a stale 0-byte one from 15:17 UTC was already moved
+to `_to_delete/git-lock-debris-2026-08-21/`; if a new one appears, no git is running on
+this machine unless you started it: move it aside the same way) — stop and tell me.
 
     git switch main && git pull --ff-only origin main
     git switch -c docs/reconcile-2026-08-21
     git add -A
-    git status            # only docs/review→docs/reviews renames, docs/reviews/**, AGENTS.md, PROGRESS.md
-    git commit -m "docs(reviews): rename docs/review → docs/reviews; add the 2026-08-21 status review and CLI handoff prompts"
+    git status            # only docs/reviews/** paths staged
+    git commit -m "docs(reviews): status review revision 2 after phase 12, revised CLI handoff prompts, the phase-12 production audit"
 
-Confirm git recorded the three old files as renames (`git show --stat HEAD` shows
-`docs/{review => reviews}/…`). Do NOT touch `docs/archived/2026-08-21-followups.patch` —
-its four `docs/review/` strings are historical.
+Do NOT touch `docs/archived/2026-08-21-followups.patch` — its four `docs/review/`
+strings are historical.
 
 ## 1. Start the record for this session
 
@@ -45,41 +47,55 @@ what this branch does and that it changes no code. Keep it updated as you go.
 
 ## 2. PROGRESS.md — fix every self-contradiction the review lists (§3.1)
 
-Work through §3.1 items 1–10 and §3.2 items 11–18 as a checklist; for each, edit the
-statement at the cited line and leave a one-clause inline note where a reader could be
-misled by history (e.g. "*(corrected 2026-MM-DD: a host exists — see §…)*"):
+Work through §3.1 items 1–10 and 19–23, and §3.2 items 11–18 and 24–26, as a checklist;
+the line numbers below are the **f34800f** ones (revision 1's are re-mapped in the review's
+*(rev 2)* note — if the file has moved again, grep for the quoted text). For each, edit
+the statement at the cited line and leave a one-clause inline note where a reader could
+be misled by history (e.g. "*(corrected 2026-MM-DD: a host exists — see §…)*"):
 
- 1. Phase-10 section :61/:63/:64 — rewrite the four `[~]` criteria against the Railway host
+ 1. Phase-10 section :88/:90/:91 — rewrite the four `[~]` criteria against the Railway host
     that has existed since 2026-08-08. Lighthouse and the p95 run are now *runnable*
     (owed, not blocked); "clean-VM compose deploy … performed" → "production deploy
     performed on Railway 2026-08-08 (`docs/ops/railway-deploy-report-2026-08-08.md`);
     a compose deploy on a clean VM was never performed and is no longer the target;
     the restore drill is still owed". Update the DoD row 1 counts to match the list
     (1 ticked, 5 `[~]`, 1 GATE) and the Phase-8 DoD row to match its list (6/1).
- 2. :93 DoD row 3 — replace 988/178/58 with the current figures and date them: backend
-    1061 passed / 4 skipped on the full stack (2026-08-21 morning); frontend 258;
-    e2e 60 tests, 59/60 on two consecutive local runs (2026-08-21); note that the evening
-    "1051 / 14 skipped" run had Gotenberg down (10 conversion tests skipped, not passed).
- 3. :1129 — mark the Playwright-`check()` verdict as superseded inline, pointing at the
+ 2. :120 DoD row 3 — replace 988/178/58 with the current figures and date them: backend
+    1061 passed / 4 skipped on the full stack (2026-08-21, twice); frontend **396 across
+    47 files** after Phase 12; e2e **63 tests, 63/63** on the Phase-12 gate (59/60 twice
+    earlier that day); note that the 18:00 "1051 / 14 skipped" run had Gotenberg down
+    (10 conversion tests skipped, not passed).
+ 3. :1121 — mark the Playwright-`check()` verdict as superseded inline, pointing at the
     stale-worker root cause in the same row.
- 4. :1135/:1137 — add "*(superseded: PR #19 merged 2026-08-21 14:49 +03:00 and
+ 4. :1202/:1204 — add "*(superseded: PR #19 merged 2026-08-21 14:49 +03:00 and
     auto-deployed; both fixes verified on the live site the same day — status review L9)*".
     Add the same addendum at the top of docs/reviews/2026-08-21-post-deploy-verification.md
     (a dated "Addendum" block; do not rewrite the report body) covering :339–341 and
     Finding 3's mechanism.
- 5. :1105 — qualify "green first time" with the ten Gotenberg skips.
- 6. Human review queue "Self-serve account deletion" (:1065) → ✔ Resolved 2026-08-02
+ 5. :1172 — qualify "green first time" with the ten Gotenberg skips.
+ 6. Human review queue "Self-serve account deletion" (:1093) → ✔ Resolved 2026-08-02
     (Phase 10): `DELETE /api/users/me/delete/`, `GET /api/users/me/export/`,
     Settings → Your data, `apps/users/tests/test_privacy.py` (10), legal copy already says so.
- 7. Human review queue `base_version_seq` row (:1088) — correct the mechanism: the mode
+ 7. Human review queue `base_version_seq` row (:1116) — correct the mechanism: the mode
     components emit `output<Job>()`; the workspace bindings
-    (`workspace.html:109–161`) drop `$event` and every handler calls `viewer.reload()`.
+    (`workspace.html:118–170` at f34800f) drop `$event` and every handler calls `viewer.reload()`.
     Leave it OPEN — the fix belongs to `handoff-to-cli-e2e-gate-hardening.md`.
- 8. :1009 (L8 row) — add the caveat: bare job subscriptions remain at `tool-page.ts:320`,
-    `dashboard.ts:181,190,201`, `workspace.ts:637`; fold them into the open five-panels
-    row (:1028) so one row owns the whole sweep.
- 9–10. Cosmetic line numbers/counts/test names exactly as §3.1 item 9–10 list them.
- 11–18. Add ONE new Human review queue row per §3.2 item that is not already tracked:
+ 8. :1036 (L8 row) — add the caveat: bare job subscriptions remain at `tool-page.ts:320`,
+    `dashboard.ts:181,190,201` and in the five panels (revision-2 line numbers in the
+    review's §3.3); fold them into the open five-panels row (:1056) so one row owns the
+    whole sweep.
+ 9–10. Cosmetic line numbers/counts/test names exactly as §3.1 items 9–10 list them.
+ 19. Phase-12 section :68 and session log :1139/:1156 — the `data-test` diff is **0 removed,
+    30 added** (the review lists all thirty); say 30, or name the three the 27 excluded.
+ 23. Phase-12 session log "passes now that `infra/up.sh` has restarted the Celery workers"
+    — qualify: `up.sh` recreates a container only when its image/definition changed, so the
+    restart is incidental; the gate-hardening prompt adds an explicit restart to `test.sh`.
+ 24. Add a Human review queue row for the version-Undo/Redo cursor being committed before
+    the revert succeeds (`workspace.ts:447–457 stepVersion`; measured live: a 429 on Redo
+    dropped the chain) — owner: `handoff-to-cli-workspace-debt-batch.md`.
+ 11–18. Add ONE new Human review queue row per §3.2 item that is not already tracked
+    (the node-25 `localStorage` row already exists at :1055 — leave it, but add "blocks
+    host-side `ng test`/`ng build` on the Mac; fixed by the e2e-gate-hardening prompt"):
     `NUM_PROXIES` three-values (owner: backend debt batch), `@api_unavailable` header set
     (backend debt batch), esign suite coupled to `/certs/…` (e2e gate hardening), gate
     passes with Gotenberg down (e2e gate hardening), design-contract grounding sentence
@@ -88,11 +104,13 @@ misled by history (e.g. "*(corrected 2026-MM-DD: a host exists — see §…)*")
 
 ## 3. The other plan documents
 
-- development-plans/README.md — header line: "**Status:** Phases 0–9 complete, Phase 10
-  awaiting owner sign-off, Phase 11 not started; production live on Railway since
-  2026-08-08 (auto-deploy from `main`). See PROGRESS.md." Fix the index rows: prompt-2b
-  and prompt-2 are "executed/superseded — historical"; add a row for
-  prompt-3-phases-03-10.md (historical); add `docs/reviews/` to "How to use this plan".
+- development-plans/README.md — header line: "**Status:** Phases 0–9 and 12 complete,
+  Phase 10 awaiting owner sign-off, Phase 11 not started; production live on Railway
+  since 2026-08-08 (auto-deploy from `main`). See PROGRESS.md." Add the index row for
+  `phase-12-usability-add-ons.md` (and a line in the dependency graph: 12 after 3/4/5/7/8,
+  frontend-only). Fix the index rows: prompt-2b and prompt-2 are "executed/superseded —
+  historical"; add a row for prompt-3-phases-03-10.md (historical); add `docs/reviews/`
+  to "How to use this plan".
 - development-plans/prompt-1-phases-00-02.md, prompt-2b-phase-02b.md,
   prompt-3-phases-03-10.md — prepend a one-paragraph banner: "**Executed <date> — kept
   as history. Do not run.**" (prompt-2 already has one; soften its "Unblocked … add §21"
@@ -107,21 +125,24 @@ misled by history (e.g. "*(corrected 2026-MM-DD: a host exists — see §…)*")
   "Deployment target" note pointing at `docs/ops/railway.md`. Architecture edits go in
   their own commit ("docs(architecture): …").
 - development-plans/02-feature-matrix.md :105 repair = PyMuPDF; :128 no `signature_pad`.
-- Phase docs 00–09: append a two-line footer "**Executed** (see PROGRESS.md §Phase N).
+- Phase docs 00–09 and 12: append a two-line footer "**Executed** (see PROGRESS.md §Phase N).
   Known drifts between this work order and what shipped are recorded in PROGRESS's
   Decisions log; this file is the plan, not the record." Do not rewrite their bodies.
 - phase-10-hardening-release.md — mark the clean-VM criterion as re-scoped (see step 2.1)
   and `@full` as "the untagged whole suite".
-- phase-11-adsense-review.md :28–31 — "exactly two sanctioned additions" → "four (theme
-  toggle, landing filter, version-level Undo, annotate Undo/Redo)".
+- phase-11-adsense-review.md :28–31 — "exactly two sanctioned additions" → the real list
+  (see step 4), and note Phase 11 adds `/contact` and `/guides` to it.
 
 ## 4. Design contract hygiene (text only — no UI change)
 
-docs/design/design-instructions.md: grounding :5 and §10 :295 — the sanctioned additions
-are now four (theme toggle, landing filter, version Undo 2026-08-20, annotate Undo/Redo
-2026-08-20). Date the 2026-08-21 "In-pane toolbars wrap" amendment at :203. Add a short
-"Amendment log" section at the end listing every dated amendment (08-10, 08-18, 08-20,
-08-21) with the section it touched. This is text about already-shipped UI; it does not
+docs/design/design-instructions.md: grounding :5 and §10 :314 — replace "exactly two
+sanctioned additions" with the real, dated list: theme toggle and landing filter (08-06),
+version-level Undo (08-20), annotate Undo/Redo (08-20), and Phase 12's (08-21) context
+menu, per-mode Undo/Redo in all six editing surfaces, Redo + Shortcuts on the workspace
+bar, the shortcuts sheet, the Areas/Placements/Fields rail lists, Copy/Duplicate on comment
+rows and Paste in the palette. Date the "In-pane toolbars wrap" amendment at :203. Add a
+short "Amendment log" section at the end listing every dated amendment (08-10, 08-18,
+08-20, 08-21 ×2) with the section it touched. This is text about already-shipped UI; it does not
 need a browser check — say so in your PR.
 
 ## 5. `docs/ops` and the other docs (§6.2)
@@ -189,6 +210,8 @@ need a browser check — say so in your PR.
   `grep -rhoE '`(docs|development-plans|backend|frontend|infra|e2e)/[^` ]+`' development-plans docs AGENTS.md | sort -u | tr -d '`' | while read p; do [ -e "$p" ] || echo "MISSING $p"; done`
   and fix every MISSING (excluding paths inside `docs/archived/*.patch`).
 - `grep -rn "docs/review/" --include=*.md . | grep -v docs/archived | grep -v status-review-2026-08-21` → no hits.
+- `docs/reviews/2026-08-21-phase-12-production-audit.md` is tracked (step 0) and listed in
+  the README's "How to use this plan" pointer to `docs/reviews/`.
 - Re-read the status review's §3.1/§3.2 and §6 tables and tick each item off in your
   session-log entry with the commit that fixed it.
 
