@@ -4,6 +4,7 @@ import {
   boundsOf,
   clamp01,
   normalizeRect,
+  nudgeRect,
   quadsFromWords,
   smoothStroke,
 } from './overlay-model';
@@ -117,5 +118,44 @@ describe('overlay geometry', () => {
       // The pen-up point still ends the stroke.
       expect(smoothed[smoothed.length - 1]).toEqual(long[long.length - 1]);
     });
+  });
+});
+
+/**
+ * Arrow-key nudging (phase-12 D9).
+ *
+ * The clamp is the whole point: a shape pushed at the edge has to stop there
+ * rather than slide off the page and become unselectable — the same guarantee a
+ * pointer drag already made, now available to someone who cannot drag.
+ */
+describe('nudgeRect', () => {
+  const rect = { x: 0.4, y: 0.4, w: 0.2, h: 0.1 };
+
+  it('translates by the delta and leaves the size alone', () => {
+    const moved = nudgeRect(rect, 0.05, -0.05);
+    expect(moved.x).toBeCloseTo(0.45);
+    expect(moved.y).toBeCloseTo(0.35);
+    expect(moved.w).toBeCloseTo(0.2);
+    expect(moved.h).toBeCloseTo(0.1);
+  });
+
+  it('stops at the start edges instead of leaving the page', () => {
+    const moved = nudgeRect({ x: 0.01, y: 0.01, w: 0.2, h: 0.1 }, -0.5, -0.5);
+    expect(moved.x).toBe(0);
+    expect(moved.y).toBe(0);
+  });
+
+  it('stops at the far edges, accounting for the shape’s own size', () => {
+    // Clamping the origin alone would let a wide shape hang off the far side.
+    const moved = nudgeRect(rect, 0.9, 0.9);
+    expect(moved.x).toBeCloseTo(0.8);
+    expect(moved.y).toBeCloseTo(0.9);
+    expect(moved.x + moved.w).toBeLessThanOrEqual(1);
+    expect(moved.y + moved.h).toBeLessThanOrEqual(1);
+  });
+
+  it('does not invert a shape that is wider than the page', () => {
+    const moved = nudgeRect({ x: 0, y: 0, w: 1.4, h: 0.1 }, 0.1, 0);
+    expect(moved.x).toBe(0);
   });
 });

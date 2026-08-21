@@ -226,3 +226,45 @@ export function quadsFromWords(words: OverlayWord[]): NormRect[] {
   }
   return quads;
 }
+
+/**
+ * One entry in the overlay's context menu (phase-12 D6).
+ *
+ * The overlay renders these and reports which was chosen; what any of them
+ * *means* stays with the feature that supplied the list, exactly as `OverlayItem`
+ * keeps feature semantics in `data`.
+ */
+export interface OverlayMenuAction {
+  id: string;
+  label: string;
+  /** Rendered in the `--color-danger` treatment: removals, and nothing else. */
+  danger?: boolean;
+  /**
+   * Offered but not currently possible. Rendered with the contract's dashed
+   * disabled treatment and `aria-disabled`, and skipped by the arrow keys —
+   * never the native `disabled` attribute, which drops the item out of the
+   * accessibility tree so "Paste (unavailable)" vanishes instead of reading as
+   * unavailable.
+   */
+  disabled?: boolean;
+  /** e.g. "⌘C" — a hint in the end column, never the only place a key is named. */
+  shortcut?: string;
+}
+
+/**
+ * Move a rect by a delta and keep it on the page.
+ *
+ * The clamp mirrors the one `PageOverlay.dragRect` applies to a pointer move:
+ * a shape pushed at the edge stops at the edge rather than sliding off it and
+ * becoming unselectable. Clamping x and y *after* accounting for the shape's
+ * own width and height is what makes the far edge behave — clamping the origin
+ * alone lets a wide shape hang off the right of the page.
+ */
+export function nudgeRect(rect: NormRect, dx: number, dy: number): NormRect {
+  return {
+    x: Math.min(clamp01(rect.x + dx), Math.max(0, 1 - rect.w)),
+    y: Math.min(clamp01(rect.y + dy), Math.max(0, 1 - rect.h)),
+    w: rect.w,
+    h: rect.h,
+  };
+}
