@@ -12,8 +12,15 @@ import {
   Rect,
 } from '../../core/models/models';
 import { ConfirmService } from '../../shared/confirm.service';
-import { OverlayDraft, OverlayItem } from '../../shared/page-overlay/overlay-model';
+import { EditorClipboard } from '../../shared/editor-clipboard.service';
+import {
+  OverlayDraft,
+  OverlayItem,
+  OverlayMenuAction,
+  nudgeRect,
+} from '../../shared/page-overlay/overlay-model';
 import { PageOverlay } from '../../shared/page-overlay/page-overlay';
+import { ShortcutId, resolveShortcut, shortcutTitle } from '../../shared/shortcuts';
 import { saveBlob } from '../../shared/save-blob';
 import { ToastService } from '../../shared/toast.service';
 
@@ -27,6 +34,9 @@ const NEEDS_OPTIONS: FormFieldType[] = ['radio', 'combobox', 'listbox'];
 
 /** Vertical gap between the auto-laid-out placements of a radio group. */
 const RADIO_GAP = 0.012;
+
+/** How far a duplicated or pasted field lands from its original. */
+const PASTE_OFFSET = 0.02;
 
 /**
  * One drawn box → N placements running down the page.
@@ -108,7 +118,9 @@ export class Forms {
   protected forms = inject(FormsFacade);
   private toast = inject(ToastService);
   private confirm = inject(ConfirmService);
+  private clipboard = inject(EditorClipboard);
   private destroyRef = inject(DestroyRef);
+  protected readonly key = shortcutTitle;
 
   protected readonly types = TYPES;
   protected tab = signal<FormsTab>('fill');
@@ -213,6 +225,15 @@ export class Forms {
       this.viewerData.set({});
       this.selectedName.set(null);
       this.forms.load(this.docId(), seq);
+    });
+
+    // The builder's keyboard. Its lifetime is the component's, and it is inert
+    // outside the build tab (see `onShortcut`).
+    effect((onCleanup) => {
+      if (typeof window === 'undefined') return;
+      const handler = (event: KeyboardEvent) => this.onShortcut(event);
+      window.addEventListener('keydown', handler);
+      onCleanup(() => window.removeEventListener('keydown', handler));
     });
   }
 
@@ -329,6 +350,146 @@ export class Forms {
     this.select(id.split('#')[0], false);
   }
 
+  // ------------------------------------------------------------------ //
+  // Keyboard, clipboard and the context menu (phase-12)
+  // ------------------------------------------------------------------ //
+
+  protected readonly canPaste = computed(() => this.clipboard.has('form-field'));
+
+  protected menuActionsFor = (id: string | null): OverlayMenuAction[] => {
+    const name = id ? id.split('#')[0] : null;
+    if (!name) {
+      return this.canPaste()
+        ? [{ id: 'paste', label: 'Paste a field here', shortcut: this.key('paste') }]
+        : [];
+    }
+    return [
+      { id: 'copy', label: 'Copy', shortcut: this.key('copy') },
+      { id: 'duplicate', label: 'Duplicate', shortcut: this.key('duplicate') },
+      { id: 'properties', label: 'Properties' },
+      { id: 'delete', label: 'Remove field', danger: true, shortcut: this.key('delete') },
+    ];
+  };
+
+  protected onContextTarget(id: string | null): void {
+    if (id) this.select(id.split('#')[0], false);
+  }
+
+  protected onMenuAction(choice: { action: string; itemId: string | null }): void {
+    const name = choice.itemId ? choice.itemId.split('#')[0] : null;
+    switch (choice.action) {
+      case 'copy':
+        this.copyField(name);
+        break;
+      case 'duplicate':
+        this.duplicateField(name);
+        break;
+      case 'properties':
+        if (name) this.select(name, false);
+        break;
+      case 'paste':
+        this.pasteField();
+        break;
+      case 'delete':
+        void this.deleteSelected(name);
+        break;
+    }
+  }
+
+  private specFor(name: string | null): FormFieldSpec | null {
+    if (!name) return null;
+    const staged = this.forms.pendingOps().find(
+      (op) => op.action !== 'delete' && op.field.name === name,
+    );
+    if (staged) return staged.field;
+    const existing = this.forms.fields().find((f) => f.name === name);
+    return existing ? specOf(existing) : null;
+  }
+
+  protected copyField(name: string | null = this.selectedName()): boolean {
+    const spec = this.specFor(name);
+    if (!spec) return false;
+    this.clipboard.copy('form-field', spec);
+    this.toast.info('Copied');
+    return true;
+  }
+
+  protected duplicateField(name: string | null = this.selectedName()): boolean {
+    const spec = this.specFor(name);
+    if (!spec) return false;
+    this.placeCopy(spec, spec.page ?? this.page());
+    return true;
+  }
+
+  protected pasteField(): boolean {
+    const held = this.clipboard.read<FormFieldSpec>('form-field');
+    if (!held) return false;
+    this.placeCopy(held, this.page());
+    return true;
+  }
+
+  /**
+   * A copy of a field, offset, with a name of its own.
+   *
+   * A name is a field's identity in the AcroForm — two fields sharing one are
+   * two views of the same value, which is emphatically not what "duplicate"
+   * means here — so the copy takes a fresh one from the same generator that
+   * names a newly drawn field.
+   */
+  private placeCopy(spec: FormFieldSpec, page: number): void {
+    const type = spec.type ?? 'text';
+    const name = this.forms.suggestName(type);
+    const copy: FormFieldSpec = { ...spec, name, page };
+    if (spec.rect) copy.rect = nudgeRect(spec.rect, PASTE_OFFSET, PASTE_OFFSET);
+    if (spec.rects?.length) {
+      // Re-lay the group out from the moved first row, so the placements stay
+      // the even column the layout helper guarantees.
+      copy.rects = radioLayout(
+        nudgeRect(spec.rects[0], PASTE_OFFSET, PASTE_OFFSET), spec.rects.length,
+      );
+    }
+    this.forms.stageAdd(copy);
+    this.select(name, true);
+  }
+
+  private onShortcut(event: KeyboardEvent): void {
+    // The builder's keyboard, and only the builder's: the Fill tab hands the
+    // page to pdf.js, which binds `window` keydown itself and owns ⌘S there.
+    if (this.tab() !== 'build') return;
+    const hasTextSelection = !(window.getSelection()?.isCollapsed ?? true);
+    const action = resolveShortcut(event, { hasTextSelection });
+    if (!action) return;
+    if (action === 'cancel' || action === 'delete' || action === 'context-menu') return;
+    if (action.startsWith('nudge-')) return;
+    if (this.runAction(action)) event.preventDefault();
+  }
+
+  private runAction(action: ShortcutId): boolean {
+    switch (action) {
+      case 'undo':
+        this.forms.undo();
+        return true;
+      case 'redo':
+        this.forms.redo();
+        return true;
+      case 'copy':
+        return this.copyField();
+      case 'cut':
+        if (!this.copyField()) return false;
+        void this.deleteSelected(this.selectedName());
+        return true;
+      case 'paste':
+        return this.pasteField();
+      case 'duplicate':
+        return this.duplicateField();
+      case 'save':
+        this.saveFields();
+        return true;
+      default:
+        return false;
+    }
+  }
+
   private select(name: string, isNew: boolean): void {
     this.selectedName.set(name);
     const staged = this.forms.pendingOps().find((op) => op.field.name === name);
@@ -414,12 +575,17 @@ export class Forms {
     if (this.selectedName() === name) this.select(name, this.draftIsNew);
   }
 
-  protected async deleteSelected(): Promise<void> {
-    const name = this.selectedName();
+  protected async deleteSelected(target: string | null = this.selectedName()): Promise<void> {
+    const name = target;
     if (!name) return;
     if (!(await this.confirm.ask(`Remove the field “${name}”?`, 'Remove'))) return;
     this.forms.stageDelete(name);
-    this.selectedName.set(null);
+    if (this.selectedName() === name) this.selectedName.set(null);
+  }
+
+  /** The overlay's Delete key, which carries the placement index. */
+  protected onDeleteRequested(id: string): void {
+    void this.deleteSelected(id.split('#')[0]);
   }
 
   protected saveFields(): void {

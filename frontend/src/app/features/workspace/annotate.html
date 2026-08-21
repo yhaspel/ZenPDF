@@ -141,9 +141,16 @@
 
       <span class="bg-border mx-2 h-4 w-px"></span>
       <button (click)="undo()" [disabled]="!annotations.canUndo()"
-              class="btn btn-ghost btn-sm" title="Undo (⌘Z)" data-test="annot-undo">Undo</button>
+              class="btn btn-ghost btn-sm" [title]="'Undo (' + key('undo') + ')'"
+              aria-keyshortcuts="Control+Z Meta+Z" data-test="annot-undo">Undo</button>
       <button (click)="redo()" [disabled]="!annotations.canRedo()"
-              class="btn btn-ghost btn-sm" title="Redo (⇧⌘Z)" data-test="annot-redo">Redo</button>
+              class="btn btn-ghost btn-sm" [title]="'Redo (' + key('redo') + ')'"
+              aria-keyshortcuts="Control+Shift+Z Meta+Shift+Z" data-test="annot-redo">Redo</button>
+      @if (canPaste()) {
+        <button (click)="pasteHere()" class="btn btn-ghost btn-sm"
+                [title]="'Paste onto this page (' + key('paste') + ')'"
+                aria-keyshortcuts="Control+V Meta+V" data-test="annot-paste">Paste</button>
+      }
 
       <div class="ms-auto flex items-center gap-2">
         @if (dirty()) {
@@ -177,6 +184,7 @@
           [editingId]="pageEditingId()"
           [drawStroke]="color()"
           [drawWidth]="strokeWidth()"
+          [menuActionsFor]="menuActionsFor"
           (created)="onCreated($event)"
           (geometryChanged)="onGeometryChanged($event)"
           (selectionChanged)="onSelectionChanged($event)"
@@ -184,6 +192,8 @@
           (editRequested)="onEditRequested($event)"
           (textChanged)="onPageTextChanged($event)"
           (editingEnded)="onPageEditingEnded()"
+          (contextTarget)="onContextTarget($event)"
+          (menuAction)="onMenuAction($event)"
         />
       </div>
     </div>
@@ -247,6 +257,10 @@
                 <span class="muted" title="This comment was made by someone else"
                       data-test="comment-foreign">by {{ item.author }}</span>
               }
+              <button class="text-ink hover:underline" (click)="copySelected(item.id)"
+                      data-test="comment-copy">Copy</button>
+              <button class="text-ink hover:underline" (click)="duplicateSelected(item.id)"
+                      data-test="comment-duplicate">Duplicate</button>
               <button class="text-danger hover:underline" (click)="onDeleteRequested(item.id)"
                       data-test="comment-delete">Delete</button>
             </div>

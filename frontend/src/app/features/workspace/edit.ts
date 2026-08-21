@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, DestroyRef, computed, effect, inject, input, output, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, DestroyRef, ElementRef, computed, effect, inject, input, output, signal, viewChild } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
 
@@ -17,10 +17,12 @@ import { ConfirmService } from '../../shared/confirm.service';
 import {
   OverlayDraft,
   OverlayItem,
+  OverlayMenuAction,
   OverlayTool,
 } from '../../shared/page-overlay/overlay-model';
 import { ZenModal } from '../../shared/modal.directive';
 import { PageOverlay } from '../../shared/page-overlay/page-overlay';
+import { ShortcutId, resolveShortcut, shortcutTitle } from '../../shared/shortcuts';
 import { ToastService } from '../../shared/toast.service';
 
 /** Which sub-tool of the Edit tab is active. */
@@ -117,6 +119,18 @@ export class Edit {
   // images
   protected selectedImage = signal<PageImage | null>(null);
   protected pendingImageRef = signal<string | null>(null);
+  /**
+   * Which link is selected.
+   *
+   * There was no such thing before phase-12: links could be deleted only from
+   * the rail's list, and `deleteLink` asked for no confirmation at all — unlike
+   * its image sibling — so the Delete key had nothing to act on and nothing to
+   * ask. Both are fixed here.
+   */
+  protected selectedLink = signal<PageLink | null>(null);
+  /** What the overlay's selection outline should be drawn around. */
+  protected readonly selectedId = signal<string | null>(null);
+  protected readonly key = shortcutTitle;
 
   // stamps
   protected wmText = signal('DRAFT');
@@ -175,7 +189,7 @@ export class Edit {
           shape: 'rect',
           rect: block.bbox,
           stroke: staged ? '#B23A26' : '#948A77',
-          fill: staged ? '#c7d2fe' : null,
+          fill: staged ? '#F6E4DD' : null,
           opacity: staged ? 0.35 : 1,
           width: 1,
           label: staged ? 'edited' : undefined,
@@ -204,7 +218,7 @@ export class Edit {
           page,
           shape: 'rect',
           rect: link.bbox,
-          stroke: '#0891b2',
+          stroke: '#3D6478',
           width: 2,
           label: link.kind === 'uri' ? (link.uri ?? 'link') : `→ p${(link.page ?? 0) + 1}`,
           data: { index: link.index },
@@ -229,28 +243,199 @@ export class Edit {
       }
       this.edits.load(this.docId(), page, seq);
     });
+
+    effect((onCleanup) => {
+      if (typeof window === 'undefined') return;
+      const handler = (event: KeyboardEvent) => this.onShortcut(event);
+      window.addEventListener('keydown', handler);
+      onCleanup(() => window.removeEventListener('keydown', handler));
+    });
   }
 
   // ------------------------------------------------------------------ //
   // Text blocks
   // ------------------------------------------------------------------ //
   protected onSelect(id: string | null): void {
+    this.selectedId.set(id);
     if (!id) {
       this.selectedImage.set(null);
+      this.selectedLink.set(null);
       return;
     }
     if (this.mode() === 'image') {
-      const xref = Number(id.slice(1));
-      this.selectedImage.set(
-        this.edits.imagesFor(this.page()).find((i) => i.xref === xref) ?? null,
-      );
+      this.selectedImage.set(this.imageFor(id) ?? null);
+      return;
+    }
+    if (this.mode() === 'link') {
+      this.selectedLink.set(this.linkFor(id) ?? null);
       return;
     }
     if (this.mode() !== 'text') return;
-    const blockId = Number(id.slice(1));
-    const block = this.edits.blocksFor(this.page()).find((b) => b.block_id === blockId);
+    const block = this.blockFor(id);
     if (!block) return;
     this.openEditor(block);
+  }
+
+  // ------------------------------------------------------------------ //
+  // Keyboard and the context menu (phase-12)
+  // ------------------------------------------------------------------ //
+  private blockFor(id: string): TextBlock | undefined {
+    return this.edits.blocksFor(this.page()).find((b) => b.block_id === Number(id.slice(1)));
+  }
+
+  private imageFor(id: string): PageImage | undefined {
+    return this.edits.imagesFor(this.page()).find((i) => i.xref === Number(id.slice(1)));
+  }
+
+  private linkFor(id: string): PageLink | undefined {
+    return this.edits.linksFor(this.page()).find((l) => l.index === Number(id.slice(1)));
+  }
+
+  protected onContextTarget(id: string | null): void {
+    this.selectedId.set(id);
+  }
+
+  /**
+   * What Edit offers on a right-click, per kind of thing.
+   *
+   * Every entry is an operation the mode already had — this is a shorter route
+   * to them, not a new set of powers. Nothing is offered on empty page: Edit
+   * has no clipboard of its own, because its items are read-models of the file
+   * rather than local drafts that could be duplicated.
+   */
+  protected menuActionsFor = (id: string | null): OverlayMenuAction[] => {
+    if (!id) return [];
+    const mode = this.mode();
+    if (mode === 'text') {
+      const block = this.blockFor(id);
+      if (!block) return [];
+      const actions: OverlayMenuAction[] = [
+        { id: 'edit-text', label: 'Edit text…' },
+        { id: 'copy-text', label: 'Copy text', shortcut: this.key('copy') },
+      ];
+      if (this.edits.editFor(this.page(), block.block_id)) {
+        actions.push({ id: 'discard-edit', label: 'Discard this edit', danger: true });
+      }
+      return actions;
+    }
+    if (mode === 'image' && this.imageFor(id)) {
+      return [
+        { id: 'replace-image', label: 'Replace image…' },
+        { id: 'delete-image', label: 'Delete image', danger: true, shortcut: this.key('delete') },
+      ];
+    }
+    if (mode === 'link' && this.linkFor(id)) {
+      return [
+        { id: 'copy-link', label: 'Copy link address', shortcut: this.key('copy') },
+        { id: 'delete-link', label: 'Delete link', danger: true, shortcut: this.key('delete') },
+      ];
+    }
+    return [];
+  };
+
+  protected onMenuAction(choice: { action: string; itemId: string | null }): void {
+    const id = choice.itemId;
+    if (!id) return;
+    switch (choice.action) {
+      case 'edit-text': {
+        const block = this.blockFor(id);
+        if (block) this.openEditor(block);
+        break;
+      }
+      case 'copy-text': {
+        const block = this.blockFor(id);
+        if (block) void this.toClipboard(block.text);
+        break;
+      }
+      case 'discard-edit': {
+        const block = this.blockFor(id);
+        if (block) {
+          this.edits.discardEdit(this.page(), block.block_id);
+          this.toast.info('Edit discarded');
+        }
+        break;
+      }
+      case 'replace-image':
+        this.selectedImage.set(this.imageFor(id) ?? null);
+        this.replaceInput()?.nativeElement.click();
+        break;
+      case 'delete-image':
+        this.selectedImage.set(this.imageFor(id) ?? null);
+        void this.deleteSelectedImage();
+        break;
+      case 'copy-link': {
+        const link = this.linkFor(id);
+        if (link?.uri) void this.toClipboard(link.uri);
+        break;
+      }
+      case 'delete-link': {
+        const link = this.linkFor(id);
+        if (link) void this.deleteLink(link);
+        break;
+      }
+    }
+  }
+
+  /**
+   * The always-rendered file input the "Replace image…" menu entry opens.
+   *
+   * The panel's own replace input only exists while an image is selected, so
+   * clicking it from the menu would race the render that creates it. A hidden
+   * input that is always there makes the menu entry work on the first click,
+   * every time.
+   */
+  private replaceInput = viewChild<ElementRef<HTMLInputElement>>('replaceImageInput');
+
+  /**
+   * Plain text *does* belong on the system clipboard — unlike a structured
+   * annotation. Guarded because the async Clipboard API is absent on insecure
+   * origins and in tests, where the toast is still the honest answer.
+   */
+  private async toClipboard(text: string): Promise<void> {
+    try {
+      await navigator.clipboard?.writeText(text);
+      this.toast.info('Copied');
+    } catch {
+      this.toast.info('Could not reach the clipboard');
+    }
+  }
+
+  /** The overlay's Delete key. */
+  protected onDeleteRequested(id: string): void {
+    if (this.mode() === 'image') {
+      this.selectedImage.set(this.imageFor(id) ?? null);
+      void this.deleteSelectedImage();
+      return;
+    }
+    if (this.mode() === 'link') {
+      const link = this.linkFor(id);
+      if (link) void this.deleteLink(link);
+    }
+  }
+
+  private onShortcut(event: KeyboardEvent): void {
+    const hasTextSelection = !(window.getSelection()?.isCollapsed ?? true);
+    const action = resolveShortcut(event, { hasTextSelection });
+    if (!action) return;
+    if (action === 'cancel' || action === 'delete' || action === 'context-menu') return;
+    if (action.startsWith('nudge-')) return;
+    if (this.runAction(action)) event.preventDefault();
+  }
+
+  private runAction(action: ShortcutId): boolean {
+    switch (action) {
+      case 'undo':
+        this.edits.undo();
+        return true;
+      case 'redo':
+        this.edits.redo();
+        return true;
+      case 'save':
+        this.save();
+        return true;
+      default:
+        return false;
+    }
   }
 
   protected openEditor(block: TextBlock): void {
@@ -401,8 +586,11 @@ export class Edit {
     this.linkRect.set(null);
   }
 
-  protected deleteLink(link: PageLink): void {
+  protected async deleteLink(link: PageLink): Promise<void> {
+    const where = link.kind === 'uri' ? (link.uri ?? 'this link') : `page ${(link.page ?? 0) + 1}`;
+    if (!(await this.confirm.ask(`Delete the link to ${where}?`, 'Delete'))) return;
     this.run('delete_link', { page: this.page(), index: link.index }, 'Link removed');
+    this.selectedLink.set(null);
   }
 
   // ------------------------------------------------------------------ //

@@ -3,6 +3,7 @@ import { Observable } from 'rxjs';
 
 import { Annotation, AnnotationOp, Job, WordBox } from '../core/models/models';
 import { DocumentsService } from '../core/services/documents.service';
+import { HistoryStack } from '../shared/history';
 import { JobsFacade } from './jobs.facade';
 
 /**
@@ -63,14 +64,14 @@ export class AnnotationsFacade {
    * is therefore exact, not a replayed inverse of each operation. Every
    * mutating call pushes one entry, and a gesture (a drag, a typed sentence
    * committed on blur) is one call, so one ⌘Z is one visible change.
+   *
+   * The mechanism itself moved to `shared/history.ts` in phase-12, so that the
+   * four other editing surfaces undo the same way this one always has.
    */
-  private past: Snapshot[] = [];
-  private future: Snapshot[] = [];
-  private _canUndo = signal(false);
-  private _canRedo = signal(false);
+  private history = new HistoryStack<Snapshot>();
 
-  readonly canUndo = this._canUndo.asReadonly();
-  readonly canRedo = this._canRedo.asReadonly();
+  readonly canUndo = this.history.canUndo;
+  readonly canRedo = this.history.canRedo;
   readonly selectedId = this._selectedId.asReadonly();
   readonly loading = this._loading.asReadonly();
 
@@ -237,12 +238,7 @@ export class AnnotationsFacade {
   // ------------------------------------------------------------------ //
   /** Snapshot the current local state before changing it. */
   private remember(): void {
-    this.past.push(this.snapshot());
-    // A session is one sitting; a hundred steps is more than anyone reaches
-    // for and keeps the memory cost of a long markup session bounded.
-    if (this.past.length > 100) this.past.shift();
-    this.future = [];
-    this.syncHistory();
+    this.history.remember(this.snapshot());
   }
 
   private snapshot(): Snapshot {
@@ -261,26 +257,16 @@ export class AnnotationsFacade {
         ? state.selectedId
         : null,
     );
-    this.syncHistory();
-  }
-
-  private syncHistory(): void {
-    this._canUndo.set(this.past.length > 0);
-    this._canRedo.set(this.future.length > 0);
   }
 
   undo(): void {
-    const previous = this.past.pop();
-    if (!previous) return;
-    this.future.push(this.snapshot());
-    this.restore(previous);
+    const previous = this.history.undo(this.snapshot());
+    if (previous) this.restore(previous);
   }
 
   redo(): void {
-    const next = this.future.pop();
-    if (!next) return;
-    this.past.push(this.snapshot());
-    this.restore(next);
+    const next = this.history.redo(this.snapshot());
+    if (next) this.restore(next);
   }
 
   // ------------------------------------------------------------------ //
@@ -341,9 +327,7 @@ export class AnnotationsFacade {
   }
 
   clear(): void {
-    this.past = [];
-    this.future = [];
-    this.syncHistory();
+    this.history.clear();
     this._saved.set([]);
     this._drafts.set(new Map());
     this._removed.set(new Set());

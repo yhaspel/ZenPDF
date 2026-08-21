@@ -4,6 +4,7 @@ import { Observable, finalize, map, switchMap } from 'rxjs';
 import { Job, Rect, SavedSignature } from '../core/models/models';
 import { DocumentsService } from '../core/services/documents.service';
 import { EsignService } from '../core/services/esign.service';
+import { HistoryStack } from '../shared/history';
 import { JobsFacade } from './jobs.facade';
 
 /** A signature the user has placed but not yet applied. */
@@ -37,6 +38,11 @@ export class EsignFacade {
   private _preview = signal<string | null>(null);
 
   readonly saved = this._saved.asReadonly();
+  /** Undo over where the signature has been put down. */
+  private history = new HistoryStack<Placement[]>();
+
+  readonly canUndo = this.history.canUndo;
+  readonly canRedo = this.history.canRedo;
   readonly placements = this._placements.asReadonly();
   readonly busy = this._busy.asReadonly();
   readonly preview = this._preview.asReadonly();
@@ -91,16 +97,36 @@ export class EsignFacade {
   }
 
   place(page: number, rect: Rect): void {
+    this.history.remember([...this._placements()]);
     this._placements.update((list) => [
       ...list, { id: `p${this.nextPlacementId++}`, page, rect },
     ]);
   }
 
   unplace(id: string): void {
+    this.history.remember([...this._placements()]);
     this._placements.update((list) => list.filter((p) => p.id !== id));
   }
 
+  /** Move a placement that is already down, so it can be dragged and nudged. */
+  movePlacement(id: string, rect: Rect): void {
+    this.history.remember([...this._placements()]);
+    this._placements.update((list) =>
+      list.map((p) => (p.id === id ? { ...p, rect } : p)));
+  }
+
+  undoPlacements(): void {
+    const previous = this.history.undo([...this._placements()]);
+    if (previous) this._placements.set(previous);
+  }
+
+  redoPlacements(): void {
+    const next = this.history.redo([...this._placements()]);
+    if (next) this._placements.set(next);
+  }
+
   clear(): void {
+    this.history.clear();
     this._placements.set([]);
   }
 
