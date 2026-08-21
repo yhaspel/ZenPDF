@@ -7,14 +7,21 @@ import {
   input,
   output,
   signal,
+  viewChild,
 } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 
 import { SecurityFacade } from '../../abstraction/security.facade';
 import { Job, PdfPermissions, RedactPattern } from '../../core/models/models';
 import { ConfirmService } from '../../shared/confirm.service';
-import { OverlayDraft, OverlayItem } from '../../shared/page-overlay/overlay-model';
+import {
+  OverlayDraft,
+  OverlayGeometryChange,
+  OverlayItem,
+  OverlayMenuAction,
+} from '../../shared/page-overlay/overlay-model';
 import { PageOverlay } from '../../shared/page-overlay/page-overlay';
+import { resolveShortcut, shortcutTitle } from '../../shared/shortcuts';
 import { ToastService } from '../../shared/toast.service';
 
 export type ProtectTab = 'protect' | 'redact' | 'sanitize';
@@ -99,6 +106,31 @@ export class Protect {
       this.security.clear();
       this.page.set(0);
     });
+    // The redact keyboard. Its lifetime is the component's, which is what keeps
+    // it clear of the pdf.js viewer — that is mounted in View and the Forms
+    // fill tab, where this component does not exist.
+    effect((onCleanup) => {
+      if (typeof window === 'undefined') return;
+      const handler = (event: KeyboardEvent) => this.onShortcut(event);
+      window.addEventListener('keydown', handler);
+      onCleanup(() => window.removeEventListener('keydown', handler));
+    });
+  }
+
+  /**
+   * Undo and redo the marked areas from the keyboard.
+   *
+   * Only those two: `cancel`, `delete` and the nudges belong to the overlay,
+   * which owns them on the focused element, and there is deliberately no ⌘S —
+   * applying a redaction destroys content and appends a version, which is not
+   * what anyone means by "save".
+   */
+  private onShortcut(event: KeyboardEvent): void {
+    const action = resolveShortcut(event);
+    if (action === 'undo') this.security.undoAreas();
+    else if (action === 'redo') this.security.redoAreas();
+    else return;
+    event.preventDefault();
   }
 
   // protect
@@ -118,6 +150,17 @@ export class Protect {
   protected cleanCopy = signal(true);
   protected redactLabel = signal('');
   protected drawing = signal(false);
+  /**
+   * Which marked area is selected.
+   *
+   * New in phase-12, and the reason a click no longer removes one: selecting
+   * and destroying used to be the same gesture here — `onSelect` called
+   * `removeArea` — so a mis-aimed click deleted work with no confirm and no way
+   * back. Now a click selects, the box shows its handles, and removing it is
+   * Delete, the menu, or the ✕ on its row.
+   */
+  protected selectedAreaId = signal<string | null>(null);
+  protected readonly key = shortcutTitle;
 
   // sanitize
   protected sanitizeChoices = signal<Record<string, boolean>>({
@@ -156,7 +199,7 @@ export class Protect {
         page: match.page,
         shape: 'rect' as const,
         rect: match.rect,
-        stroke: '#e11d48',
+        stroke: '#B23A26',
         fill: '#211C15',
         opacity: 0.35,
         width: 1,
@@ -273,8 +316,41 @@ export class Protect {
     this.security.addArea(draft.page, draft.rect);
   }
 
+  private overlay = viewChild(PageOverlay);
+
   protected onSelect(id: string | null): void {
-    if (id) this.security.removeArea(id);
+    this.selectedAreaId.set(id);
+    if (id) this.overlay()?.focusSurface();
+  }
+
+  protected onGeometryChanged(change: OverlayGeometryChange): void {
+    this.security.moveArea(change.id, change.rect);
+  }
+
+  protected removeArea(id: string): void {
+    this.security.removeArea(id);
+    if (this.selectedAreaId() === id) this.selectedAreaId.set(null);
+  }
+
+  protected onContextTarget(id: string | null): void {
+    if (id) this.selectedAreaId.set(id);
+  }
+
+  protected onMenuAction(choice: { action: string; itemId: string | null }): void {
+    if (choice.action === 'remove' && choice.itemId) this.removeArea(choice.itemId);
+  }
+
+  /** Only a drawn area has a menu. A pattern match is `locked` and is removed
+   *  by unticking it in the review list, which is where its context lives. */
+  protected menuActionsFor = (id: string | null): OverlayMenuAction[] => {
+    if (!id || !this.security.areas().some((a) => a.id === id)) return [];
+    return [{
+      id: 'remove', label: 'Remove area', danger: true, shortcut: this.key('delete'),
+    }];
+  };
+
+  protected areaLabel(index: number, page: number): string {
+    return `Area ${index + 1} · page ${page + 1}`;
   }
 
   /** The user's own regex, checked here so the answer is immediate rather than

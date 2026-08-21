@@ -1,4 +1,12 @@
-import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  computed,
+  effect,
+  inject,
+  signal,
+  viewChild,
+} from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 
@@ -12,8 +20,15 @@ import {
   VerificationService,
   isEmailNotVerified,
 } from '../../core/services/verification.service';
-import { OverlayDraft, OverlayItem } from '../../shared/page-overlay/overlay-model';
+import { HistoryStack } from '../../shared/history';
+import {
+  OverlayDraft,
+  OverlayGeometryChange,
+  OverlayItem,
+  OverlayMenuAction,
+} from '../../shared/page-overlay/overlay-model';
 import { PageOverlay } from '../../shared/page-overlay/page-overlay';
+import { resolveShortcut, shortcutTitle } from '../../shared/shortcuts';
 import { ToastService } from '../../shared/toast.service';
 
 interface DraftRecipient {
@@ -38,7 +53,7 @@ interface DraftField {
 }
 
 /** One colour per recipient, so a page of boxes is readable at a glance. */
-const COLORS = ['#4f46e5', '#059669', '#d97706', '#db2777', '#0891b2', '#7c3aed'];
+const COLORS = ['#B23A26', '#2F6B46', '#8A6212', '#8E2A38', '#3D6478', '#5F574A'];
 
 /**
  * The request builder (`/app/sign/new/:docId`, phase-08 §8B).
@@ -75,6 +90,19 @@ export class RequestBuilder {
     { email: '', name: '', role: 'signer', order: 1 },
   ]);
   protected fields = signal<DraftField[]>([]);
+  /**
+   * Which placed field is selected.
+   *
+   * Before phase-12 a click *deleted* a field — `onSelect` filtered it out of
+   * the list — which is the same trap the redaction layer had, in a builder
+   * where twenty minutes of placement is normal. A click now selects; removing
+   * is Delete, the right-click menu, or the ✕ on its row.
+   */
+  protected selectedFieldId = signal<string | null>(null);
+  private history = new HistoryStack<DraftField[]>();
+  protected readonly canUndo = this.history.canUndo;
+  protected readonly canRedo = this.history.canRedo;
+  protected readonly key = shortcutTitle;
   protected armedFor = signal<string | null>(null);
   protected armedType = signal<SignFieldType>('signature');
   /** phase-08's "required toggle" — an optional field is a real thing:
@@ -119,6 +147,28 @@ export class RequestBuilder {
         this.router.navigate(['/app/doc', docId]);
       },
     });
+    effect((onCleanup) => {
+      if (typeof window === 'undefined') return;
+      const handler = (event: KeyboardEvent) => this.onShortcut(event);
+      window.addEventListener('keydown', handler);
+      onCleanup(() => window.removeEventListener('keydown', handler));
+    });
+  }
+
+  /**
+   * Undo and redo placed fields from the keyboard.
+   *
+   * Gated to step 2 because that is the only step whose bar carries the two
+   * buttons — undoing a placement from the message step would be an invisible
+   * change to a screen the user is not looking at.
+   */
+  private onShortcut(event: KeyboardEvent): void {
+    if (this.step() !== 2) return;
+    const action = resolveShortcut(event);
+    if (action === 'undo') this.undoFields();
+    else if (action === 'redo') this.redoFields();
+    else return;
+    event.preventDefault();
   }
 
   protected colorFor(recipientId: string): string {
@@ -169,6 +219,8 @@ export class RequestBuilder {
         this.armedFor.set(updated.recipients.find(
           (r) => r.role === 'signer')?.id ?? null);
         this.fields.set([]);
+        this.history.clear();
+        this.selectedFieldId.set(null);
         this.busy.set(false);
         this.step.set(2);
       },
@@ -186,6 +238,7 @@ export class RequestBuilder {
       this.toast.info('Pick whose field this is first.');
       return;
     }
+    this.history.remember([...this.fields()]);
     this.fields.update((rows) => [...rows, {
       recipient_id: recipientId,
       page: draft.page,
@@ -196,12 +249,78 @@ export class RequestBuilder {
     }]);
   }
 
+  private overlay = viewChild(PageOverlay);
+
   protected onSelect(id: string | null): void {
-    if (id === null) return;
-    const index = Number(id);
+    this.selectedFieldId.set(id);
+    if (id !== null) this.overlay()?.focusSurface();
+  }
+
+  /** The overlay addresses a field by its index *within the current page*. */
+  private fieldAt(id: string | null): DraftField | undefined {
+    if (id === null) return undefined;
+    return this.fields().filter((f) => f.page === this.page())[Number(id)];
+  }
+
+  protected removeField(id: string | null): void {
+    const target = this.fieldAt(id);
+    if (!target) return;
+    this.history.remember([...this.fields()]);
+    this.fields.update((rows) => rows.filter((f) => f !== target));
+    this.selectedFieldId.set(null);
+  }
+
+  protected onGeometryChanged(change: OverlayGeometryChange): void {
+    const target = this.fieldAt(change.id);
+    if (!target) return;
+    this.history.remember([...this.fields()]);
+    const { x, y, w, h } = change.rect;
+    this.fields.update((rows) =>
+      rows.map((f) => (f === target ? { ...f, x, y, w, h } : f)));
+  }
+
+  protected undoFields(): void {
+    const previous = this.history.undo([...this.fields()]);
+    if (previous) {
+      this.fields.set(previous);
+      this.selectedFieldId.set(null);
+    }
+  }
+
+  protected redoFields(): void {
+    const next = this.history.redo([...this.fields()]);
+    if (next) {
+      this.fields.set(next);
+      this.selectedFieldId.set(null);
+    }
+  }
+
+  protected onContextTarget(id: string | null): void {
+    if (id !== null) this.selectedFieldId.set(id);
+  }
+
+  protected onMenuAction(choice: { action: string; itemId: string | null }): void {
+    if (choice.action === 'remove') this.removeField(choice.itemId);
+  }
+
+  protected menuActionsFor = (id: string | null): OverlayMenuAction[] => {
     const onPage = this.fields().filter((f) => f.page === this.page());
-    const target = onPage[index];
-    if (target) this.fields.update((rows) => rows.filter((f) => f !== target));
+    if (id === null || !onPage[Number(id)]) return [];
+    return [{
+      id: 'remove', label: 'Remove field', danger: true, shortcut: this.key('delete'),
+    }];
+  };
+
+  /** The rows of the per-page list — the touch and keyboard route to removal. */
+  protected readonly fieldsOnPage = computed(() =>
+    this.fields()
+      .filter((f) => f.page === this.page())
+      .map((field, index) => ({ id: `${index}`, field })),
+  );
+
+  protected fieldLabel(field: DraftField): string {
+    const who = this.recipients().find((r) => r.id === field.recipient_id);
+    return `${field.type.replace('_', ' ')} — ${who?.email || 'unassigned'}`;
   }
 
   protected saveFields(): void {

@@ -13,20 +13,74 @@ import {
 
 import { DocumentsService } from '../../core/services/documents.service';
 import {
+  NUDGE_SHIFT_MULTIPLIER,
+  NUDGE_STEP,
+  NUDGE_VECTORS,
+  resolveShortcut,
+} from '../shortcuts';
+import {
   NormPoint,
   NormRect,
   OverlayDraft,
   OverlayGeometryChange,
   OverlayItem,
+  OverlayMenuAction,
   OverlayTool,
   OverlayWord,
   clamp01,
   normalizeRect,
+  nudgeRect,
   quadsFromWords,
   smoothStroke,
 } from './overlay-model';
 
 type Handle = 'nw' | 'ne' | 'sw' | 'se';
+
+/**
+ * Enough of the menu's size to keep it inside the page before it has rendered.
+ *
+ * Measuring it would need a frame, and a menu that appears in the wrong place
+ * and then jumps is worse than one placed from a known minimum: `.menu` is
+ * `min-width: 160px` with 4px of padding, and its items are 44px tall.
+ */
+const MENU_MIN_WIDTH = 200;
+const MENU_ITEM_HEIGHT = 44;
+const MENU_PADDING = 8;
+
+/** Two rects the user cannot tell apart — a sub-0.01% difference is a click. */
+function sameRect(a: NormRect, b: NormRect): boolean {
+  const near = (x: number, y: number) => Math.abs(x - y) < 1e-4;
+  return near(a.x, b.x) && near(a.y, b.y) && near(a.w, b.w) && near(a.h, b.h);
+}
+
+/** What a shape is called out loud. `OverlayItem.label`, where a feature set
+ *  one, is a better name than any of these and wins. */
+const SHAPE_NAMES: Record<string, string> = {
+  rect: 'Rectangle',
+  ellipse: 'Ellipse',
+  line: 'Line',
+  arrow: 'Arrow',
+  polygon: 'Polygon',
+  polyline: 'Polyline',
+  ink: 'Drawing',
+  quads: 'Text markup',
+  point: 'Note',
+};
+
+/** What a nudge is called out loud. */
+const NUDGE_NAMES: Record<string, string> = {
+  'nudge-up': 'up',
+  'nudge-down': 'down',
+  'nudge-left': 'left',
+  'nudge-right': 'right',
+};
+
+/** Where the context menu is, and what it belongs to. */
+interface MenuState {
+  x: number;
+  y: number;
+  itemId: string | null;
+}
 
 interface Drag {
   kind: 'draw' | 'move' | 'resize' | 'ink' | 'select-text';
@@ -58,8 +112,11 @@ interface Drag {
   templateUrl: './page-overlay.html',
   host: {
     '(keydown)': 'onKeyDown($event)',
+    '(contextmenu)': 'onContextMenu($event)',
     tabindex: '0',
-    class: 'block outline-none',
+    role: 'group',
+    '[attr.aria-label]': "'Page ' + (page() + 1) + ' — page editing layer'",
+    class: 'relative block outline-none',
   },
 })
 export class PageOverlay {
@@ -82,8 +139,38 @@ export class PageOverlay {
   readonly pageWidthPt = input(595);
   /** Which item is being typed into, if any. */
   readonly editingId = input<string | null>(null);
+  /**
+   * Draw the selection outline without resize grips.
+   *
+   * Edit mode's items are read-models of the file — text blocks, images, links
+   * — and cannot be moved by dragging a corner. Rendering four live handles
+   * over them would be a control wired to nothing, which the design contract
+   * forbids outright (§10, "no dead UI").
+   */
+  readonly readonlyHandles = input(false);
+  /**
+   * What the right-click menu should offer for whatever is under the pointer.
+   *
+   * A **function**, not an array, and that is load-bearing. The overlay has to
+   * decide *synchronously* — inside the `contextmenu` handler — whether to
+   * `preventDefault()` and open, because a browser menu cannot be suppressed
+   * after the fact. An array input cannot answer that question: emitting
+   * `contextTarget` sets a signal in the parent, but the input carrying the
+   * result only updates on the next change detection, so the overlay would read
+   * the *previous* item's actions. That mistake shipped for an afternoon and
+   * showed up as "the redaction menu never opens" while Annotate's worked by
+   * luck, because its list happened to be non-empty already.
+   *
+   * The overlay still owns opening, placing, navigating and dismissing; what an
+   * entry *means* stays with the feature, the same way `OverlayItem.data` keeps
+   * feature semantics out of here. **An empty list means no menu** — the
+   * browser's own is left alone rather than replaced with an empty box.
+   */
+  readonly menuActionsFor = input<(itemId: string | null) => OverlayMenuAction[]>(() => []);
   /** Stroke/fill applied to the in-progress shape, so drawing previews truthfully. */
-  readonly drawStroke = input('#e11d48');
+  /** The in-progress shape's colour. Vermilion by default — every call site
+   *  overrides it, and the contract has no rose. */
+  readonly drawStroke = input('#B23A26');
   readonly drawFill = input<string | null>(null);
   readonly drawWidth = input(2);
 
@@ -95,10 +182,21 @@ export class PageOverlay {
   readonly editRequested = output<string>();
   readonly textChanged = output<{ id: string; text: string }>();
   readonly editingEnded = output<void>();
+  /**
+   * What the menu is about to be opened for, emitted *before* it opens.
+   *
+   * Deliberately not `selectionChanged`: in Protect and the sign request
+   * builder a selection is destructive, so routing a right-click through it
+   * would delete the very thing the user meant to right-click.
+   */
+  readonly contextTarget = output<string | null>();
+  readonly menuAction = output<{ action: string; itemId: string | null }>();
 
   private docsSvc = inject(DocumentsService);
   private surface = viewChild<ElementRef<HTMLDivElement>>('surface');
   private textEditor = viewChild<ElementRef<HTMLTextAreaElement>>('textEditor');
+  private menuEl = viewChild<ElementRef<HTMLDivElement>>('overlayMenu');
+  private host = inject(ElementRef<HTMLElement>);
 
   protected imageUrl = signal<string | null>(null);
   /** Natural page aspect (height / width), so the box matches the raster exactly. */
@@ -107,8 +205,20 @@ export class PageOverlay {
   /** Vertices committed so far for polygon/polyline (click-to-add, Enter/dbl-click to finish). */
   protected pending = signal<NormPoint[]>([]);
   protected hoverPoint = signal<NormPoint | null>(null);
+  protected menu = signal<MenuState | null>(null);
+  /** The list resolved when the menu opened — rendered, and navigated. */
+  protected menuActions = signal<OverlayMenuAction[]>([]);
+  /** Which menu entry the keyboard is on — the highlight is drawn from this,
+   *  not from `:focus-visible`, because a menu opened by a right-click never
+   *  matches `:focus-visible` and its first item would look unfocused. */
+  protected menuIndex = signal(0);
+  /** Announced to screen readers: what got selected, where a nudge went. */
+  protected liveMessage = signal('');
 
   private objectUrl: string | null = null;
+  private menuOpenedBy: HTMLElement | null = null;
+  /** What the live region last named, so a nudge is not talked over. */
+  private announcedId: string | null = null;
 
   protected readonly boxHeight = computed(() =>
     Math.round(this.renderWidth() * this.aspect()),
@@ -128,7 +238,54 @@ export class PageOverlay {
     }
   });
 
+  /** Indexes of the entries the arrow keys are allowed to land on. */
+  protected readonly enabledMenuIndexes = computed(() =>
+    this.menuActions()
+      .map((action, index) => (action.disabled ? -1 : index))
+      .filter((index) => index >= 0),
+  );
+
+  /** The currently selected item, if it is on this page. */
+  protected readonly selectedItem = computed<OverlayItem | undefined>(() => {
+    const id = this.selectedId();
+    if (!id) return undefined;
+    return this.items().find((item) => item.id === id && item.page === this.page());
+  });
+
   constructor() {
+    // Move real focus with the highlight, so a screen reader reads each entry
+    // as it is reached. Guarded on the menu being open so it does not steal
+    // focus from the page.
+    effect(() => {
+      const state = this.menu();
+      const index = this.menuIndex();
+      if (!state) return;
+      queueMicrotask(() => {
+        const buttons = this.menuEl()?.nativeElement.querySelectorAll<HTMLButtonElement>('button');
+        buttons?.[index]?.focus({ preventScroll: true });
+      });
+    });
+
+    // A page change closes the menu with everything else it abandons.
+    effect(() => {
+      this.page();
+      this.menu.set(null);
+    });
+
+    // Selection is a pointer gesture with no visible text, so it is invisible
+    // to a screen reader unless something says it out loud.
+    //
+    // Keyed on the *id*, not the item: a nudge replaces the item object, and
+    // announcing the selection again on every arrow press wiped out "Moved
+    // right" before anything could read it.
+    effect(() => {
+      const item = this.selectedItem();
+      const id = item?.id ?? null;
+      if (id === this.announcedId) return;
+      this.announcedId = id;
+      if (item) this.announce(`${item.label || SHAPE_NAMES[item.shape] || 'Item'} selected`);
+    });
+
     effect((onCleanup) => {
       const id = this.docId();
       const page = this.page();
@@ -227,6 +384,16 @@ export class PageOverlay {
   // ------------------------------------------------------------------ //
   protected onPointerDown(event: PointerEvent): void {
     if (this.readonlyMode()) return;
+    // Only the primary button draws, selects and drags.
+    //
+    // `pointerdown` fires *before* `contextmenu`, and without this guard a
+    // right-click ran the whole left-click path first: it cleared the
+    // selection, started a latched `move` drag with `setPointerCapture` on
+    // button 2 — and in Protect, where selecting an area removed it, it
+    // deleted the thing the user was trying to open a menu on.
+    if (event.button !== 0) return;
+    // A click anywhere on the page dismisses an open menu.
+    if (this.menu()) this.closeMenu();
     const point = this.toNorm(event);
     const tool = this.tool();
 
@@ -302,7 +469,10 @@ export class PageOverlay {
 
     if (drag.kind === 'move' || drag.kind === 'resize') {
       const rect = this.dragRect(drag, point);
-      if (drag.itemId && rect && drag.originRect) {
+      // A click *is* a zero-distance drag. Reporting it as a geometry change
+      // made every click on a shape a history entry, so the first ⌘Z after
+      // selecting something undid nothing anyone could see.
+      if (drag.itemId && rect && drag.originRect && !sameRect(rect, drag.originRect)) {
         this.geometryChanged.emit({ id: drag.itemId, rect, from: drag.originRect });
       }
       return;
@@ -351,6 +521,8 @@ export class PageOverlay {
   // ------------------------------------------------------------------ //
   protected onItemPointerDown(event: PointerEvent, item: OverlayItem): void {
     if (this.readonlyMode() || this.tool() !== 'select' || item.locked) return;
+    if (event.button !== 0) return; // see `onPointerDown`
+    if (this.menu()) this.closeMenu();
     event.stopPropagation();
     this.selectionChanged.emit(item.id);
     if (!item.rect) return;
@@ -362,7 +534,8 @@ export class PageOverlay {
   }
 
   protected onHandlePointerDown(event: PointerEvent, item: OverlayItem, handle: Handle): void {
-    if (this.readonlyMode() || !item.rect) return;
+    if (this.readonlyMode() || this.readonlyHandles() || !item.rect) return;
+    if (event.button !== 0) return;
     event.stopPropagation();
     (event.target as HTMLElement).setPointerCapture?.(event.pointerId);
     const start = this.toNorm(event);
@@ -438,6 +611,7 @@ export class PageOverlay {
   // ------------------------------------------------------------------ //
   protected onTextPointerDown(event: PointerEvent, word: OverlayWord): void {
     if (this.readonlyMode() || this.tool() !== 'text') return;
+    if (event.button !== 0) return;
     event.preventDefault();
     // Deliberately NO `setPointerCapture` here, unlike every other gesture.
     // Capturing suppresses boundary events on every other element, so
@@ -485,7 +659,15 @@ export class PageOverlay {
   // Keyboard
   // ------------------------------------------------------------------ //
   protected onKeyDown(event: KeyboardEvent): void {
-    if (event.key === 'Escape') {
+    // While the menu is open it owns the keyboard completely. Without this,
+    // walking the menu with the arrow keys would also nudge the shape under
+    // it, and reaching for an entry with Delete would destroy the item the
+    // menu belongs to.
+    if (this.menu()) return;
+
+    const action = resolveShortcut(event);
+
+    if (action === 'cancel') {
       // ESC always means "abandon what I am doing", at every level.
       if (this.drag() || this.pending().length) {
         this.drag.set(null);
@@ -502,10 +684,203 @@ export class PageOverlay {
       event.preventDefault();
       return;
     }
-    if ((event.key === 'Delete' || event.key === 'Backspace') && this.selectedId()) {
+    if (action === 'context-menu') {
+      if (this.openMenuForSelection()) event.preventDefault();
+      return;
+    }
+    if (action === 'delete' && this.selectedId()) {
       this.deleteRequested.emit(this.selectedId()!);
       event.preventDefault();
+      return;
     }
+    if (action && NUDGE_VECTORS[action]) {
+      // Only swallow the key when something actually moved: with nothing
+      // selected the arrows must still scroll the pane, which is the correct
+      // default and the only way to reach the bottom of a tall page.
+      if (this.nudge(action, event.shiftKey)) event.preventDefault();
+    }
+  }
+
+  /**
+   * Move the selection by a fraction of the page.
+   *
+   * Emitted through `geometryChanged` rather than a channel of its own, so
+   * every consumer that already re-derives quads, ink strokes and vertices from
+   * a drag gets nudging with no new code at all.
+   */
+  private nudge(action: string, fast: boolean): boolean {
+    if (this.readonlyMode() || this.readonlyHandles()) return false;
+    if (this.drag() || this.pending().length) return false;
+    const item = this.selectedItem();
+    if (!item?.rect || item.locked) return false;
+
+    const [ux, uy] = NUDGE_VECTORS[action];
+    const step = NUDGE_STEP * (fast ? NUDGE_SHIFT_MULTIPLIER : 1);
+    const rect = nudgeRect(item.rect, ux * step, uy * step);
+    if (rect.x === item.rect.x && rect.y === item.rect.y) {
+      this.announce('At the edge of the page');
+      return true; // handled: do not also scroll the pane
+    }
+    this.geometryChanged.emit({ id: item.id, rect, from: item.rect });
+    this.announce(`Moved ${NUDGE_NAMES[action]}`);
+    return true;
+  }
+
+  // ------------------------------------------------------------------ //
+  // Context menu
+  // ------------------------------------------------------------------ //
+  /**
+   * Open the menu for whatever is under the pointer.
+   *
+   * The item is found by hit-testing normalized rects rather than by walking up
+   * from `event.target`: an item the feature marked `locked` is rendered
+   * `pointer-events: none`, so the event lands on the surface and ancestry
+   * would report "empty page" — which would offer *Paste* over a redaction
+   * match. Geometry does not lie about what is there.
+   */
+  protected onContextMenu(event: MouseEvent): void {
+    if (this.readonlyMode()) return;
+    const point = this.toNorm(event);
+    const item = this.itemAt(point);
+    // A locked item is not editable and offers nothing; leave the browser's
+    // own menu alone rather than opening an empty one.
+    if (item?.locked) return;
+
+    const itemId = item?.id ?? null;
+    this.contextTarget.emit(itemId);
+    const actions = this.menuActionsFor()(itemId);
+    if (!actions.length) return; // nothing to offer — the browser's menu stands
+
+    event.preventDefault();
+    this.menuOpenedBy = this.host.nativeElement.contains(document.activeElement)
+      ? (document.activeElement as HTMLElement)
+      : null;
+    this.menuActions.set(actions);
+    this.openMenuAt(this.px(point[0]), this.pyv(point[1]), itemId);
+  }
+
+  /** Shift+F10 / the ContextMenu key: anchor on the selection, not on 0,0. */
+  private openMenuForSelection(): boolean {
+    const item = this.selectedItem();
+    const itemId = item?.id ?? null;
+    this.contextTarget.emit(itemId);
+    const actions = this.menuActionsFor()(itemId);
+    if (!actions.length) return false;
+    this.menuOpenedBy = document.activeElement as HTMLElement | null;
+    this.menuActions.set(actions);
+    const rect = item?.rect;
+    this.openMenuAt(
+      rect ? this.px(rect.x) : this.renderWidth() / 2,
+      rect ? this.pyv(rect.y + rect.h) : this.boxHeight() / 2,
+      itemId,
+    );
+    return true;
+  }
+
+  /** Place the menu inside the page box, so the scrolling pane cannot clip it. */
+  private openMenuAt(x: number, y: number, itemId: string | null): void {
+    const height = MENU_PADDING + this.menuActions().length * MENU_ITEM_HEIGHT;
+    this.menu.set({
+      x: Math.max(0, Math.min(x, this.renderWidth() - MENU_MIN_WIDTH)),
+      y: Math.max(0, Math.min(y, this.boxHeight() - height)),
+      itemId,
+    });
+    this.menuIndex.set(this.enabledMenuIndexes()[0] ?? 0);
+  }
+
+  private itemAt(point: NormPoint): OverlayItem | undefined {
+    const onPage = this.items().filter((item) => item.page === this.page() && item.rect);
+    // Reverse render order: the one drawn last is the one on top.
+    for (let i = onPage.length - 1; i >= 0; i -= 1) {
+      const rect = onPage[i].rect!;
+      if (
+        point[0] >= rect.x && point[0] <= rect.x + rect.w
+        && point[1] >= rect.y && point[1] <= rect.y + rect.h
+      ) {
+        return onPage[i];
+      }
+    }
+    return undefined;
+  }
+
+  /**
+   * Give the page the keyboard.
+   *
+   * Selecting a mark from a rail list leaves focus on the button that was
+   * clicked, so Delete and the arrow keys — which belong to the page — would go
+   * nowhere. Clicking the page itself focuses this host already (a `tabindex=0`
+   * ancestor takes focus when a non-focusable child is clicked); this is the
+   * same thing for the other route in.
+   */
+  focusSurface(): void {
+    // `preventScroll`, always. The host *is* the whole page box, taller than
+    // the pane that holds it, so a plain `focus()` scrolls it into view — which
+    // moves the page out from under the pointer. Closing a menu did exactly
+    // that: the next click landed on empty backdrop and cleared the selection.
+    this.host.nativeElement.focus?.({ preventScroll: true });
+  }
+
+  protected closeMenu(restoreFocus = false): void {
+    if (!this.menu()) return;
+    this.menu.set(null);
+    this.menuActions.set([]);
+    if (restoreFocus) {
+      (this.menuOpenedBy ?? this.host.nativeElement).focus?.({ preventScroll: true });
+    }
+    this.menuOpenedBy = null;
+  }
+
+  protected chooseMenuAction(action: OverlayMenuAction): void {
+    if (action.disabled) return;
+    const itemId = this.menu()?.itemId ?? null;
+    this.closeMenu(true);
+    this.menuAction.emit({ action: action.id, itemId });
+  }
+
+  /**
+   * The menu's own keyboard, per the ARIA menu pattern.
+   *
+   * Every key it handles is stopped here rather than allowed to bubble: the
+   * overlay host below is listening for the same arrows, Delete and Escape.
+   */
+  protected onMenuKeyDown(event: KeyboardEvent): void {
+    const enabled = this.enabledMenuIndexes();
+    if (!enabled.length) return;
+    const at = Math.max(0, enabled.indexOf(this.menuIndex()));
+
+    switch (event.key) {
+      case 'ArrowDown':
+        this.menuIndex.set(enabled[(at + 1) % enabled.length]);
+        break;
+      case 'ArrowUp':
+        this.menuIndex.set(enabled[(at - 1 + enabled.length) % enabled.length]);
+        break;
+      case 'Home':
+        this.menuIndex.set(enabled[0]);
+        break;
+      case 'End':
+        this.menuIndex.set(enabled[enabled.length - 1]);
+        break;
+      case 'Escape':
+      case 'Tab':
+        this.closeMenu(true);
+        break;
+      case 'Enter':
+      case ' ': {
+        const action = this.menuActions()[this.menuIndex()];
+        if (action) this.chooseMenuAction(action);
+        break;
+      }
+      default:
+        return; // not ours: let it through
+    }
+    event.preventDefault();
+    event.stopPropagation();
+  }
+
+  /** Say something once, for whoever is listening through a screen reader. */
+  private announce(message: string): void {
+    this.liveMessage.set(message);
   }
 
   // ------------------------------------------------------------------ //

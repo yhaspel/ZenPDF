@@ -24,6 +24,8 @@ import { ConfirmService } from '../../shared/confirm.service';
 import { GuestBanner } from '../../shared/guest-banner';
 import { ZenModal } from '../../shared/modal.directive';
 import { PdfThumbnail } from '../../shared/pdf-thumbnail';
+import { ShortcutsHelp } from '../../shared/shortcuts-help';
+import { resolveShortcut, shortcutTitle } from '../../shared/shortcuts';
 import { ThemeToggle } from '../../shared/theme-toggle';
 import { saveBlob } from '../../shared/save-blob';
 import { Spinner } from '../../shared/spinner';
@@ -46,7 +48,7 @@ type Dialog = null | 'split' | 'scale' | 'nup' | 'compress' | 'insert';
   imports: [
     FormsModule, RouterLink, NgxExtendedPdfViewerModule, CdkDropList, CdkDrag, PdfThumbnail,
     Annotate, Edit, Forms, Convert, Compare, Protect, Sign, ZenModal, Spinner,
-    Brand, GuestBanner, ThemeToggle,
+    Brand, GuestBanner, ThemeToggle, ShortcutsHelp,
   ],
   templateUrl: './workspace.html',
   // The host is a flex item of the shell's `main`, and it was not saying so:
@@ -98,6 +100,8 @@ export class Workspace {
   protected titleDraft = signal('');
 
   protected dialog = signal<Dialog>(null);
+  protected shortcutsOpen = signal(false);
+  protected readonly key = shortcutTitle;
   protected splitMode = signal<'ranges' | 'every_n' | 'by_size_mb' | 'by_bookmarks'>('ranges');
   protected splitRanges = signal('1');
   protected splitEveryN = signal(1);
@@ -169,6 +173,21 @@ export class Workspace {
   });
 
   constructor() {
+    // The one shortcut that belongs to the whole workspace rather than to a
+    // mode: the sheet that says what the others are. It carries a modifier on
+    // purpose — a bare `?` would be a single-character shortcut, which WCAG
+    // 2.1 SC 2.1.4 only permits if it can be turned off or remapped, and
+    // building a remapping UI to save one keypress is the wrong trade.
+    effect((onCleanup) => {
+      if (!this.isBrowser) return;
+      const handler = (event: KeyboardEvent) => {
+        if (resolveShortcut(event) !== 'help') return;
+        event.preventDefault();
+        this.openShortcuts();
+      };
+      window.addEventListener('keydown', handler);
+      onCleanup(() => window.removeEventListener('keydown', handler));
+    });
     // Arm the countdown whenever a throttle arrives, and let it run down.
     effect((onCleanup) => {
       const wait = this.viewer.error()?.retryAfter ?? 0;
@@ -363,12 +382,79 @@ export class Workspace {
    * editing affordance (§4 workspace, D3). It is itself a new version, so it
    * can be undone in turn, which is why it does not stop to ask.
    */
-  protected readonly canUndoVersion = computed(() => (this.viewer.currentSeq() ?? 1) > 1);
+  /**
+   * Where the undo chain is, when there is one (phase-12 D11).
+   *
+   * A revert *appends*, so after one Undo the version whose content is on
+   * screen and `currentSeq()` are two different numbers — and the first cut of
+   * this button ignored that. `undoLastChange` always reverted to
+   * `currentSeq() - 1`: at v5 that is v4, correctly; but the revert makes v6,
+   * so pressing Undo again reverted to **v5 — the change just undone**. Undo
+   * was single-shot and silently became Redo on the second press.
+   *
+   * `content` is the version actually being shown, `ceiling` the one the chain
+   * started from (so Redo cannot walk forward past where the user was), and
+   * `expected` is what `currentSeq()` must equal for the chain to still be
+   * live. Any other operation appends a version, `expected` stops matching, and
+   * the chain ends by arithmetic — no invalidation to wire up and forget.
+   */
+  private versionCursor = signal<{ ceiling: number; content: number; expected: number } | null>(null);
+
+  /** The version whose content is on screen. */
+  private readonly shownSeq = computed(() => {
+    const cursor = this.versionCursor();
+    const seq = this.viewer.currentSeq() ?? 1;
+    return cursor && cursor.expected === seq ? cursor.content : seq;
+  });
+
+  protected readonly canUndoVersion = computed(() => this.shownSeq() > 1);
+
+  protected readonly canRedoVersion = computed(() => {
+    const cursor = this.versionCursor();
+    if (!cursor || cursor.expected !== (this.viewer.currentSeq() ?? 1)) return false;
+    return cursor.content < cursor.ceiling;
+  });
+
+  protected readonly undoTarget = computed(() => this.shownSeq() - 1);
+  protected readonly redoTarget = computed(() => this.shownSeq() + 1);
+
+  /**
+   * Focus the button *before* opening the sheet.
+   *
+   * `ZenModal` restores focus to whatever was active when it was constructed,
+   * and for a sheet opened by a keystroke that is usually `<body>` — whose
+   * `focus()` is a no-op, so closing would drop focus to the top of the
+   * document. Focusing the control that represents this action first makes the
+   * restore land somewhere a person can carry on from.
+   */
+  protected openShortcuts(): void {
+    if (this.isBrowser) {
+      document.querySelector<HTMLElement>('[data-test=shortcuts-open]')?.focus();
+    }
+    this.shortcutsOpen.set(true);
+  }
 
   protected undoLastChange(): void {
-    const seq = this.viewer.currentSeq();
-    if (!seq || seq < 2) return;
-    this.revert(seq - 1);
+    if (!this.canUndoVersion()) return;
+    this.stepVersion(this.undoTarget());
+  }
+
+  protected redoLastChange(): void {
+    if (!this.canRedoVersion()) return;
+    this.stepVersion(this.redoTarget());
+  }
+
+  private stepVersion(target: number): void {
+    const seq = this.viewer.currentSeq() ?? 1;
+    const cursor = this.versionCursor();
+    const live = cursor && cursor.expected === seq;
+    this.versionCursor.set({
+      ceiling: live ? cursor.ceiling : seq,
+      content: target,
+      // The revert appends exactly one version.
+      expected: seq + 1,
+    });
+    this.revert(target);
   }
 
   revert(seq: number): void {

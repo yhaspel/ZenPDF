@@ -100,7 +100,7 @@
                 [attr.rx]="px((item.rect?.w ?? 0) / 2)"
                 [attr.ry]="pyv((item.rect?.h ?? 0) / 2)"
                 [attr.fill]="item.fill ?? 'none'"
-                [attr.stroke]="item.stroke ?? '#0f172a'"
+                [attr.stroke]="item.stroke ?? '#332D24'"
                 [attr.stroke-width]="strokePx(item)"
               />
             }
@@ -108,7 +108,7 @@
               <line
                 [attr.x1]="px(item.points?.[0]?.[0] ?? 0)" [attr.y1]="pyv(item.points?.[0]?.[1] ?? 0)"
                 [attr.x2]="px(item.points?.[1]?.[0] ?? 0)" [attr.y2]="pyv(item.points?.[1]?.[1] ?? 0)"
-                [attr.stroke]="item.stroke ?? '#0f172a'"
+                [attr.stroke]="item.stroke ?? '#332D24'"
                 [attr.stroke-width]="strokePx(item)"
                 stroke-linecap="round"
               />
@@ -117,7 +117,7 @@
               <line
                 [attr.x1]="px(item.points?.[0]?.[0] ?? 0)" [attr.y1]="pyv(item.points?.[0]?.[1] ?? 0)"
                 [attr.x2]="px(item.points?.[1]?.[0] ?? 0)" [attr.y2]="pyv(item.points?.[1]?.[1] ?? 0)"
-                [attr.stroke]="item.stroke ?? '#0f172a'"
+                [attr.stroke]="item.stroke ?? '#332D24'"
                 [attr.stroke-width]="strokePx(item)"
                 stroke-linecap="round"
                 marker-end="url(#zen-arrow)"
@@ -127,7 +127,7 @@
               <polygon
                 [attr.points]="pointsAttr(item.points)"
                 [attr.fill]="item.fill ?? 'none'"
-                [attr.stroke]="item.stroke ?? '#0f172a'"
+                [attr.stroke]="item.stroke ?? '#332D24'"
                 [attr.stroke-width]="strokePx(item)"
               />
             }
@@ -135,7 +135,7 @@
               <polyline
                 [attr.points]="pointsAttr(item.points)"
                 fill="none"
-                [attr.stroke]="item.stroke ?? '#0f172a'"
+                [attr.stroke]="item.stroke ?? '#332D24'"
                 [attr.stroke-width]="strokePx(item)"
                 stroke-linejoin="round"
               />
@@ -144,7 +144,7 @@
               <path
                 [attr.d]="inkPath(item.ink)"
                 fill="none"
-                [attr.stroke]="item.stroke ?? '#0f172a'"
+                [attr.stroke]="item.stroke ?? '#332D24'"
                 [attr.stroke-width]="strokePx(item)"
                 stroke-linecap="round"
                 stroke-linejoin="round"
@@ -155,7 +155,7 @@
                 [attr.x]="px(item.rect?.x ?? 0)" [attr.y]="pyv(item.rect?.y ?? 0)"
                 [attr.width]="px(item.rect?.w ?? 0)" [attr.height]="pyv(item.rect?.h ?? 0)"
                 [attr.fill]="item.fill ?? 'none'"
-                [attr.stroke]="item.stroke ?? '#0f172a'"
+                [attr.stroke]="item.stroke ?? '#332D24'"
                 [attr.stroke-width]="strokePx(item)"
                 rx="2"
               />
@@ -209,7 +209,7 @@
         [style.height.px]="pyv(item.rect.h)"
         data-test="overlay-selection"
       ></div>
-      @if (!readonlyMode() && !item.locked) {
+      @if (!readonlyMode() && !readonlyHandles() && !item.locked) {
         @for (handle of ['nw', 'ne', 'sw', 'se']; track handle) {
           <button
             type="button"
@@ -269,4 +269,45 @@
       }
     }
   }
+
+  <!-- Context menu (design contract §3 "Context menu"). Placed inside the page
+       box and clamped to it, so the scrolling pane can never clip it, and with
+       physical offsets like every other child here — the page raster does not
+       mirror under RTL, so a logical offset would fling the menu across it. -->
+  @if (menu(); as state) {
+    <div
+      #overlayMenu
+      class="menu absolute"
+      role="menu"
+      tabindex="-1"
+      [attr.aria-label]="state.itemId ? 'Actions for the selected item' : 'Page actions'"
+      [style.left.px]="state.x"
+      [style.top.px]="state.y"
+      (keydown)="onMenuKeyDown($event)"
+      (pointerdown)="$event.stopPropagation()"
+      (contextmenu)="$event.preventDefault(); $event.stopPropagation()"
+      data-test="overlay-menu"
+    >
+      @for (action of menuActions(); track action.id; let i = $index) {
+        <button
+          type="button"
+          role="menuitem"
+          [class.menu-danger]="action.danger"
+          [class.is-active]="menuIndex() === i"
+          [attr.aria-disabled]="action.disabled ? 'true' : null"
+          [attr.tabindex]="menuIndex() === i ? 0 : -1"
+          (click)="chooseMenuAction(action)"
+          [attr.data-test]="'overlay-menu-' + action.id"
+        >
+          <span>{{ action.label }}</span>
+          @if (action.shortcut) {
+            <span class="menu-key" aria-hidden="true">{{ action.shortcut }}</span>
+          }
+        </button>
+      }
+    </div>
+  }
 </div>
+
+<!-- What just happened, for whoever is listening rather than looking. -->
+<p class="sr-only" aria-live="polite" role="status" data-test="overlay-live">{{ liveMessage() }}</p>

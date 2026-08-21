@@ -333,8 +333,26 @@
       <span class="muted" data-test="edit-page">Page {{ page() + 1 }} / {{ pageCount() }}</span>
       <button (click)="nextPage()" [disabled]="page() >= pageCount() - 1"
               class="btn btn-ghost btn-sm" data-test="edit-next">›</button>
+
+      <span class="bg-border mx-2 h-4 w-px"></span>
+      <!-- Local to this session only: everything else in Edit is applied to the
+           file the moment it runs, and taking *that* back is the workspace
+           bar's Undo. The titles say which is which. -->
+      <button (click)="edits.undo()" [disabled]="!edits.canUndo()"
+              class="btn btn-ghost btn-sm"
+              [title]="'Undo the last text change, not yet saved (' + key('undo') + ')'"
+              aria-keyshortcuts="Control+Z Meta+Z" data-test="edit-undo">Undo</button>
+      <button (click)="edits.redo()" [disabled]="!edits.canRedo()"
+              class="btn btn-ghost btn-sm" [title]="'Redo (' + key('redo') + ')'"
+              aria-keyshortcuts="Control+Shift+Z Meta+Shift+Z" data-test="edit-redo">Redo</button>
       @if (busy()) { <span class="text-accent text-xs" data-test="edit-busy">working…</span> }
     </div>
+
+    <!-- Opened by the "Replace image…" menu entry. Always rendered so the menu
+         never has to wait for the panel to create it. -->
+    <input #replaceImageInput type="file" accept="image/png,image/jpeg"
+           class="sr-only" tabindex="-1" aria-hidden="true"
+           (change)="onImageFile($event, true)" />
 
     <!-- Scanned-page gate (phase-04): the editor refuses, and says what to do. -->
     @if (scanned()) {
@@ -362,10 +380,15 @@
           [renderWidth]="zoom()"
           [items]="overlayItems()"
           [tool]="gesture()"
-          [selectedId]="null"
+          [selectedId]="selectedId()"
+          [readonlyHandles]="true"
           [drawStroke]="'#B23A26'"
+          [menuActionsFor]="menuActionsFor"
           (created)="onCreated($event)"
           (selectionChanged)="onSelect($event)"
+          (deleteRequested)="onDeleteRequested($event)"
+          (contextTarget)="onContextTarget($event)"
+          (menuAction)="onMenuAction($event)"
         />
 
         <!-- Inline text editor, positioned over the block being edited -->

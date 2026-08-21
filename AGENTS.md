@@ -1,6 +1,6 @@
 # ZenPDF — agent instructions (repo-local)
 
-Monorepo: `backend/` (Django 6), `frontend/` (Angular 22 + Tailwind CSS v4, signals, 3-layer core → abstraction → features, OnPush), `e2e/` (Playwright), `infra/` (full local stack via `infra/up.sh`), `development-plans/` (plan docs — `01-architecture.md` is normative; amend it when architecture changes), `PROGRESS.md` (canonical execution tracker), `docs/review/` (QA findings).
+Monorepo: `backend/` (Django 6), `frontend/` (Angular 22 + Tailwind CSS v4, signals, 3-layer core → abstraction → features, OnPush), `e2e/` (Playwright), `infra/` (full local stack via `infra/up.sh`), `development-plans/` (plan docs — `01-architecture.md` is normative; amend it when architecture changes), `PROGRESS.md` (canonical execution tracker), `docs/reviews/` (QA findings, status reviews and the CLI handoff prompts under `docs/reviews/handoffs/`).
 
 Local env quirks: `.env` overrides `API_PORT=8010`, `DB_PORT=15432`; Angular 22 needs Node ≥ 22.22.3. SSR is build-time prerender (`outputMode: static`) — verify with `npm run verify:prerender`.
 

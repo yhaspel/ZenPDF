@@ -11,6 +11,7 @@ import {
 } from '../core/models/models';
 import { DocumentPasswords } from '../core/services/document-passwords';
 import { DocumentsService } from '../core/services/documents.service';
+import { HistoryStack } from '../shared/history';
 import { JobsFacade } from './jobs.facade';
 
 /** An area the user has drawn but not yet applied. */
@@ -41,6 +42,12 @@ export class SecurityFacade {
   private _excluded = signal<Set<string>>(new Set());
   private _busy = signal(false);
 
+  /** Undo over the areas marked for redaction, so a mis-drawn box or a
+   *  mis-aimed Delete is one keystroke away from coming back. */
+  private history = new HistoryStack<RedactArea[]>();
+
+  readonly canUndo = this.history.canUndo;
+  readonly canRedo = this.history.canRedo;
   readonly areas = this._areas.asReadonly();
   readonly report = this._report.asReadonly();
   readonly excluded = this._excluded.asReadonly();
@@ -113,16 +120,36 @@ export class SecurityFacade {
   private nextAreaId = 0;
 
   addArea(page: number, rect: Rect): void {
+    this.history.remember([...this._areas()]);
     this._areas.update((areas) => [
       ...areas, { id: `a${this.nextAreaId++}`, page, rect },
     ]);
   }
 
   removeArea(id: string): void {
+    this.history.remember([...this._areas()]);
     this._areas.update((areas) => areas.filter((a) => a.id !== id));
   }
 
+  /** Move an already-marked area — what makes dragging and nudging one work.
+   *  Without it the overlay would draw resize handles wired to nothing. */
+  moveArea(id: string, rect: Rect): void {
+    this.history.remember([...this._areas()]);
+    this._areas.update((areas) => areas.map((a) => (a.id === id ? { ...a, rect } : a)));
+  }
+
+  undoAreas(): void {
+    const previous = this.history.undo([...this._areas()]);
+    if (previous) this._areas.set(previous);
+  }
+
+  redoAreas(): void {
+    const next = this.history.redo([...this._areas()]);
+    if (next) this._areas.set(next);
+  }
+
   clear(): void {
+    this.history.clear();
     this._areas.set([]);
     this.clearReview();
   }

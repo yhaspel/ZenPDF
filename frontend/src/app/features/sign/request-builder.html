@@ -129,6 +129,25 @@
               finishes — nobody types it.
             </p>
 
+            @if (fieldsOnPage().length) {
+              <p class="kicker mt-4">On this page</p>
+              <ul class="mt-1 flex flex-col gap-1" data-test="builder-field-list">
+                @for (row of fieldsOnPage(); track row.id) {
+                  <li class="rounded-1 border-border flex items-center gap-1 border"
+                      [class.border-accent]="selectedFieldId() === row.id">
+                    <button class="text-ink flex-1 px-2 py-1 text-start text-xs"
+                            [attr.aria-pressed]="selectedFieldId() === row.id"
+                            (click)="onSelect(row.id)"
+                            data-test="builder-field-select">{{ fieldLabel(row.field) }}</button>
+                    <button class="text-danger h-11 w-11 shrink-0 text-sm"
+                            [attr.aria-label]="'Remove ' + fieldLabel(row.field)"
+                            (click)="removeField(row.id)"
+                            data-test="builder-field-remove">✕</button>
+                  </li>
+                }
+              </ul>
+            }
+
             <button class="btn btn-secondary btn-block mt-4"
                     [disabled]="busy()" (click)="saveFields()" data-test="to-message">
               Next: message
@@ -148,6 +167,16 @@
               <button (click)="nextPage()" [disabled]="page() >= pageCount() - 1"
                       class="btn btn-ghost btn-sm"
                       data-test="builder-next">›</button>
+              <span class="bg-border mx-2 h-4 w-px"></span>
+              <button (click)="undoFields()" [disabled]="!canUndo()"
+                      class="btn btn-ghost btn-sm"
+                      [title]="'Undo the last field change (' + key('undo') + ')'"
+                      aria-keyshortcuts="Control+Z Meta+Z"
+                      data-test="builder-undo">Undo</button>
+              <button (click)="redoFields()" [disabled]="!canRedo()"
+                      class="btn btn-ghost btn-sm" [title]="'Redo (' + key('redo') + ')'"
+                      aria-keyshortcuts="Control+Shift+Z Meta+Shift+Z"
+                      data-test="builder-redo">Redo</button>
             </div>
             <div class="min-h-0 flex-1 overflow-auto p-6">
               <div class="relative mx-auto w-fit">
@@ -157,9 +186,15 @@
                   [renderWidth]="zoom()"
                   [items]="overlayItems()"
                   [tool]="armedFor() ? 'rect' : 'select'"
-                  [drawStroke]="'#4f46e5'"
+                  [selectedId]="selectedFieldId()"
+                  [drawStroke]="'#B23A26'"
+                  [menuActionsFor]="menuActionsFor"
                   (created)="onDrawn($event)"
                   (selectionChanged)="onSelect($event)"
+                  (geometryChanged)="onGeometryChanged($event)"
+                  (deleteRequested)="removeField($event)"
+                  (contextTarget)="onContextTarget($event)"
+                  (menuAction)="onMenuAction($event)"
                 />
               </div>
             </div>

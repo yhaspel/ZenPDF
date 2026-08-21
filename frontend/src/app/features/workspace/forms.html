@@ -255,6 +255,20 @@
       } @else {
         <span class="muted">{{ forms.fields().length }} field(s)</span>
       }
+      @if (tab() === 'build') {
+        <span class="bg-border mx-2 h-4 w-px"></span>
+        <button (click)="forms.undo()" [disabled]="!forms.canUndo()"
+                class="btn btn-ghost btn-sm" [title]="'Undo the last field change (' + key('undo') + ')'"
+                aria-keyshortcuts="Control+Z Meta+Z" data-test="forms-undo">Undo</button>
+        <button (click)="forms.redo()" [disabled]="!forms.canRedo()"
+                class="btn btn-ghost btn-sm" [title]="'Redo (' + key('redo') + ')'"
+                aria-keyshortcuts="Control+Shift+Z Meta+Shift+Z" data-test="forms-redo">Redo</button>
+        @if (canPaste()) {
+          <button (click)="pasteField()" class="btn btn-ghost btn-sm"
+                  [title]="'Paste a field onto this page (' + key('paste') + ')'"
+                  aria-keyshortcuts="Control+V Meta+V" data-test="forms-paste">Paste</button>
+        }
+      }
       @if (busy()) { <span class="text-accent text-xs" data-test="forms-busy">working…</span> }
     </div>
 
@@ -287,9 +301,13 @@
             [tool]="armed() ? 'rect' : 'select'"
             [selectedId]="selectedItemId()"
             [drawStroke]="'#B23A26'"
+            [menuActionsFor]="menuActionsFor"
             (created)="onCreated($event)"
             (selectionChanged)="onSelect($event)"
             (geometryChanged)="onGeometryChanged($event)"
+            (deleteRequested)="onDeleteRequested($event)"
+            (contextTarget)="onContextTarget($event)"
+            (menuAction)="onMenuAction($event)"
           />
         </div>
       </div>

@@ -9,6 +9,7 @@ import {
   input,
   output,
   signal,
+  viewChild,
 } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 
@@ -18,17 +19,22 @@ import { JobsFacade } from '../../abstraction/jobs.facade';
 import { Annotation, AnnotationType, Job } from '../../core/models/models';
 import { DocumentsService } from '../../core/services/documents.service';
 import { ConfirmService } from '../../shared/confirm.service';
+import { EditorClipboard } from '../../shared/editor-clipboard.service';
 import {
+  NormRect,
   OverlayDraft,
   OverlayGeometryChange,
   OverlayItem,
+  OverlayMenuAction,
   OverlayTool,
   boundsOf,
   boundsOfPoints,
+  nudgeRect,
   transformPoint,
   transformRect,
 } from '../../shared/page-overlay/overlay-model';
 import { PageOverlay } from '../../shared/page-overlay/page-overlay';
+import { ShortcutId, resolveShortcut, shortcutTitle } from '../../shared/shortcuts';
 import { ToastService } from '../../shared/toast.service';
 
 /** Every palette entry, including the two that are not annotations. */
@@ -65,6 +71,14 @@ const STANDARD_STAMPS = [
 
 const AUTOSAVE_MS = 30_000;
 
+/**
+ * How far a pasted or duplicated mark lands from its original.
+ *
+ * Enough to see that there are two of them. Pasting exactly on top produces
+ * one visible mark and two unsaved changes, which reads as a bug.
+ */
+const PASTE_OFFSET = 0.02;
+
 /** The two working colours the palette moves between (design contract §3). */
 const HIGHLIGHT_COLOR = '#facc15';
 const INK_COLOR = '#332D24';
@@ -85,6 +99,21 @@ function familyOf(tool: AnnotateTool): ToolFamily {
 function fitZoom(): number {
   if (typeof window === 'undefined') return 900;
   return Math.max(280, Math.min(900, window.innerWidth - 48));
+}
+
+/**
+ * A mark without whose-it-is.
+ *
+ * The server stamps the real author when the batch is applied, and copying
+ * somebody else's comment with their name still on it is not a copy — it is
+ * the forgery `isOwn()` already refuses to let anyone commit in the sidebar.
+ */
+function withoutIdentity(a: Annotation): Annotation {
+  const copy: Annotation = { ...a };
+  delete copy.author;
+  delete copy.created;
+  delete copy.modified;
+  return copy;
 }
 
 function uuid(): string {
@@ -126,6 +155,7 @@ export class Annotate {
   private toast = inject(ToastService);
   private confirm = inject(ConfirmService);
   private guests = inject(GuestFacade);
+  private clipboard = inject(EditorClipboard);
   private isBrowser = isPlatformBrowser(inject(PLATFORM_ID));
 
   protected page = signal(0);
@@ -173,6 +203,7 @@ export class Annotate {
   protected pageEditingId = signal<string | null>(null);
 
   protected readonly stamps = STANDARD_STAMPS;
+  protected readonly key = shortcutTitle;
 
   protected readonly family = computed<ToolFamily>(() => familyOf(this.tool()));
   protected readonly color = computed(() => this.familyColors()[this.family()]);
@@ -187,6 +218,50 @@ export class Annotate {
   protected readonly overlayItems = computed<OverlayItem[]>(() =>
     this.annotations.all().map((a) => this.toOverlay(a)),
   );
+
+  /** Whether there is a mark on the clipboard to paste. */
+  protected readonly canPaste = computed(() => this.clipboard.has('annotation'));
+
+  /**
+   * The right-click menu for whatever is under the pointer.
+   *
+   * An empty list is the signal to the overlay that it should leave the
+   * browser's own menu alone, which is what happens on empty page with nothing
+   * copied.
+   */
+  /**
+   * Called by the overlay, synchronously, with the item under the pointer.
+   *
+   * An arrow property rather than a method so the template can pass it by
+   * reference; it reads signals directly, which is safe because it is only ever
+   * called during an event.
+   */
+  protected menuActionsFor = (id: string | null): OverlayMenuAction[] => {
+    if (!id) {
+      return this.canPaste()
+        ? [{ id: 'paste', label: 'Paste here', shortcut: this.key('paste') }]
+        : [];
+    }
+    const item = this.annotations.all().find((a) => a.id === id);
+    if (!item) return [];
+    const actions: OverlayMenuAction[] = [
+      { id: 'copy', label: 'Copy', shortcut: this.key('copy') },
+      { id: 'cut', label: 'Cut', shortcut: this.key('cut') },
+      { id: 'duplicate', label: 'Duplicate', shortcut: this.key('duplicate') },
+    ];
+    // Only a text box has words *on the page* to put a caret into; offering
+    // "Edit text" on a highlight would be a menu entry that does nothing.
+    if (item.type === 'free_text') {
+      actions.push({ id: 'edit-text', label: 'Edit text…' });
+    }
+    actions.push({ id: 'edit-comment', label: 'Edit comment…' });
+    if (this.canPaste()) {
+      actions.push({ id: 'paste', label: 'Paste here', shortcut: this.key('paste') });
+    }
+    // No shortcut hint: it would read "Delete   Delete".
+    actions.push({ id: 'delete', label: 'Delete', danger: true });
+    return actions;
+  };
 
   protected readonly comments = computed(() => {
     const grouped = this.annotations.byPage();
@@ -217,19 +292,17 @@ export class Annotate {
       onCleanup(() => clearInterval(timer));
     });
 
-    // ⌘Z / ⌘⇧Z, the way every other editor on the machine works. Skipped while
-    // a field has focus, where the browser's own undo is the right one.
+    // The editing keyboard (phase-12). One resolver, shared with every other
+    // mode and with the shortcuts sheet, so a key cannot be bound here and
+    // documented differently there.
+    //
+    // The listener is on `window` but its *lifetime* is the component's, which
+    // is what keeps it clear of pdf.js: the viewer binds `window` keydown too
+    // and claims ⌘S, +, - and PageUp/PageDown — and it is mounted only in View
+    // mode and the Forms fill tab, where this component does not exist.
     effect((onCleanup) => {
       if (!this.isBrowser) return;
-      const handler = (event: KeyboardEvent) => {
-        if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== 'z') return;
-        const el = document.activeElement as HTMLElement | null;
-        const tag = el?.tagName;
-        if (tag === 'INPUT' || tag === 'TEXTAREA' || el?.isContentEditable) return;
-        event.preventDefault();
-        if (event.shiftKey) this.redo();
-        else this.undo();
-      };
+      const handler = (event: KeyboardEvent) => this.onShortcut(event);
       window.addEventListener('keydown', handler);
       onCleanup(() => window.removeEventListener('keydown', handler));
     });
@@ -482,6 +555,150 @@ export class Annotate {
     }
   }
 
+  // ------------------------------------------------------------------ //
+  // Keyboard, clipboard and the context menu
+  // ------------------------------------------------------------------ //
+  private onShortcut(event: KeyboardEvent): void {
+    const hasTextSelection = !(window.getSelection()?.isCollapsed ?? true);
+    const action = resolveShortcut(event, { hasTextSelection });
+    if (!action) return;
+
+    // The overlay owns these three itself, on the element that has focus —
+    // handling them again here would delete twice and nudge twice.
+    if (action === 'cancel' || action === 'delete' || action === 'context-menu') return;
+    if (action.startsWith('nudge-')) return;
+
+    const handled = this.runAction(action);
+    if (handled) event.preventDefault();
+  }
+
+  private runAction(action: ShortcutId | string): boolean {
+    switch (action) {
+      case 'undo':
+        this.undo();
+        return true;
+      case 'redo':
+        this.redo();
+        return true;
+      case 'copy':
+        return this.copySelected();
+      case 'cut':
+        return this.cutSelected();
+      case 'paste':
+        return this.pasteHere();
+      case 'duplicate':
+        return this.duplicateSelected();
+      case 'save':
+        this.save();
+        return true;
+      default:
+        return false;
+    }
+  }
+
+  /** The overlay reports what a right-click landed on before it opens. */
+  protected onContextTarget(id: string | null): void {
+    if (id) this.annotations.select(id);
+  }
+
+  protected onMenuAction(choice: { action: string; itemId: string | null }): void {
+    const id = choice.itemId;
+    switch (choice.action) {
+      case 'copy':
+        this.copySelected(id);
+        break;
+      case 'cut':
+        this.cutSelected(id);
+        break;
+      case 'duplicate':
+        this.duplicateSelected(id);
+        break;
+      case 'paste':
+        this.pasteHere();
+        break;
+      case 'edit-text':
+        if (id) this.onEditRequested(id);
+        break;
+      case 'edit-comment':
+        if (id) this.startEditing(id);
+        break;
+      case 'delete':
+        if (id) void this.onDeleteRequested(id);
+        break;
+    }
+  }
+
+  /**
+   * Put a mark on the editor's clipboard.
+   *
+   * Author and timestamps are deliberately dropped: the server stamps the real
+   * author when the batch is applied, and copying somebody else's comment with
+   * their name still on it is not a copy, it is a forgery — the same rule
+   * `isOwn()` enforces in the sidebar.
+   */
+  protected copySelected(id: string | null = this.annotations.selectedId()): boolean {
+    const item = id ? this.annotations.all().find((a) => a.id === id) : null;
+    if (!item) return false;
+    this.clipboard.copy('annotation', withoutIdentity(item));
+    this.toast.info('Copied');
+    return true;
+  }
+
+  protected cutSelected(id: string | null = this.annotations.selectedId()): boolean {
+    if (!this.copySelected(id)) return false;
+    this.annotations.remove(id ?? this.annotations.selectedId()!);
+    return true;
+  }
+
+  /** Paste onto the page being looked at, not the page it was copied from. */
+  protected pasteHere(): boolean {
+    const held = this.clipboard.read<Annotation>('annotation');
+    if (!held) return false;
+    this.annotations.add(this.offsetCopy(held, this.page()));
+    return true;
+  }
+
+  protected duplicateSelected(id: string | null = this.annotations.selectedId()): boolean {
+    const item = id ? this.annotations.all().find((a) => a.id === id) : null;
+    if (!item) return false;
+    this.annotations.add(this.offsetCopy(item, item.page));
+    return true;
+  }
+
+  /**
+   * A copy of a mark, moved slightly, with a fresh identity.
+   *
+   * The offset is applied to the mark's *bounding box* and the real geometry
+   * re-derived from how that box moved — the same affine step a drag uses — so
+   * a multi-line highlight, an ink stroke and a polygon all move as one piece
+   * rather than each part being nudged independently.
+   */
+  private offsetCopy(source: Annotation, page: number): Annotation {
+    const copy: Annotation = { ...withoutIdentity(source), id: uuid(), page };
+    const from = this.boundsOfAnnotation(source);
+    if (!from) return copy;
+    const to = nudgeRect(from, PASTE_OFFSET, PASTE_OFFSET);
+    if (source.quads?.length) {
+      copy.quads = source.quads.map((q) => transformRect(q, from, to));
+    }
+    if (source.ink?.length) {
+      copy.ink = source.ink.map((stroke) => stroke.map((p) => transformPoint(p, from, to)));
+    }
+    if (source.vertices?.length) {
+      copy.vertices = source.vertices.map((p) => transformPoint(p, from, to));
+    }
+    if (source.rect) copy.rect = to;
+    return copy;
+  }
+
+  /** Where a mark is, whatever kind of geometry it happens to carry. */
+  private boundsOfAnnotation(a: Annotation): NormRect | undefined {
+    if (MARKUP.includes(a.type)) return boundsOf(a.quads ?? []);
+    if (a.type === 'ink') return boundsOfPoints((a.ink ?? []).flat());
+    if (a.vertices?.length) return boundsOfPoints(a.vertices);
+    return a.rect;
+  }
+
   protected undo(): void {
     this.pageEditingId.set(null);
     this.annotations.undo();
@@ -499,9 +716,15 @@ export class Annotate {
   // ------------------------------------------------------------------ //
   // Comments sidebar
   // ------------------------------------------------------------------ //
+  private overlay = viewChild(PageOverlay);
+
   protected jumpTo(annotation: Annotation): void {
     this.page.set(annotation.page);
     this.annotations.select(annotation.id);
+    // The keyboard follows the selection onto the page: Delete and the arrow
+    // keys belong to the overlay, and leaving focus on the sidebar button would
+    // make both of them do nothing.
+    this.overlay()?.focusSurface();
   }
 
   protected startEditing(id: string): void {

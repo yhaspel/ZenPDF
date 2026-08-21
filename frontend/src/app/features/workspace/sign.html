@@ -43,8 +43,23 @@
 
       @if (esign.placements().length) {
         <p class="muted text-xs" data-test="placement-count">
-          {{ esign.placements().length }} placement(s). Click one to remove it.
+          {{ esign.placements().length }} placement(s). Select one below to move or remove it.
         </p>
+        <ul class="flex flex-col gap-1" data-test="placement-list">
+          @for (spot of esign.placements(); track spot.id; let i = $index) {
+            <li class="rounded-1 border-border flex items-center gap-1 border"
+                [class.border-accent]="selectedPlacementId() === spot.id">
+              <button class="text-ink flex-1 px-2 py-1 text-start text-xs"
+                      [attr.aria-pressed]="selectedPlacementId() === spot.id"
+                      (click)="onSelect(spot.id); page.set(spot.page)"
+                      data-test="placement-select">{{ placementLabel(i, spot.page) }}</button>
+              <button class="text-danger h-11 w-11 shrink-0 text-sm"
+                      [attr.aria-label]="'Remove ' + placementLabel(i, spot.page)"
+                      (click)="removePlacement(spot.id)"
+                      data-test="placement-remove">✕</button>
+            </li>
+          }
+        </ul>
       }
 
       <button class="btn btn-primary"
@@ -83,6 +98,13 @@
       </span>
       <button (click)="nextPage()" [disabled]="page() >= pageCount() - 1"
               class="btn btn-ghost btn-sm" data-test="sign-next">›</button>
+      <span class="bg-border mx-2 h-4 w-px"></span>
+      <button (click)="esign.undoPlacements()" [disabled]="!esign.canUndo()"
+              class="btn btn-ghost btn-sm" [title]="'Undo the last placement change (' + key('undo') + ')'"
+              aria-keyshortcuts="Control+Z Meta+Z" data-test="sign-undo">Undo</button>
+      <button (click)="esign.redoPlacements()" [disabled]="!esign.canRedo()"
+              class="btn btn-ghost btn-sm" [title]="'Redo (' + key('redo') + ')'"
+              aria-keyshortcuts="Control+Shift+Z Meta+Shift+Z" data-test="sign-redo">Redo</button>
       @if (esign.busy()) {
         <span class="text-accent text-xs" data-test="sign-busy">working…</span>
       }
@@ -96,9 +118,15 @@
           [renderWidth]="zoom()"
           [items]="overlayItems()"
           [tool]="esign.hasSignature() ? 'rect' : 'select'"
-          [drawStroke]="'#4f46e5'"
+          [selectedId]="selectedPlacementId()"
+          [drawStroke]="'#B23A26'"
+          [menuActionsFor]="menuActionsFor"
           (created)="onPlaced($event)"
           (selectionChanged)="onSelect($event)"
+          (geometryChanged)="onGeometryChanged($event)"
+          (deleteRequested)="removePlacement($event)"
+          (contextTarget)="onContextTarget($event)"
+          (menuAction)="onMenuAction($event)"
         />
       </div>
     </div>

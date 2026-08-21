@@ -11,6 +11,7 @@ import {
   TextStyle,
 } from '../core/models/models';
 import { DocumentsService } from '../core/services/documents.service';
+import { HistoryStack } from '../shared/history';
 import { JobsFacade } from './jobs.facade';
 
 /** A block the user has rewritten but not yet committed. */
@@ -53,6 +54,19 @@ export class EditFacade {
   private _loading = signal(false);
   private docId: string | null = null;
 
+  /**
+   * Undo over the *staged* block edits, and nothing else (phase-12 D2).
+   *
+   * Every other operation in Edit mode — whiteout, add image, watermark, page
+   * numbers — is dispatched to the server and appends a version, and those are
+   * the workspace bar's Undo to take back. Binding ⌘Z to a server round-trip
+   * that appends a version would make a keystroke destructive, so this history
+   * covers exactly what is still local, and the button says so.
+   */
+  private history = new HistoryStack<Map<string, BlockEdit>>();
+
+  readonly canUndo = this.history.canUndo;
+  readonly canRedo = this.history.canRedo;
   readonly loading = this._loading.asReadonly();
   readonly report = this._report.asReadonly();
   readonly excluded = this._excluded.asReadonly();
@@ -126,6 +140,7 @@ export class EditFacade {
 
   /** A new version invalidates every cached page. */
   reset(): void {
+    this.history.clear();
     this._reportQuery = null;
     this._blocks.set(new Map());
     this._images.set(new Map());
@@ -140,6 +155,7 @@ export class EditFacade {
   // ------------------------------------------------------------------ //
   stageEdit(block: TextBlock, page: number, newText: string, style: TextStyle): void {
     const key = EditFacade.key(page, block.block_id);
+    this.history.remember(new Map(this._edits()));
     if (newText === block.text) {
       // Reverting to the original is not an edit; keeping it would send a
       // no-op through the redact-and-reinsert path and re-render the block for
@@ -164,11 +180,22 @@ export class EditFacade {
   }
 
   discardEdit(page: number, blockId: number): void {
+    this.history.remember(new Map(this._edits()));
     this._edits.update((map) => {
       const next = new Map(map);
       next.delete(EditFacade.key(page, blockId));
       return next;
     });
+  }
+
+  undo(): void {
+    const previous = this.history.undo(new Map(this._edits()));
+    if (previous) this._edits.set(previous);
+  }
+
+  redo(): void {
+    const next = this.history.redo(new Map(this._edits()));
+    if (next) this._edits.set(next);
   }
 
   /** Commit every staged block as ONE `edit_text` job. */

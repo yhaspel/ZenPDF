@@ -10,6 +10,7 @@ import {
   Job,
 } from '../core/models/models';
 import { DocumentsService } from '../core/services/documents.service';
+import { HistoryStack } from '../shared/history';
 import { JobsFacade } from './jobs.facade';
 
 /**
@@ -37,6 +38,11 @@ export class FormsFacade {
   private _loading = signal(false);
   private docId: string | null = null;
 
+  /** Undo over the staged builder ops — one step per staged change. */
+  private history = new HistoryStack<FormFieldOp[]>();
+
+  readonly canUndo = this.history.canUndo;
+  readonly canRedo = this.history.canRedo;
   readonly model = this._model.asReadonly();
   readonly loading = this._loading.asReadonly();
   readonly pendingOps = computed<FormFieldOp[]>(() => this._ops());
@@ -106,6 +112,7 @@ export class FormsFacade {
 
   /** A new version replaces the fields themselves — drop everything staged. */
   reset(): void {
+    this.history.clear();
     this._model.set(null);
     this._values.set(new Map());
     this._ops.set([]);
@@ -196,10 +203,12 @@ export class FormsFacade {
   }
 
   stageAdd(field: FormFieldSpec): void {
+    this.history.remember([...this._ops()]);
     this._ops.update((ops) => [...ops, { action: 'add', field }]);
   }
 
   stageUpdate(field: FormFieldSpec): void {
+    this.history.remember([...this._ops()]);
     // One entry per field: re-dragging the same box twice must not send two
     // updates, and an update after an add is just a different add.
     this._ops.update((ops) => {
@@ -212,6 +221,7 @@ export class FormsFacade {
   }
 
   stageDelete(name: string): void {
+    this.history.remember([...this._ops()]);
     this._ops.update((ops) => {
       // Deleting a field that was only ever staged locally cancels the add
       // instead of asking the server to remove something it never saw.
@@ -222,7 +232,18 @@ export class FormsFacade {
   }
 
   clearOps(): void {
+    this.history.remember([...this._ops()]);
     this._ops.set([]);
+  }
+
+  undo(): void {
+    const previous = this.history.undo([...this._ops()]);
+    if (previous) this._ops.set(previous);
+  }
+
+  redo(): void {
+    const next = this.history.redo([...this._ops()]);
+    if (next) this._ops.set(next);
   }
 
   /** The whole builder session as ONE `edit_form_fields_batch` job. */

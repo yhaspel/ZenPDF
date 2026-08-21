@@ -48,11 +48,20 @@
       <button (click)="undoLastChange()" [disabled]="!canUndoVersion() || busy()"
               class="btn btn-ghost btn-sm" data-test="undo-version"
               [title]="canUndoVersion()
-                ? 'Undo the last change — back to v' + ((viewer.currentSeq() ?? 1) - 1)
+                ? 'Undo the last change — back to v' + undoTarget()
                 : 'Nothing to undo yet'">Undo</button>
+      <button (click)="redoLastChange()" [disabled]="!canRedoVersion() || busy()"
+              class="btn btn-ghost btn-sm" data-test="redo-version"
+              [title]="canRedoVersion()
+                ? 'Redo — forward to v' + redoTarget()
+                : 'Nothing to redo'">Redo</button>
       <button (click)="dialog.set('split')" class="btn btn-ghost btn-sm" data-test="tool-split">Split</button>
       <button (click)="dialog.set('compress')" class="btn btn-ghost btn-sm" data-test="tool-compress">Compress</button>
       <button (click)="download()" class="btn btn-secondary btn-sm" data-test="download">Download</button>
+      <button (click)="openShortcuts()" class="btn btn-ghost btn-sm"
+              [title]="'Keyboard shortcuts (' + key('help') + ')'"
+              aria-keyshortcuts="Control+Slash Meta+Slash"
+              data-test="shortcuts-open">Shortcuts</button>
       <app-theme-toggle />
     </div>
     <app-guest-banner />
@@ -323,6 +332,10 @@
     </div>
     }
   </div>
+
+  @if (shortcutsOpen()) {
+    <app-shortcuts-help (closed)="shortcutsOpen.set(false)" />
+  }
 
   <!-- Dialogs (§3 modals) -->
   @if (dialog(); as d) {
