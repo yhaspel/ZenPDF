@@ -2,7 +2,15 @@
 
 **The design contract for the "Zen ink & paper" redesign.** This file is law; the mockups in `mockups/` are reference. Where a mockup and this contract disagree, the contract wins. Every future UI change is validated against this document.
 
-Grounding: built from the repo at `yhaspel/ZenPDF@main` (frontend: Angular 22 + Tailwind CSS v4). Every affordance specified here maps to an action that exists in the codebase today, plus exactly two sanctioned additions: the Light/Dark/System theme toggle and the landing directory's client-side type-to-filter. Nothing else new. No pricing, AI, sharing, templates, blogs, chat, or notification UI — ever.
+Grounding: built from the repo at `yhaspel/ZenPDF@main` (frontend: Angular 22 + Tailwind CSS v4). **Every affordance specified here maps to an action that exists in the codebase today** — that is the rule, and it is the one that matters. Additions are sanctioned individually, dated, and listed here; the list is not a count, because a count goes stale silently and a list does not. Sanctioned so far:
+
+- **2026-08-06** (the redesign) — the Light/Dark/System theme toggle; the landing directory's client-side type-to-filter.
+- **2026-08-20** — version-level **Undo** in the workspace bar; **Undo/Redo** in Annotate.
+- **2026-08-21** (Phase 12) — the **context menu** over a page; **per-mode Undo/Redo in all six editing surfaces** (Annotate, Edit, Forms, Protect, Sign, request builder); **Redo and Shortcuts on the workspace bar**; the **keyboard-shortcuts sheet**; the **Areas / Placements / Fields rail lists**; **Copy and Duplicate on comment rows**; **Paste in the annotate palette**.
+
+Every one of those is a real, wired control — the no-dead-affordances rule (§10) is what constrains additions, not a quota. Still forbidden outright, and not additions anyone may sanction: pricing, AI, sharing, templates, blogs, chat, notification UI — ever.
+
+*(Corrected 2026-08-22: this paragraph said "exactly two sanctioned additions … Nothing else new" from 2026-08-06 until now, while two later changes added nine more. Phase 12 amended §3/§4/§6/§8 with the specs for its additions and left the sentence forbidding them in place. See the Amendment log at the end of this file.)*
 
 ---
 
@@ -200,7 +208,7 @@ Every workspace mode is the same three-part figure: a start rail, the page, some
 
 **Below `md` the panes stack.** A 390 px phone cannot hold a 208 px rail, a page and a 256 px rail: rails become full-width sections above and below the page, each capped at `34vh` and scrolling within it, hairlines turning to block edges. Every control stays reachable — nothing is hidden at a breakpoint, because a control you cannot reach on a phone is a dead affordance with extra steps. **The same rule governs the right-click menu** *(added 2026-08-21)*: right-click does not exist on a touch screen, so every action the menu offers must also be a real control in a rail — the list of marked redaction areas, of signature placements, of request fields, and the per-item actions on a comment row. The menu is an accelerator, never the mechanism. The **page's own render width is seeded from the viewport** (`min(900, innerWidth − 48)`), not fixed, so the first paint fits.
 
-**In-pane toolbars wrap; they never overflow.** The row above each pane (page nav, zoom, undo/redo, the save cluster; the organize operations; the find bar) carries `flex-wrap` — as the organize toolbar always has. Only one of the seven did, and Annotate's needs 609 px against a 390 px phone, so the row spilled and dragged the *document* sideways with it; Chrome then widened its layout viewport to 609 and drew the whole app at about 64 %. Wrapping rather than scrolling, because these rows end in Save — a primary action that must not be hidden off an edge. The workspace bar is the deliberate exception: it scrolls (§3 headers), because nine mode buttons wrapped would push the page down on every screen.
+**In-pane toolbars wrap; they never overflow.** *(added 2026-08-21, in the follow-ups that landed as PR #19 — the amendment was committed undated)* The row above each pane (page nav, zoom, undo/redo, the save cluster; the organize operations; the find bar) carries `flex-wrap` — as the organize toolbar always has. Only one of the seven did, and Annotate's needs 609 px against a 390 px phone, so the row spilled and dragged the *document* sideways with it; Chrome then widened its layout viewport to 609 and drew the whole app at about 64 %. Wrapping rather than scrolling, because these rows end in Save — a primary action that must not be hidden off an edge. The workspace bar is the deliberate exception: it scrolls (§3 headers), because nine mode buttons wrapped would push the page down on every screen.
 
 ### Context menu (`.menu`) *(added 2026-08-21)*
 The one popover pattern in the product, shared by the dashboard's ⋯ menu and the right-click menu over a page. Raised surface, hairline `--color-border`, `shadow-3`, radius 6 px, 4 px padding, `min-width: 160px`, **layer 20** (§2) — and it must be given `position: absolute` at the call site, because a `z-index` on a static box does nothing.
@@ -311,4 +319,27 @@ Logical properties only: `margin-inline-start`, `padding-inline-end`, `inset-inl
 
 ## 10. Invariants (do not touch)
 
-Routes and all 24 tool slugs; tool-page H1s and SEO copy semantics (wording may be polished, meaning and keywords kept); every existing `data-test` attribute on interactive elements; the three-ad-surface limit and the ad-forbidden routes; legal and e-sign disclosure texts verbatim (incl. the ceremony's not-a-QES footer sentence); anonymous-first flows — no login walls, gates, teaser blurs or nags on anonymous use, ever; the global `prefers-reduced-motion` collapse; RTL-safe logical properties; the footer's exact five links; no dead UI — every affordance maps to an implemented action (the theme toggle and landing filter are the only two additions sanctioned with this redesign).
+Routes and all 24 tool slugs; tool-page H1s and SEO copy semantics (wording may be polished, meaning and keywords kept); every existing `data-test` attribute on interactive elements; the three-ad-surface limit and the ad-forbidden routes; legal and e-sign disclosure texts verbatim (incl. the ceremony's not-a-QES footer sentence); anonymous-first flows — no login walls, gates, teaser blurs or nags on anonymous use, ever; the global `prefers-reduced-motion` collapse; RTL-safe logical properties; the footer's exact five links; no dead UI — every affordance maps to an implemented action. **Additions are sanctioned one at a time and listed in the grounding paragraph at the top of this file, with dates** *(corrected 2026-08-22: this said "the theme toggle and landing filter are the only two additions sanctioned", which was true on 2026-08-06 and had been wrong since 08-20)*. The invariant is that nothing is drawn that does not work — not that the number stays at two.
+
+---
+
+## 11. Amendment log
+
+*(Added 2026-08-22.)* This contract is amended under the **gap rule** in `AGENTS.md`: when a change needs a pattern the contract does not have, the pattern is specced here in the same change, then implemented. That rule worked — every amendment below landed with its code. What was missing was a **register**, so amendments accumulated while the grounding paragraph went on claiming there had been two. Anything added here must also be added to the grounding list at the top of this file, in the same commit.
+
+Reconstructed from `git log -- docs/design/design-instructions.md`. The dates are commit dates.
+
+| Date | Commit | Section(s) touched | What was amended |
+|---|---|---|---|
+| 2026-08-06 | `d315b83` | all | The original contract — token layer, typography, theme toggle, the "Zen ink & paper" language. The two sanctioned additions of that day: theme toggle, landing filter. |
+| 2026-08-10 | `2ae271b` | §5 tokens, §6 a11y | `--color-ink-faint` retuned (it failed AA at 3.0:1 in light — now 5.0:1) and the contrast table rewritten; **toggle buttons are `aria-pressed` buttons in a `role="group"`, never `aria-selected` or `role="tablist"`** — two invalid ARIA patterns removed. |
+| 2026-08-10 | `cc9babb` | §5 | CSP wording: production's policy had left the stylesheet and the theme boot script inert. |
+| 2026-08-10 | `2062fb8` | §3 header / landing | The **compact landing** — the `h1` becomes the header masthead. Proposal kept at `docs/design/2026-08-10-compact-landing.md`. |
+| 2026-08-18 | `b031622` | §3 fields, §4 tool page, §5 | **Choice rows (`.cfield`)** added as a pattern — 44 px rows, because `.seg` is a 36 px dense-toolbar control and these sit on marketing surfaces; the tool page gains an **options row**; `color-scheme` declared per theme, without which every native radio, checkbox and scrollbar rendered from the light palette in dark mode. |
+| 2026-08-20 | `6bc6b88` | §3 | **Text on the page (`.page-text`)** — text drawn inside its own rect at its own point size, edited in place, with colour and opacity held **per tool family** (`markup` vs `ink`). Undo/Redo appear in Annotate and version-level Undo on the workspace bar. |
+| 2026-08-20 | `4241cbc` | §3 | **Workspace panes (`.ws-panes` / `.ws-rail` / `.ws-pane-main`)** — the three-part figure, `min-width: 0` on the page pane, and **the panes stack below `md`** rather than hiding anything. |
+| 2026-08-21 | `cf663e5` | §3 workspace panes | **In-pane toolbars wrap; they never overflow.** Six of the seven pane toolbars lacked `flex-wrap`; Annotate's row needed 609 px on a 390 px phone. Committed undated — dated here. |
+| 2026-08-21 | `d71e77e` | §3, §4, §6, §8 | **Phase 12.** §3 gains the **Context menu (`.menu`)** spec — 44 px items, `aria-disabled` never native `disabled`, roving tabindex, `.is-active`, required `position: absolute`; §3 headers gain Redo + Shortcuts on the workspace bar; §3 modals gain the shortcuts sheet's focusable scroll region; §3 workspace panes gain **"a right-click-only action is a dead affordance"**; §4 gains per-mode Undo/Redo and arrow-key nudging; §6 gains the **no-single-character-shortcut rule** (SC 2.1.4), the `aria-keyshortcuts` format, the overlay host's roles and the 44 px popover floor; §8 gains the one physical-placement exception with its reason. |
+| 2026-08-22 | *(this change)* | grounding, §10, §11 | **Text only — no UI changed.** The grounding paragraph and the §10 invariant stopped counting additions and started listing them, dated; this Amendment log was added so the next amendment has somewhere to be recorded. |
+
+**Pending, not yet sanctioned:** Phase 11 will add `/contact` and `/guides` (and amend the footer's five links); the phone workspace is specced as "stacked", which the 2026-08-20 queue row calls a rescue rather than a design. Both must land here when they land.
