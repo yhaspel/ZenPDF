@@ -135,6 +135,13 @@ test('phase 3: annotate, save, reload, flatten', async ({ page }) => {
   await expect(page.locator('[data-test=comment-row]')).toHaveCount(before - 1);
   await page.click('[data-test=annot-save]');
   await expect(successToast(page, 'Annotations saved')).toBeVisible({ timeout: 60_000 });
+  // The toast is the *job* succeeding; `annot-clean` is the *file* confirming
+  // it, and only the second one clears `dirty()`. Flatten refuses while there
+  // are unsaved changes — it says "Save your changes first" and never opens its
+  // confirm — so clicking it on the toast is a race the spec invented. This is
+  // the same wait step 4 above already does; step 5b was missing it, which cost
+  // one red run in eight on 2026-08-22.
+  await expect(page.locator('[data-test=annot-clean]')).toBeVisible();
 
   // --- 6. Flatten: annotations become part of the page. ---
   await page.click('[data-test=annot-flatten]');

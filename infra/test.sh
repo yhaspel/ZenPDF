@@ -178,18 +178,29 @@ if [ "$E2E" -eq 1 ]; then
   # stack left up across a backend edit keeps running the old task code — and
   # the e2e suite would be testing it. See the header.
   docker compose restart worker-default worker-heavy worker-render beat
-  echo "Waiting for checks.workers to come back true..."
-  workers_ready=0
+  # `checks.workers` **and** the overall verdict. Asking only about the workers
+  # was not enough: a stack whose Postgres has run out of connections reports
+  # `{"status":"degraded","checks":{"db":false,...,"workers":true}}`, and the
+  # suite then fails at `registerAndLogin` in a dozen specs at once — which
+  # reads like a product regression and is a laptop that has been running e2e
+  # all afternoon (`conn_max_age=600` against a 100-connection budget). Measured
+  # here on 2026-08-22: 7 of 11 specs red, zero failed jobs, `db:false`.
+  echo "Waiting for the stack to report healthy (workers included)..."
+  health_ready=0
   for _ in $(seq 1 60); do
-    if curl -s "http://localhost:${API_PORT}/api/health/" 2>/dev/null | grep -q '"workers":true'; then
-      workers_ready=1; break
-    fi
+    health="$(curl -s "http://localhost:${API_PORT}/api/health/" 2>/dev/null || true)"
+    case "$health" in
+      *'"status":"ok"'*) case "$health" in *'"workers":true'*) health_ready=1;; esac;;
+    esac
+    [ "$health_ready" -eq 1 ] && break
     sleep 2
   done
-  if [ "$workers_ready" -ne 1 ]; then
-    echo "ERROR: the workers did not report healthy within 120 s. Refusing to run"
-    echo "       the e2e suite against a queue that may not be consuming."
-    echo "       Check: ./logs.sh worker-default"
+  if [ "$health_ready" -ne 1 ]; then
+    echo "ERROR: /api/health/ did not report ok within 120 s. Refusing to run the"
+    echo "       e2e suite against a stack that already knows it is broken —"
+    echo "       every spec would fail for a reason that is not the product."
+    echo "       Last health: ${health:-<none>}"
+    echo "       Check: ./logs.sh api  ·  ./logs.sh db  ·  ./logs.sh worker-default"
     exit 1
   fi
   for svc in worker-default worker-heavy worker-render beat; do

@@ -168,6 +168,49 @@ export class ViewerFacade {
     }
   }
 
+  /**
+   * Take the new version from the job that just produced it, then reload.
+   *
+   * `reload()` alone is a race, and it was measured: 2 of 6 runs of `phase-3`
+   * and `phase-4` red on `main`, in isolation, on a settled stack. A save
+   * succeeds, `trackReload` shows the toast and calls `reload()`, and the
+   * refetch is *asynchronous* — so for as long as that GET is in flight
+   * `currentSeq()` is still the old number, and anything dispatched in that
+   * window carries a stale `base_version_seq`. The worker refuses it with
+   * `version_conflict`: "The document changed since you loaded it." Across a
+   * full suite run **every** failed job was that, and not only in the editor —
+   * `page_numbers` and `set_metadata` too. In the product it self-heals into a
+   * "Document changed — refreshed" toast, so it is a recoverable annoyance for
+   * anyone who acts quickly after saving, and a reliable flake for a test
+   * script that always does.
+   *
+   * The job already carries the answer. The result of every version-producing
+   * operation reports the `seq` it created, so `currentSeq()` can be right the
+   * instant the save returns instead of one round trip later. The reload still
+   * happens — the version list, the outline and the page count come from it —
+   * but nothing has to *wait* for it to know which version it is on.
+   *
+   * A result without a `seq` falls back to a plain reload rather than guessing:
+   * an operation that produced no version (or a shape this does not recognise)
+   * must not be allowed to invent one, because a `currentSeq` that is wrong in
+   * the *other* direction is the same defect with the blame reversed.
+   */
+  adopt(job: Job): void {
+    const d = this._doc();
+    const seq = Number(job?.result?.['seq']);
+    if (!d || !d.current_version || !Number.isFinite(seq)) {
+      this.reload();
+      return;
+    }
+    const pageCount = Number(job.result?.['page_count']);
+    this._doc.set({
+      ...d,
+      current_version: { ...d.current_version, seq },
+      ...(Number.isFinite(pageCount) ? { page_count: pageCount } : {}),
+    });
+    this.reload();
+  }
+
   rename(title: string): void {
     const d = this._doc();
     if (!d) return;
