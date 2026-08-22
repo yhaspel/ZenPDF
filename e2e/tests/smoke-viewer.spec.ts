@@ -68,7 +68,7 @@ test('@smoke smoke-viewer: a cold guest opens a PDF and the page draws', async (
     // Recorded in the run log so a green result carries its own evidence.
     console.log(
       `smoke-viewer: canvas ${sample.width}×${sample.height}, `
-        + `${sample.colours} distinct colours`,
+        + `${sample.colours} distinct colours (counting stops at 64)`,
     );
 
     expect(moduleTypes.size, 'the viewer pulled no .mjs modules at all').toBeGreaterThan(0);
