@@ -199,6 +199,19 @@ export class PageOverlay {
   private host = inject(ElementRef<HTMLElement>);
 
   protected imageUrl = signal<string | null>(null);
+  /**
+   * The raster that actually **decoded**, with a non-zero natural size.
+   *
+   * Annotate, Edit, Forms, Protect and Sign draw the page as an `<img>` rather
+   * than through pdf.js, so "the page drew" is a different event here — and a
+   * broken or empty raster still fires `load`. Keyed on the URL for the same
+   * reason as the viewer's `pageDrawn`: a new page or a new version withdraws
+   * the claim without anything having to remember to clear it.
+   */
+  private drewUrl = signal<string | null>(null);
+  protected readonly rasterDrawn = computed(
+    () => !!this.drewUrl() && this.drewUrl() === this.imageUrl(),
+  );
   /** Natural page aspect (height / width), so the box matches the raster exactly. */
   protected aspect = signal(842 / 595);
   protected drag = signal<Drag | null>(null);
@@ -335,6 +348,7 @@ export class PageOverlay {
     const img = event.target as HTMLImageElement;
     if (img.naturalWidth > 0) {
       this.aspect.set(img.naturalHeight / img.naturalWidth);
+      this.drewUrl.set(img.getAttribute('src'));
     }
   }
 

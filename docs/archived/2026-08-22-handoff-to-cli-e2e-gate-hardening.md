@@ -1,3 +1,5 @@
+**Executed 2026-08-22 — see PROGRESS.md. Historical.**
+
 # Handoff — E2E and gate hardening: the node-25 guard, prove the page drew, never test stale workers, and fix the `version_conflict` flake at its source (2026-08-21, revision 2 after Phase 12)
 
 **For:** Claude CLI on the Mac in `~/Documents/Claude/Projects/ZenPDF`.

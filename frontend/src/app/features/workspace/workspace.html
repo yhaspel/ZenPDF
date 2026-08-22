@@ -115,7 +115,7 @@
         [pageCount]="viewer.pageCount()"
         [currentSeq]="viewer.currentSeq()"
         [ocrAvailable]="true"
-        (saved)="onEditSaved()"
+        (saved)="onEditSaved($event)"
         (conflict)="onAnnotationConflict()"
         (ocrRequested)="onOcrRequested()"
       />
@@ -124,7 +124,7 @@
         [docId]="doc.id"
         [currentSeq]="viewer.currentSeq()"
         [isScanned]="cameFromScannedGate()"
-        (saved)="onConvertSaved()"
+        (saved)="onConvertSaved($event)"
         (conflict)="onAnnotationConflict()"
       />
     } @else if (mode() === 'compare') {
@@ -135,7 +135,7 @@
         [docTitle]="doc.title"
         [pageCount]="viewer.pageCount()"
         [currentSeq]="viewer.currentSeq()"
-        (saved)="onSigned()"
+        (saved)="onSigned($event)"
         (conflict)="onAnnotationConflict()"
       />
     } @else if (mode() === 'protect') {
@@ -146,7 +146,7 @@
         [currentSeq]="viewer.currentSeq()"
         [isEncrypted]="doc.is_encrypted"
         [initialTab]="protectTab()"
-        (saved)="onProtectSaved()"
+        (saved)="onProtectSaved($event)"
         (forked)="onRedactedCopy($event)"
         (conflict)="onAnnotationConflict()"
       />
@@ -157,7 +157,7 @@
         [currentSeq]="viewer.currentSeq()"
         [src]="contentUrl()"
         [httpHeaders]="authHeaders()"
-        (saved)="onFormsSaved()"
+        (saved)="onFormsSaved($event)"
         (conflict)="onAnnotationConflict()"
       />
     } @else if (mode() === 'annotate') {
@@ -167,7 +167,7 @@
         [currentSeq]="viewer.currentSeq()"
         [selectedPages]="selected()"
         [initialTool]="annotateTool()"
-        (saved)="onAnnotationsSaved()"
+        (saved)="onAnnotationsSaved($event)"
         (cropped)="onCropApplied()"
         (conflict)="onAnnotationConflict()"
       />
@@ -253,7 +253,10 @@
               <span class="muted text-sm" data-test="find-count">{{ searchHits().length }} result(s)</span>
             }
           </div>
-          <div class="min-h-0 flex-1">
+          <!-- `viewer-drew` appears only once pdf.js has painted a page of the
+               bytes currently in `src` — the assertion that was missing while
+               the production viewer drew nothing for ten days. -->
+          <div class="min-h-0 flex-1" [attr.data-test]="pageDrawn() ? 'viewer-drew' : null">
             @if (contentUrl()) {
               <!-- D3: the pdf.js toolbar is reduced to exactly zoom and paging
                    (find lives in our bar above, once). Rotate lives in Organize,
@@ -295,6 +298,7 @@
                 [showSignatureEditor]="false"
                 [showCommentEditor]="false"
                 height="100%"
+                (pageRendered)="onPageRendered()"
                 (pdfLoadingFailed)="onViewerLoadFailed()"
                 data-test="pdf-viewer"
               />

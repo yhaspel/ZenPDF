@@ -18,6 +18,7 @@
       class="pointer-events-none absolute inset-0 h-full w-full object-contain"
       (load)="onImageLoad($event)"
       draggable="false"
+      [attr.data-test]="rasterDrawn() ? 'overlay-drew' : null"
     />
   } @else {
     <div class="pointer-events-none absolute inset-0 flex items-center justify-center bg-surface text-ink-faint text-sm"

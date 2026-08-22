@@ -111,6 +111,9 @@ export class Workspace {
   protected insertAt = signal(1);
   protected insertCount = signal(1);
 
+  /** Which document is open, as a value — see the annotate effect below. */
+  private readonly openDocId = computed(() => this.viewer.doc()?.id ?? null);
+
   protected passwordPrompt = signal(false);
   /**
    * What PDF.js needs to render an encrypted document — read from the session
@@ -150,6 +153,32 @@ export class Workspace {
     const attempt = this.viewerAttempt();
     return attempt ? `${url}${url.includes('?') ? '&' : '?'}retry=${attempt}` : url;
   });
+  /**
+   * The `src` whose **first page has actually painted**.
+   *
+   * The viewer being present, the requests answering 200 and the document
+   * loading are three things that were all true throughout the ten days
+   * `/app/doc/:id` rendered nothing in production (queue, 2026-08-10). None of
+   * them is "a page drew", and `pdfLoaded` is not either — the library reports
+   * the document parsed, before any canvas exists. `pageRendered` fires once
+   * per page *after* pdf.js has painted it, which is the event that means what
+   * we need to assert.
+   *
+   * Storing the URL rather than a boolean makes the reset free and exact: the
+   * claim is about the bytes currently in `src`, so a new version, a revert or
+   * a refresh-retry (all of which change `contentUrl()`) withdraws it by
+   * arithmetic, with nothing to remember to clear.
+   */
+  private drawnUrl = signal<string | null>(null);
+  protected readonly pageDrawn = computed(
+    () => !!this.drawnUrl() && this.drawnUrl() === this.contentUrl(),
+  );
+
+  /** pdf.js painted a page of the document currently in `src`. */
+  protected onPageRendered(): void {
+    this.drawnUrl.set(this.contentUrl());
+  }
+
   /**
    * ngx-extended-pdf-viewer fetches the PDF **outside `HttpClient`**, so the
    * auth interceptor never runs for it (§21.2, trap 5). This is the one place
@@ -241,17 +270,25 @@ export class Workspace {
     // and every cached page word list is stale with it.
     //
     // Gated on annotate mode on purpose: reading annotations pulls the whole PDF
-    // out of object storage and parses it in the API process, and it is keyed on
-    // `viewer.doc()`, which is a *new object* after any refresh (a rename, for
-    // instance). Ungated, every existing View/Organize user would pay that cost
-    // on every open for a panel they never open.
+    // out of object storage and parses it in the API process. Ungated, every
+    // View/Organize user would pay that cost on every open for a panel they
+    // never touch.
+    //
+    // Keyed on the **id and the seq**, not on `viewer.doc()`. The document is a
+    // new *object* after every refresh, so keying on it re-read the whole file
+    // for changes that cannot possibly have altered an annotation — a rename,
+    // for one. `adopt()` made that worse rather than exposing it: it advances
+    // the seq when the save returns and then refreshes the document again when
+    // the refetch lands, which under the old key was two full annotation reads
+    // per save. A computed only notifies when its value actually changes, so
+    // both the old waste and the new doubling go away together.
     effect(() => {
       if (this.mode() !== 'annotate') return;
-      const doc = this.viewer.doc();
+      const id = this.openDocId();
       const seq = this.viewer.currentSeq();
-      if (!doc) return;
+      if (!id) return;
       this.annotations.resetForVersion();
-      this.annotations.load(doc.id, seq);
+      this.annotations.load(id, seq);
     });
     effect(() => {
       const doc = this.viewer.doc();
@@ -571,7 +608,7 @@ export class Workspace {
     if (job.status === 'succeeded') {
       this.toast.success(label);
       this.pages.clear();
-      this.viewer.reload();
+      this.viewer.adopt(job);
       this.busy.set(false);
     } else if (job.status === 'failed') {
       this.handleFailure(job);
@@ -618,14 +655,25 @@ export class Workspace {
     if (doc && pw) this.security.remember(doc.id, pw);
   }
 
-  /** Protect/redact/sanitize produced a new version. */
-  onProtectSaved(): void {
-    this.viewer.reload();
+  /**
+   * The six "a mode produced a new version" handlers.
+   *
+   * Each takes the `Job` its panel emitted and hands it to
+   * `ViewerFacade.adopt`, which reads the new `seq` out of the result before
+   * kicking off the refetch. Until 2026-08-22 every one of these was a bare
+   * `this.viewer.reload()` and the template dropped the `$event` — so for the
+   * length of one GET after every save, `currentSeq()` was a version behind and
+   * the next operation dispatched a stale `base_version_seq` straight into a
+   * `version_conflict`. The panels were never the problem: all six have emitted
+   * `output<Job>()` since Phase 3. The receiver was throwing it away.
+   */
+  onProtectSaved(job: Job): void {
+    this.viewer.adopt(job);
   }
 
   /** Self-sign produced a new version. */
-  onSigned(): void {
-    this.viewer.reload();
+  onSigned(job: Job): void {
+    this.viewer.adopt(job);
   }
 
   /**
@@ -658,18 +706,18 @@ export class Workspace {
   }
 
   /** Annotate mode produced a new version (save, flatten or overlay crop). */
-  onAnnotationsSaved(): void {
-    this.viewer.reload();
+  onAnnotationsSaved(job: Job): void {
+    this.viewer.adopt(job);
   }
 
   /** Edit mode produced a new version. */
-  onEditSaved(): void {
-    this.viewer.reload();
+  onEditSaved(job: Job): void {
+    this.viewer.adopt(job);
   }
 
   /** Forms mode produced a new version (fill, flatten, import or field edits). */
-  onFormsSaved(): void {
-    this.viewer.reload();
+  onFormsSaved(job: Job): void {
+    this.viewer.adopt(job);
   }
 
   /**
@@ -689,8 +737,8 @@ export class Workspace {
   }
 
   /** Convert/OCR/repair produced a new version. */
-  onConvertSaved(): void {
-    this.viewer.reload();
+  onConvertSaved(job: Job): void {
+    this.viewer.adopt(job);
   }
 
   /**

@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test';
 import path from 'node:path';
 
+import { expectOverlayDrew } from './drew';
 import { FIXTURES, registerAndLogin, uploadFiles } from './helpers';
 
 /**
@@ -134,6 +135,13 @@ test('phase 3: annotate, save, reload, flatten', async ({ page }) => {
   await expect(page.locator('[data-test=comment-row]')).toHaveCount(before - 1);
   await page.click('[data-test=annot-save]');
   await expect(successToast(page, 'Annotations saved')).toBeVisible({ timeout: 60_000 });
+  // The toast is the *job* succeeding; `annot-clean` is the *file* confirming
+  // it, and only the second one clears `dirty()`. Flatten refuses while there
+  // are unsaved changes — it says "Save your changes first" and never opens its
+  // confirm — so clicking it on the toast is a race the spec invented. This is
+  // the same wait step 4 above already does; step 5b was missing it, which cost
+  // one red run in eight on 2026-08-22.
+  await expect(page.locator('[data-test=annot-clean]')).toBeVisible();
 
   // --- 6. Flatten: annotations become part of the page. ---
   await page.click('[data-test=annot-flatten]');
@@ -198,6 +206,10 @@ test('phase 3: a guest annotates from the public tool page with no login prompt'
 
   // Draw a rectangle and save it — no account anywhere in the path.
   await expect(page.locator('[data-test=page-overlay]')).toBeVisible({ timeout: 30_000 });
+  // The overlay box being visible is not the page being visible: the raster is
+  // a separate fetch, and a guest marking up a blank white box would be exactly
+  // the failure nobody noticed in View mode for ten days.
+  await expectOverlayDrew(page);
   await fitPage(page);
   await page.click('[data-test=tool-square]');
   await dragOnPage(page, [0.2, 0.2], [0.5, 0.35]);

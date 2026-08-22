@@ -50,14 +50,28 @@ async function rightClickOnPage(page: Page, at: [number, number]) {
  * box straight after the click therefore measures the *wrong mark*, and the
  * nudge assertion below compares two different shapes. Two identical readings
  * in a row mean the frame the click caused has landed.
+ *
+ * A **null** reading is one of those unsettled frames, not a fatal error — and
+ * until 2026-08-22 this asserted non-null on it and crashed with
+ * `Cannot read properties of null (reading 'x')` instead of polling again. That
+ * cost 3 red runs in 12 while `main` was 0 in 20, and the crash reported the
+ * helper rather than anything about the product: the final DOM had the outline,
+ * the right size, in the right place, and sampling the element inside the page
+ * at animation-frame resolution across this whole sequence found **no** absent
+ * and **no** zero-sized frame. Waiting is what this function is for.
  */
 async function settledBox(locator: ReturnType<Page['locator']>) {
-  let previous = (await locator.boundingBox())!;
-  for (let i = 0; i < 20; i += 1) {
-    await locator.page().waitForTimeout(100);
-    const current = (await locator.boundingBox())!;
-    if (current.x === previous.x && current.y === previous.y) return current;
+  let previous: Awaited<ReturnType<typeof locator.boundingBox>> = null;
+  for (let i = 0; i < 40; i += 1) {
+    const current = await locator.boundingBox();
+    if (current && previous && current.x === previous.x && current.y === previous.y) {
+      return current;
+    }
     previous = current;
+    await locator.page().waitForTimeout(100);
+  }
+  if (!previous) {
+    throw new Error('the selection outline never reported a box');
   }
   return previous;
 }
