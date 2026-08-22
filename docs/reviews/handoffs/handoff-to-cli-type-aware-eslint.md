@@ -21,6 +21,10 @@ today — find the §6 error envelope type if one exists).
     ./infra/up.sh && docker compose -f infra/docker-compose.yml restart worker-default worker-heavy worker-render beat
     git switch -c chore/type-aware-eslint
 
+TRACKING: in docs/reviews/handoffs/TRACKING.md set row 7 to
+`🔵 in progress — `chore/type-aware-eslint`, <today>` (Status column) and put the branch name in
+the next column; include that edit in your FIRST commit on the branch. Touch no other row.
+
 PROGRESS session-log entry; the row → 🔵.
 
 ## 1. Measure, then decide the rule set
@@ -87,7 +91,15 @@ turned off and for the `router.navigate` policy; `01-architecture.md` §18 CI no
 
     git mv docs/reviews/handoffs/handoff-to-cli-type-aware-eslint.md docs/archived/$(date +%F)-handoff-to-cli-type-aware-eslint.md
 
-prepend the "Executed <date>" banner; mark row 7 in docs/reviews/handoffs/README.md.
+prepend the "Executed <date>" banner.
+
+TRACKING: after the merge and the `git pull --ff-only` below, set row 7 of
+docs/reviews/handoffs/TRACKING.md to `✅ merged — PR #<n> (<merge sha>), <date>, archived at
+docs/archived/<date>-handoff-to-cli-type-aware-eslint.md`, fill the PR/merge column, and put the PROGRESS anchor
+(your session-log heading and the queue rows you closed) in the Evidence column. Commit that
+one edit directly on `main` as `docs(tracking): prompt 7 merged` and push — docs only, no
+deploy, the same way `f34800f` recorded Phase 12. This is the last commit of the run — do it
+before you report. (The README carries no status; the board does.)
 
 Commit in chunks (`build(lint): type-aware config`, `refactor(core): apiError()`,
 `refactor: navigate results handled`, `docs(progress): …`); push;

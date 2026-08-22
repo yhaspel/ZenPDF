@@ -29,9 +29,10 @@ Every prompt follows the same contract:
    context-menu spec, per-mode Undo/Redo and a no-single-character-shortcut rule that new
    UI must respect), `data-test` parity, anonymous-first, ownership through
    `principals.py`, Decisions-log rationale;
-5. **self-archives**: the prompt file moves to `docs/archived/<date>-<name>.md` with an
-   "Executed" banner (the model is `docs/archived/2026-08-21-phase-12-cli-handoff.md`),
-   in the same PR as the work;
+5. **self-archives and self-tracks**: the prompt file moves to `docs/archived/<date>-<name>.md`
+   with an "Executed" banner (the model is `docs/archived/2026-08-21-phase-12-cli-handoff.md`)
+   in the same PR as the work, and the prompt's row in `TRACKING.md` goes 🔵 at the start
+   and ✅ (PR, merge sha, archived path, PROGRESS anchor) after the merge;
 6. commits, pushes, opens the PR, **reviews it autonomously** with independent lenses,
    fixes what is real, merges to `main`, then `git switch main && git pull --ff-only` —
    and, because a push to `main` is the deploy, checks the live site afterwards.
@@ -39,11 +40,21 @@ Every prompt follows the same contract:
 Baselines as of `f34800f`: **396 unit tests / 47 files · 63 e2e tests · backend 1061
 passed / 4 skipped on the full stack · 29 prerendered routes · 24 tool pages.**
 
-Run them **one at a time**, in this order (later ones assume earlier ones are on `main`):
+**Status is tracked in one place: [`TRACKING.md`](TRACKING.md)** — one row per prompt with
+the plan items it owns, its branch/PR/merge, where it was archived and where the evidence
+is. Each prompt sets its row to 🔵 in its first commit and to ✅ after the merge; this README
+carries no status. `development-plans/PROGRESS.md` remains the canonical tracker for phase
+status, acceptance evidence, decisions and the Human review queue — the prompts write
+there too, and the board points at those entries rather than repeating them.
+
+Run them **one at a time**, in this order — **1 → 2 → 9 → 3 → 4 → 5 → 6 → 7 → 8** (9 is
+pulled forward because it depends only on 2, changes no product code and gates launch).
+Later ones assume earlier ones are on `main`; never start a prompt while another one's
+branch is unmerged:
 
 | # | File | What it lands | Touches prod on merge? |
 |---|---|---|---|
-| 1 | `handoff-to-cli-docs-reconciliation.md` | Commits the revision-2 review edits and the untracked Phase-12 production audit; reconciles PROGRESS/README/AGENTS/contract/ops docs with reality (incl. the Phase-12 README row and the contract's sanctioned-additions sentence) | No (`docs/**` is outside the Railway watch patterns) |
+| 1 | `handoff-to-cli-docs-reconciliation.md` | Commits the revision-2 review edits, this board and the untracked Phase-12 production audit; reconciles PROGRESS/README/AGENTS/contract/ops docs with reality (incl. the Phase-12 README row and the contract's sanctioned-additions sentence); adds a "Handoff programme" pointer in PROGRESS.md to `TRACKING.md` | No (`docs/**` is outside the Railway watch patterns) |
 | 2 | `handoff-to-cli-e2e-gate-hardening.md` | **The node-25 `localStorage` guard first**; page-actually-drew assertion; stale-worker restart in the gate; Gotenberg-skip guard; `@quarantine` exclusion; repo-relative signing cert in tests; the `version_conflict` flake fixed at the source | Yes (frontend + test settings) |
 | 3 | `handoff-to-cli-workspace-debt-batch.md` | `takeUntilDestroyed` sweep, thumbnail backoff, `image_stamp` palette state, compare copy, **the version-Undo/Redo cursor committed on success / restored on failure** (found live in rev 2) | Yes (frontend) |
 | 4 | `handoff-to-cli-backend-debt-batch.md` | Password-meter race, finalize append notice, `usage_recompute`, account asset sweeper, `--pg` concurrency proof, nginx 503 headers, `NUM_PROXIES` in `infra/railway` + §19 | Yes (backend + nginx) |
@@ -51,7 +62,7 @@ Run them **one at a time**, in this order (later ones assume earlier ones are on
 | 6 | `handoff-to-cli-mobile-workspace.md` | A designed phone workspace (drawers + bottom bar) replacing the stacked rescue — now including Phase 12's per-mode Undo/Redo and rail lists; contract amended first | Yes (frontend) |
 | 7 | `handoff-to-cli-type-aware-eslint.md` | Type-aware linting adopted; the typed `apiError()` helper | Yes (frontend, no behaviour change intended) |
 | 8 | `handoff-to-cli-launch-gate-evidence.md` | Lighthouse on the deployed build, three recorded full e2e runs (63 tests), `@smoke` vs production, the p95 number; checklist ticks with evidence | No (docs + `infra/perf`) |
-| 9 | `handoff-to-cli-h1-production-seal-proof.md` | Proves the production signing certificate seals (local stack + prod `.p12`), the launch-gating H1 | No (docs) |
+| 9 | `handoff-to-cli-h1-production-seal-proof.md` | Proves the production signing certificate seals (local stack + prod `.p12`), the launch-gating H1 — **run right after 2** | No (docs) |
 
 Done since revision 1 and therefore **not** a prompt: Phase 12 (usability add-ons) —
 planned, adversarially reviewed, implemented, gated, merged and verified live on

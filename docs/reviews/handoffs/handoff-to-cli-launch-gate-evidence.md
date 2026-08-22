@@ -23,6 +23,10 @@ docs/ops/launch-handoff-owner.md items 7–8, docs/reviews/status-review-2026-08
     git switch -c docs/launch-gate-evidence
     ./infra/up.sh && docker compose -f infra/docker-compose.yml restart worker-default worker-heavy worker-render beat
 
+TRACKING: in docs/reviews/handoffs/TRACKING.md set row 8 to
+`🔵 in progress — `docs/launch-gate-evidence`, <today>` (Status column) and put the branch name in
+the next column; include that edit in your FIRST commit on the branch. Touch no other row.
+
 PROGRESS session-log entry; the four rows → 🔵.
 
 ## 1. Lighthouse on the deployed build
@@ -93,7 +97,15 @@ owed and why.
 
     git mv docs/reviews/handoffs/handoff-to-cli-launch-gate-evidence.md docs/archived/$(date +%F)-handoff-to-cli-launch-gate-evidence.md
 
-prepend the "Executed <date>" banner; mark row 8 in docs/reviews/handoffs/README.md.
+prepend the "Executed <date>" banner.
+
+TRACKING: after the merge and the `git pull --ff-only` below, set row 8 of
+docs/reviews/handoffs/TRACKING.md to `✅ merged — PR #<n> (<merge sha>), <date>, archived at
+docs/archived/<date>-handoff-to-cli-launch-gate-evidence.md`, fill the PR/merge column, and put the PROGRESS anchor
+(your session-log heading and the queue rows you closed) in the Evidence column. Commit that
+one edit directly on `main` as `docs(tracking): prompt 8 merged` and push — docs only, no
+deploy, the same way `f34800f` recorded Phase 12. This is the last commit of the run — do it
+before you report. (The README carries no status; the board does.)
 
 ## 6. UI testing via the Chrome MCP tools
 

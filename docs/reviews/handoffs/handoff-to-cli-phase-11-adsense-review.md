@@ -30,6 +30,10 @@ core/tool-pages.spec.ts.
     ./infra/up.sh && docker compose -f infra/docker-compose.yml restart worker-default worker-heavy worker-render beat
     git switch -c feat/phase-11-guides-and-contact
 
+TRACKING: in docs/reviews/handoffs/TRACKING.md set row 5 to
+`🔵 in progress — `feat/phase-11-guides-and-contact`, <today>` (Status column) and put the branch name in
+the next column; include that edit in your FIRST commit on the branch. Touch no other row.
+
 PROGRESS: set Phase 11 to 🔵 with today's date; copy its Acceptance criteria verbatim
 into a new phase section (protocol step 2); note in the section that 11A/11D/11E are
 owner-gated and which criteria this branch can and cannot tick.
@@ -183,7 +187,15 @@ row. Then:
     git mv docs/reviews/handoffs/handoff-to-cli-phase-11-adsense-review.md docs/archived/$(date +%F)-handoff-to-cli-phase-11-adsense-review.md
 
 prepend "**Executed <date> — 11B/11C landed; 11A/11D/11E remain owner-gated (see
-PROGRESS §Phase 11). Historical.**"; mark row 5 in docs/reviews/handoffs/README.md.
+PROGRESS §Phase 11). Historical.**".
+
+TRACKING: after the merge and the `git pull --ff-only` below, set row 5 of
+docs/reviews/handoffs/TRACKING.md to `✅ merged — PR #<n> (<merge sha>), <date>, archived at
+docs/archived/<date>-handoff-to-cli-phase-11-adsense-review.md`, fill the PR/merge column, and put the PROGRESS anchor
+(your session-log heading and the queue rows you closed) in the Evidence column. Commit that
+one edit directly on `main` as `docs(tracking): prompt 5 merged` and push — docs only, no
+deploy, the same way `f34800f` recorded Phase 12. This is the last commit of the run — do it
+before you report. (The README carries no status; the board does.)
 
 Commit in chunks (the contract first, then `feat(legal): /contact and the identity
 paragraph`, `feat(guides): …`, `feat(seo): …`, `content(tools): intro top-up and fourth

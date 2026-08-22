@@ -29,6 +29,10 @@ only, no raw colours/radii/sizes).
     ./infra/up.sh && docker compose -f infra/docker-compose.yml restart worker-default worker-heavy worker-render beat
     git switch -c feat/mobile-workspace
 
+TRACKING: in docs/reviews/handoffs/TRACKING.md set row 6 to
+`🔵 in progress — `feat/mobile-workspace`, <today>` (Status column) and put the branch name in
+the next column; include that edit in your FIRST commit on the branch. Touch no other row.
+
 PROGRESS session-log entry; the queue row → 🔵.
 
 ## 1. Spec first — amend the contract (own commit)
@@ -125,7 +129,15 @@ contract amendment already committed. Then:
 
     git mv docs/reviews/handoffs/handoff-to-cli-mobile-workspace.md docs/archived/$(date +%F)-handoff-to-cli-mobile-workspace.md
 
-prepend the "Executed <date>" banner; mark row 6 in docs/reviews/handoffs/README.md.
+prepend the "Executed <date>" banner.
+
+TRACKING: after the merge and the `git pull --ff-only` below, set row 6 of
+docs/reviews/handoffs/TRACKING.md to `✅ merged — PR #<n> (<merge sha>), <date>, archived at
+docs/archived/<date>-handoff-to-cli-mobile-workspace.md`, fill the PR/merge column, and put the PROGRESS anchor
+(your session-log heading and the queue rows you closed) in the Evidence column. Commit that
+one edit directly on `main` as `docs(tracking): prompt 6 merged` and push — docs only, no
+deploy, the same way `f34800f` recorded Phase 12. This is the last commit of the run — do it
+before you report. (The README carries no status; the board does.)
 
 Commit in chunks (contract first; `feat(workspace): bottom bar`, `feat(shared): drawer`,
 `style(workspace): …`, `test: …`, `docs(progress): …`); push;

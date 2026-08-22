@@ -26,6 +26,10 @@ components stay presentation-only — keep it that way.
     ./infra/up.sh && docker compose -f infra/docker-compose.yml restart worker-default worker-heavy worker-render beat
     git switch -c fix/workspace-debt-2026-08
 
+TRACKING: in docs/reviews/handoffs/TRACKING.md set row 3 to
+`🔵 in progress — `fix/workspace-debt-2026-08`, <today>` (Status column) and put the branch name in
+the next column; include that edit in your FIRST commit on the branch. Touch no other row.
+
 Open the PROGRESS session-log entry; set the three queue rows to 🔵 (the two of 2026-08-04 and the cursor row).
 
 ## 1. Every job subscription dies with its component
@@ -156,7 +160,15 @@ tool-button spec and the menu spec's 44 px floor).
 
     git mv docs/reviews/handoffs/handoff-to-cli-workspace-debt-batch.md docs/archived/$(date +%F)-handoff-to-cli-workspace-debt-batch.md
 
-prepend the "Executed <date>" banner; mark row 3 done in docs/reviews/handoffs/README.md.
+prepend the "Executed <date>" banner.
+
+TRACKING: after the merge and the `git pull --ff-only` below, set row 3 of
+docs/reviews/handoffs/TRACKING.md to `✅ merged — PR #<n> (<merge sha>), <date>, archived at
+docs/archived/<date>-handoff-to-cli-workspace-debt-batch.md`, fill the PR/merge column, and put the PROGRESS anchor
+(your session-log heading and the queue rows you closed) in the Evidence column. Commit that
+one edit directly on `main` as `docs(tracking): prompt 3 merged` and push — docs only, no
+deploy, the same way `f34800f` recorded Phase 12. This is the last commit of the run — do it
+before you report. (The README carries no status; the board does.)
 
 Commit in chunks (`fix(workspace): …`, `feat(annotate): the palette shows the armed
 stamp`, `fix(thumbnails): …`, `test: …`, `docs(progress): …`); push;
