@@ -1,3 +1,5 @@
+> **Executed 2026-08-01/02 — kept as history. Do not run.** Phases 3–9 are ✅ and Phase 10 is 🟠 awaiting owner sign-off in `PROGRESS.md`. **In particular, ignore the "Re-runnable by design" line below** — it was true while the phases were being executed and is now the most dangerous sentence in this directory: a fresh session pasting this prompt today would find every phase already ✅, and the value of re-running is zero against the cost of an agent deciding otherwise. Resumption is what PROGRESS.md is for.
+
 # One-Shot Prompt 3 — Execute Phases 3–10 (everything remaining) and ship each phase to `main`
 
 **Usage:** start a Claude Code session with its working directory at the **ZenPDF repo root**, Docker daemon running, and `gh` authenticated (`gh auth status`). The session needs permission to run `git`, `gh`, `docker`, and to create/delete files. Paste everything below the line as the prompt (or run `claude "$(cat development-plans/prompt-3-phases-03-10.md)"`).

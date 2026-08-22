@@ -36,3 +36,8 @@ E2E: open doc → reorder via drag → rotate page → delete page → undo via 
 ## Risks
 - PyMuPDF TOC/link preservation on `select`/`insert_pdf` edge cases → golden tests assert TOC survival; document known losses in UI copy ("links between removed pages are dropped").
 - by_size split estimation accuracy → greedy pack + post-check actual sizes, adjust.
+
+---
+
+**Executed** (see PROGRESS.md §Phase 2). Known drifts between this work order and what shipped are recorded in PROGRESS's
+Decisions log; this file is the plan, not the record.

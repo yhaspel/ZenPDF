@@ -49,3 +49,8 @@ E2E: edit a paragraph → save → text visibly changed → find&replace 3 of 5 
 ## Risks
 - Fidelity complaints on exotic fonts → constraints documented in-product; block-scoped model keeps blast radius small; pixel-diff sanity test defines "acceptable".
 - `insert_htmlbox` behavior changes across PyMuPDF versions → engine pinned (§2); golden tests catch regressions on upgrade.
+
+---
+
+**Executed** (see PROGRESS.md §Phase 4). Known drifts between this work order and what shipped are recorded in PROGRESS's
+Decisions log; this file is the plan, not the record.

@@ -64,3 +64,8 @@ E2E: upload 2 PDFs → open one → jump via thumbnail → find text → rename 
 ## Risks
 - Range/streaming quirks between PDF.js and Django proxy → mitigated by the dual-mode decision above + explicit 206 tests.
 - Huge PDFs (2000-page cap) thumbnailing cost → thumbnails are lazy beyond first 20 pages (on-demand endpoint renders + caches).
+
+---
+
+**Executed** (see PROGRESS.md §Phase 1). Known drifts between this work order and what shipped are recorded in PROGRESS's
+Decisions log; this file is the plan, not the record.

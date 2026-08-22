@@ -52,3 +52,8 @@ E2E: fresh signup → verify email via Mailpit → upload allowed; decline conse
 ## Risks
 - AdSense approval timing/policy friction → decoupled by default-off flag; product launch does not gate on ad network approval.
 - Consent complexity (regional) → certified CMP outsources the hard part; we only wire Consent Mode correctly.
+
+---
+
+**Executed** (see PROGRESS.md §Phase 9). Known drifts between this work order and what shipped are recorded in PROGRESS's
+Decisions log; this file is the plan, not the record.

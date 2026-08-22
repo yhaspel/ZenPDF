@@ -109,3 +109,8 @@ No new services. New env block per §19 (`GUEST_*`, `CAPTCHA_ENABLED`, `TURNSTIL
 - **Anonymous compute abuse** — the login wall was doing free abuse filtering. Mitigated by §17's layered controls; the Turnstile flag exists so it can be tightened without a deploy of new code.
 - **Storage growth from guests** — bounded by the 200 MB/session cap × hourly purge. Watch actual numbers before launch; `GUEST_TTL_HOURS` is the tuning knob.
 - **SSR added mid-project** — `@angular/ssr` on an existing zoneless v22 app can surface hydration mismatches in the viewer. Mitigation: tool pages are SSR'd, the viewer/workspace is explicitly **not** — the split is deliberate, not incidental.
+
+---
+
+**Executed** (see PROGRESS.md §Phase 2B). Known drifts between this work order and what shipped are recorded in PROGRESS's
+Decisions log; this file is the plan, not the record.

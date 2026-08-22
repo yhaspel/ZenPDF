@@ -50,3 +50,8 @@ E2E: upload scan → OCR (progress bar) → select text in viewer → export Wor
 ## Risks
 - LibreOffice fidelity variance → Gotenberg pinned major; honest UI copy; fidelity bugs are content-, not architecture-level.
 - OCR queue starvation by huge docs → heavy-queue limits (§12) + per-user monthly OCR page quota (§16) + page-count pre-check.
+
+---
+
+**Executed** (see PROGRESS.md §Phase 6). Known drifts between this work order and what shipped are recorded in PROGRESS's
+Decisions log; this file is the plan, not the record.

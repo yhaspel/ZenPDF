@@ -283,3 +283,8 @@ Read-only. `onOverlaySelect` navigates to a diff row; there is nothing to undo, 
 - **Changing behaviour people learned (D-B/D-C).** Mitigated by the replacement being strictly more capable, by Undo now existing there, by a visible list replacing an invisible gesture, and by the copy changing in the same commit.
 - **Menu placement near a page edge** is the classic popover bug — clamped to the page box, and checked in a real browser at both widths.
 - **Scope.** Six surfaces × (history + menu + keyboard + list) is the bulk of the work. The generic primitives in §2 are what keep it from being six implementations; if the phase has to be split, §§3–4.1 and 4.8 are the coherent first half (the overlay, Annotate, and the bar), and 4.2–4.6 the second.
+
+---
+
+**Executed** (see PROGRESS.md §Phase 12). Known drifts between this work order and what shipped are recorded in PROGRESS's
+Decisions log; this file is the plan, not the record. The acceptance boxes above are unticked by design — PROGRESS holds the ticks, with the evidence beside each.

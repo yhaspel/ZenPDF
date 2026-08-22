@@ -44,3 +44,8 @@ Golden: each annot type round-trips (create → extract → fields match; open o
 ## Risks
 - Custom image stamps appearance-stream fidelity → dual-path spec above, resolved by golden test day one.
 - Text-layer selection quality on odd PDFs (ligatures, RTL) → quads come from PDF.js's own text layer, matching what the user sees; add a Hebrew/RTL fixture to the corpus and an explicit test (relevant to owner's locale).
+
+---
+
+**Executed** (see PROGRESS.md §Phase 3). Known drifts between this work order and what shipped are recorded in PROGRESS's
+Decisions log; this file is the plan, not the record.

@@ -1,3 +1,5 @@
+> **Executed 2026-07-19 — kept as history. Do not run.** Phases 0, 1 and 2 are ✅ in `PROGRESS.md` and have been through eight further phases of change since; running this again would drive an agent to rebuild a foundation that exists. It is kept because it records what the phases were asked to be, which is not the same as what they became — the drifts are in PROGRESS's Decisions log.
+
 # One-Shot Prompt 1 — Execute Phases 0–2 (Foundation → Documents & Viewer → Page Organization)
 
 **Usage:** start an agent session (e.g. Claude Code) with its working directory at the **ZenPDF repo root** (the folder containing `development-plans/`), with Docker installed and the daemon running, and paste everything below the line as the prompt.
