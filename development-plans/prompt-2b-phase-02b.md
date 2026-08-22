@@ -90,7 +90,7 @@ Then set Phase 2B to 🔵 in `PROGRESS.md` with today's date, copy its Acceptanc
 11. **Frontend** — `GuestFacade`, interceptor credential branch, **the viewer's `httpHeaders` and `pdf-thumbnail.ts`** (both bypass the interceptor), guards narrowed to `accountGuard`, guest-aware 401 handling, session banner, token discard after claim.
 12. **SSR + tool pages** — `@angular/ssr`, the seven Phase-2 slugs, generated `sitemap.xml`, `robots.txt`.
 13. **Tests** — everything in the phase doc's Tests section, including the rewritten superseded tests.
-14. **`e2e/phase-2b.spec.ts`** — the cold-browser journey through registration and claim.
+14. **`e2e/tests/phase-2b.spec.ts`** — the cold-browser journey through registration and claim.
 
 ### The five traps that will bite you
 
