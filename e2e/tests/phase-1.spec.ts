@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 
+import { expectPageDrew } from './drew';
 import { registerAndLogin, uploadFiles } from './helpers';
 
 test('@smoke phase 1: upload, view, search, rename, trash, restore', async ({ page }) => {
@@ -15,6 +16,12 @@ test('@smoke phase 1: upload, view, search, rename, trash, restore', async ({ pa
     .filter({ has: page.locator('[data-test=doc-title]', { hasText: 'text' }) });
   await textCard.locator('[data-test=open-doc]').click();
   await expect(page).toHaveURL(/\/app\/doc\//);
+
+  // The page is on the screen — read back from the canvas, not inferred from a
+  // 200. This is the assertion the 2026-08-02 and 2026-08-20 queue rows asked
+  // for, and the one whose absence let the production viewer render nothing for
+  // ten days while every other check stayed green.
+  await expectPageDrew(page);
 
   // Thumbnail rail loads; jump to a page
   await expect(page.locator('[data-test=rail-thumb]').first()).toBeVisible();

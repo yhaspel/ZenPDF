@@ -253,7 +253,10 @@
               <span class="muted text-sm" data-test="find-count">{{ searchHits().length }} result(s)</span>
             }
           </div>
-          <div class="min-h-0 flex-1">
+          <!-- `viewer-drew` appears only once pdf.js has painted a page of the
+               bytes currently in `src` — the assertion that was missing while
+               the production viewer drew nothing for ten days. -->
+          <div class="min-h-0 flex-1" [attr.data-test]="pageDrawn() ? 'viewer-drew' : null">
             @if (contentUrl()) {
               <!-- D3: the pdf.js toolbar is reduced to exactly zoom and paging
                    (find lives in our bar above, once). Rotate lives in Organize,
@@ -295,6 +298,7 @@
                 [showSignatureEditor]="false"
                 [showCommentEditor]="false"
                 height="100%"
+                (pageRendered)="onPageRendered()"
                 (pdfLoadingFailed)="onViewerLoadFailed()"
                 data-test="pdf-viewer"
               />

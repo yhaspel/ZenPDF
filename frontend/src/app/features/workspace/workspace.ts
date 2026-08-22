@@ -151,6 +151,32 @@ export class Workspace {
     return attempt ? `${url}${url.includes('?') ? '&' : '?'}retry=${attempt}` : url;
   });
   /**
+   * The `src` whose **first page has actually painted**.
+   *
+   * The viewer being present, the requests answering 200 and the document
+   * loading are three things that were all true throughout the ten days
+   * `/app/doc/:id` rendered nothing in production (queue, 2026-08-10). None of
+   * them is "a page drew", and `pdfLoaded` is not either — the library reports
+   * the document parsed, before any canvas exists. `pageRendered` fires once
+   * per page *after* pdf.js has painted it, which is the event that means what
+   * we need to assert.
+   *
+   * Storing the URL rather than a boolean makes the reset free and exact: the
+   * claim is about the bytes currently in `src`, so a new version, a revert or
+   * a refresh-retry (all of which change `contentUrl()`) withdraws it by
+   * arithmetic, with nothing to remember to clear.
+   */
+  private drawnUrl = signal<string | null>(null);
+  protected readonly pageDrawn = computed(
+    () => !!this.drawnUrl() && this.drawnUrl() === this.contentUrl(),
+  );
+
+  /** pdf.js painted a page of the document currently in `src`. */
+  protected onPageRendered(): void {
+    this.drawnUrl.set(this.contentUrl());
+  }
+
+  /**
    * ngx-extended-pdf-viewer fetches the PDF **outside `HttpClient`**, so the
    * auth interceptor never runs for it (§21.2, trap 5). This is the one place
    * the credential has to be assembled by hand — miss it and a guest gets a

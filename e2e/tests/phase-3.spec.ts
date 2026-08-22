@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test';
 import path from 'node:path';
 
+import { expectOverlayDrew } from './drew';
 import { FIXTURES, registerAndLogin, uploadFiles } from './helpers';
 
 /**
@@ -198,6 +199,10 @@ test('phase 3: a guest annotates from the public tool page with no login prompt'
 
   // Draw a rectangle and save it — no account anywhere in the path.
   await expect(page.locator('[data-test=page-overlay]')).toBeVisible({ timeout: 30_000 });
+  // The overlay box being visible is not the page being visible: the raster is
+  // a separate fetch, and a guest marking up a blank white box would be exactly
+  // the failure nobody noticed in View mode for ten days.
+  await expectOverlayDrew(page);
   await fitPage(page);
   await page.click('[data-test=tool-square]');
   await dragOnPage(page, [0.2, 0.2], [0.5, 0.35]);
