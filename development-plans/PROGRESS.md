@@ -1050,6 +1050,8 @@ up from 178. Coverage `apps` 92 % (gate 85) and `pdf_engine` 92 % (gate 90).
 
 ## Human review queue
 
+Handoff programme (the nine CLI prompts from the 2026-08-21 status review) is tracked in `docs/reviews/handoffs/TRACKING.md`; PROGRESS stays canonical for phase status and evidence.
+
 | Added | Item | Phase | GATE? | Resolved |
 |---|---|---|---|---|
 | 2026-08-21 | **`typeof localStorage === 'undefined'` is no longer a safe "am I in a browser" test.** Node 25 ships a `localStorage` global that exists but has no `getItem` unless `--localstorage-file` is passed, so `token.service.ts:35` hands the service an object it cannot use. On the owner's Mac (node 25.2.1) that is **108 failing unit tests and every prerendered route failing** with `TypeError: e?.getItem is not a function` — a host `ng test` and a host `npm run build` are both unusable. Nothing is wrong in production (Railway and the `web` container are on node 24, and `infra/test.sh` runs both inside the container, which is why the gate is green), and nothing is wrong in a browser. It becomes a real problem the day node 26 goes LTS. The fix is to feature-detect rather than existence-check — `typeof localStorage?.getItem === 'function'` — or to route the decision through `isPlatformBrowser`, which the rest of the app already injects. Found while running the phase-12 local gate; deliberately **not** fixed there, because it is not that phase's code. | 0 | No | ⬜ |
@@ -1123,6 +1125,14 @@ up from 178. Coverage `apps` 92 % (gate 85) and `pdf_engine` 92 % (gate 90).
 | 2026-08-20 | **The workspace on a phone is stacked, not designed.** Below `md` the rails now become full-width sections above and below the page (§3 workspace panes) — which makes every control reachable and stops the page scrolling sideways, but it is a rescue, not a phone layout. A designed treatment would probably make the rails drawers with a persistent bottom bar. Worth a designer's eye before any mobile push. | 10 | No | ⬜ *(2026-08-21: the row above the page now wraps rather than overflowing, so the page no longer scrolls sideways and the app is no longer drawn at ~64 % — but that is a repair, not a design. Row stays open.)* |
 
 ## Session log
+
+**2026-08-22 — Record reconciliation: making the docs say what the code does**
+
+Branch `docs/reconcile-2026-08-21`, executed from `docs/reviews/handoffs/handoff-to-cli-docs-reconciliation.md` (prompt 1 of the nine on `docs/reviews/handoffs/TRACKING.md`). **No application code, tests, templates, styles or infra were touched** — the diff is markdown under `development-plans/`, `docs/` and `AGENTS.md`. Nothing here deploys: `docs/**` is outside every Railway watch pattern.
+
+The spec is `docs/reviews/status-review-2026-08-21.md` (revision 2): §3.1 and §3.2 list every statement changed, §6 catalogues every document. The rule followed throughout was **banners, not deletions** — a statement that was true when it was written keeps its text and gains a dated correction beside it, because a record that quietly rewrites its own history teaches nobody why it was wrong.
+
+*(Item-by-item close-out, with the commit that fixed each, is at the end of this entry.)*
 
 **2026-08-21 — Independent production audit of Phase 12 (Cowork session)**
 
