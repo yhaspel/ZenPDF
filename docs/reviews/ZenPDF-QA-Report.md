@@ -1,3 +1,5 @@
+> **Historical — findings implemented 2026-08-04** (PROGRESS §"Session log — QA findings"); **only M6 remains open** (Human review queue: DNS rebinding defeats the URL→PDF guard — a bounded, deliberate acceptance, not an oversight). The remediation prompt that executed this report is `IMPLEMENT-FINDINGS-PROMPT.md`, beside this file. Kept as the record of what was found and how it was answered.
+
 # ZenPDF — Full QA & Review Report
 
 **Prepared by:** Testing/Review engineering pass (design critique + code review + bughunt + full UI test)
@@ -86,7 +88,21 @@ Based on the 29 captured screenshots. The visual language is clean, modern, and 
 
 **D6 — The auth pages are bare.** `/auth/register` and `/auth/login` render a floating card with **no ZenPDF header/logo and no link back to the marketing site** — a user who lands there directly can only escape via browser back. There's also no password-visibility toggle and no inline hint about the 8-char/common-password rule, so the first feedback is a post-submit rejection. Add the header/logo (as a home link) and a lightweight password affordance. *(Screens: 04-register, 05-login.)*
 
-**D7 — (Minor, verify) Base viewer sizing for RTL/first paint.** In the base pdf.js viewer the Hebrew RTL page appeared small and clipped near the top at load under "Automatic Zoom"; the custom Annotate overlay renders the same document perfectly right-aligned. Likely a first-paint zoom/scroll artifact rather than a true defect — worth a quick check on initial fit-to-width. *(Screens: 15-workspace-viewer vs 17-panel-annotate.)*
+**D7 — (Minor, verify) Base viewer sizing for RTL/first paint.** *(See "where D1–D7 landed" below.)* In the base pdf.js viewer the Hebrew RTL page appeared small and clipped near the top at load under "Automatic Zoom"; the custom Annotate overlay renders the same document perfectly right-aligned. Likely a first-paint zoom/scroll artifact rather than a true defect — worth a quick check on initial fit-to-width. *(Screens: 15-workspace-viewer vs 17-panel-annotate.)*
+
+### Design items D1–D7 — where they landed
+
+*(Added 2026-08-22. The seven design findings were never tracked to resolution as a set — the code items had a remediation prompt and these did not. They were answered, but by the **2026-08-06 redesign** rather than by a patch, which is why nothing here says "fixed in commit X". Each is now a rule in `docs/design/design-instructions.md`, which is the contract every later UI change is validated against — a stronger outcome than a fix, because a rule cannot regress silently.)*
+
+| # | Where it landed |
+|---|---|
+| **D1** primary-button colour inconsistent | §1 principle 3 — **one accent, used like a seal**: vermilion appears only on the logo seal, the single primary action of a screen, focus rings, selection marks and completion stamps. "If vermilion is on screen twice with no reason, that is a bug to fix." The green "Finish signing" and the indigo/lavender split are both gone: §3 Ceremony now specifies *"**Finish signing** vermilion primary"* and *"**Agree and continue** vermilion primary"*, and §3 `.seg` selected state is an **ink stamp, not accent**, precisely so the accent stays reserved. |
+| **D2** dashboard shows uploads twice | §3 Dashboard — the file-card grid carries "the **D2 rule**"; the transient uploading/converting rows are their own row type above the grid and resolve into cards rather than sitting beside them. |
+| **D3** two stacked toolbars | §3 Workspace — **"the workspace bar is the single owner of every editing affordance — defect D3"**. The pdf.js toolbar is cut by visibility config to zoom, page nav and find. Explicitly hidden: pdf.js download, print, open-file, rotate, draw/ink, text, stamp, presentation, scrolling/spread menus and the sidebar toggle. Rotate lives only in Organize, download only in our bar, annotation only in Annotate. |
+| **D4** 24 undifferentiated landing cards | §3 Landing — **six kicker-headed groups** (Organize 7 · Edit & annotate 4 · Convert & OCR 6 · Optimize & review 3 · Protect 3 · Sign 1) of icon+name cards, plus a **type-to-filter** input that filters by name and synonyms, hides empty groups and shows a calm empty line. The filter is one of the two additions the redesign sanctioned. Superseded in detail by the compact landing (2026-08-10), which kept both. |
+| **D5** disabled primary buttons unreadable | §3 — **one** disabled treatment everywhere (dashed `--color-border-strong`, `--color-ink-muted`, `cursor: not-allowed`), and §6's contrast table pins it: *disabled btn text: ink-muted on bg — **6.3:1** light / **8.8:1** dark, ≥3 ✓ **(D5 resolved)***. |
+| **D6** auth pages bare | §3 Auth — a **slim header (brand + toggle), "the way home, defect D6"**, a 44 % brand panel with "← Back to the tools", and §3 fields: password fields get a **44×44 px visibility toggle inside the field and an inline rules hint (defect D6)** — so the first feedback is no longer a post-submit rejection. |
+| **D7** RTL/first-paint sizing | §3 Workspace — **"First paint rule (defect D7): initial zoom fit-to-width, content centered, backdrop `--color-canvas-backdrop` — for every page size and for RTL documents; no small-and-clipped first render."** Confirmed live in the 2026-08-20 sweep: RTL mirrors correctly, including Hebrew in a text box. |
 
 ---
 

@@ -1,5 +1,7 @@
 # Screen-reader pass: the signing ceremony
 
+> **Run this against the local stack (`./infra/up.sh`), not production** *(added 2026-08-22)*. The ceremony is reached from an emailed invitation, and **production has SMTP off** — no invitation is ever sent, so there is no ceremony to open there. Locally, mail goes to **Mailpit** at `http://localhost:8025`, where you can open the invitation and follow its link. That is the only way to run this script today, and it stays true until SMTP is turned on.
+
 §10.3 calls this the legally sensitive flow. axe and the keyboard test in
 `e2e/tests/phase-10-a11y.spec.ts` prove the controls are reachable, labelled
 and operable — a signer completes the whole ceremony there with Tab, Enter and

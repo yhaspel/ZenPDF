@@ -21,7 +21,13 @@ off — and there is no undo for that.
 
 ## Oversized accounts — the report
 
+Local / compose:
+
     docker compose -f infra/docker-compose.yml exec api python manage.py oversized_accounts --over 80
+
+On Railway (production) *(added 2026-08-22 — the command above is compose-only, and production has no `docker compose`)*:
+
+    railway run python manage.py oversized_accounts --over 80
 
 Lists accounts using more than the given percentage of their tier quota,
 largest first, with what they use, what they are allowed, and when they last
@@ -37,4 +43,4 @@ than housekeeping:
 - **Move to trash** (documents): soft delete, recoverable for
   `TRASH_RETENTION_DAYS`.
 
-Admin itself is IP-gated in production (§17).
+> **⚠ Neither action is reachable in production today** *(corrected 2026-08-22)*. This section ended "Admin itself is IP-gated in production (§17)", which describes a configuration that was never applied. **Admin is OFF in production: `/admin/` answers 404** (verified live 2026-08-10 and again 08-21). The gate denies when unconfigured, which is the safe default and deliberate — but it means **ban and move-to-trash cannot be performed at all** until the owner sets `ADMIN_ENABLED=true`, `ADMIN_URL_PATH` and a real `ADMIN_IP_ALLOWLIST` (an empty allowlist denies). Both are launch-checklist items. Until then, moderation in production is: change the variables, or nothing.

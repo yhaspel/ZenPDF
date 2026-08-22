@@ -32,11 +32,16 @@ owner-side account view.
         pages, backend `ALLOWED_HOSTS`/`CSRF_TRUSTED_ORIGINS`/CORS;
       - verify the property in Search Console, submit the sitemap, and
         give it crawl time **before** applying.
-- [ ] **Substantive public content reachable by a crawler.** Already shipped:
+- [x] **Substantive public content reachable by a crawler.** Already shipped:
       the landing page, 24 tool pages, `/about`, `/legal/privacy`,
       `/legal/terms`, `/legal/esign-disclosure`. All are prerendered and listed
       in `sitemap.xml`; `robots.txt` allows them and disallows `/app/`, `/s/`
-      and `/api/`.
+      and `/api/`. **✔ Verified live 2026-08-21** *(ticked 2026-08-22 — it was
+      done and unticked)*: `npm run build` prerenders **29 static routes**,
+      `verify:prerender` confirms 24 tool pages each with a unique title/H1,
+      FAQ + SoftwareApplication JSON-LD and a canonical, and production's
+      `sitemap.xml` serves **29 `<loc>` entries**. `robots.txt` on the live site
+      allows `/`, disallows `/app/`, `/s/` and `/api/`, and names the sitemap.
 - [ ] **Editorial layer against the "low value content" rejection** — the
       most common AdSense failure mode for tool sites, which read to the
       reviewer as thin templates (mostly UI, little crawlable prose). The
@@ -48,9 +53,11 @@ owner-side account view.
 - [ ] **Legal pages reviewed by a human.** They are honest drafts written
       against real system behaviour, not lawyer-reviewed text — this is the
       open GATE item in `PROGRESS.md`.
-- [ ] **`/ads.txt` answers at the site root.** It already does: nginx proxies
+- [x] **`/ads.txt` answers at the site root.** It already does: nginx proxies
       `/ads.txt` to the API, which renders it from `ADSENSE_CLIENT_ID`. Until
       that variable is set the file honestly says no seller is authorised yet.
+      **✔ Verified live 2026-08-21** *(ticked 2026-08-22)*: `/ads.txt` on
+      production renders the honest empty state rather than naming a seller.
 
 ## Applying
 
@@ -72,8 +79,14 @@ owner-side account view.
       one at a time.
 - [ ] `ADS_ENABLED=true`.
 - [ ] Confirm `/ads.txt` now names the publisher.
-- [ ] Add the ad domains to the CSP. The exact list is written down in
-      `frontend/nginx.conf` next to the policy; phase 10 owns turning CSP on.
+- [ ] Add the ad domains to the CSP. The exact list is written down next to the
+      policy in **both** nginx configs — and **production's is
+      `infra/railway/nginx.railway.conf`**, not `frontend/nginx.conf` (that one
+      is the compose copy; keep the two in step). *(Corrected 2026-08-22: this
+      said "phase 10 owns turning CSP on". **CSP is on.** It has been enforced
+      in production since 2026-08-08 and was verified in a real browser on
+      08-10 — full ads-off policy, zero violations — and again on 08-21. What
+      remains here is only adding the ad hosts when you turn ads on.)*
 
 ## Consent (EEA/UK/CH)
 
