@@ -8,6 +8,25 @@ ordered, with the exact command or prompt for each. Companion docs:
 `docs/10-launch-checklist.md` (the GATE), `development-plans/PROGRESS.md`
 (session log of this pass).
 
+## Update 2026-08-21 — read this before the rest of the file
+
+Twelve days of work happened after this handoff was written. Three things in it are no longer true, and the owner list has shrunk.
+
+- **The viewer defect is fixed and verified live.** The one defect this pass surfaced — the production workspace viewer never fetching `/content/`, so the page stayed blank — was root-caused on 2026-08-20 to **two** production-only blockers: the viewer library feature-detects the browser with an inline `<script>` that `script-src 'self'` refuses (`[useInlineScripts]="false"` now takes its external equivalent), and nginx served pdf.js's `.mjs` modules as `application/octet-stream`, which `nosniff` makes fatal for a module script (both configs pin the type). Shipped in PR #17 and **confirmed on the live site 2026-08-21**: both modules served `text/javascript`, `/content/` answered 200, and the canvas was measured non-uniform from a cold profile — the page drew.
+- **H2 and H3 are done** (2026-08-21). `@smoke` against production: 4 passed, 2 environmental (a shared-IP throttle and a Mailpit-only test — neither a deploy defect). `./infra/test.sh --e2e` on the Mac: 59/60 twice, then 63/63 after Phase 12. **H1 is the only one of the three still open**, and it still gates launch.
+- **"e2e never run" is out of date** — it has been run repeatedly since.
+
+**What actually remains for you** is the owner list from `docs/reviews/status-review-2026-08-21.md` §5.2, reproduced here so you do not have to open it:
+
+- **SMTP on or off for launch.** Multi-party signing is unreachable until it is on, and H1 cannot be exercised *in production* without it (locally it can).
+- **A custom root domain** (Phase 11 P1) → Cloudflare session, Railway custom domains + TXT, Search Console. Phase 11 is gated on this.
+- **Three legal reviews** — Privacy, Terms, and the e-sign disclosure — including the AdSense cookie-disclosure check. These are GATE rows.
+- **A Railway dashboard session:** `TSA_URL` (the docs disagree on whether it is set), the storage-volume backup schedule, `SENTRY_DSN`, the worker recycle drill, and **the restore drill** (needs a token — it has never been run).
+- **The certificate decision**, recorded in the checklist: stay self-signed for v1, or buy one.
+- **Five minutes with a viewer** (Acrobat/Preview) for annotations, filled forms, permissions and a sealed envelope; **ten minutes signing from a real phone**; the **twenty-minute screen-reader script** (`docs/10-accessibility-screen-reader-script.md`).
+- **Skim the twelve guides** before any AdSense submission, and decide the ad-revenue sanity check.
+- **Tag `v1.0.0`** only when `docs/10-launch-checklist.md` has no unticked box.
+
 ## Verified today, with evidence
 
 - **Chrome smoke pass on production (your real browser).** Landing renders

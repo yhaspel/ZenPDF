@@ -5,7 +5,27 @@
 Users report "processing" that never ends. `/api/health/` shows
 `checks.workers: false`, or `queues.default` / `queues.heavy` climbing.
 
-## Check, in this order
+## On Railway (production)
+
+*(Added 2026-08-22 — production is Railway. The compose commands below are the local stack.)*
+
+```bash
+curl -s https://zenpdf.up.railway.app/api/health/ | jq '{workers: .checks.workers, age: .worker_heartbeat_age_seconds, queues}'
+railway logs -s worker-heavy    # and worker-default, worker-render
+```
+
+There are **three worker services** — `worker-default`, `worker-heavy` (OCR, conversion, compare, redact, compress) and `worker-render` — plus `beat`. Read the health payload first: which queue is climbing tells you which service to look at, and a `workers: false` with all three services ● Online is a Redis problem, not a worker problem.
+
+**To restart:** use **Restart** on the service in the dashboard (or redeploy its current deployment). Restart the one whose queue is stuck; restarting all three at once loses whatever each was mid-way through, and a job killed mid-flight is `reap_stalled_jobs`' problem afterwards.
+
+Two Railway-specific things worth knowing before you restart anything:
+
+- **The workers carry `--max-memory-per-child 1500000`**, so a worker child recycling itself after a large document is **normal** and is not the incident. A restart loop in the logs at that boundary is the guard working.
+- **`beat` must be exactly one instance.** If queue depth is fine but every sweep is running twice, check that `beat` was not scaled to 2 — that is a different incident with the same symptom.
+
+Everything below — the queued/started reasoning, purging, and what *not* to do — applies unchanged; only the commands differ.
+
+## Check, in this order — local / compose
 
 ```bash
 curl -s https://<host>/api/health/ | jq '{workers: .checks.workers, age: .worker_heartbeat_age_seconds, queues}'

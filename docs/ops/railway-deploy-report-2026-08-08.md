@@ -1,3 +1,5 @@
+> **Executed 2026-08-08 — historical.** This is the evidence log of the deploy, and it stays as written. Two things have moved since: **`NUM_PROXIES` measured 3** (recorded in §3 here, and now in `01-architecture.md` §19), and **auto-deploy from `main` has been live since 2026-08-10**, so the "deployed tree" line below is a snapshot of that day rather than a standing fact. §8's open list has been ticked in place. Current state: [railway.md](railway.md).
+
 # ZenPDF → Railway — execution report
 
 **Executed:** 2026-08-08, by a Claude Cowork cloud session following
@@ -156,10 +158,9 @@ config stays clean.
 **Blocking:** H1 — the production signing certificate has never actually sealed a
 document. See the handoff.
 
-**Not blocking:** H2 (e2e smoke), H3 (`infra/test.sh --e2e` pre-ship gate), SMTP,
-correcting `docs/ops/railway.md` gotcha 4 to `NUM_PROXIES=3`, custom domain,
-AdSense, Sentry, admin, AATL cert, GitHub auto-deploys, first restore drill, and
-the `v1.0.0` tag.
+**Not blocking:** ~~H2 (e2e smoke)~~ ✅ **done 2026-08-21** (4 passed, 2 environmental — a shared-IP throttle and a Mailpit-only test); ~~H3 (`infra/test.sh --e2e` pre-ship gate)~~ ✅ **done 2026-08-21** (59/60 twice, then 63/63 after Phase 12); SMTP *(still off — owner decision)*; ~~correcting `docs/ops/railway.md` gotcha 4 to `NUM_PROXIES=3`~~ ✅ **done** — `railway.md` says 3, and `01-architecture.md` §19 now lists the variable with all three topologies; custom domain *(open — Phase 11 P1, owner)*; AdSense *(open, owner)*; Sentry *(open, owner)*; admin *(deliberately off in production)*; AATL cert *(open — the certificate decision, owner)*; ~~GitHub auto-deploys~~ ✅ **done 2026-08-10** — every push to `main` deploys; first restore drill *(open — never run; needs a Railway token)*; and the `v1.0.0` tag *(open — gated on the launch checklist)*.
+
+*(Ticked in place 2026-08-22 from the 2026-08-21 status review. H1 above is still blocking and still the only one.)*
 
 **Accepted risks confirmed unchanged:** R4 (Mailpit-dependent specs will fail
 against prod), R5 (Gmail SMTP limits — moot while off), R7 (the pre-ship gate did

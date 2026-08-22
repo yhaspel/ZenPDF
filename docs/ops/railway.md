@@ -62,15 +62,17 @@ query, never `me`.
 | Railway service | Start command | Notes |
 |---|---|---|
 | `api` | `gunicorn config.wsgi --bind [::]:$PORT --workers 4 --timeout 120` | Private only — nginx reaches it over the private network. Run migrations on deploy (below). **`--timeout`**: the default 30 s kills a large account's data export mid-build and the user gets a 502. **A fixed worker count, not `$((2 * $(nproc) + 1))`**: on Railway Metal `nproc` reports the *host's* cores, so the formula asks for dozens of gunicorn workers on a container sized for a handful and the service OOMs. |
-| `worker-default` | `celery -A config worker -Q default -c 2 --time-limit 300 --soft-time-limit 240` | Cheap page ops; 60 s is not enough for a large merge. |
-| `worker-heavy` | `celery -A config worker -Q heavy -c 1 --time-limit 900 --soft-time-limit 600 --max-tasks-per-child 20` | OCR and conversion. `--max-tasks-per-child` recycles the process, which is what bounds a slow memory leak in a C parser. |
-| `worker-render` | `celery -A config worker -Q render -c 2 --time-limit 300` | Thumbnails; neither cheap nor user-visible, so it gets its own lane. |
+| `worker-default` | `celery -A config worker -Q default -c 2 --max-memory-per-child 1500000 --time-limit 300 --soft-time-limit 240` | Cheap page ops; 60 s is not enough for a large merge. |
+| `worker-heavy` | `celery -A config worker -Q heavy -c 1 --max-memory-per-child 1500000 --time-limit 900 --soft-time-limit 600 --max-tasks-per-child 20` | OCR and conversion. `--max-tasks-per-child` recycles the process, which is what bounds a slow memory leak in a C parser. |
+| `worker-render` | `celery -A config worker -Q render -c 2 --max-memory-per-child 1500000 --time-limit 300 --soft-time-limit 240` | Thumbnails; neither cheap nor user-visible, so it gets its own lane. |
+
+*(Worker commands corrected 2026-08-22: all three omitted **`--max-memory-per-child 1500000`**, which every deployed worker actually carries — see `railway-deploy-plan.md` §"Per-service values" and the deploy report. It is a 1.5 GB ceiling per child, after which Celery recycles it; without it a single 300-page OCR can take a container down. It also means **a child recycling after a large document is normal**, which matters when reading logs during an incident. Each real start command is additionally wrapped to decode the certificate first: `mkdir -p /tmp/certs && printf %s "$SIGNING_CERT_B64" | base64 -d > /tmp/certs/zenpdf.p12 && exec …`.)*
 | `beat` | `celery -A config beat -s /tmp/celerybeat-schedule` | **Exactly one instance.** Two beats means two of every sweep. |
 | `web` | nginx image built from `infra/railway/web.Dockerfile` | Serves the SPA, proxies `/api` and `/ads.txt`. Config is `infra/railway/nginx.railway.conf`. |
 | `gotenberg` | `gotenberg/gotenberg:8` with the two hardening flags from `infra/docker-compose.prod.yml` | Private; never expose it. |
 | Postgres | Railway plugin | Managed is the right call here. |
 | Redis | Railway plugin | Broker **and** cache — the throttles, the captcha pass and the worker heartbeat live in the cache. |
-| Storage | External S3-compatible (Cloudflare R2, Backblaze B2, AWS S3) | Railway has no object storage. SeaweedFS on a volume works but you own the backups. |
+| Storage | **SeaweedFS 3.97 on a 50 GB Railway volume** — this is what production runs | *Corrected 2026-08-22: this row read "External S3-compatible (R2, B2, S3) … SeaweedFS on a volume works but you own the backups", describing the option that was **not** taken as though it were the state. External S3 remains a reasonable future migration; it is not the current state.* **You own the backups** — that half was right and is now load-bearing: backups are **daily volume snapshots**, and there is no bucket to `aws s3 sync`. 50 GB is a real ceiling, not elastic. See [storage-full.md](storage-full.md) and [restore-drill.md](restore-drill.md). |
 
 ## Variables
 
@@ -78,7 +80,11 @@ Everything in `infra/.env.prod.example`, translated to Railway variables, plus:
 
 ```
 DJANGO_SETTINGS_MODULE=config.settings.prod
-ALLOWED_HOSTS=<your-domain>,<service>.up.railway.app
+ALLOWED_HOSTS=<your-domain>,<service>.up.railway.app,healthcheck.railway.app
+#   ^ healthcheck.railway.app is REQUIRED and was missing from this line until
+#     2026-08-22. Railway's platform probe sends that Host header; without it
+#     Django answers 400 DisallowedHost, the healthcheck never goes green, and
+#     the deploy is rolled back for a reason that looks nothing like the cause.
 CSRF_TRUSTED_ORIGINS=https://<your-domain>
 FRONTEND_BASE_URL=https://<your-domain>
 API_BASE_URL=https://<your-domain>

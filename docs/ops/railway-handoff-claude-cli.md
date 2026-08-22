@@ -12,6 +12,12 @@ the full local stack (docker, Mailpit, a real network) exists.
 
 Do **H1 first** — it is the only one that gates launch.
 
+> **Status, 2026-08-22 — two of the three are done.**
+>
+> - **H1 — OPEN, and still the only one that gates launch.** The production certificate has never sealed a document. The prompt in §H1 below is kept **verbatim** because it is what `docs/reviews/handoffs/handoff-to-cli-h1-production-seal-proof.md` reuses; run that.
+> - **H2 — ✅ done 2026-08-21.** `@smoke` against production: **4 passed, 2 environmental.** `phase-8:91` failed inside the suite on production's real rate limiter (the whole suite runs from one IP) and **passes standalone**; `phase-8:135` polls Mailpit on `localhost:8025`, which production has no equivalent of, so it is structurally local-only. Neither is a defect in the deploy. Recorded in `development-plans/PROGRESS.md`, session log **2026-08-21 "Deployed, and verified in production. The viewer draws."**
+> - **H3 — ✅ done 2026-08-21.** `./infra/test.sh --e2e` on the Mac: **59/60 twice** that morning (a different test failing each run, both green in isolation), and **63/63** the same night on the Phase-12 gate. Recorded in PROGRESS's session log **2026-08-21 "The UI audit patch landed"** and **"(night) — The phase-12 local gate"**.
+
 ---
 
 ## H1 — Verify the production signing certificate actually seals (BLOCKING)
@@ -119,13 +125,18 @@ green) — but its **e2e suite had never been run**, and per H2 it still hasn't.
 > **Prompt to paste:**
 >
 > Run the full pre-ship gate for ZenPDF on this machine: `infra/test.sh --e2e`.
-> The tree currently deployed to production is commit `d315b83` on `main` plus
-> two uncommitted files, and the five additive Railway files under
-> `infra/railway/` (+ root `.railwayignore`) that the deploy session added.
+> The tree currently deployed to production is **`main` via auto-deploy** —
+> every push to `main` ships, and has since 2026-08-10.
+> *(Corrected 2026-08-22: this said "commit `d315b83` on `main` plus two
+> uncommitted files, and the five additive Railway files under `infra/railway/`
+> (+ root `.railwayignore`) that the deploy session added". That was true on
+> 2026-08-10, before auto-deploy; those files are long since committed. Do not
+> check the tree against `d315b83` — check `git log origin/main -1` against
+> what production serves.)*
 >
 > Report the results, and separately confirm the working tree still matches what
-> is live — `git status --porcelain` should show only the Railway files and the
-> two files that were already dirty at deploy time. If anything else has drifted,
+> is live — with auto-deploy, `git status --porcelain` should be **clean** and
+> `origin/main` should be what production serves. If anything has drifted,
 > production is running something that is not in git and I need to know.
 
 ---

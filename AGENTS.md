@@ -1,6 +1,6 @@
 # ZenPDF — agent instructions (repo-local)
 
-Monorepo: `backend/` (Django 6), `frontend/` (Angular 22 + Tailwind CSS v4, signals, 3-layer core → abstraction → features, OnPush), `e2e/` (Playwright), `infra/` (full local stack via `infra/up.sh`), `development-plans/` (plan docs — `01-architecture.md` is normative; amend it when architecture changes), `PROGRESS.md` (canonical execution tracker), `docs/reviews/` (QA findings, status reviews and the CLI handoff prompts under `docs/reviews/handoffs/`).
+Monorepo: `backend/` (Django 6), `frontend/` (Angular 22 + Tailwind CSS v4, signals, 3-layer core → abstraction → features, OnPush), `e2e/` (Playwright), `infra/` (full local stack via `infra/up.sh`), `development-plans/` (plan docs — `01-architecture.md` is normative; amend it when architecture changes), `development-plans/PROGRESS.md` (canonical execution tracker — it is **not** at the repo root), `docs/reviews/` (QA findings, status reviews and the CLI handoff prompts under `docs/reviews/handoffs/`, with `TRACKING.md` as their board), `docs/ops/` (runbooks; production is Railway — `docs/ops/railway.md`).
 
 Local env quirks: `.env` overrides `API_PORT=8010`, `DB_PORT=15432`; Angular 22 needs Node ≥ 22.22.3. SSR is build-time prerender (`outputMode: static`) — verify with `npm run verify:prerender`.
 
@@ -10,7 +10,7 @@ Local env quirks: `.env` overrides `API_PORT=8010`, `DB_PORT=15432`; Angular 22 
 
 **The rule:** before you edit, add, remove, restyle, or rearrange ANY user-visible surface — Angular components, templates, styles, `index.html`, favicon/OG assets, error pages, UX copy, user-facing emails — read `docs/design/design-instructions.md` first and conform to it. This applies to one-line tweaks as much as to new screens.
 
-*Bootstrap note:* if `docs/design/design-instructions.md` does not exist yet, the redesign hasn't landed. Do not invent visual direction — keep changes minimal and consistent with current styles, and see `docs/design/claude-design-prompt.md` for where the design is headed. Once the file lands, it is law and this note is obsolete.
+The contract landed on 2026-08-06 and has been amended eight times since; its **Amendment log** (§11) is where a new amendment gets recorded, and the grounding paragraph at the top is where a new sanctioned addition gets listed. Both, in the same change. *(The bootstrap note that stood here until 2026-08-22 told you what to do if the contract did not exist yet, and pointed at `docs/design/claude-design-prompt.md`, which does not exist. The contract does. It is law.)*
 
 Non-negotiables (hold even where the contract is silent):
 
