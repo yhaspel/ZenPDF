@@ -29,6 +29,10 @@ backend/config/settings/test.py and base.py (SIGNING_CERT_PATH).
     curl -s http://localhost:8010/api/health/    # .env overrides API_PORT=8010; expect every check true
     git switch -c fix/e2e-gate-hardening
 
+TRACKING: in docs/reviews/handoffs/TRACKING.md set row 2 to
+`🔵 in progress — `fix/e2e-gate-hardening`, <today>` (Status column) and put the branch name in
+the next column; include that edit in your FIRST commit on the branch. Touch no other row.
+
 Open a PROGRESS.md session-log entry now ("2026-MM-DD — E2E and gate hardening") and
 set the five queue rows to "🔵 in progress (this branch)" in their Resolved column.
 
@@ -187,8 +191,15 @@ the emitters), the skip guard and the `@quarantine` semantics; amend `01-archite
     git mv docs/reviews/handoffs/handoff-to-cli-e2e-gate-hardening.md \
            docs/archived/$(date +%F)-handoff-to-cli-e2e-gate-hardening.md
 
-prepend "**Executed <date> — see PROGRESS.md. Historical.**", and mark row 2 done in
-docs/reviews/handoffs/README.md.
+prepend "**Executed <date> — see PROGRESS.md. Historical.**".
+
+TRACKING: after the merge and the `git pull --ff-only` below, set row 2 of
+docs/reviews/handoffs/TRACKING.md to `✅ merged — PR #<n> (<merge sha>), <date>, archived at
+docs/archived/<date>-handoff-to-cli-e2e-gate-hardening.md`, fill the PR/merge column, and put the PROGRESS anchor
+(your session-log heading and the queue rows you closed) in the Evidence column. Commit that
+one edit directly on `main` as `docs(tracking): prompt 2 merged` and push — docs only, no
+deploy, the same way `f34800f` recorded Phase 12. This is the last commit of the run — do it
+before you report. (The README carries no status; the board does.)
 
 ## 10. Ship
 

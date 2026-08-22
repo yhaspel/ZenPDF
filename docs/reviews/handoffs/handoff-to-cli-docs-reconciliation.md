@@ -37,6 +37,14 @@ this machine unless you started it: move it aside the same way) — stop and tel
     git status            # only docs/reviews/** paths staged
     git commit -m "docs(reviews): status review revision 2 after phase 12, revised CLI handoff prompts, the phase-12 production audit"
 
+TRACKING: in docs/reviews/handoffs/TRACKING.md set row 1 to
+`🔵 in progress — `docs/reconcile-2026-08-21`, <today>` (Status column) and put the branch
+name in the next column; amend it into that first commit (`git commit --amend --no-edit`
+after `git add`). Touch no other row. Also add, under PROGRESS.md's "Human review queue"
+heading, one line: "Handoff programme (the nine CLI prompts from the 2026-08-21 status
+review) is tracked in `docs/reviews/handoffs/TRACKING.md`; PROGRESS stays canonical for
+phase status and evidence."
+
 Do NOT touch `docs/archived/2026-08-21-followups.patch` — its four `docs/review/`
 strings are historical.
 
@@ -230,8 +238,15 @@ need a browser check — say so in your PR.
            docs/archived/$(date +%F)-handoff-to-cli-docs-reconciliation.md
 
 Prepend "**Executed <date> — see PROGRESS.md session log. Historical.**" to the archived
-copy, and update the table in docs/reviews/handoffs/README.md (row 1 → "done <date>,
-archived").
+copy.
+
+TRACKING: after the merge and the `git pull --ff-only` below, set row 1 of
+docs/reviews/handoffs/TRACKING.md to `✅ merged — PR #<n> (<merge sha>), <date>, archived at
+docs/archived/<date>-handoff-to-cli-docs-reconciliation.md`, fill the PR/merge column, and put the PROGRESS anchor
+(your session-log heading and the queue rows you closed) in the Evidence column. Commit that
+one edit directly on `main` as `docs(tracking): prompt 1 merged` and push — docs only, no
+deploy, the same way `f34800f` recorded Phase 12. This is the last commit of the run — do it
+before you report. (The README carries no status; the board does.)
 
 ## 9. Ship
 

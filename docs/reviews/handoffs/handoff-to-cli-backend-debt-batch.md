@@ -27,6 +27,10 @@ infra/test.sh (`--pg`), frontend/nginx.conf (:85–91), infra/railway/nginx.rail
     ./infra/up.sh && docker compose -f infra/docker-compose.yml restart worker-default worker-heavy worker-render beat
     git switch -c fix/backend-debt-2026-08
 
+TRACKING: in docs/reviews/handoffs/TRACKING.md set row 4 to
+`🔵 in progress — `fix/backend-debt-2026-08`, <today>` (Status column) and put the branch name in
+the next column; include that edit in your FIRST commit on the branch. Touch no other row.
+
 PROGRESS session-log entry opened; the rows set to 🔵.
 
 ## 1. `record_password_failure` cannot lose a count
@@ -168,7 +172,15 @@ image); §9/§15/§19 amended in `01-architecture.md`; OpenAPI clean.
 
     git mv docs/reviews/handoffs/handoff-to-cli-backend-debt-batch.md docs/archived/$(date +%F)-handoff-to-cli-backend-debt-batch.md
 
-prepend the "Executed <date>" banner; mark row 4 done in docs/reviews/handoffs/README.md.
+prepend the "Executed <date>" banner.
+
+TRACKING: after the merge and the `git pull --ff-only` below, set row 4 of
+docs/reviews/handoffs/TRACKING.md to `✅ merged — PR #<n> (<merge sha>), <date>, archived at
+docs/archived/<date>-handoff-to-cli-backend-debt-batch.md`, fill the PR/merge column, and put the PROGRESS anchor
+(your session-log heading and the queue rows you closed) in the Evidence column. Commit that
+one edit directly on `main` as `docs(tracking): prompt 4 merged` and push — docs only, no
+deploy, the same way `f34800f` recorded Phase 12. This is the last commit of the run — do it
+before you report. (The README carries no status; the board does.)
 
 Commit in chunks (`fix(core): …`, `feat(esign): …`, `feat(core): usage_recompute`,
 `build(railway): …`, `test: …`, `docs: …`); push;

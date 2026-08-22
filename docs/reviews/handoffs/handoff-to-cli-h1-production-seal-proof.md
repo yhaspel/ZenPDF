@@ -31,6 +31,10 @@ a PR body, a screenshot or a log you commit).
     ./infra/up.sh && docker compose -f infra/docker-compose.yml restart worker-default worker-heavy worker-render beat
     git switch -c docs/h1-seal-proof
 
+TRACKING: in docs/reviews/handoffs/TRACKING.md set row 9 to
+`🔵 in progress — `docs/h1-seal-proof`, <today>` (Status column) and put the branch name in
+the next column; include that edit in your FIRST commit on the branch. Touch no other row.
+
 PROGRESS session-log entry "H1 — production seal proof"; the GATE row → 🔵.
 
 ## 1. Step A — the engine seals with the production p12
@@ -101,8 +105,15 @@ verifiable and write the exact dashboard check into docs/ops/launch-handoff-owne
 
     git mv docs/reviews/handoffs/handoff-to-cli-h1-production-seal-proof.md docs/archived/$(date +%F)-handoff-to-cli-h1-production-seal-proof.md
 
-prepend the "Executed <date> — result: <sealed / failed at step X>" banner; mark row 9
-in docs/reviews/handoffs/README.md.
+prepend the "Executed <date> — result: <sealed / failed at step X>" banner.
+
+TRACKING: after the merge and the `git pull --ff-only` below, set row 9 of
+docs/reviews/handoffs/TRACKING.md to `✅ merged — PR #<n> (<merge sha>), <date>, archived at
+docs/archived/<date>-handoff-to-cli-h1-production-seal-proof.md`, fill the PR/merge column, and put the PROGRESS anchor
+(your session-log heading and the queue rows you closed) in the Evidence column. Commit that
+one edit directly on `main` as `docs(tracking): prompt 9 merged` and push — docs only, no
+deploy, the same way `f34800f` recorded Phase 12. This is the last commit of the run — do it
+before you report. (The README carries no status; the board does.)
 
 ## 6. UI testing via the Chrome MCP tools
 
