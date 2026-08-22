@@ -29,22 +29,29 @@ export interface DrawnSample {
 }
 
 /**
- * 97 px between sampled rows, and prime on purpose.
+ * Enough distinct colours to stop counting.
  *
- * A stride that shares a factor with the page's own rhythm — line height, a
- * table rule, a ruled form — can step between the marks for a whole page and
- * report a uniform sample of a perfectly good render. A prime cannot stay in
- * step with anything for long.
+ * **There is no stride, and the reason is a defect this file's first version
+ * shipped with.** It walked rows at a 97 px stride — prime, so it could not
+ * stay in step with the page's own rhythm — and read every pixel within a
+ * sampled row. That reasoning is sound about *columns* and wrong about rows.
+ * The fixture page is four short lines near the top, and rows 0, 97, 194, 291
+ * step straight over all four.
  *
- * **Within** a sampled row every pixel is read. A grid coarse in both axes is
- * the version of this that looks more rigorous and is not: on a sparse page of
- * body text, 97 px between probes in *x* as well as *y* leaves a few hundred
- * of them that can plausibly all land on paper, and a test that passes or
- * fails on where the text happened to sit is worse than no test. Fifteen full
- * rows of a 1000 px page is ~15 000 probes, a few milliseconds, and it crosses
- * every line of text it passes through.
+ * It was caught by hand-sampling the deployed site: the canvas read as **one
+ * colour** while the screenshot plainly showed the page, and scanning every
+ * pixel found **173 colours with the darkest at y = 141**. The e2e run passed
+ * on the same site minutes earlier only because its canvas is a different
+ * height, so its rows happened to land on the text. A sampler that can miss a
+ * drawn page is exactly the defect this file exists to remove, and passing by
+ * luck is the same thing as failing.
+ *
+ * So every pixel is read, and the loop stops the moment the answer is not in
+ * doubt. `getImageData` copies the whole buffer either way; the loop is the
+ * cheap part, a drawn page costs a few thousand iterations, and only a blank
+ * one scans to the end — which is precisely the case worth spending on.
  */
-const STRIDE = 97;
+const ENOUGH_COLOURS = 64;
 
 /** Not a thumbnail, not a spinner: a real page raster is wider than this. */
 const MIN_WIDTH = 300;
@@ -82,38 +89,46 @@ async function assertDrawn(
   ).toBeGreaterThan(MIN_WIDTH);
   expect(
     last!.colours,
-    `${what} sampled ${last!.colours} distinct colour(s) — it is blank`,
+    `${what} sampled only ${last!.colours} distinct colour(s) — it is blank`,
   ).toBeGreaterThan(MIN_COLOURS);
   return last!;
 }
 
-/** Read back the largest canvas on the page. */
-async function sampleLargestCanvas(page: Page): Promise<DrawnSample | null> {
-  return page.evaluate(({ stride }) => {
+/**
+ * Read back the page canvases and return whichever has the most on it.
+ *
+ * Not "the largest": pdf.js keeps one canvas per rendered page and they are all
+ * the same size, so choosing by area really chooses whichever the DOM happens
+ * to list first — as likely the page scrolled off screen as the one in front of
+ * you. The question here is whether *a* page drew, so the answer is the best
+ * canvas, not the biggest one.
+ */
+async function sampleBestCanvas(page: Page): Promise<DrawnSample | null> {
+  return page.evaluate(({ enough }) => {
     const canvases = [...document.querySelectorAll('canvas')].filter(
       (c) => c.width > 0 && c.height > 0,
     );
     if (!canvases.length) return null;
-    const canvas = canvases.reduce((a, b) => (b.width * b.height > a.width * a.height ? b : a));
-    const ctx = canvas.getContext('2d', { willReadFrequently: true });
-    if (!ctx) return null;
-    const { width, height } = canvas;
-    const data = ctx.getImageData(0, 0, width, height).data;
-    const seen = new Set<number>();
-    for (let y = 0; y < height; y += stride) {
-      const row = y * width * 4;
-      for (let x = 0; x < width; x += 1) {
-        const i = row + x * 4;
+    let best: { width: number; height: number; colours: number } | null = null;
+    for (const canvas of canvases) {
+      const ctx = canvas.getContext('2d', { willReadFrequently: true });
+      if (!ctx) continue;
+      const { width, height } = canvas;
+      const data = ctx.getImageData(0, 0, width, height).data;
+      const seen = new Set<number>();
+      for (let i = 0; i < data.length && seen.size < enough; i += 4) {
         seen.add((data[i] << 16) | (data[i + 1] << 8) | data[i + 2]);
       }
+      if (!best || seen.size > best.colours) best = { width, height, colours: seen.size };
+      if (best.colours >= enough) break;
     }
-    return { width, height, colours: seen.size };
-  }, { stride: STRIDE });
+    return best;
+  }, { enough: ENOUGH_COLOURS });
 }
 
 /** Draw the overlay's page raster onto an offscreen canvas and read it back. */
 async function sampleOverlayRaster(page: Page): Promise<DrawnSample | null> {
-  return page.evaluate(async ({ stride }) => {
+  return page.evaluate(async ({ enough }) => {
     const image = document.querySelector<HTMLImageElement>('[data-test=overlay-drew]');
     if (!image) return null;
     await image.decode().catch(() => undefined);
@@ -128,15 +143,11 @@ async function sampleOverlayRaster(page: Page): Promise<DrawnSample | null> {
     ctx.drawImage(image, 0, 0);
     const data = ctx.getImageData(0, 0, width, height).data;
     const seen = new Set<number>();
-    for (let y = 0; y < height; y += stride) {
-      const row = y * width * 4;
-      for (let x = 0; x < width; x += 1) {
-        const i = row + x * 4;
-        seen.add((data[i] << 16) | (data[i + 1] << 8) | data[i + 2]);
-      }
+    for (let i = 0; i < data.length && seen.size < enough; i += 4) {
+      seen.add((data[i] << 16) | (data[i + 1] << 8) | data[i + 2]);
     }
     return { width, height, colours: seen.size };
-  }, { stride: STRIDE });
+  }, { enough: ENOUGH_COLOURS });
 }
 
 /**
@@ -148,7 +159,7 @@ async function sampleOverlayRaster(page: Page): Promise<DrawnSample | null> {
  */
 export async function expectPageDrew(page: Page): Promise<DrawnSample> {
   await expect(page.locator('[data-test=viewer-drew]')).toBeVisible({ timeout: 60_000 });
-  return assertDrawn(() => sampleLargestCanvas(page), 'the viewer canvas');
+  return assertDrawn(() => sampleBestCanvas(page), 'the viewer canvas');
 }
 
 /**
