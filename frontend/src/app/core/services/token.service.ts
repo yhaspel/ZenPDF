@@ -1,7 +1,10 @@
 import { Injectable, signal } from '@angular/core';
 
+import { inBrowser, usableLocalStorage } from '../browser-storage';
+
 @Injectable({ providedIn: 'root' })
 export class TokenService {
+  private readonly isBrowser = inBrowser();
   private readonly ACCESS = 'zen_access';
   private readonly REFRESH = 'zen_refresh';
 
@@ -27,15 +30,11 @@ export class TokenService {
 
   /**
    * SSR-safe accessor: the landing and tool pages are prerendered in Node,
-   * where `localStorage` does not exist. Reading it unguarded throws during
-   * prerendering and takes the whole page down.
+   * where there is no usable `localStorage` — see `core/browser-storage.ts` for
+   * why "no usable one" is not the same question as "no global called that".
    */
   private get storage(): Storage | null {
-    try {
-      return typeof localStorage === 'undefined' ? null : localStorage;
-    } catch {
-      return null;
-    }
+    return usableLocalStorage(this.isBrowser);
   }
 
   constructor() {

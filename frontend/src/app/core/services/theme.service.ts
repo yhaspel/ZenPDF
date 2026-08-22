@@ -1,6 +1,8 @@
 import { DOCUMENT } from '@angular/common';
 import { Injectable, computed, effect, inject, signal } from '@angular/core';
 
+import { inBrowser, usableLocalStorage } from '../browser-storage';
+
 export type ThemePreference = 'light' | 'dark' | 'system';
 
 const STORAGE_KEY = 'zenpdf.theme';
@@ -22,6 +24,7 @@ const DARK_THEME_COLOR = '#171310';
 @Injectable({ providedIn: 'root' })
 export class ThemeService {
   private readonly document = inject(DOCUMENT);
+  private readonly isBrowser = inBrowser();
 
   readonly preference = signal<ThemePreference>('system');
   private readonly systemDark = signal(false);
@@ -34,11 +37,7 @@ export class ThemeService {
   });
 
   private get storage(): Storage | null {
-    try {
-      return typeof localStorage === 'undefined' ? null : localStorage;
-    } catch {
-      return null;
-    }
+    return usableLocalStorage(this.isBrowser);
   }
 
   constructor() {
