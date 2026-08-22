@@ -1134,7 +1134,7 @@ Handoff programme (the nine CLI prompts from the 2026-08-21 status review) is tr
 
 **2026-08-22 — Record reconciliation: making the docs say what the code does**
 
-Branch `docs/reconcile-2026-08-21`, executed from `docs/reviews/handoffs/handoff-to-cli-docs-reconciliation.md` (prompt 1 of the nine on `docs/reviews/handoffs/TRACKING.md`). **No application code, tests, templates, styles or infra were touched** — the diff is markdown under `development-plans/`, `docs/` and `AGENTS.md`. Nothing here deploys: `docs/**` is outside every Railway watch pattern.
+Branch `docs/reconcile-2026-08-21`, executed from prompt 1 of the nine on `docs/reviews/handoffs/TRACKING.md` — archived on completion at `docs/archived/2026-08-22-handoff-to-cli-docs-reconciliation.md`. **No application code, tests, templates, styles or infra were touched** — the diff is markdown under `development-plans/`, `docs/` and `AGENTS.md`. Nothing here deploys: `docs/**` is outside every Railway watch pattern.
 
 The spec is `docs/reviews/status-review-2026-08-21.md` (revision 2): §3.1 and §3.2 list every statement changed, §6 catalogues every document. The rule followed throughout was **banners, not deletions** — a statement that was true when it was written keeps its text and gains a dated correction beside it, because a record that quietly rewrites its own history teaches nobody why it was wrong.
 
