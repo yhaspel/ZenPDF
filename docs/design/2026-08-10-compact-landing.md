@@ -75,4 +75,4 @@ If an h1 inside `<header>` feels wrong (it is valid and prerendered, but it is u
 
 ## Mockup
 
-`compact-landing-mockup.html` — toggle **Today / A / B**, light/dark, and a 780 px fold guide. Real tokens, real component CSS, real icons.
+**The implementation is the reference.** *(Corrected 2026-08-22: this pointed at `compact-landing-mockup.html`, which does not exist in `docs/design/mockups/` and — judging by the description of a Today/A/B toggle — was a working comparison artefact from the proposal session that was never committed.)* This proposal shipped, so the live landing page **is** the mockup: see `frontend/src/app/features/landing/` and `https://zenpdf.up.railway.app/`. The two older landing mockups, `mockups/01a`/`01b-landing-desktop.html` and `10-landing-mobile-light.html`, predate this change and are superseded by it — where they disagree with the compact landing, this document wins, and where this document disagrees with `design-instructions.md`, the contract wins.

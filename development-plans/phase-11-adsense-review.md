@@ -25,10 +25,9 @@ proceed independently.
 > with an explicit protocol for rejections, and its terminal acceptance
 > criterion is external. Everything before the loop is fully in our control.
 
-> **⚠ This phase amends the design contract.** The contract currently
-> sanctions exactly two post-redesign additions (theme toggle, landing filter)
-> and pins the route set, the 24 tool slugs and the footer's five links
-> (`docs/design/design-instructions.md` grounding, §3 Footer, §10 Invariants).
+> **⚠ This phase amends the design contract.** *(Count corrected 2026-08-22 — this said "exactly two post-redesign additions", which the contract itself said and which stopped being true on 2026-08-20.)* The contract sanctions, as of 2026-08-22: the **theme toggle** and the **landing filter** (2026-08-06); **version-level Undo** and **annotate Undo/Redo** (2026-08-20); and Phase 12's additions (2026-08-21) — the **context menu**, **per-mode Undo/Redo in all six editing surfaces**, **Redo and Shortcuts on the workspace bar**, the **shortcuts sheet**, the **Areas / Placements / Fields rail lists**, **Copy/Duplicate on comment rows** and **Paste in the palette**. It also pins the route set, the 24 tool slugs and the footer's five links
+> (`docs/design/design-instructions.md` grounding, §3 Footer, §10 Invariants, and the Amendment log at the end of that file).
+> **Phase 11 adds `/contact` and `/guides` to that list** — and must add them to the Amendment log in the same change, which is what stops the grounding sentence ageing again.
 > Adding `/contact`, `/guides` and the guide routes is therefore a
 > **contract amendment, owner-sanctioned by commissioning this phase**, made
 > in the same changes as the implementation (gap rule) — never silently.

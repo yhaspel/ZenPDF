@@ -42,3 +42,8 @@ E2E: protect doc → reopen (password prompt) → unlock → redact all emails v
 ## Risks
 - Text-as-outlines/vector text escapes pattern redaction (undetectable by extraction) → documented limitation in UI ("pattern search finds *text*; scanned/outline content: use area redaction after OCR/visual review").
 - Password material in job params → sanitization scheme above; revisit with a proper secrets channel in backlog.
+
+---
+
+**Executed** (see PROGRESS.md §Phase 7). Known drifts between this work order and what shipped are recorded in PROGRESS's
+Decisions log; this file is the plan, not the record.

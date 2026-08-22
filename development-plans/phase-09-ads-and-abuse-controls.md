@@ -16,7 +16,7 @@ Depends on: Phase 8 (product is feature-complete enough to launch); tiered limit
 - Mechanics: AdSense script loaded lazily only when `ads.enabled && consent granted`; responsive units; reserved-height containers (no layout shift, CLS-safe); graceful collapse when unfilled or ad-blocked (never nag users about ad blockers in v1).
 - `ads.txt` served at site root (nginx location + dev static); publisher id from env.
 - **Public content build-out (dev work, this phase):** polished landing page (hero, tool grid, honest feature copy, SEO meta/OpenGraph, sitemap.xml, robots.txt) plus `/about` and per-tool marketing pages (static routes) — the content substance AdSense review requires and organic acquisition needs.
-- CSP additions for ad domains documented in `infra/docker/nginx.conf` comments (activated with the phase-10 CSP work).
+- CSP additions for ad domains documented in the nginx config's comments (activated with the phase-10 CSP work). *(Path corrected 2026-08-22: this named `infra/docker/nginx.conf`, which has never existed. As built, the ad hosts are written down beside the policy in **both** configs — `frontend/nginx.conf` for compose and `infra/railway/nginx.railway.conf`, which is the one production serves. The phase-10 CSP work is done: CSP has been enforced in production since 2026-08-08.)*
 
 ### Consent & privacy (launch-blocking prerequisites for ads)
 - **CMP:** Google's certified CMP ("Privacy & messaging" / Funding Choices) for EEA/UK/CH consent (TCF), wired to Consent Mode; non-personalized ads when consent declined. Region-aware display. (If AdSense onboarding stalls, ads stay dark — `ADS_ENABLED=false` is the shipped default; the product launches ad-ready, not ad-dependent.)
@@ -52,3 +52,8 @@ E2E: fresh signup → verify email via Mailpit → upload allowed; decline conse
 ## Risks
 - AdSense approval timing/policy friction → decoupled by default-off flag; product launch does not gate on ad network approval.
 - Consent complexity (regional) → certified CMP outsources the hard part; we only wire Consent Mode correctly.
+
+---
+
+**Executed** (see PROGRESS.md §Phase 9). Known drifts between this work order and what shipped are recorded in PROGRESS's
+Decisions log; this file is the plan, not the record.

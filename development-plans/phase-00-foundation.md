@@ -68,3 +68,8 @@ Backend: register→login→refresh→me flow; wrong-password/dupe-email; health
 
 - Dependency friction on Python 3.14 (fresh ecosystem): if any engine lib lacks 3.14 wheels, drop image to `python:3.13-slim` (both supported by Django 6.0) — record in PROGRESS.md Decisions log.
 - simplejwt × Django 6 (covered by 0.1.1 with LTS fallback).
+
+---
+
+**Executed** (see PROGRESS.md §Phase 0). Known drifts between this work order and what shipped are recorded in PROGRESS's
+Decisions log; this file is the plan, not the record.

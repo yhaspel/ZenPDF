@@ -102,7 +102,7 @@ Notably **guest-accessible**: all page ops, annotations, content editing, forms,
 | PDF → Word (docx) | P6 | pdf2docx |
 | PDF → images / text / Markdown / HTML | P6 | PyMuPDF + pymupdf4llm |
 | PDF/A export | P6 | OCRmyPDF `--output-type pdfa` |
-| Repair corrupted PDF | P6 | pikepdf (also auto-offered at upload, P1) |
+| Repair corrupted PDF | P6 | **PyMuPDF** (`engine/validate.py:80 repair_pdf` — opens with auto-repair and re-saves). *Corrected 2026-08-22: this said pikepdf, which is what **detects** the damage (`validate_pdf` probes with `pikepdf.open` and sets `needs_repair` when pikepdf fails where PyMuPDF succeeds) — the repair itself is PyMuPDF's.* Also auto-offered at upload, P1 |
 | Compare documents (text diff + visual) | P6 | differentiator; only iLovePDF has it among web suites |
 | PDF → Excel/PPT | BL | poor OSS fidelity; camelot-based table extraction as BL |
 | Email → PDF, EPUB, CAD/InDesign export | OUT | niche |
@@ -125,7 +125,7 @@ Notably **guest-accessible**: all page ops, annotations, content editing, forms,
 
 | Feature | Status | Notes |
 |---|---|---|
-| Saved signatures/initials: draw, type (fonts), upload | P8 | signature_pad |
+| Saved signatures/initials: draw, type (fonts), upload | P8 | **plain canvas — no `signature_pad`.** *Corrected 2026-08-22: the library was researched and never adopted; it is not in `frontend/package.json`. Drawing is pointer events on a `<canvas>` the app owns, which is also what let the ceremony meet the a11y and typed-signature requirements without fighting a third party.* |
 | Self-sign (place + flatten) | P8 | |
 | Sign requests: multi-recipient, roles (signer/approver/viewer/CC) | P8 | Documenso-class role model |
 | Sequential/parallel/mixed routing | P8 | order ints |

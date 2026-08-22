@@ -58,3 +58,8 @@ E2E (full loop, Mailpit-driven): create request (2 signers sequential + 1 cc) �
 - pyHanko is 0.x/beta → pin exact version; validation round-trip tests on every upgrade; its API is the de-facto standard regardless.
 - Deliverability of email in production (SPF/DKIM) → phase 10 prod checklist item; dev uses Mailpit.
 - Legal nuance: we implement SES + platform seal (Documenso/DocuSeal parity) and say exactly that in product copy — no QES/AES claims.
+
+---
+
+**Executed** (see PROGRESS.md §Phase 8). Known drifts between this work order and what shipped are recorded in PROGRESS's
+Decisions log; this file is the plan, not the record.

@@ -36,3 +36,8 @@ E2E: open form fixture → fill 4 field types in-browser → save → reload sho
 ## Risks
 - PDF.js forms layer ↔ our save cycle (viewer reload after version bump must not lose focus context) → save reloads doc; acceptable v1 friction, autosave-on-blur softens it.
 - Widget appearance streams (fonts in filled text) → PyMuPDF regenerates appearances on `update()`; golden pixel checks on two zoom levels.
+
+---
+
+**Executed** (see PROGRESS.md §Phase 5). Known drifts between this work order and what shipped are recorded in PROGRESS's
+Decisions log; this file is the plan, not the record.

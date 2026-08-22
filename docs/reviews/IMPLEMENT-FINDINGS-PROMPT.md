@@ -1,3 +1,5 @@
+> **Historical — findings implemented 2026-08-04** (PROGRESS §"Session log — QA findings"); **only M6 remains open** (Human review queue: DNS rebinding on the URL→PDF guard, a bounded and deliberate acceptance). **Do not run this prompt.** It was executed verbatim on 2026-08-04 and every task in it is done; a fresh session running it today would re-derive work that exists. It is kept because it records what was asked for, beside the report that asked.
+
 You are working autonomously in the **ZenPDF** repository (Django 6 + DRF + Celery/Redis + Postgres + S3 backend under `backend/`, Angular 22 frontend under `frontend/`, infra under `infra/`, Playwright e2e under `e2e/`). Your job is to implement a set of verified QA findings from a full code review, safely and completely, without regressing anything. Work through the tasks in order, committing after each one.
 
 ## Operating rules (read first)

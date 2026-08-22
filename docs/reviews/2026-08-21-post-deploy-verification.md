@@ -1,5 +1,15 @@
 # Audit — ZenPDF production — 2026-08-21, 09:20–11:05 UTC
 
+> ## Addendum — 2026-08-22
+>
+> **The report body below is left exactly as written.** Two of its statements were overtaken by events within hours of it being finished, and this block records that rather than editing them away — the report was accurate when it was made, and a reader needs to see both the finding and what happened next.
+>
+> **1. "The two fixes are not deployed" — superseded the same day.** The Scope-limits section (:339–341) and the handoff line say the pane-toolbar wrap and the `/organize-pdf` landing mode were verified only against a local build. **PR #19 merged 2026-08-21 at 14:49 +03:00 and auto-deployed**, and both fixes were then **verified on the live site the same day** (status review L9): `/organize-pdf` + upload lands on `/app/doc/<id>?mode=organize` with **3 page tiles, zero `ngx-extended-pdf-viewer` elements** and `aria-pressed=true` on Organize; and at a true 390 px viewport **with device emulation off**, `scrollWidth` / `visualViewport.width` / `innerWidth` all read **390 in all nine workspace modes** — Annotate included, which this report measured at 609. Production no longer overflows on a phone and no longer opens the reading view for "Organize pages".
+>
+> **2. Finding 3's mechanism was wrong, though its conclusion was right.** Finding 3 correctly concluded that `separate` extraction **is not broken in production** — extracting "2, 4" from a 5-page file really does return two documents. The mechanism it names for the e2e failure — "Playwright's `check()` not taking on that native radio" — is not what happened. Root-caused the same evening: **the local Celery workers had been running for ten days, since before `separate` shipped on 2026-08-19, and Celery does not hot-reload.** The client demonstrably sent `{"pages":[0,2],"as_new_document":true,"separate":true}` and got one document back because the worker executing it predated the feature. After `docker compose restart worker-default worker-heavy worker-render` the same flow returns two documents and `phase-2b:130` passes. **`check()` works fine** — all four ways of driving that radio set it. The spec was never wrong and should not be "fixed".
+>
+> The larger lesson is now its own open queue row: **the e2e suite tests whatever code the workers booted with**, so a long-lived local stack can produce a false *pass* as easily as a false failure.
+
 Independent verification of the UI-audit deploy (PRs #17, #18), and a full pass over the
 feature stack. Method: evidence from the live system only. Every claim below is labelled
 **Verified** (measured here), **Inferred** (read from code/config, not confirmed live), or

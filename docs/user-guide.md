@@ -8,10 +8,46 @@ else for signature.
 Files uploaded without an account are deleted within 24 hours. Trash is emptied
 after 30 days. Exports are kept for 24 hours.
 
+## Without an account: the limits, in numbers
+
+*(Added 2026-08-22 — these were enforced from the start and stated nowhere, so
+the first time you met one was when it stopped you. Checked against the running
+configuration; an account raises every row.)*
+
+| | Without an account | With a free account |
+|---|---|---|
+| Largest single file | **25 MB** | 100 MB |
+| Pages in one document | **300** | 2 000 |
+| Total storage | **200 MB** | 2 GB |
+| Jobs running at once | **1** | 3 |
+| OCR, conversion and compare | **5 an hour** | 40 an hour |
+| OCR pages | **50 a day** | 2 000 a month |
+| How long files are kept | **24 hours from your last visit, and 72 hours at the most** | until you delete them |
+
+The 24 hours **slides**: it restarts each time you come back, up to a hard
+ceiling of 72 hours from when the session began. Come back on the second day
+and your files are still there; leave it four days and they are not, whatever
+you do. Nothing warns you at the boundary, so treat anything you want to keep
+as something to download.
+
+Two things are account-only, and both for the same reason — they involve
+somebody else: **sending a document to another person for signature**, and a
+library that outlives the session. Signing something *yourself* does not.
+
 ## Pages
 
 **Merge, split, extract, delete, reorder, rotate, crop, scale, N-up, insert
 blank.** Lossless: pages are moved, never re-encoded, so nothing degrades.
+
+**Choosing pages** *(added 2026-08-22 — this shipped 2026-08-19 and the guide
+never mentioned it)*. Extract and Delete take a page selection on the tool page
+itself, before anything runs: type `1, 3, 5-8` in any order, and the order you
+type is the order you get — a selection can reorder as it extracts. Extract
+also offers a choice of result: **one PDF holding the selection**, or **a
+separate PDF per page**. Two mistakes are caught before the file is touched
+rather than after: asking for a page the document does not have (it tells you
+the real page count) and deleting every page.
+
 Crop is a *visual* crop — the content outside the box is hidden by the page
 box, not removed. Use redaction if the point is that nobody can recover it.
 
@@ -26,6 +62,22 @@ Highlight, underline, strike, notes, shapes, freehand, text boxes, stamps.
 These are real PDF annotations, so any viewer can see them and Acrobat can
 edit them. **Flatten** burns them into the page when you want them
 un-editable.
+
+**Text boxes** put your words on the page itself, at the size and colour you
+chose — you type them where they will appear, not into a sidebar, and clicking
+away commits them. Colour and opacity are remembered separately for
+highlighting and for ink, so text does not come out highlighter-yellow.
+
+**Undo** *(added 2026-08-22 to this guide; shipped 2026-08-20 and 08-21)*. There
+are two, and they are different things. **⌘Z inside a tool** (Annotate, Edit,
+Forms, Protect, Sign, and the signature-request builder each have their own,
+with visible Undo and Redo buttons) takes back what you have not saved yet —
+one step per action. **Undo in the top bar** goes back a whole saved version of
+the document, and pressing it twice goes back two; Redo walks forward again.
+Nothing is destroyed either way: every edit adds a version and the history keeps
+them all. Right-click anything you have placed for a menu — copy, cut,
+duplicate, delete — and arrow keys nudge it, Shift for bigger steps. **⌘/**
+lists every shortcut.
 
 ## Edit text and images
 
@@ -94,8 +146,13 @@ reports exactly what it removed.
 **Sign it yourself** — draw, type or upload a signature, place it, done. Works
 without an account.
 
-**Send it to other people** — needs an account with a confirmed email address,
-because every invitation is sent in your name. Recipients sign in the order you
+**Send it to other people** — **not yet enabled on the hosted service.** *(Added
+2026-08-22: outbound email is switched off in production, so no invitation can
+be sent and this half of signing is unreachable there today. Everything below
+describes how it works and is accurate; it becomes available when mail is turned
+on. Signing something yourself is unaffected and works now.)* It needs an
+account with a confirmed email address, because every invitation is sent in your
+name. Recipients sign in the order you
 set, get reminders, and can decline or report a request they did not expect.
 The finished document is sealed with a document signature and accompanied by a
 certificate listing every event with its timestamp, IP and user agent, chained

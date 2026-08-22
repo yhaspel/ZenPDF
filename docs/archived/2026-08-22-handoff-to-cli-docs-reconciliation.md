@@ -1,3 +1,5 @@
+**Executed 2026-08-22 — see PROGRESS.md session log "2026-08-22 — Record reconciliation: making the docs say what the code does". Historical.**
+
 # Handoff — Record reconciliation: make the docs say what the code does (2026-08-21, revision 2 after Phase 12)
 
 **For:** Claude CLI, run locally on the Mac in `~/Documents/Claude/Projects/ZenPDF`.

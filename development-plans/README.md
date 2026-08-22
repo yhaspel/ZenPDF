@@ -1,6 +1,8 @@
 # ZenPDF — Development Plan
 
-**Created:** 2026-07-19 · **Stack verified as of:** 2026-07-19 · **Amended:** 2026-07-31 (anonymous-first access) · **Status:** In implementation (Phases 0–2 complete)
+**Created:** 2026-07-19 · **Stack verified as of:** 2026-07-19 · **Amended:** 2026-07-31 (anonymous-first access), 2026-08-22 (status line + index reconciled)
+
+**Status:** Phases 0–9 and 12 complete, Phase 10 awaiting owner sign-off, Phase 11 not started; production live on Railway since 2026-08-08 (auto-deploy from `main`). See [PROGRESS.md](PROGRESS.md).
 
 ZenPDF is a free-to-use, ad-supported web application for editing, organizing, converting, securing, and signing PDF documents — **usable with no account at all** — a web-based product covering the table-stakes feature set of Adobe Acrobat / Foxit / Smallpdf-class tools, plus a DocuSign-class e-signature workflow, built entirely on open-source components.
 
@@ -21,9 +23,10 @@ ZenPDF is a free-to-use, ad-supported web application for editing, organizing, c
 | File | Contents |
 |---|---|
 | [PROGRESS.md](PROGRESS.md) | **Canonical execution tracker** — status, decisions, blockers, human review queue |
-| [prompt-1-phases-00-02.md](prompt-1-phases-00-02.md) | One-shot agent prompt: execute Phases 0–2 autonomously |
-| [prompt-2b-phase-02b.md](prompt-2b-phase-02b.md) | **One-shot agent prompt: execute Phase 2B and ship it to `main` via a reviewed PR — run this next** |
-| [prompt-2-phases-03-07.md](prompt-2-phases-03-07.md) | One-shot agent prompt: execute Phases 3–7 autonomously (⚠ blocked until 2B lands — see its banner) |
+| [prompt-1-phases-00-02.md](prompt-1-phases-00-02.md) | One-shot agent prompt, Phases 0–2 — **executed 2026-07-19. Historical; do not run.** |
+| [prompt-2b-phase-02b.md](prompt-2b-phase-02b.md) | One-shot agent prompt, Phase 2B — **executed 2026-08-01. Historical; do not run.** |
+| [prompt-2-phases-03-07.md](prompt-2-phases-03-07.md) | One-shot agent prompt, Phases 3–7 — **superseded by prompt-3; never run as written. Historical.** |
+| [prompt-3-phases-03-10.md](prompt-3-phases-03-10.md) | One-shot agent prompt, Phases 3–10 — **executed 2026-08-01/02. Historical; do not run.** |
 | [00-research-findings.md](00-research-findings.md) | Competitor + e-sign research digest, feature taxonomy, verified stack facts, sources |
 | [01-architecture.md](01-architecture.md) | **The canonical reference**: stack versions, repo layout, data model, API + operation conventions, coordinate system, storage, jobs, security model, env matrix |
 | [02-feature-matrix.md](02-feature-matrix.md) | Every researched feature → phase mapping (proof of completeness) |
@@ -40,13 +43,15 @@ ZenPDF is a free-to-use, ad-supported web application for editing, organizing, c
 | [phase-09-ads-and-abuse-controls.md](phase-09-ads-and-abuse-controls.md) | Ad slots + consent (CMP), landing page, quotas, throttling, anti-abuse |
 | [phase-10-hardening-release.md](phase-10-hardening-release.md) | Security hardening, performance, a11y, E2E suite, prod deploy |
 | [phase-11-adsense-review.md](phase-11-adsense-review.md) | AdSense approval pass: custom-domain cutover, contact page, guides editorial layer, application loop |
+| [phase-12-usability-add-ons.md](phase-12-usability-add-ons.md) | Right-click menus, keyboard shortcuts, visible Undo/Redo on all six editing surfaces, six defect fixes — **executed 2026-08-21** |
 
 ## How to use this plan
 
 1. Implement phases **in order**. Each phase is self-contained: models, endpoints, UI, tests, acceptance criteria. A phase is done only when its **Acceptance criteria** all pass and its tests are green — no TODOs left behind.
 2. `01-architecture.md` is normative. Phase docs reference it instead of restating conventions (coordinates, job pipeline, error shapes, storage keys). If a phase doc and the architecture doc conflict, the architecture doc wins — and the conflict should be fixed in the same commit.
 3. Version pins in the architecture doc were verified against official sources on 2026-07-19. Phase 0 contains a short "re-verify on scaffold day" checklist for anything that may have moved (marked ⚠ in the stack table).
-4. Recommended order is strictly linear (0→2→2B→3→10). If parallelizing with multiple developers: **2B should land before anything else starts** (it changes ownership everywhere); then 4, 5, and 7 each require 3 (they reuse its overlay layer); 6 requires only 1–2 + 2B; 8 requires 3 + 5; 9 and 10 close out sequentially.
+4. Recommended order is strictly linear (0→2→2B→3→10). If parallelizing with multiple developers: **2B should land before anything else starts** (it changes ownership everywhere); then 4, 5, and 7 each require 3 (they reuse its overlay layer); 6 requires only 1–2 + 2B; 8 requires 3 + 5; 9 and 10 close out sequentially. Phase 12 came after all of them and touches only the frontend.
+5. **`docs/reviews/`** holds the adversarial QA and status reviews, the production audits, and the CLI handoff prompts they generated (`docs/reviews/handoffs/`, with `TRACKING.md` as the board for those nine prompts). Reviews are evidence *about* the plan, not part of it — when a review and this plan disagree, PROGRESS.md is what settles it. The current one is `docs/reviews/status-review-2026-08-21.md`, with `docs/reviews/2026-08-21-phase-12-production-audit.md` as an independent corroboration of Phase 12 in production.
 
 ## Phase dependency graph
 
@@ -65,6 +70,7 @@ ZenPDF is a free-to-use, ad-supported web application for editing, organizing, c
 9  Ads & abuse controls — after 8 (product feature-complete)
 10 Hardening & release  — after everything
 11 AdSense review readiness — after 9 + production deploy; gated on an owner-purchased custom domain, terminal gate external (Google review)
+12 Usability add-ons     — after 3, 4, 5, 7 and 8 (it edits all six editing surfaces); frontend-only, no backend or infra change
 ```
 
 **Why 2B sits there:** every phase after it adds ownership-coupled code. Doing the principal refactor once, before Phase 3, costs one focused phase; doing it after Phase 8 means unpicking eight phases of accumulated `filter(owner=request.user)`. From 2B onward, each phase also ships its own public tool page (§21.6) rather than deferring all SEO surface to Phase 9.

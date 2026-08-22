@@ -1,3 +1,5 @@
+> **Executed 2026-08-08 — historical.** Kept for the reasoning behind each decision, not as a procedure to follow. Three things in it are now out of date: **`NUM_PROXIES` was measured at 3**, not the 2 planned here; deploys are **auto-deploy from `main`** (since 2026-08-10), not `railway up`; and the plan is on **Pro** with a 50 GB volume, not the Hobby tier and 5 GB it costs out. For the current state see [railway.md](railway.md); for what actually happened see [railway-deploy-report-2026-08-08.md](railway-deploy-report-2026-08-08.md).
+
 # ZenPDF → Railway — execution plan (v2, post-adversarial-review)
 
 **Written:** 2026-08-07 · decisions in §0 locked by Yuval; v2 incorporates all findings of an independent adversarial review (fixes marked ✦ where they changed v1 behavior).

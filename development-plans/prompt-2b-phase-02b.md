@@ -1,3 +1,5 @@
+> **Executed 2026-08-01 — kept as history. Do not run.** Phase 2B is ✅ in `PROGRESS.md`; ownership flows through `apps/core/principals.py` and a grep test enforces it. Note that this file's own preconditions have gone stale in the way such files do — the `.git/index.lock` it says is "present right now" was a condition of one machine on one day in July 2026.
+
 # One-Shot Prompt 2B — Execute Phase 2B (Anonymous Access) and ship it to `main`
 
 **Usage:** start a Claude Code session with its working directory at the **ZenPDF repo root**, Docker daemon running, and `gh` authenticated (`gh auth status`). The session needs permission to run `git`, `gh`, `docker` and to delete files. Paste everything below the line as the prompt.
@@ -88,7 +90,7 @@ Then set Phase 2B to 🔵 in `PROGRESS.md` with today's date, copy its Acceptanc
 11. **Frontend** — `GuestFacade`, interceptor credential branch, **the viewer's `httpHeaders` and `pdf-thumbnail.ts`** (both bypass the interceptor), guards narrowed to `accountGuard`, guest-aware 401 handling, session banner, token discard after claim.
 12. **SSR + tool pages** — `@angular/ssr`, the seven Phase-2 slugs, generated `sitemap.xml`, `robots.txt`.
 13. **Tests** — everything in the phase doc's Tests section, including the rewritten superseded tests.
-14. **`e2e/phase-2b.spec.ts`** — the cold-browser journey through registration and claim.
+14. **`e2e/tests/phase-2b.spec.ts`** — the cold-browser journey through registration and claim.
 
 ### The five traps that will bite you
 
