@@ -87,7 +87,17 @@ echo "======================================================"
 # Fail here, with a cause, rather than ten tests later with a skip nobody reads:
 # every `needs_gotenberg` conversion test silently disappears when this
 # container has drifted, and the run still exits 0.
-if ! docker compose exec -T api curl -sf -o /dev/null http://gotenberg:3000/health; then
+# urllib rather than curl: the api image does not ship curl, and adding it to a
+# production image to run a health check would be the wrong trade. Python is
+# what that container is for.
+if ! docker compose exec -T api python -c "
+import sys, urllib.request
+try:
+    with urllib.request.urlopen('http://gotenberg:3000/health', timeout=5) as r:
+        sys.exit(0 if r.status == 200 else 1)
+except Exception:
+    sys.exit(1)
+"; then
   echo "ERROR: gotenberg is not answering /health from inside the network."
   echo "       Ten conversion tests would be skipped and the gate would still"
   echo "       exit 0. Restart gotenberg:"
