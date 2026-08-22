@@ -24,8 +24,21 @@ import { defineConfig, devices } from '@playwright/test';
  * Retries: **zero, deliberately.** A flaky test that passes on retry is a
  * flaky product nobody looks at; §10.5 asks for a quarantine tag and a fix,
  * not a retry count.
+ *
+ * `@quarantine` is that tag, and until 2026-08-22 it did nothing at all — the
+ * config never mentioned it, so a "quarantined" spec ran with everything else
+ * and failed the gate exactly as before. It excludes the spec now:
+ *
+ *   npx playwright test                      # @quarantine excluded
+ *   INCLUDE_QUARANTINE=1 npx playwright test # everything, to see if it is fixed
+ *
+ * The tag is a debt marker with a name attached, not a retry in disguise:
+ * excluding a spec hides a real failure, so it is only ever correct with a
+ * queue row saying what is broken and who owns it. **Nothing carries the tag
+ * today**, which is the state to keep.
  */
 const allBrowsers = process.env['BROWSERS'] === 'all';
+const includeQuarantine = process.env['INCLUDE_QUARANTINE'] === '1';
 
 export default defineConfig({
   testDir: './tests',
@@ -34,6 +47,7 @@ export default defineConfig({
   fullyParallel: false,
   workers: 1,
   retries: 0,
+  ...(includeQuarantine ? {} : { grepInvert: /@quarantine/ }),
   reporter: [['list']],
   use: {
     baseURL: process.env['BASE_URL'] ?? 'http://localhost:4200',

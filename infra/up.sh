@@ -60,6 +60,85 @@ docker compose exec -T api python manage.py init_storage
 echo "==> Seeding dev data..."
 docker compose exec -T api python manage.py seed_dev
 
+echo "==> Checking the workers are not older than the code they run..."
+# Celery does not hot-reload, and `docker compose up -d --build` above recreates
+# a container only when its image or definition changed — so a stack left up
+# across a backend edit silently keeps running the old task code. That is how
+# `phase-2b:130` was misdiagnosed twice in one day against workers that were ten
+# days stale (PROGRESS, 2026-08-21); a false *pass* is the worse half of it and
+# would never be noticed at all.
+#
+# This only says so. Restarting belongs to `test.sh --e2e`, which is the place
+# that is about to depend on the answer — `up.sh` is also run to *get back to* a
+# stack somebody is using, and killing their in-flight job to make a point is
+# not an improvement.
+stale_workers="$(
+  python3 - <<'PY'
+import datetime
+import os
+import subprocess
+
+# "The newest file under backend/" has to mean the newest *source* file, and
+# git already knows which those are. Walking the directory instead does not
+# work: celery beat writes `celerybeat-schedule-shm` in there every few seconds,
+# so the newest file under backend/ is always younger than any worker and the
+# warning would fire on every single run — which is how a warning stops being
+# read. `--others --exclude-standard` keeps a file you have just written and not
+# yet added, while .gitignore keeps out the caches and the runtime state.
+listing = subprocess.run(
+    ['git', '-C', '..', 'ls-files', '-z', '--cached', '--others',
+     '--exclude-standard', 'backend'],
+    capture_output=True, text=True)
+if listing.returncode != 0:
+    raise SystemExit(0)
+
+newest = 0.0
+for rel in listing.stdout.split('\0'):
+    if not rel:
+        continue
+    try:
+        newest = max(newest, os.stat(os.path.join('..', rel)).st_mtime)
+    except OSError:
+        pass
+
+
+def started_at(container):
+    raw = subprocess.run(['docker', 'inspect', '-f', '{{.State.StartedAt}}', container],
+                         capture_output=True, text=True).stdout.strip()
+    if not raw:
+        return None
+    # RFC3339 with nanoseconds; datetime stops at microseconds.
+    if '.' in raw:
+        head, _, tail = raw.partition('.')
+        raw = f"{head}.{''.join(c for c in tail if c.isdigit())[:6]}+00:00"
+    else:
+        raw = raw.replace('Z', '+00:00')
+    try:
+        return datetime.datetime.fromisoformat(raw).timestamp()
+    except ValueError:
+        return None
+
+
+for service in ('worker-default', 'worker-heavy', 'worker-render', 'beat'):
+    cid = subprocess.run(['docker', 'compose', 'ps', '-q', service],
+                         capture_output=True, text=True).stdout.strip()
+    if not cid:
+        continue
+    when = started_at(cid)
+    if when is not None and when < newest:
+        print(service)
+PY
+)"
+if [ -n "$stale_workers" ]; then
+  for svc in $stale_workers; do
+    printf '\033[33m    WARNING: %s started before the newest backend change — restart it\033[0m\n' "$svc"
+  done
+  printf '\033[33m             docker compose -f infra/docker-compose.yml restart %s\033[0m\n' \
+    "$(echo "$stale_workers" | tr '\n' ' ')"
+else
+  echo "    workers are newer than the newest file under backend/."
+fi
+
 SEED_EMAIL="$(grep -E '^SEED_ADMIN_EMAIL=' .env | cut -d= -f2)"
 SEED_PASS="$(grep -E '^SEED_ADMIN_PASSWORD=' .env | cut -d= -f2)"
 

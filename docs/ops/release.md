@@ -15,7 +15,10 @@
 
 *(The row above was labelled `Full e2e ("@full")`. **There is no `@full` tag** — `@smoke` is the only tag that selects anything. "The full suite" means the suite with no grep, which is what `test.sh` runs.)*
 
-**Two things the gate does not tell you, both open** (`docs/reviews/handoffs/handoff-to-cli-e2e-gate-hardening.md` owns them): it exits 0 with dependency-gated tests **skipped** — a Gotenberg container that has drifted turns ten conversion tests into skips and the run still reads green — and it drives whatever code the **Celery workers booted with**, so a long-lived local stack can test stale backend code and produce a false pass.
+**Two things the gate did not tell you, both closed 2026-08-22** *(`fix/e2e-gate-hardening`; the paragraph here previously listed them as open)*:
+
+- **It exited 0 with dependency-gated tests skipped.** `infra/test.sh` now health-checks Gotenberg from inside the network *before* pytest and fails with "restart gotenberg" rather than turning ten conversion tests into skips nobody reads; and it runs pytest with `-rs` and asserts the skip **set** — four query-plan tests in `apps/core/tests/test_performance.py`, which are vacuous on SQLite and are what `--pg` exists to run — failing with "the gate did not exercise N tests — fix the environment, do not ship" on anything else. Asserting the set and not just the count matters: four Gotenberg skips would have passed a count check.
+- **It drove whatever code the Celery workers booted with.** `./infra/test.sh --e2e` now restarts `worker-default`, `worker-heavy`, `worker-render` and `beat`, waits for `/api/health/` to report `checks.workers` true (120 s, then a loud failure), and prints each container's `StartedAt` so the run says out loud what code it tested. `./infra/up.sh` warns — in yellow, without restarting anything, because it is also how you get back to a stack somebody is using — when a worker predates the newest source file under `backend/` (asked of `git ls-files`, so celery beat's own schedule file cannot make the warning fire every time).
 
 ## The flake policy
 
@@ -27,7 +30,14 @@ When a spec flakes: reproduce it with `--repeat-each=5`, fix the cause, and if
 it cannot be fixed the same day, tag it `@quarantine` with a dated comment
 saying why. A quarantine older than one phase is a bug nobody owns.
 
-> **⚠ `@quarantine` currently does nothing** *(corrected 2026-08-22)*. This said the tag was "excluded from the deploy gate". Nothing excludes it: `e2e/playwright.config.ts` has no `grepInvert`, and `infra/test.sh:106` runs `npx playwright test` bare. **A quarantined test still runs and still fails the gate** — so tagging one today is a comment, not an exclusion, and the honest options are to fix it or to skip it explicitly. Wiring the tag up is `docs/reviews/handoffs/handoff-to-cli-e2e-gate-hardening.md`'s job. (As it happens no spec carries the tag today, so nothing is silently mis-handled — but the next person to reach for it would find it inert.)
+> **`@quarantine` does something now** *(2026-08-22, `fix/e2e-gate-hardening`)*. It was inert for the whole of Phase 10: the config had no `grepInvert` and `infra/test.sh` ran `npx playwright test` bare, so a "quarantined" spec ran with everything else and failed the gate exactly as before — the tag was a comment. `e2e/playwright.config.ts` now sets `grepInvert: /@quarantine/` unless `INCLUDE_QUARANTINE=1`:
+>
+> ```
+> npx playwright test                      # @quarantine excluded — this is the gate
+> INCLUDE_QUARANTINE=1 npx playwright test # everything, to see whether it is fixed yet
+> ```
+>
+> Retries stay at **zero**. This is not a retry with a longer name: excluding a spec hides a real failure, so the tag is only ever correct alongside a dated comment and a Human-review-queue row naming what is broken and who owns it. **No spec carries the tag today, and that is the state to keep** — nothing was tagged to make this work.
 
 ## Before tagging a release
 

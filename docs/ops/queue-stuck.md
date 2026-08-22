@@ -71,3 +71,34 @@ print(Job.objects.filter(status='running').values_list('id','type','document_id'
 That document is a hostile-corpus candidate — add it to
 `backend/tests/fixtures/generate_fixtures.py` and to
 `apps/pdf_engine/tests/test_hostile_corpus.py` so it cannot come back.
+
+## The quieter failure: a worker that is running, and running old code
+
+The symptoms above are all "nothing happens". The one that costs the most time
+is the opposite — everything happens, and it is wrong. **Celery does not
+hot-reload.** A worker executes the task code it imported when it booted, so a
+stack left up across a backend change runs the old tasks while the `api`
+container (Django autoreload) runs the new. The queue is not stuck; it is
+answering confidently out of date.
+
+On 2026-08-21 that cost two wrong diagnoses of one test in a single day —
+`phase-2b:130` was blamed first on the product and then on a Playwright quirk,
+against workers that had been up for ten days, i.e. since before the feature
+under test shipped. A false *pass* is the worse half of this and would never
+have been noticed at all.
+
+Two guards exist now and neither is a substitute for knowing this:
+
+- `./infra/test.sh --e2e` restarts the four Celery services, waits for
+  `checks.workers`, and prints each container's `StartedAt`.
+- `./infra/up.sh` warns in yellow when a worker predates the newest source file
+  under `backend/`. It does **not** restart anything — `up.sh` is also how you
+  return to a stack somebody is using.
+
+If you are debugging a task and the code in front of you does not explain the
+behaviour in front of you, check the ages before you check the logic:
+
+```bash
+docker compose -f infra/docker-compose.yml ps --format '{{.Name}}\t{{.RunningFor}}'
+docker compose -f infra/docker-compose.yml restart worker-default worker-heavy worker-render beat
+```
