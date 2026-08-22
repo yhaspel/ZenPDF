@@ -90,7 +90,11 @@ echo "======================================================"
 # urllib rather than curl: the api image does not ship curl, and adding it to a
 # production image to run a health check would be the wrong trade. Python is
 # what that container is for.
-if ! docker compose exec -T api python -c "
+#
+# `run --rm` rather than `exec`, so this works whether or not the long-running
+# api container happens to be up — every other step here uses `run` too, and a
+# gate that needs the stack already running would fail with the wrong message.
+if ! docker compose run --rm -T api python -c "
 import sys, urllib.request
 try:
     with urllib.request.urlopen('http://gotenberg:3000/health', timeout=5) as r:
@@ -100,7 +104,7 @@ except Exception:
 "; then
   echo "ERROR: gotenberg is not answering /health from inside the network."
   echo "       Ten conversion tests would be skipped and the gate would still"
-  echo "       exit 0. Restart gotenberg:"
+  echo "       exit 0. Bring the stack up (./infra/up.sh), or restart gotenberg:"
   echo "         docker compose -f infra/docker-compose.yml restart gotenberg"
   exit 1
 fi
