@@ -1224,11 +1224,25 @@ interaction a person or a script can drive. What *does* discriminate is the arit
 that holds the refetch open and asserts `currentSeq()` is already the new version — and the e2e
 numbers above.
 
-**Gate.** Frontend: **427 unit tests across 51 files**, `ng lint` clean, `ng build` + 29 prerendered
-routes + `verify:prerender`, all on host node 25. Backend: **1066 passed, 4 skipped** (the four
-query-plan tests, now asserted *by name*), ruff and mypy clean, coverage gates held. `./infra/test.sh
---pg --e2e` green. `data-test` parity: **two added (`viewer-drew`, `overlay-drew`), zero removed.**
-No migrations, no new dependencies.
+**Gate, on the final commit.** SSRF deny-list drift check passed · ruff and mypy clean (**174 source
+files**) · Gotenberg health-checked before pytest · backend **1066 passed, 4 skipped**, the four
+asserted *by name* · `ng lint` clean · frontend **427 unit tests across 51 files** (and the same 427
+on host node 25, plus `ng build` with 29 prerendered routes and `verify:prerender`) · query plans
+under `--pg` **8 passed** · the four Celery services restarted and `StartedAt` printed · e2e
+**64 of 64**, the 64th being the new viewer smoke (canvas 1056 × 1494, 77 colours). `data-test`
+parity: **two added (`viewer-drew`, `overlay-drew`), zero removed.** No migrations, no new
+dependencies.
+
+**And what the gate cost to get green, which is part of the record.** It took four runs, each red on
+a *different* pre-existing flake and none of them in code this branch touches: two vitest specs
+timing out at the 5 s default (`documents.facade`, `workspace-drew`), then three more
+(`auth-next`, `tool-page-order`, `tool-page-pages`), then `phase-9:246` failing at `uploadFiles`
+with `[data-test=file-input]` not found in 20 s — which is the open memory-sensitivity row **word
+for word**. The same suites are 427/427 on the host and 64/64 on a re-run. The machine was running
+**four unrelated Docker stacks on one 8 GB VM** while this ran, with the `web` dev server alone
+holding 1.2 GB. That row stays open, and this run is one more measurement for it: the gate is
+reliable enough to trust when it is red about *your* code, and not yet reliable enough to read a
+single red run as a verdict.
 
 **2026-08-22 — Record reconciliation: making the docs say what the code does**
 
