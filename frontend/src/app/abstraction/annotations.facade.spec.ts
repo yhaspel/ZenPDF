@@ -278,4 +278,53 @@ describe('AnnotationsFacade', () => {
     // Letter, not A4 — a 12pt text box must not be drawn at A4's scale.
     expect(facade.pageWidthFor(0)).toBe(612);
   });
+
+  describe('the custom stamp', () => {
+    let made: string[];
+    let revoked: string[];
+    const realCreate = URL.createObjectURL;
+    const realRevoke = URL.revokeObjectURL;
+
+    beforeEach(() => {
+      // jsdom has no blob-URL store, and what matters here is the bookkeeping:
+      // one URL per stamp, and the one it replaces released.
+      made = [];
+      revoked = [];
+      let n = 0;
+      URL.createObjectURL = () => { const u = `blob:stamp-${++n}`; made.push(u); return u; };
+      URL.revokeObjectURL = (u: string) => void revoked.push(u);
+    });
+
+    // The runner shares a process between spec files unless `--isolate`, so a
+    // global left swapped out here would follow the thumbnail specs home.
+    afterEach(() => {
+      URL.createObjectURL = realCreate;
+      URL.revokeObjectURL = realRevoke;
+    });
+
+    it('has nothing armed until something is uploaded', () => {
+      expect(facade.stamp()).toBeNull();
+    });
+
+    it('holds the ref and a preview of the file that produced it', () => {
+      facade.useStamp('ref-1', new Blob(['png'], { type: 'image/png' }));
+      expect(facade.stamp()).toEqual({ ref: 'ref-1', preview: 'blob:stamp-1' });
+    });
+
+    it('releases the preview of the stamp it replaces', () => {
+      facade.useStamp('ref-1', new Blob(['one']));
+      facade.useStamp('ref-2', new Blob(['two']));
+      expect(facade.stamp()!.ref).toBe('ref-2');
+      expect(revoked).toEqual(['blob:stamp-1']);
+      expect(made.length).toBe(2);
+    });
+
+    it('survives moving to another document', () => {
+      // An `uploads/…` image is scoped to the principal, not to a file (§13):
+      // stamping the same mark onto three documents is one upload, not three.
+      facade.useStamp('ref-1', new Blob(['one']));
+      facade.clear();
+      expect(facade.stamp()).toEqual({ ref: 'ref-1', preview: 'blob:stamp-1' });
+    });
+  });
 });

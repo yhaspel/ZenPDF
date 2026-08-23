@@ -4,53 +4,70 @@
     <div>
       <p class="kicker mb-1">Tools</p>
       <div class="grid grid-cols-2 gap-1">
-        <button class="rounded-1 border-border border px-2 py-1 text-start"
-                [class.bg-ink-strong]="tool() === 'select'" [class.text-bg]="tool() === 'select'"
+        <button class="rounded-1 border-border flex min-h-11 items-center border px-2 py-1 text-start"
+                [class.bg-ink-strong]="tool() === 'select'" [class.text-bg]="tool() === 'select'" [attr.aria-pressed]="tool() === 'select'"
                 (click)="setTool('select')" data-test="tool-select">Select</button>
-        <button class="rounded-1 border-border border px-2 py-1 text-start"
-                [class.bg-ink-strong]="tool() === 'highlight'" [class.text-bg]="tool() === 'highlight'"
+        <button class="rounded-1 border-border flex min-h-11 items-center border px-2 py-1 text-start"
+                [class.bg-ink-strong]="tool() === 'highlight'" [class.text-bg]="tool() === 'highlight'" [attr.aria-pressed]="tool() === 'highlight'"
                 (click)="setTool('highlight')" data-test="tool-highlight">Highlight</button>
-        <button class="rounded-1 border-border border px-2 py-1 text-start"
-                [class.bg-ink-strong]="tool() === 'underline'" [class.text-bg]="tool() === 'underline'"
+        <button class="rounded-1 border-border flex min-h-11 items-center border px-2 py-1 text-start"
+                [class.bg-ink-strong]="tool() === 'underline'" [class.text-bg]="tool() === 'underline'" [attr.aria-pressed]="tool() === 'underline'"
                 (click)="setTool('underline')" data-test="tool-underline">Underline</button>
-        <button class="rounded-1 border-border border px-2 py-1 text-start"
-                [class.bg-ink-strong]="tool() === 'strikeout'" [class.text-bg]="tool() === 'strikeout'"
+        <button class="rounded-1 border-border flex min-h-11 items-center border px-2 py-1 text-start"
+                [class.bg-ink-strong]="tool() === 'strikeout'" [class.text-bg]="tool() === 'strikeout'" [attr.aria-pressed]="tool() === 'strikeout'"
                 (click)="setTool('strikeout')" data-test="tool-strikeout">Strike</button>
-        <button class="rounded-1 border-border border px-2 py-1 text-start"
-                [class.bg-ink-strong]="tool() === 'squiggly'" [class.text-bg]="tool() === 'squiggly'"
+        <button class="rounded-1 border-border flex min-h-11 items-center border px-2 py-1 text-start"
+                [class.bg-ink-strong]="tool() === 'squiggly'" [class.text-bg]="tool() === 'squiggly'" [attr.aria-pressed]="tool() === 'squiggly'"
                 (click)="setTool('squiggly')" data-test="tool-squiggly">Squiggly</button>
-        <button class="rounded-1 border-border border px-2 py-1 text-start"
-                [class.bg-ink-strong]="tool() === 'note'" [class.text-bg]="tool() === 'note'"
+        <button class="rounded-1 border-border flex min-h-11 items-center border px-2 py-1 text-start"
+                [class.bg-ink-strong]="tool() === 'note'" [class.text-bg]="tool() === 'note'" [attr.aria-pressed]="tool() === 'note'"
                 (click)="setTool('note')" data-test="tool-note">Note</button>
-        <button class="rounded-1 border-border border px-2 py-1 text-start"
-                [class.bg-ink-strong]="tool() === 'free_text'" [class.text-bg]="tool() === 'free_text'"
+        <button class="rounded-1 border-border flex min-h-11 items-center border px-2 py-1 text-start"
+                [class.bg-ink-strong]="tool() === 'free_text'" [class.text-bg]="tool() === 'free_text'" [attr.aria-pressed]="tool() === 'free_text'"
                 (click)="setTool('free_text')" data-test="tool-free-text">Text box</button>
-        <button class="rounded-1 border-border border px-2 py-1 text-start"
-                [class.bg-ink-strong]="tool() === 'square'" [class.text-bg]="tool() === 'square'"
+        <button class="rounded-1 border-border flex min-h-11 items-center border px-2 py-1 text-start"
+                [class.bg-ink-strong]="tool() === 'square'" [class.text-bg]="tool() === 'square'" [attr.aria-pressed]="tool() === 'square'"
                 (click)="setTool('square')" data-test="tool-square">Rect</button>
-        <button class="rounded-1 border-border border px-2 py-1 text-start"
-                [class.bg-ink-strong]="tool() === 'circle'" [class.text-bg]="tool() === 'circle'"
+        <button class="rounded-1 border-border flex min-h-11 items-center border px-2 py-1 text-start"
+                [class.bg-ink-strong]="tool() === 'circle'" [class.text-bg]="tool() === 'circle'" [attr.aria-pressed]="tool() === 'circle'"
                 (click)="setTool('circle')" data-test="tool-circle">Ellipse</button>
-        <button class="rounded-1 border-border border px-2 py-1 text-start"
-                [class.bg-ink-strong]="tool() === 'line'" [class.text-bg]="tool() === 'line'"
+        <button class="rounded-1 border-border flex min-h-11 items-center border px-2 py-1 text-start"
+                [class.bg-ink-strong]="tool() === 'line'" [class.text-bg]="tool() === 'line'" [attr.aria-pressed]="tool() === 'line'"
                 (click)="setTool('line')" data-test="tool-line">Line</button>
-        <button class="rounded-1 border-border border px-2 py-1 text-start"
-                [class.bg-ink-strong]="tool() === 'arrow'" [class.text-bg]="tool() === 'arrow'"
+        <button class="rounded-1 border-border flex min-h-11 items-center border px-2 py-1 text-start"
+                [class.bg-ink-strong]="tool() === 'arrow'" [class.text-bg]="tool() === 'arrow'" [attr.aria-pressed]="tool() === 'arrow'"
                 (click)="setTool('arrow')" data-test="tool-arrow">Arrow</button>
-        <button class="rounded-1 border-border border px-2 py-1 text-start"
-                [class.bg-ink-strong]="tool() === 'polygon'" [class.text-bg]="tool() === 'polygon'"
+        <button class="rounded-1 border-border flex min-h-11 items-center border px-2 py-1 text-start"
+                [class.bg-ink-strong]="tool() === 'polygon'" [class.text-bg]="tool() === 'polygon'" [attr.aria-pressed]="tool() === 'polygon'"
                 (click)="setTool('polygon')" data-test="tool-polygon">Polygon</button>
-        <button class="rounded-1 border-border border px-2 py-1 text-start"
-                [class.bg-ink-strong]="tool() === 'polyline'" [class.text-bg]="tool() === 'polyline'"
+        <button class="rounded-1 border-border flex min-h-11 items-center border px-2 py-1 text-start"
+                [class.bg-ink-strong]="tool() === 'polyline'" [class.text-bg]="tool() === 'polyline'" [attr.aria-pressed]="tool() === 'polyline'"
                 (click)="setTool('polyline')" data-test="tool-polyline">Polyline</button>
-        <button class="rounded-1 border-border border px-2 py-1 text-start"
-                [class.bg-ink-strong]="tool() === 'ink'" [class.text-bg]="tool() === 'ink'"
+        <button class="rounded-1 border-border flex min-h-11 items-center border px-2 py-1 text-start"
+                [class.bg-ink-strong]="tool() === 'ink'" [class.text-bg]="tool() === 'ink'" [attr.aria-pressed]="tool() === 'ink'"
                 (click)="setTool('ink')" data-test="tool-ink">Draw</button>
-        <button class="rounded-1 border-border border px-2 py-1 text-start"
-                [class.bg-ink-strong]="tool() === 'stamp'" [class.text-bg]="tool() === 'stamp'"
+        <button class="rounded-1 border-border flex min-h-11 items-center border px-2 py-1 text-start"
+                [class.bg-ink-strong]="tool() === 'stamp'" [class.text-bg]="tool() === 'stamp'" [attr.aria-pressed]="tool() === 'stamp'"
                 (click)="setTool('stamp')" data-test="tool-stamp">Stamp</button>
-        <button class="rounded-1 border-border border px-2 py-1 text-start"
-                [class.bg-ink-strong]="tool() === 'crop'" [class.text-bg]="tool() === 'crop'"
+        <!-- The uploaded stamp, as a tool. Disabled until there is one to arm:
+             uploading used to switch the tool with nothing in the palette
+             saying so, and switching away lost it (design contract §3). -->
+        <button class="rounded-1 border-border flex min-h-11 items-center gap-1.5 border px-2 py-1 text-start
+                       disabled:border-border-strong disabled:text-ink-muted disabled:cursor-not-allowed disabled:border-dashed"
+                [class.bg-ink-strong]="tool() === 'image_stamp'" [class.text-bg]="tool() === 'image_stamp'"
+                [attr.aria-pressed]="tool() === 'image_stamp'"
+                [disabled]="!annotations.stamp()"
+                [title]="annotations.stamp()
+                  ? 'Drag a box to place the image you uploaded'
+                  : 'Upload a custom stamp below to use this'"
+                (click)="setTool('image_stamp')" data-test="tool-image-stamp">
+          @if (annotations.stamp(); as stamp) {
+            <img [src]="stamp.preview" alt="" class="border-border h-6 w-6 shrink-0 rounded-[2px] border object-contain" />
+          }
+          <span>Image stamp</span>
+        </button>
+        <button class="rounded-1 border-border flex min-h-11 items-center border px-2 py-1 text-start"
+                [class.bg-ink-strong]="tool() === 'crop'" [class.text-bg]="tool() === 'crop'" [attr.aria-pressed]="tool() === 'crop'"
                 (click)="setTool('crop')" data-test="tool-crop">Crop</button>
       </div>
       @if (tool() === 'polygon' || tool() === 'polyline') {
@@ -107,7 +124,7 @@
       <label for="annot-stamp-upload" class="kicker">Custom stamp</label>
       <input id="annot-stamp-upload" type="file" accept="image/png,image/jpeg" (change)="onStampFile($event)"
              class="mt-1 w-full text-[11px]" data-test="stamp-upload" />
-      @if (stampRef()) {
+      @if (annotations.stamp()) {
         <p class="text-success text-[11px]">Image ready — drag a box to place it.</p>
       }
     </div>

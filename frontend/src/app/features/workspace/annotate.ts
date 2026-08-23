@@ -3,6 +3,7 @@ import { isPlatformBrowser } from '@angular/common';
 import {
   ChangeDetectionStrategy,
   Component,
+  DestroyRef,
   computed,
   effect,
   inject,
@@ -11,6 +12,7 @@ import {
   signal,
   viewChild,
 } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
 
 import { AnnotationsFacade } from '../../abstraction/annotations.facade';
@@ -157,6 +159,7 @@ export class Annotate {
   private guests = inject(GuestFacade);
   private clipboard = inject(EditorClipboard);
   private isBrowser = isPlatformBrowser(inject(PLATFORM_ID));
+  private destroyRef = inject(DestroyRef);
 
   protected page = signal(0);
   protected tool = signal<AnnotateTool>('select');
@@ -187,7 +190,6 @@ export class Annotate {
   /** Opacity, remembered per family for the same reason colour is. */
   private familyOpacity = signal<Record<ToolFamily, number>>({ markup: 0.7, ink: 1 });
   protected stampName = signal(STANDARD_STAMPS[0]);
-  protected stampRef = signal<string | null>(null);
   protected busy = signal(false);
   protected cropRect = signal<{ x: number; y: number; w: number; h: number } | null>(null);
   protected lastSavedAt = signal<Date | null>(null);
@@ -478,12 +480,12 @@ export class Annotate {
       annotation.stamp_name = this.stampName();
     }
     if (tool === 'image_stamp') {
-      const ref = this.stampRef();
-      if (!ref) {
+      const stamp = this.annotations.stamp();
+      if (!stamp) {
         this.toast.info('Upload a stamp image first');
         return;
       }
-      annotation.image_ref = ref;
+      annotation.image_ref = stamp.ref;
     }
 
     this.annotations.add(annotation);
@@ -803,9 +805,9 @@ export class Annotate {
     const input = event.target as HTMLInputElement;
     const file = input.files?.[0];
     if (!file) return;
-    this.docsSvc.uploadImage(file).subscribe({
+    this.docsSvc.uploadImage(file).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (asset) => {
-        this.stampRef.set(asset.ref);
+        this.annotations.useStamp(asset.ref, file);
         this.tool.set('image_stamp');
         this.toast.success('Stamp ready — drag a box to place it');
       },
