@@ -434,6 +434,18 @@ export class Workspace {
    * `expected` is what `currentSeq()` must equal for the chain to still be
    * live. Any other operation appends a version, `expected` stops matching, and
    * the chain ends by arithmetic — no invalidation to wire up and forget.
+   *
+   * **It is written only when the revert has succeeded** (2026-08-23). The
+   * first cut set it in `stepVersion()` *before* dispatching, and a revert that
+   * never lands — a guest's 429, a `locked` document, a `version_conflict` —
+   * left a cursor whose `expected` `currentSeq` would never reach. The next
+   * press read it as dead and fell back to "Undo → `currentSeq` − 1", Redo
+   * disabled: measured on production at v5 showing v1, where a throttled Redo
+   * left the bar offering v4 — a version the person had never been on. Nothing
+   * said so, because from the bar's side nothing had failed. Where the chain
+   * *would* go is carried through `revert()` as an argument rather than kept in
+   * a field, so a History-tab revert — which is not a step in a chain — cannot
+   * commit one.
    */
   private versionCursor = signal<{ ceiling: number; content: number; expected: number } | null>(null);
 
@@ -485,23 +497,44 @@ export class Workspace {
     const seq = this.viewer.currentSeq() ?? 1;
     const cursor = this.versionCursor();
     const live = cursor && cursor.expected === seq;
-    this.versionCursor.set({
-      ceiling: live ? cursor.ceiling : seq,
-      content: target,
-      // The revert appends exactly one version.
-      expected: seq + 1,
-    });
-    this.revert(target);
+    this.revert(target, { ceiling: live ? cursor.ceiling : seq, content: target, from: seq });
   }
 
-  revert(seq: number): void {
+  revert(seq: number, chain: { ceiling: number; content: number; from: number } | null = null): void {
     this.busy.set(true);
     // Track the revert job to completion (viewer.revert only creates it).
     this.jobs.dispatch(this.viewer.revert(seq))
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
-      next: (job) => this.trackReload(job, `Reverted to v${seq}`),
+      next: (job) => {
+        this.trackReload(job, `Reverted to v${seq}`);
+        // Only now: a refused or failed revert leaves the chain untouched, so
+        // the bar still offers what it offered before the press.
+        if (job.status === 'succeeded') this.commitCursor(chain, job);
+      },
       error: () => this.fail(),
+    });
+  }
+
+  /**
+   * Adopt the chain the finished revert actually produced.
+   *
+   * `expected` comes from the job's own `seq` — the same number `adopt()` has
+   * just written into `currentSeq()` — rather than from `from + 1`, which is
+   * only true while a revert appends exactly one version. The arithmetic is the
+   * fallback for a result that carries no `seq`, which is also the case where
+   * `adopt()` fell back to a plain reload and `currentSeq()` is still stale.
+   */
+  private commitCursor(
+    chain: { ceiling: number; content: number; from: number } | null,
+    job: Job,
+  ): void {
+    if (!chain) return;
+    const seq = Number(job.result?.['seq']);
+    this.versionCursor.set({
+      ceiling: chain.ceiling,
+      content: chain.content,
+      expected: Number.isFinite(seq) ? seq : chain.from + 1,
     });
   }
 

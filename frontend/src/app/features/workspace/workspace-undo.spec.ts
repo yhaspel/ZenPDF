@@ -1,12 +1,13 @@
-import { provideHttpClient } from '@angular/common/http';
+import { HttpErrorResponse, provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { WritableSignal, signal } from '@angular/core';
-import { TestBed } from '@angular/core/testing';
+import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ActivatedRoute, convertToParamMap, provideRouter } from '@angular/router';
-import { Observable, of } from 'rxjs';
+import { Observable, of, throwError } from 'rxjs';
 
 import { DocumentModel, Job } from '../../core/models/models';
 import { DocumentsService } from '../../core/services/documents.service';
+import { JobsFacade } from '../../abstraction/jobs.facade';
 import { ViewerFacade } from '../../abstraction/viewer.facade';
 import { Workspace } from './workspace';
 
@@ -24,9 +25,19 @@ describe('Workspace — version undo and redo', () => {
   let reverted: number[];
   /** A real signal, because `canRedoVersion` is a computed that reads it. */
   let seq: WritableSignal<number>;
+  let fixture: ComponentFixture<Workspace>;
+  /**
+   * What the server does with the next revert.
+   *
+   * `refused` is the guest's 429 — an HTTP error on the create call, so it
+   * never becomes a job at all; `failed` is a job that ran and lost (a `locked`
+   * document, a `version_conflict`). The cursor has to survive both.
+   */
+  let outcome: 'succeeded' | 'failed' | 'refused';
 
   function build(startAt: number) {
     reverted = [];
+    outcome = 'succeeded';
     seq = signal(startAt);
     const fakeDocs: Partial<DocumentsService> = {
       get: () => of({ id: 'doc-1', title: 'A file' } as DocumentModel) as never,
@@ -40,6 +51,11 @@ describe('Workspace — version undo and redo', () => {
         provideHttpClientTesting(),
         provideRouter([]),
         { provide: DocumentsService, useValue: fakeDocs },
+        // The real facade polls `GET /jobs/:id/` after the create call, which
+        // under `provideHttpClientTesting` never answers — so the revert would
+        // never finish and `trackReload` would never run. The cursor is now
+        // written *there*, so the job has to be allowed to land.
+        { provide: JobsFacade, useValue: { dispatch: (create$: Observable<Job>) => create$ } },
         {
           provide: ActivatedRoute,
           useValue: {
@@ -56,12 +72,18 @@ describe('Workspace — version undo and redo', () => {
     // content, which is the whole reason a cursor is needed.
     (viewer as unknown as { revert(s: number): Observable<Job> }).revert = (target: number) => {
       reverted.push(target);
+      if (outcome === 'refused') {
+        return throwError(() => new HttpErrorResponse({ status: 429, statusText: 'Too Many Requests' }));
+      }
+      if (outcome === 'failed') {
+        return of({ id: 'job', status: 'failed', error_message: 'Document is locked' } as Job);
+      }
       seq.update((v) => v + 1);
       return of({ id: 'job', status: 'succeeded' } as Job);
     };
     Object.defineProperty(viewer, 'currentSeq', { value: seq });
 
-    const fixture = TestBed.createComponent(Workspace);
+    fixture = TestBed.createComponent(Workspace);
     fixture.detectChanges();
     return fixture.componentInstance as unknown as {
       canUndoVersion(): boolean;
@@ -134,5 +156,73 @@ describe('Workspace — version undo and redo', () => {
     expect(bar.canUndoVersion()).toBe(false);
     bar.undoLastChange();
     expect(reverted).toEqual([]);
+  });
+
+  // ------------------------------------------------------------------ //
+  // A revert that does not land (2026-08-23)
+  //
+  // The cursor used to be written before the dispatch, so a refused revert
+  // left `expected` pointing at a version `currentSeq` would never reach: the
+  // next press read the chain as dead, Undo silently fell back to
+  // `currentSeq − 1`, and Redo went away. Measured on production at v5 showing
+  // v1, where a throttled Redo left the bar offering v4.
+  // ------------------------------------------------------------------ //
+
+  /** The bar as a person reads it: what the two buttons say and whether they work. */
+  function bar(): { undo: [string, boolean]; redo: [string, boolean] } {
+    fixture.detectChanges();
+    const read = (test: string): [string, boolean] => {
+      const el = fixture.nativeElement.querySelector(`[data-test=${test}]`) as HTMLButtonElement;
+      return [el.title, el.disabled];
+    };
+    return { undo: read('undo-version'), redo: read('redo-version') };
+  }
+
+  it('leaves Undo and Redo exactly as they were when an Undo is refused', () => {
+    const ws = build(5);
+    ws.undoLastChange();          // v5 → v4, appending v6: the chain is live
+    const before = bar();
+    expect(before.undo).toEqual(['Undo the last change — back to v3', false]);
+    expect(before.redo).toEqual(['Redo — forward to v5', false]);
+
+    outcome = 'refused';          // the guest's 429 on the create call
+    ws.undoLastChange();
+
+    expect(reverted).toEqual([4, 3]);   // it was asked for, and refused
+    expect(seq()).toBe(6);              // no version appended
+    expect(bar()).toEqual(before);
+    expect(ws.canRedoVersion()).toBe(true);
+    expect(ws.undoTarget()).toBe(3);
+    expect(ws.redoTarget()).toBe(5);
+  });
+
+  it('leaves Undo and Redo exactly as they were when a Redo fails', () => {
+    const ws = build(5);
+    ws.undoLastChange();
+    const before = bar();
+
+    outcome = 'failed';           // the job ran and lost — a locked document
+    ws.redoLastChange();
+
+    expect(reverted).toEqual([4, 5]);
+    expect(seq()).toBe(6);
+    expect(bar()).toEqual(before);
+    expect(ws.canRedoVersion()).toBe(true);
+    expect(ws.redoTarget()).toBe(5);
+  });
+
+  it('picks the chain back up on the next press, once the window has passed', () => {
+    const ws = build(5);
+    ws.undoLastChange();
+    outcome = 'refused';
+    ws.redoLastChange();
+    expect(ws.canRedoVersion()).toBe(true);
+
+    outcome = 'succeeded';
+    ws.redoLastChange();
+
+    expect(reverted).toEqual([4, 5, 5]);
+    expect(ws.canRedoVersion()).toBe(false);   // back where the chain started
+    expect(bar().undo).toEqual(['Undo the last change — back to v4', false]);
   });
 });
