@@ -185,7 +185,12 @@
                   <button (click)="trash(doc)" data-test="trash">Trash</button>
                 } @else {
                   <button (click)="restore(doc)" data-test="restore">Restore</button>
-                  <button class="menu-danger" (click)="purge(doc)" data-test="purge">Delete forever</button>
+                  <!-- Not offered when `_purge` is going to refuse it. A menu
+                       item that always fails is a dead affordance (§10), and
+                       the explanation below is what replaces it. -->
+                  @if (!doc.has_sign_requests) {
+                    <button class="menu-danger" (click)="purge(doc)" data-test="purge">Delete forever</button>
+                  }
                 }
               </div>
             }
@@ -219,6 +224,14 @@
               {{ doc.page_count }} pages · {{ fileSize(doc.size_bytes) }}
               @if (doc.is_encrypted) { · <svg class="ti" style="width:13px;height:13px;vertical-align:-2px;display:inline" viewBox="0 0 24 24" aria-hidden="true"><rect x="5.5" y="10.5" width="13" height="9.5" rx="1.5"/><path d="M8.5 10.5V8a3.5 3.5 0 0 1 7 0v2.5"/><path d="M12 14.2v2.3"/></svg> }
             </p>
+            @if (undeletableReason(doc); as reason) {
+              <!-- Why "Delete forever" is not on this card. A standing fact
+                   about the document, so it sits next to the document rather
+                   than in a toast that fades (contract §3 notice) — the nightly
+                   `trash_purge` retry used to be the only other explanation,
+                   and it is written to a log the user cannot read. -->
+              <p class="notice notice-info mt-2 !text-xs" data-test="undeletable">{{ reason }}</p>
+            }
           </div>
         }
       </div>

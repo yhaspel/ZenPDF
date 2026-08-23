@@ -110,6 +110,16 @@ verification link and unsubscribe link in every email is built from them, and
    `client_ip` counts from the right, so an undercount reads a proxy's address
    as the client and every throttle and the admin allowlist key on the wrong
    one. If you put another proxy (Cloudflare) in front, raise it again.
+
+   **Since 2026-08-23 the image sets it** (`ENV NUM_PROXIES=3` in
+   `infra/railway/api.Dockerfile`), so a project rebuilt from this repo gets the
+   measured value instead of `base.py`'s default of 1. Until then the number
+   existed only as a service variable in the dashboard, and a rebuild would have
+   collapsed every per-IP throttle onto the edge's address — the QA report's H1
+   failure, re-armed. A service variable still overrides the image, which is how
+   you change the topology; `apps/core/tests/test_client_ip_topology.py::test_the_railway_image_defaults_to_the_measured_hop_count`
+   reads the value back out of the Dockerfile, so lowering it has to be
+   deliberate.
 5. **`SECURE_SSL_REDIRECT`** with Railway's TLS termination needs
    `SECURE_PROXY_SSL_HEADER`, which `config/settings/prod.py` sets. The health
    endpoints are exempt (`SECURE_REDIRECT_EXEMPT`), because the platform probes

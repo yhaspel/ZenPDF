@@ -146,6 +146,93 @@ def test_four_failures_do_not_lock_the_document():
     L.enforce_password_attempts(doc_id)  # does not raise
 
 
+class _OverwritingCache:
+    """A cache whose `set` does exactly what the old fallback relied on.
+
+    `set` is unconditional — it is *supposed* to be — so an implementation that
+    reaches for it on a cold bucket loses whatever a concurrent caller wrote a
+    microsecond earlier. `add` is the conditional sibling and the whole point:
+    it refuses when the key exists, which is how the second caller learns to
+    increment instead of seed.
+
+    The stub is what stages the race in a single-process suite: real Redis
+    would need two connections and a scheduler that cooperates.
+    """
+
+    def __init__(self):
+        self.store: dict[str, int] = {}
+        self.sets = 0
+
+    def add(self, key, value, timeout=None):
+        if key in self.store:
+            return False
+        self.store[key] = value
+        return True
+
+    def incr(self, key, delta=1):
+        if key not in self.store:
+            raise ValueError(f"Key '{key}' not found")
+        self.store[key] += delta
+        return self.store[key]
+
+    def set(self, key, value, timeout=None):
+        self.sets += 1
+        self.store[key] = value
+
+    def get_many(self, keys):
+        return {k: self.store[k] for k in keys if k in self.store}
+
+
+def test_two_cold_misses_both_count(monkeypatch):
+    """Two concurrent guesses on a cold bucket must read 2, not 1.
+
+    The pre-fix code did `incr` → `except ValueError: set(key, 1)`. Both callers
+    miss, both fall into `set`, and the second writes 1 over the first's 1 — one
+    of the five tries an attacker is allowed came free. Here the two calls are
+    serialized, which is *weaker* than the real race and still enough: the
+    first-writer-loses shape is in the fallback itself, not in the interleaving.
+    """
+    from apps.core import limits as L
+
+    stub = _OverwritingCache()
+    monkeypatch.setattr(L, "cache", stub)
+    doc_id = "55555555-5555-5555-5555-555555555555"
+
+    L.record_password_failure(doc_id)
+    L.record_password_failure(doc_id)
+
+    assert L.password_failures_in_window(doc_id) == 2
+    assert stub.sets == 0, "a cold bucket must be seeded with `add`, never `set`"
+
+
+def test_a_cold_bucket_is_seeded_at_zero_then_incremented(monkeypatch):
+    """`add(key, 0)` + `incr` — not `add(key, 1)`, which would count the first
+    guess twice the moment anything else also incremented it."""
+    from apps.core import limits as L
+
+    stub = _OverwritingCache()
+    monkeypatch.setattr(L, "cache", stub)
+    doc_id = "66666666-6666-6666-6666-666666666666"
+
+    L.record_password_failure(doc_id)
+    assert stub.store[L._password_keys(doc_id)[0]] == 1
+
+
+def test_five_cold_misses_still_refuse_the_sixth(monkeypatch):
+    """End to end on the stub: the cap is reached at five, not at six."""
+    from apps.core import limits as L
+    from apps.core.exceptions import QuotaExceeded
+
+    stub = _OverwritingCache()
+    monkeypatch.setattr(L, "cache", stub)
+    doc_id = "77777777-7777-7777-7777-777777777777"
+
+    for _ in range(L.PASSWORD_ATTEMPTS_PER_MINUTE):
+        L.record_password_failure(doc_id)
+    with pytest.raises(QuotaExceeded):
+        L.enforce_password_attempts(doc_id)
+
+
 # --------------------------------------------------------------------------- #
 # L13 — production must name itself
 # --------------------------------------------------------------------------- #

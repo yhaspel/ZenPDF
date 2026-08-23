@@ -271,6 +271,37 @@ small, .muted { color: var(--color-ink-muted); }
   border-end-start-radius: 3px;
 }
 
+/* Inline notice — a fact about the record on screen, stated where it applies.
+   Not a toast: a toast is for something that just happened and can be missed,
+   and these are standing conditions somebody may arrive at an hour later.
+   Not a `.sheet` either — that is one-per-screen and reserved for trust and
+   empty states. Ink on a tinted surface with a tone rule on the inline start;
+   the tone never carries the words (§1: colour is almost never the
+   differentiator, and `--color-ink` clears 10.7:1 on every tone surface in both
+   themes, where the tone colour on body copy would not). */
+.notice {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border: var(--border-hairline) solid var(--color-border-strong);
+  border-inline-start-width: 3px;
+  border-radius: var(--radius-2);
+  background: var(--color-surface-raised);
+  color: var(--color-ink);
+  font: 400 13.5px/1.6 var(--font-ui);
+}
+/* Four tones because the contract specs four (§3) and a screen that needs
+   `danger` should not have to amend it again. `warning` and `info` are the two
+   in use today; `success` and `danger` are the pair the audit-chain line in
+   `request-detail.html` already draws by hand, and are here for it to adopt
+   whenever that file is next opened for its own reasons. */
+.notice-success { border-color: var(--color-success); background: var(--color-success-surface); }
+.notice-warning { border-color: var(--color-warning); background: var(--color-warning-surface); }
+.notice-danger { border-color: var(--color-danger); background: var(--color-danger-surface); }
+.notice-info { border-color: var(--color-info); background: var(--color-info-surface); }
+
 /* ---------- 6. The hanko stamp — completions only (§1) ---------- */
 .stamp {
   display: inline-flex;

@@ -114,24 +114,33 @@ echo "======================================================"
 echo " Backend tests (pytest, config.settings.test)"
 echo "======================================================"
 # The one skip set this gate accepts, asserted by file and not only by count:
-# four query-plan assertions that are vacuous on the hermetic suite's SQLite and
-# are exercised by `--pg` instead. Anything else skipped is an environment
-# fault, and an environment fault is not a green run.
-ALLOWED_SKIP_FILE="apps/core/tests/test_performance.py"
-ALLOWED_SKIPS=4
+# assertions whose *subject* does not exist on the hermetic suite's SQLite —
+# four query plans, and two that stage the concurrency-slot race across two
+# connections. Both files carry `@PG_ONLY`, and `--pg` below runs exactly them.
+# Anything else skipped is an environment fault, and an environment fault is not
+# a green run.
+#
+# Kept as a regex over paths rather than a count, because a count cannot tell
+# you what it did not run — which is the failure this guard exists for.
+ALLOWED_SKIP_FILES="apps/core/tests/test_performance.py|apps/core/tests/test_concurrency_pg.py"
+ALLOWED_SKIPS=6
 
 count_skips() { grep -c '^SKIPPED' "$1" 2>/dev/null || true; }
-foreign_skips() { grep '^SKIPPED' "$1" 2>/dev/null | grep -v "$ALLOWED_SKIP_FILE" || true; }
+foreign_skips() { grep '^SKIPPED' "$1" 2>/dev/null | grep -Ev "$ALLOWED_SKIP_FILES" || true; }
 
 # Regression test for the guard itself (see the header): the counter is run over
 # canned transcripts before it is trusted with a real one.
 selftest="$(mktemp -d)"
 printf 'SKIPPED [1] apps/core/tests/test_performance.py:49: vacuous on sqlite\nSKIPPED [1] apps/documents/tests/test_convert.py:9: needs gotenberg\n7 passed, 2 skipped\n' > "$selftest/mixed"
 printf '1061 passed, 0 skipped\n' > "$selftest/clean"
+# Both allowed files, so widening the set to two paths is itself checked here
+# rather than only by the run that follows.
+printf 'SKIPPED [1] apps/core/tests/test_performance.py:49: vacuous on sqlite\nSKIPPED [1] apps/core/tests/test_concurrency_pg.py:120: no row locks on sqlite\n2 skipped\n' > "$selftest/allowed"
 [ "$(count_skips "$selftest/mixed")" = "2" ] || { echo "skip-guard self-test failed: expected 2 skips"; exit 1; }
 [ "$(count_skips "$selftest/clean")" = "0" ] || { echo "skip-guard self-test failed: expected 0 skips"; exit 1; }
 [ -n "$(foreign_skips "$selftest/mixed")" ] || { echo "skip-guard self-test failed: a gotenberg skip must be foreign"; exit 1; }
 [ -z "$(foreign_skips "$selftest/clean")" ] || { echo "skip-guard self-test failed: a clean run has no foreign skips"; exit 1; }
+[ -z "$(foreign_skips "$selftest/allowed")" ] || { echo "skip-guard self-test failed: both PG-only files must be allowed"; exit 1; }
 rm -rf "$selftest"
 
 # Force test settings: the api service's env_file sets dev, and pytest-django's
@@ -170,17 +179,52 @@ docker compose run --rm -T --no-deps web npx ng lint
 echo "======================================================"
 echo " Frontend unit tests (vitest via ng test)"
 echo "======================================================"
+# The long-running dev server is stopped first, and this is not tidiness.
+#
+# The unit leg runs in its *own* `--no-deps` container and never talks to the
+# dev server — but they compete for the same Docker VM, and vitest loses. The
+# symptom is the worst kind: N unrelated spec files failing one test each with
+# `Hook timed out in 10000ms`, which reads exactly like the change under test
+# breaking things. It has now been recorded five times on five different
+# branches, twice on branches that changed **zero** frontend files, and the
+# failing set is different every run.
+#
+# Measured here on 2026-08-23, same commit, back to back:
+#   dev server up   → 2 failed / 464 passed, 25.3 s (transform 98.9 s, import 151.0 s)
+#   dev server down → 0 failed / 466 passed,  5.3 s (transform  6.3 s, import  11.1 s)
+#
+# `test.sh` already brings `web` back up before the e2e leg, for a related
+# reason it had also learned the hard way, so this costs nothing downstream.
+# A red gate that does not mean anything is the same failure the skip-set guard
+# above exists to prevent.
+docker compose stop web >/dev/null 2>&1 || true
 docker compose run --rm -T --no-deps web npx ng test --watch=false
+# …and put it back, whether or not `--e2e` follows. A gate that leaves the
+# developer's dev server stopped has fixed one surprise by introducing another;
+# the e2e leg's own `up -d web` then just waits for a container already coming
+# up. `set -e` is active, so this runs only on a green unit leg — which is what
+# we want: a red one leaves the stack exactly as it was for inspection.
+docker compose up -d web >/dev/null 2>&1 || true
 
 if [ "$PG" -eq 1 ]; then
   echo "======================================================"
-  echo " Query plans (pytest against Postgres, config.settings.dev)"
+  echo " Postgres-only tests (-m pg_only, config.settings.dev)"
   echo "======================================================"
-  # The hermetic suite runs on SQLite, where "no Seq Scan" is vacuous. These
-  # assertions are the §10.2 index audit, so they need the real planner —
-  # `--pg` is what makes them more than documentation.
+  # Everything whose *subject* does not exist on SQLite:
+  #
+  #   * query plans — "no Seq Scan" is vacuous without the real planner. These
+  #     are the §10.2 index audit, and `--pg` is what makes them more than
+  #     documentation.
+  #   * the concurrency slot — `_concurrency_slot` takes `SELECT … FOR UPDATE`
+  #     only where `has_select_for_update` is True, which SQLite is not. The
+  #     hermetic suite therefore exercised the *path* and not the *lock*, and
+  #     could not have failed if the lock were deleted. `test_concurrency_pg.py`
+  #     stages the race across two connections, twenty times.
+  #
+  # Selected by marker rather than by filename: this flag used to name one file,
+  # so a second Postgres-only file would have been written and then never run.
   docker compose run --rm -T -e DJANGO_SETTINGS_MODULE=config.settings.dev api \
-    pytest -q apps/core/tests/test_performance.py
+    pytest -q -rs -m pg_only
 fi
 
 if [ "$E2E" -eq 1 ]; then

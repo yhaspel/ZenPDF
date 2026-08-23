@@ -374,12 +374,30 @@ def _password_keys(document_id) -> list[str]:
 
 
 def record_password_failure(document_id) -> None:
-    """Count one wrong password against this document's sliding minute."""
+    """Count one wrong password against this document's sliding minute.
+
+    `add` then `incr`, never `incr` then `set`. The fallback this replaces
+    **lost counts on a cold bucket**: `incr` raises when the key is absent, so
+    two guesses arriving together both fell into `cache.set(key, 1)` and the
+    second overwrote the first rather than adding to it. Ten-second buckets made
+    cold buckets six times more frequent than the calendar minute did, so the
+    window L5 tightened is exactly the window that made this reachable.
+
+    Redis answers `add` with SETNX and `incr` with INCR — each atomic on its
+    own, and that is all this needs. `add` is a no-op when the key exists, so
+    the loser of the race still increments the winner's seed. The TTL is set by
+    `add` alone; `incr` never extends it, which is what keeps the bucket ageing
+    out of the window on schedule.
+    """
     key = _password_keys(document_id)[0]
+    # Live long enough to still be counted from the far end of the window.
+    cache.add(key, 0, timeout=PASSWORD_ATTEMPT_WINDOW_SECONDS * 3)
     try:
         cache.incr(key)
     except ValueError:
-        # Live long enough to still be counted from the far end of the window.
+        # The bucket expired between the `add` and the `incr` — a 3× window is
+        # long enough that this is a curiosity, not a path. Seed it again
+        # rather than lose the attempt entirely.
         cache.set(key, 1, timeout=PASSWORD_ATTEMPT_WINDOW_SECONDS * 3)
 
 

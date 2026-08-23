@@ -41,6 +41,14 @@ export interface DocumentModel {
   trashed_at: string | null;
   created_at: string;
   updated_at: string;
+  /**
+   * A signature request points at this document, so permanent deletion will be
+   * refused: `source_version` is `PROTECT` and the signed record has to keep
+   * pointing at what was signed. Read it *before* offering "Delete forever" —
+   * the refusal used to arrive as a toast that faded, leaving the nightly purge
+   * retry as the only remaining explanation, in a log nobody can read.
+   */
+  has_sign_requests: boolean;
 }
 
 export interface DocumentVersion {
@@ -609,6 +617,14 @@ export interface SignRequestModel {
   recipients: SignRecipient[];
   fields_: SignFieldModel[];
   page_count: number;
+  /**
+   * Why the signed copy never landed as a new version of the source document,
+   * or null. Best-effort by design (the envelope and the sealed file are
+   * unaffected), so this is the only place the owner can learn it happened —
+   * it used to be a server log line and nothing else. Cleared when a later
+   * resume succeeds.
+   */
+  source_append_error: string | null;
 }
 
 /** What a recipient sees at `/s/:token` — never another recipient's fields. */

@@ -55,6 +55,28 @@ class BaseStorage:
         """
         raise NotImplementedError
 
+    def list_prefix_detailed(self, prefix: str) -> list[dict]:
+        """`[{'key', 'size', 'last_modified'}, …]` for everything under `prefix`.
+
+        Two callers need more than the key and neither can get it cheaply from
+        `list_prefix` + `head`:
+
+        * `usage_recompute` sums the bytes under `uploads/{u|g}/{id}/`. Those
+          blobs have **no rows** — the ref is opaque and nothing records the
+          size — so the only way to know what a principal is charged for is to
+          add up what is actually there.
+        * `account_assets_purge` needs the age, and age is not derivable from
+          the key either.
+
+        One listing rather than one listing plus N `head` calls: S3 already
+        returns `Size` and `LastModified` in `list_objects_v2`, so asking again
+        per object would be a round trip per asset for data we were handed.
+
+        `last_modified` is an aware UTC datetime on both backends, so callers
+        can compare it with `timezone.now()` without knowing which one they got.
+        """
+        raise NotImplementedError
+
     def delete_prefix(self, prefix: str) -> int:
         """Delete everything under `prefix`; return the number of keys removed."""
         removed = 0
@@ -152,6 +174,19 @@ class S3Storage(BaseStorage):
             keys.extend(obj["Key"] for obj in page.get("Contents", []))
         return keys
 
+    def list_prefix_detailed(self, prefix):
+        # boto3 already parses LastModified into an aware UTC datetime.
+        out = []
+        paginator = self._client.get_paginator("list_objects_v2")
+        for page in paginator.paginate(Bucket=self._bucket, Prefix=prefix):
+            for obj in page.get("Contents", []):
+                out.append({
+                    "key": obj["Key"],
+                    "size": int(obj.get("Size") or 0),
+                    "last_modified": obj.get("LastModified"),
+                })
+        return out
+
     def presigned_get(self, key, expires=3600):
         return self._public_client.generate_presigned_url(
             "get_object",
@@ -236,6 +271,32 @@ class FilesystemStorage(BaseStorage):
                 if key.startswith(prefix):
                     keys.append(key)
         return keys
+
+    def list_prefix_detailed(self, prefix):
+        import datetime as _dt
+
+        out = []
+        for dirpath, _dirnames, filenames in os.walk(self._root):
+            for name in filenames:
+                path = os.path.join(dirpath, name)
+                key = os.path.relpath(path, self._root)
+                if not key.startswith(prefix):
+                    continue
+                try:
+                    stat = os.stat(path)
+                except OSError:
+                    # Swept between the walk and the stat. Nothing to report.
+                    continue
+                out.append({
+                    "key": key,
+                    "size": stat.st_size,
+                    # Aware UTC, to match what boto3 hands back — a caller
+                    # comparing against `timezone.now()` must not have to ask
+                    # which backend it is talking to.
+                    "last_modified": _dt.datetime.fromtimestamp(
+                        stat.st_mtime, tz=_dt.UTC),
+                })
+        return out
 
     def presigned_get(self, key, expires=3600):
         # Filesystem backend has no presign; callers must use the API proxy.

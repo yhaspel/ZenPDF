@@ -233,8 +233,12 @@ def _append_to_source_document(sign_request) -> None:
     quota is one of the reasons this can decline. That is the right answer for
     an unbounded write, and it costs the owner nothing they cannot recover: the
     sealed file is in the envelope and downloadable from the request either
-    way. It is logged rather than surfaced because there is no job here to fail
-    — the ceremony belongs to the signer, who did nothing wrong.
+    way. There is still no job here to fail — the ceremony belongs to the
+    signer, who did nothing wrong — **but the owner is now told**. A log line is
+    where a failure goes to be forgotten: the person who can act on "you are
+    over quota" is the one looking at the request, and until 2026-08-23 the
+    request said nothing at all. `source_append_error` carries the reason, and
+    the request detail renders it under the status with the download links.
 
     The sealed bytes are read back from storage rather than passed in, because
     a resumed finalize does not have them: the only thing it inherits from the
@@ -253,14 +257,49 @@ def _append_to_source_document(sign_request) -> None:
             _save_new_version(document=sign_request.document, data=sealed,
                               label="Signed", created_by=sign_request.owner,
                               job=None)
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
         # Deliberately *not* marked done: the next resume gets to try again,
         # and a permanent reason (a deleted document) simply logs each time.
         logger.warning("finalize: could not append signed version to document %s",
                        sign_request.document_id, exc_info=True)
+        reason = _append_failure_reason(exc)
+        if sign_request.source_append_error != reason:
+            sign_request.source_append_error = reason
+            sign_request.save(update_fields=["source_append_error"])
         return
     sign_request.source_appended_at = timezone.now()
-    sign_request.save(update_fields=["source_appended_at"])
+    # A later resume that succeeds clears the notice — `_finalize_tail` re-runs
+    # this whenever `source_appended_at` is null, so the owner who freed some
+    # space stops being told about a failure that no longer applies.
+    sign_request.source_append_error = None
+    sign_request.save(update_fields=["source_appended_at", "source_append_error"])
+
+
+def _append_failure_reason(exc: BaseException) -> str:
+    """One sentence the owner can act on, never a stack trace or a repr.
+
+    Domain errors already carry copy written for a person — `QuotaExceeded`'s
+    "Empty your trash or delete a document to free some up", the page cap's
+    "the limit is N", `doc_lock`'s "busy with another change". Those are exactly
+    what this notice should say. Anything else is an engine or storage fault
+    whose text is for us, so it gets a fixed sentence: the owner cannot act on
+    "KeyError", and showing it would be alarming rather than useful.
+    """
+    from apps.core.exceptions import ZenAPIException
+    from apps.pdf_engine.exceptions import EngineError
+
+    if isinstance(exc, ZenAPIException):
+        # DRF stores the detail on the instance; `str()` of it is the sentence.
+        return str(getattr(exc, "detail", "") or exc) or _APPEND_GENERIC_REASON
+    if isinstance(exc, EngineError):
+        return getattr(exc, "message", "") or _APPEND_GENERIC_REASON
+    return _APPEND_GENERIC_REASON
+
+
+_APPEND_GENERIC_REASON = (
+    "The document could not be updated. It may have been deleted or moved to "
+    "the trash."
+)
 
 
 @shared_task(name="apps.esign.tasks.sign_reminders")

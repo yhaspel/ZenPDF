@@ -4,6 +4,14 @@ python_files = ["test_*.py"]
 testpaths = ["apps"]
 addopts = "-p no:cacheprovider"
 filterwarnings = ["ignore::DeprecationWarning"]
+markers = [
+    # Tests whose subject does not exist on SQLite: query plans (§10.2) and the
+    # row lock behind the concurrency slot. They skip on the hermetic suite —
+    # asserting "no Seq Scan" against SQLite is vacuous, and a race needs two
+    # connections — and are selected by `./infra/test.sh --pg`, which runs them
+    # under `config.settings.dev` against the real Postgres.
+    "pg_only: needs a real Postgres planner or row locks; run via ./infra/test.sh --pg",
+]
 
 [tool.coverage.run]
 source = ["apps"]

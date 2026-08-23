@@ -151,6 +151,20 @@ class SignRequest(models.Model):
     # a resumed finalize mails every recipient a second copy.
     completed_notified_at = models.DateTimeField(null=True, blank=True)
     source_appended_at = models.DateTimeField(null=True, blank=True)
+    # Why the append declined, in words the owner can act on — or NULL.
+    #
+    # `_append_to_source_document` is best-effort by design: the envelope is
+    # complete and the sealed file downloadable either way, and there is no job
+    # to fail because the ceremony belongs to the signer, who did nothing wrong.
+    # What it used to do was swallow every reason into a `logger.warning`, so an
+    # owner whose signed copy never reached their document had no way to find
+    # out — and since the storage quota moved onto the version write, "you are
+    # over quota" became one of the reasons.
+    #
+    # **Nullable rather than blank**, deliberately: "" would mean the same thing
+    # as "no attempt has failed", and the resume path needs to tell those apart
+    # to know whether it is clearing anything.
+    source_append_error = models.TextField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

@@ -7,6 +7,7 @@ from datetime import timedelta
 from pathlib import Path
 
 import dj_database_url
+from celery.schedules import crontab
 from decouple import Csv, config
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -317,6 +318,24 @@ CELERY_BEAT_SCHEDULE = {
         "task": "apps.core.tasks.trash_purge",
         "schedule": 86400.0,
     },
+    # §15 named this from the beginning and nothing implemented it until
+    # 2026-08-23. It reconciles `storage_bytes_used` against what is actually
+    # charged — the counter `enforce_storage` refuses on, so drift upward locks
+    # a user out of their own quota. 02:00, as §15 says: a full pass lists two
+    # storage prefixes per principal, which is the sort of thing that belongs
+    # where nobody is working.
+    "usage-recompute": {
+        "task": "apps.core.tasks.usage_recompute",
+        "schedule": crontab(hour=2, minute=0),
+    },
+    # An account's `uploads/u/{id}/` stamps and conversion sources (§13
+    # "ephemeral"), which nothing swept — a guest's die with the session, an
+    # account's were charged for ever. Runs after the reconciler so the day's
+    # refunds are already in the counter it will read tomorrow.
+    "account-assets-purge": {
+        "task": "apps.core.tasks.account_assets_purge",
+        "schedule": crontab(hour=3, minute=0),
+    },
 }
 EXPORT_TTL_HOURS = config("EXPORT_TTL_HOURS", default=24, cast=int)
 # How long a job may be *running* before the sweep concludes its worker died.
@@ -525,6 +544,14 @@ TRASH_RETENTION_DAYS = config("TRASH_RETENTION_DAYS", default=30, cast=int)
 # point where anybody could notice it leaving the twenty-row panel in Settings.
 JOB_PARAMS_RETENTION_DAYS = config("JOB_PARAMS_RETENTION_DAYS", default=30, cast=int)
 JOB_RETENTION_DAYS = config("JOB_RETENTION_DAYS", default=365, cast=int)
+# Ephemeral image assets under `uploads/{u|g}/{id}/` — stamps, image watermarks
+# and conversion sources (§13). Seven days because they are re-uploaded per
+# session by design and a conversion source is discarded the moment its job
+# finishes; a week is long enough that nobody working across a weekend notices.
+# Guest prefixes are swept by `guest_purge` at session expiry instead, which is
+# both sooner and more complete. Saved signatures share this prefix and are
+# exempt by key — see `account_assets_purge`.
+ASSET_RETENTION_DAYS = config("ASSET_RETENTION_DAYS", default=7, cast=int)
 
 # --- Abuse (§9B) ------------------------------------------------------------
 MAX_RECIPIENTS_PER_REQUEST = config("MAX_RECIPIENTS_PER_REQUEST", default=10, cast=int)

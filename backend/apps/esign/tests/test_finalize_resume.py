@@ -203,3 +203,146 @@ def test_only_the_missing_half_is_redone(completed):
     assert completed.certificate_key == before_cert
     assert completed.audit_events.filter(type="completed").count() == 1
     assert len(_completion_mails(completed)) == _one_round_of_mail(completed)
+
+
+# --------------------------------------------------------------------------- #
+# An append that declines tells the owner (queue, 2026-08-02)
+# --------------------------------------------------------------------------- #
+def _over_quota(settings):
+    """Shrink the tier until any version write is refused."""
+    import copy
+
+    tiers = copy.deepcopy(settings.TIERS)
+    tiers["free"]["storage_mb"] = 0
+    settings.TIERS = tiers
+
+
+def test_the_happy_path_sets_no_notice(completed):
+    """The regression this pins is the opposite one: a field that is always
+    set would show every owner a failure that did not happen."""
+    assert completed.source_appended_at is not None
+    assert completed.source_append_error is None
+
+
+def test_an_append_refused_by_quota_is_recorded_on_the_request(completed, settings):
+    """The envelope still completes and the certificate is still produced —
+    that is the design. What changes is that the owner is told why their
+    document did not get the signed copy."""
+    versions_before = completed.document.versions.count()
+    sign_request = _kill_after_the_commit(completed)
+    _over_quota(settings)
+
+    finalize_sign_request(str(sign_request.id))
+
+    sign_request.refresh_from_db()
+    assert sign_request.source_appended_at is None
+    assert sign_request.source_append_error, "the owner was told nothing"
+    assert "storage" in sign_request.source_append_error.lower()
+    # Everything else the completion owes still happened.
+    assert sign_request.status == SignRequest.Status.COMPLETED
+    assert sign_request.certificate_key
+    assert sign_request.audit_events.filter(type="completed").count() == 1
+    assert sign_request.document.versions.count() == versions_before
+
+
+def test_a_later_resume_with_room_clears_the_notice(completed, settings):
+    """`_finalize_tail` re-runs the append while `source_appended_at` is null.
+    An owner who freed some space must stop being told about a failure that no
+    longer applies."""
+    sign_request = _kill_after_the_commit(completed)
+    _over_quota(settings)
+    finalize_sign_request(str(sign_request.id))
+    sign_request.refresh_from_db()
+    assert sign_request.source_append_error
+
+    versions_before = sign_request.document.versions.count()
+    settings.TIERS = _generous(settings)
+    _finalize_tail(sign_request)
+
+    sign_request.refresh_from_db()
+    assert sign_request.source_append_error is None
+    assert sign_request.source_appended_at is not None
+    assert sign_request.document.versions.count() == versions_before + 1
+
+
+def _generous(settings):
+    import copy
+
+    tiers = copy.deepcopy(settings.TIERS)
+    tiers["free"]["storage_mb"] = 2048
+    return tiers
+
+
+def test_the_reason_is_a_sentence_not_a_repr(completed, settings):
+    """The notice is rendered verbatim to the owner. A `KeyError` or a stack
+    frame in it would be alarming and unactionable, so anything that is not a
+    domain error with copy written for a person gets a fixed sentence."""
+    from apps.esign import tasks
+
+    sign_request = _kill_after_the_commit(completed)
+
+    def _boom(**kwargs):
+        raise KeyError("docs/deadbeef/v3.pdf")
+
+    from apps.documents import tasks as document_tasks
+
+    original = document_tasks._save_new_version
+    document_tasks._save_new_version = _boom
+    try:
+        tasks._append_to_source_document(sign_request)
+    finally:
+        document_tasks._save_new_version = original
+
+    sign_request.refresh_from_db()
+    reason = sign_request.source_append_error
+    assert reason == tasks._APPEND_GENERIC_REASON
+    assert "KeyError" not in reason
+    assert "deadbeef" not in reason
+
+
+def test_the_owner_sees_the_reason_and_a_recipient_never_does(completed, api,
+                                                              anon, settings):
+    """It is on the owner's serializer only. The ceremony builds its own dict,
+    and a recipient has no business knowing about the sender's storage."""
+    sign_request = _kill_after_the_commit(completed)
+    _over_quota(settings)
+    finalize_sign_request(str(sign_request.id))
+    sign_request.refresh_from_db()
+
+    owner_view = api.get(f"/api/sign-requests/{sign_request.id}/")
+    assert owner_view.status_code == 200, owner_view.content
+    body = owner_view.json()
+    assert body["source_append_error"] == sign_request.source_append_error
+
+    token = Recipient.objects.get(sign_request_id=sign_request.id).token
+    ceremony = anon.get(f"/api/public/sign/{token}/").json()
+    assert "source_append_error" not in ceremony
+    assert sign_request.source_append_error not in str(ceremony)
+
+
+def test_the_owner_cannot_write_the_reason_themselves(completed, api):
+    """Read-only by nature and read-only in the serializer: a PATCH that could
+    set it would let an owner author a sentence the UI presents as something
+    the system observed."""
+    resp = api.patch(f"/api/sign-requests/{completed.id}/",
+                     {"source_append_error": "Ignore this, it is fine."},
+                     format="json")
+    assert resp.status_code in (200, 400), resp.content
+    completed.refresh_from_db()
+    assert completed.source_append_error is None
+
+
+def test_a_repeated_failure_does_not_rewrite_the_row(completed, settings):
+    """Two resumes that fail the same way must not churn the row — the notice
+    is a standing condition, not an event log."""
+    sign_request = _kill_after_the_commit(completed)
+    _over_quota(settings)
+    finalize_sign_request(str(sign_request.id))
+    sign_request.refresh_from_db()
+    first = sign_request.updated_at
+    reason = sign_request.source_append_error
+
+    finalize_sign_request(str(sign_request.id))
+    sign_request.refresh_from_db()
+    assert sign_request.source_append_error == reason
+    assert sign_request.updated_at == first
