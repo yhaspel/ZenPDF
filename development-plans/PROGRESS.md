@@ -1290,6 +1290,17 @@ Screenshots and the full table are in `docs/reviews/evidence/workspace-debt/`. O
    enabled. Pressed again after the window: v7, "back to v4" / "Nothing to redo" — the ceiling,
    which is where the person started.
 
+**And again on production**, once the deploy was live — confirmed by bundle hash, `main-RJIETFAM.js`
+on `zenpdf.up.railway.app` is the one this branch built. As a **guest**, which is who the anonymous
+-first product is for: the stamp palette lights up on upload, keeps the image across Select and
+re-arms on click, and both stamps survive the save (v2); the version bar walks v4 → Undo → v5
+showing v3 ("back to v2" / "forward to v4") → Redo → v6 showing v4 ("back to v3" / "Nothing to
+redo", the ceiling); and Compare answers *"Compared 2 pages against 3 — 3 pages differ (1 only
+exists in the other document) · 4 text changes"* — the singular agreeing with the one page, from
+the real engine. No console errors. Screenshots 14–16 in the evidence folder. The throttled cases
+were not repeated there, deliberately: forcing a 429 on production means spending a real rate limit,
+and the local run already measured it.
+
 **What the by-eye pass found that the tests did not.** The toast on a refused revert says
 *"Operation failed"* — true, and nothing more. §1's voice rule asks errors to say what happened and
 what to do next, and a 429 has both of those to say ("too many requests just now; try again in a

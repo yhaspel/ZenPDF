@@ -32,6 +32,19 @@ is 500, so the *user* scope was lowered to the same rates instead — first to 8
 | `11-compare-summary-dark-390.png` | The same at 390 px, no overflow. |
 | `12-undo-bar-after-refused-redo-dark-1280.png` | The bar **after** a Redo that drew a 429: still "Undo the last change — back to v3" / "Redo — forward to v5", both enabled, `v6` unchanged. On the previous code this read "back to v5" / "Nothing to redo". |
 | `13-undo-bar-advanced-light-1280.png` | The same Redo pressed again once the window passed: `v7`, "back to v4" / "Nothing to redo" — the chain reached its ceiling, which is where the person started. |
+| `14-prod-stamp-palette-1280.png` | **Production**, as a guest: the entry armed by the upload, wearing the image, after a place → Select → re-arm → place. |
+| `15-prod-undo-redo-bar-1280.png` | **Production**: the bar after Undo then Redo — v6 showing v4, "back to v3" / "Nothing to redo". |
+| `16-prod-compare-summary-1280.png` | **Production**: "Compared 2 pages against 3 — 3 pages differ (1 only exists in the other document) · 4 text changes" — the singular agreeing with the one page. |
+
+## The production re-check (2026-08-23, after the merge)
+
+Run against `https://zenpdf.up.railway.app` once the deploy was live — confirmed by bundle hash
+(`main-RJIETFAM.js`, the one this branch built) rather than by waiting a plausible interval. Done
+as a **guest**, which is who the anonymous-first product is for. No console errors.
+
+The two throttled scenarios were **not** repeated there, deliberately: forcing a 429 on production
+means spending a real rate limit, and the local run already measured that behaviour at production's
+own guest rate.
 
 ## Numbers worth keeping
 
