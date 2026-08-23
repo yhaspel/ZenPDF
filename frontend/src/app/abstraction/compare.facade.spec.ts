@@ -135,5 +135,79 @@ describe('CompareFacade', () => {
     });
     expect(facade.summary()!.identical).toBe(true);
     expect(facade.changes()).toEqual([]);
+    // The identical sentence is the template's own; the line stands down.
+    expect(facade.summaryLine()).toBeNull();
+  });
+
+  // ------------------------------------------------------------------ //
+  // "4 of 2 page(s) differ" (2026-08-21 report, smaller observations)
+  //
+  // `changed_pages` counts the positions compared — the union of both
+  // documents — and `a_pages` counts only this one, so the sentence put a
+  // union numerator over a single-document denominator and read as nonsense
+  // the moment the other document was the longer one.
+  // ------------------------------------------------------------------ //
+
+  /** A report of `entries` page pairs; `null` on a side means "no such page". */
+  function load(
+    entries: [number | null, number | null][],
+    summary: Partial<CompareReport['summary']> & { a_pages: number; b_pages: number },
+  ): void {
+    const report: CompareReport = {
+      pages: entries.map(([a, b]) => ({
+        a_page: a, b_page: b, text_changes: [], visual_regions: [], visual_share: 0,
+      })),
+      summary: {
+        offset: 0, changed_pages: entries.length, text_changes: entries.length,
+        identical: false, ...summary,
+      },
+    };
+    facade.setOther('doc-b');
+    facade.run('doc-a', 1)!.subscribe();
+    http.expectOne((r) => r.url.endsWith('/documents/doc-a/operations/'))
+      .flush({ id: 'j', status: 'succeeded' });
+    http.expectOne((r) => r.url.endsWith('/jobs/j/'))
+      .flush({ id: 'j', status: 'succeeded', result: { report } });
+  }
+
+  it('states one denominator when the two documents are the same length', () => {
+    load([[0, 0], [1, 1], [2, 2]], { a_pages: 3, b_pages: 3, changed_pages: 2, text_changes: 5 });
+    expect(facade.summaryLine()).toBe('2 of 3 pages differ · 5 text changes');
+  });
+
+  it('names both lengths when this document is the longer one', () => {
+    load([[0, 0], [1, 1], [2, null], [3, null]],
+      { a_pages: 4, b_pages: 2, changed_pages: 3, text_changes: 5 });
+    expect(facade.summaryLine()).toBe(
+      'Compared 4 pages against 2 — 3 pages differ (2 only exist in this document) '
+      + '· 5 text changes',
+    );
+  });
+
+  it('names both lengths when the other document is the longer one', () => {
+    // The measured case: 4 changed pages, 2 of them this document's whole length.
+    load([[0, 0], [1, 1], [null, 2], [null, 3]],
+      { a_pages: 2, b_pages: 4, changed_pages: 4, text_changes: 4 });
+    expect(facade.summaryLine()).toBe(
+      'Compared 2 pages against 4 — 4 pages differ (2 only exist in the other document) '
+      + '· 4 text changes',
+    );
+  });
+
+  it('counts the unpaired pages an offset leaves on each side, not the difference', () => {
+    // Two 3-page files at offset 1: B's first page and A's last have no
+    // counterpart, and `|a_pages − b_pages|` is zero — which is why the count
+    // comes off the report rather than off the two lengths.
+    load([[null, 0], [0, 1], [1, 2], [2, null]],
+      { a_pages: 3, b_pages: 3, offset: 1, changed_pages: 2, text_changes: 2 });
+    expect(facade.summaryLine()).toBe(
+      'Compared 3 pages against 3 — 2 pages differ '
+      + '(1 only exists in this document, 1 only exists in the other document) · 2 text changes',
+    );
+  });
+
+  it('says it in the singular where the singular is what happened', () => {
+    load([[0, 0], [1, 1]], { a_pages: 2, b_pages: 2, changed_pages: 1, text_changes: 1 });
+    expect(facade.summaryLine()).toBe('1 of 2 pages differs · 1 text change');
   });
 });

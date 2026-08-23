@@ -242,6 +242,91 @@ describe('Annotate — clipboard, menu and keyboard', () => {
     });
   });
 
+  /**
+   * The palette says what is armed (2026-08-23).
+   *
+   * Uploading a custom stamp switched the active tool to `image_stamp` and no
+   * button lit up — so the one tool with no palette entry was also the only one
+   * you could not get back to without uploading the file again.
+   */
+  describe('the image-stamp entry', () => {
+    const realCreate = URL.createObjectURL;
+    const button = () =>
+      fixture.nativeElement.querySelector('[data-test=tool-image-stamp]') as HTMLButtonElement;
+
+    beforeEach(() => {
+      URL.createObjectURL = () => 'blob:stamp';
+    });
+    afterEach(() => {
+      URL.createObjectURL = realCreate;
+    });
+
+    it('is there but unusable until a stamp has been uploaded', () => {
+      const el = button();
+      expect(el).not.toBeNull();
+      expect(el.disabled).toBe(true);
+      expect(el.getAttribute('aria-pressed')).toBe('false');
+      expect(el.title).toBe('Upload a custom stamp below to use this');
+      // Nothing to show yet, so no empty image box in a dashed button.
+      expect(el.querySelector('img')).toBeNull();
+    });
+
+    it('wears the uploaded image and reads as pressed once the tool is armed', () => {
+      annotations.useStamp('ref-1', new Blob(['png'], { type: 'image/png' }));
+      (fixture.componentInstance as unknown as { tool: { set(v: string): void } })
+        .tool.set('image_stamp');
+      fixture.detectChanges();
+
+      const el = button();
+      expect(el.disabled).toBe(false);
+      expect(el.getAttribute('aria-pressed')).toBe('true');
+      expect(el.querySelector('img')!.getAttribute('src')).toBe('blob:stamp');
+      // Decorative: the button's own words are its name.
+      expect(el.querySelector('img')!.getAttribute('alt')).toBe('');
+      expect(el.textContent!.trim()).toBe('Image stamp');
+    });
+
+    it('re-arms the tool when clicked, which is the way back to it', () => {
+      annotations.useStamp('ref-1', new Blob(['png']));
+      const tool = fixture.componentInstance as unknown as { tool(): string };
+      fixture.detectChanges();
+      expect(tool.tool()).toBe('select');
+
+      button().click();
+      fixture.detectChanges();
+
+      expect(tool.tool()).toBe('image_stamp');
+      expect(button().getAttribute('aria-pressed')).toBe('true');
+    });
+
+    it('places the stamp the session is holding', () => {
+      annotations.useStamp('ref-1', new Blob(['png']));
+      fixture.detectChanges();
+      button().click();
+      (fixture.componentInstance as unknown as {
+        onCreated(d: { page: number; rect: unknown }): void;
+      }).onCreated({ page: 0, rect: { x: 0.2, y: 0.2, w: 0.2, h: 0.1 } });
+
+      const placed = annotations.all();
+      expect(placed.length).toBe(1);
+      expect(placed[0].type).toBe('image_stamp');
+      expect(placed[0].image_ref).toBe('ref-1');
+    });
+
+    it('gives every palette entry a hit target and a pressed state', () => {
+      // §6: ≥44 px, and a toggle that does not announce its state is a toggle
+      // only the sighted half of the audience can read.
+      const buttons: HTMLButtonElement[] = Array.from(
+        fixture.nativeElement.querySelectorAll('[data-test^=tool-]'),
+      );
+      expect(buttons.length).toBe(17);
+      for (const el of buttons) {
+        expect(el.getAttribute('aria-pressed')).not.toBeNull();
+        expect(el.className).toContain('min-h-11');
+      }
+    });
+  });
+
   describe('nudging through the overlay', () => {
     it('re-derives a highlight’s quads rather than only its box', () => {
       annotations.add(square({

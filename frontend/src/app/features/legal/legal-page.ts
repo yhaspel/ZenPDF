@@ -1,5 +1,6 @@
 import { DOCUMENT } from '@angular/common';
-import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, DestroyRef, computed, inject, signal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { Meta, Title } from '@angular/platform-browser';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 
@@ -37,6 +38,7 @@ export class LegalPage {
   private title = inject(Title);
   private meta = inject(Meta);
   private doc = inject(DOCUMENT);
+  private destroyRef = inject(DestroyRef);
 
   protected kind = signal<LegalKind>('privacy');
   protected config = signal<AppConfig | null>(null);
@@ -75,7 +77,7 @@ export class LegalPage {
     // indexable URLs for one page.
     setCanonical(this.doc, this.meta, `${SITE_URL}/${meta.path}`);
 
-    this.configSvc.config().subscribe({
+    this.configSvc.config().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (config) => this.config.set(config),
       error: () => this.config.set(null),
     });

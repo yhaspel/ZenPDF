@@ -9,6 +9,10 @@
     "src/**/*.ts"
   ],
   "exclude": [
-    "src/**/*.spec.ts"
+    "src/**/*.spec.ts",
+    // Spec helpers. They reach for `expect`, which the app program has no
+    // types for and no business shipping — the application build must not be
+    // type-checking test scaffolding at all.
+    "src/app/testing/**/*.ts"
   ]
 }

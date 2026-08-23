@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test';
 import path from 'node:path';
 
 import { expectOverlayDrew } from './drew';
-import { FIXTURES, registerAndLogin, uploadFiles } from './helpers';
+import { FIXTURES, IMAGES, registerAndLogin, uploadFiles } from './helpers';
 
 /**
  * Phase 3 — annotations (phase-03 "Tests → E2E").
@@ -296,4 +296,54 @@ test('phase 3: a text box shows its words on the page, and undo takes them back'
   await page.reload();
   await page.click('[data-test=annotate-toggle]');
   await expect(page.locator('[data-test=overlay-text]')).toHaveText(sentence);
+});
+
+/**
+ * The palette says which tool is armed — including the custom stamp.
+ *
+ * Uploading a stamp switched the active tool to `image_stamp` and no palette
+ * button lit up, so the one tool without an entry was also the only one you
+ * could not come back to without uploading the file a second time
+ * (2026-08-21 review, smaller observations; design contract §3).
+ */
+test('phase 3: the palette shows the uploaded stamp, and arms it again', async ({ page }) => {
+  await registerAndLogin(page, 'p3stamp');
+  await uploadFiles(page, ['text.pdf']);
+  await page.locator('[data-test=doc-card] [data-test=open-doc]').first().click();
+  await expect(page).toHaveURL(/\/app\/doc\//);
+
+  await page.click('[data-test=annotate-toggle]');
+  await expect(page.locator('[data-test=annotate-mode]')).toBeVisible();
+  await fitPage(page);
+
+  // Nothing uploaded: the entry is there, and says why it cannot be used.
+  const entry = page.locator('[data-test=tool-image-stamp]');
+  await expect(entry).toBeDisabled();
+  await expect(entry).toHaveAttribute('aria-pressed', 'false');
+
+  await page.locator('[data-test=stamp-upload]').setInputFiles(path.join(IMAGES, 'sample.png'));
+  await expect(successToast(page, 'Stamp ready')).toBeVisible({ timeout: 30_000 });
+
+  // Armed by the upload, and the palette now says so, wearing the image.
+  await expect(entry).toBeEnabled();
+  await expect(entry).toHaveAttribute('aria-pressed', 'true');
+  await expect(entry.locator('img')).toHaveAttribute('src', /^blob:/);
+
+  await dragOnPage(page, [0.15, 0.15], [0.4, 0.3]);
+  await expect(page.locator('[data-test=comment-row]')).toHaveCount(1);
+
+  // Away and back: the entry is the way back, and it still has the stamp.
+  await page.click('[data-test=tool-select]');
+  await expect(entry).toHaveAttribute('aria-pressed', 'false');
+  await entry.click();
+  await expect(entry).toHaveAttribute('aria-pressed', 'true');
+
+  await dragOnPage(page, [0.15, 0.45], [0.4, 0.6]);
+  await expect(page.locator('[data-test=comment-row]')).toHaveCount(2);
+
+  await page.click('[data-test=annot-save]');
+  await expect(successToast(page, 'Annotations saved')).toBeVisible({ timeout: 60_000 });
+  await page.reload();
+  await page.click('[data-test=annotate-toggle]');
+  await expect(page.locator('[data-test=comment-row]')).toHaveCount(2);
 });

@@ -1,4 +1,5 @@
-import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, DestroyRef, inject, signal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { RouterLink } from '@angular/router';
 
 import { SignRequestModel } from '../../core/models/models';
@@ -55,12 +56,13 @@ import { EmptyState } from '../../shared/empty-state';
 })
 export class RequestList {
   private esign = inject(EsignService);
+  private destroyRef = inject(DestroyRef);
 
   protected requests = signal<SignRequestModel[]>([]);
   protected loaded = signal(false);
 
   constructor() {
-    this.esign.listRequests().subscribe({
+    this.esign.listRequests().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (page) => {
         this.requests.set(page.results ?? []);
         this.loaded.set(true);

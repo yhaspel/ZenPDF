@@ -281,7 +281,7 @@ export class Forms {
   }
 
   protected exportData(format: 'json' | 'csv'): void {
-    this.forms.exportData(this.docId(), format).subscribe({
+    this.forms.exportData(this.docId(), format).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (blob) => saveBlob(blob, `form-data.${format}`),
       error: () => this.toast.error('Export failed'),
     });
@@ -296,7 +296,9 @@ export class Forms {
     file.text().then(
       (text) => {
         this.busy.set(true);
-        this.forms.importData(this.docId(), this.currentSeq(), format, text).subscribe({
+        this.forms.importData(this.docId(), this.currentSeq(), format, text)
+          .pipe(takeUntilDestroyed(this.destroyRef))
+          .subscribe({
           next: (job) => this.onJob(job, 'Form data imported'),
           error: () => this.fail(),
         });
@@ -606,9 +608,8 @@ export class Forms {
   // Shared job plumbing
   // ------------------------------------------------------------------ //
   private track(job$: ReturnType<FormsFacade['flatten']>, label: string): void {
-    job$ = job$.pipe(takeUntilDestroyed(this.destroyRef));
     this.busy.set(true);
-    job$.subscribe({
+    job$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (job) => this.onJob(job, label),
       error: () => this.fail(),
     });

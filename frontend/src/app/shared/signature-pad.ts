@@ -1,6 +1,7 @@
 import {
   ChangeDetectionStrategy,
   Component,
+  DestroyRef,
   ElementRef,
   computed,
   inject,
@@ -9,6 +10,7 @@ import {
   signal,
   viewChild,
 } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
 
 import { EsignService } from '../core/services/esign.service';
@@ -141,6 +143,7 @@ export class SignaturePad {
   readonly chosen = output<string>();
 
   private esign = inject(EsignService);
+  private destroyRef = inject(DestroyRef);
   private canvasRef = viewChild<ElementRef<HTMLCanvasElement>>('pad');
 
   protected readonly tabs: { value: SignatureTab; label: string }[] = [
@@ -243,7 +246,7 @@ export class SignaturePad {
     }
     // Rendered by the server, in the fonts vendored there — the browser has no
     // copy, and fetching one from Google would tell Google who is signing.
-    this.esign.renderTyped(text, this.chosenFont()).subscribe({
+    this.esign.renderTyped(text, this.chosenFont()).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (blob) => this.toDataUrl(blob),
       error: () => this.preview.set(null),
     });

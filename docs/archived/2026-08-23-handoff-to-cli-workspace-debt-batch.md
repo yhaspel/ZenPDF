@@ -1,3 +1,22 @@
+> **Executed 2026-08-23 — result: all five paid down, on `fix/workspace-debt-2026-08`.** Two of
+> them were bigger than this prompt said and one of its own instructions rested on an assumption the
+> audit contradicted; all three are recorded rather than smoothed over. (1) Subscriptions: the row
+> named five panels, the audit found **72 bare subscriptions across 24 files** — including fifteen
+> the record never named, and six and two bare calls sitting *around* the `track()` helpers in
+> `edit.ts`/`forms.ts` that made those two look done. All 72 piped; held by a custom ESLint rule and
+> by runtime assertions on rxjs's own `observed` flag. One deliberate exemption (`confirmLeave`'s
+> autosave), decided and written down. (2) Thumbnails: automatic backoff on 429/503 with a shared
+> `ThumbnailScheduler`, and an unthrottled rail measurably unchanged. (3) The `image_stamp` palette
+> entry — plus `aria-pressed` and a 44 px floor on all seventeen buttons, because the prompt's
+> "like its siblings" described siblings that had neither. (4) Compare's summary. (5) The version
+> cursor, committed on success only. **The one instruction not followed as written:** the
+> backing-off tile does not get the `.breath` — 34 px of `--color-accent` × 500 tiles is what §1's
+> one-accent rule exists to prevent — and design contract §3 now says so, with the refusal attached.
+> Gate: backend 1109 passed / 4 skipped (the expected Postgres-only set), `ng lint` clean, unit
+> 454 / 52 files, build + prerender green on the host, e2e 66 passed. `data-test` parity additive
+> only: `tool-image-stamp`. Backend untouched. Evidence: PROGRESS session log
+> **"2026-08-23 (later still) — Workspace debt: five things the record had been carrying"**.
+
 # Handoff — Workspace debt batch: subscriptions that outlive their panel, thumbnails that hammer a 429, a palette that lies, one odd sentence, and an Undo chain that a 429 can drop (2026-08-21, revision 2 after Phase 12)
 
 **For:** Claude CLI on the Mac in `~/Documents/Claude/Projects/ZenPDF`.

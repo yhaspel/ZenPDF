@@ -1,4 +1,5 @@
-import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, DestroyRef, inject, signal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { Meta, Title } from '@angular/platform-browser';
 import { RouterLink } from '@angular/router';
 
@@ -26,6 +27,7 @@ export class Verify {
   private esign = inject(EsignService);
   private title = inject(Title);
   private meta = inject(Meta);
+  private destroyRef = inject(DestroyRef);
 
   protected report = signal<VerifyReport | null>(null);
   protected busy = signal(false);
@@ -62,7 +64,7 @@ export class Verify {
     this.error.set('');
     this.report.set(null);
     this.filename.set(file.name);
-    this.esign.verify(file).subscribe({
+    this.esign.verify(file).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (report) => {
         this.report.set(report);
         this.busy.set(false);

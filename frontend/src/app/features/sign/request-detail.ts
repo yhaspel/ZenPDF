@@ -1,4 +1,5 @@
-import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, DestroyRef, inject, signal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 
 import {
@@ -34,6 +35,7 @@ export class RequestDetail {
   private route = inject(ActivatedRoute);
   private esign = inject(EsignService);
   private toast = inject(ToastService);
+  private destroyRef = inject(DestroyRef);
 
   protected request = signal<SignRequestModel | null>(null);
   protected events = signal<AuditEventModel[]>([]);
@@ -47,11 +49,11 @@ export class RequestDetail {
   }
 
   private load(id: string): void {
-    this.esign.getRequest(id).subscribe({
+    this.esign.getRequest(id).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (row) => this.request.set(row),
       error: () => this.toast.error('That request could not be opened.'),
     });
-    this.esign.audit(id).subscribe({
+    this.esign.audit(id).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (body) => {
         this.events.set(body.events);
         this.chain.set(body.chain);
@@ -64,7 +66,7 @@ export class RequestDetail {
     const request = this.request();
     if (!request) return;
     this.busy.set(true);
-    this.esign.remind(request.id).subscribe({
+    this.esign.remind(request.id).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (body) => {
         this.busy.set(false);
         if (body.reminded.length) {
@@ -84,7 +86,7 @@ export class RequestDetail {
     const request = this.request();
     if (!request) return;
     this.busy.set(true);
-    this.esign.cancelRequest(request.id).subscribe({
+    this.esign.cancelRequest(request.id).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (row) => {
         this.request.set(row);
         this.busy.set(false);
@@ -100,7 +102,7 @@ export class RequestDetail {
   protected download(what: 'final' | 'certificate'): void {
     const request = this.request();
     if (!request) return;
-    this.esign.download(request.id, what).subscribe({
+    this.esign.download(request.id, what).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (blob) => saveBlob(blob, what === 'final'
         ? `${request.title}.pdf`
         : `Certificate ${request.envelope_code}.pdf`),

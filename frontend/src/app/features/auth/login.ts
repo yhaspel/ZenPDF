@@ -1,4 +1,5 @@
-import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, DestroyRef, computed, inject, signal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 
@@ -152,6 +153,7 @@ export class Login {
   private auth = inject(AuthFacade);
   private router = inject(Router);
   private route = inject(ActivatedRoute);
+  private destroyRef = inject(DestroyRef);
 
   /** `next` and `reason` keep travelling if the person bounces back (L12). */
   protected readonly registerLinkParams = computed(() => {
@@ -167,7 +169,7 @@ export class Login {
     if (!this.email || !this.password) return;
     this.loading.set(true);
     this.error.set('');
-    this.auth.login(this.email, this.password).subscribe({
+    this.auth.login(this.email, this.password).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       // Read `next` the way Register does (L12): somebody sent here by the
       // account gate was landing on the dashboard, one click away from what
       // they had been doing and with nothing to say why. Validated, never

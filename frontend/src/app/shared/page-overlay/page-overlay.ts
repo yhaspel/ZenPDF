@@ -1,6 +1,7 @@
 import {
   ChangeDetectionStrategy,
   Component,
+  DestroyRef,
   ElementRef,
   computed,
   effect,
@@ -10,6 +11,7 @@ import {
   signal,
   viewChild,
 } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 
 import { DocumentsService } from '../../core/services/documents.service';
 import {
@@ -197,6 +199,7 @@ export class PageOverlay {
   private textEditor = viewChild<ElementRef<HTMLTextAreaElement>>('textEditor');
   private menuEl = viewChild<ElementRef<HTMLDivElement>>('overlayMenu');
   private host = inject(ElementRef<HTMLElement>);
+  private destroyRef = inject(DestroyRef);
 
   protected imageUrl = signal<string | null>(null);
   /**
@@ -308,6 +311,7 @@ export class PageOverlay {
       // render stays inside the <1 s single-page budget (§3, §13).
       const sub = this.docsSvc
         .thumbnailBlob(id, page, Math.min(2000, Math.round(width * 2)), version)
+        .pipe(takeUntilDestroyed(this.destroyRef))
         .subscribe({
           next: (blob) => {
             this.revoke();

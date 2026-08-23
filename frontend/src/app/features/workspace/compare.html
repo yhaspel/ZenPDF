@@ -34,9 +34,7 @@
         @if (summary.identical) {
           These two documents are identical.
         } @else {
-          <strong>{{ summary.changed_pages }}</strong> of
-          {{ summary.a_pages }} page(s) differ ·
-          {{ summary.text_changes }} text change(s)
+          {{ compare.summaryLine() }}
         }
       </div>
 

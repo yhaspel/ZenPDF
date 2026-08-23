@@ -545,7 +545,7 @@ export class Edit {
     const input = event.target as HTMLInputElement;
     const file = input.files?.[0];
     if (!file) return;
-    this.docsSvc.uploadImage(file).subscribe({
+    this.docsSvc.uploadImage(file).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (asset) => {
         if (replace) {
           const target = this.selectedImage();
@@ -609,7 +609,9 @@ export class Edit {
     this.edits.setReport(null);
     this.edits.rememberQuery(find, this.matchCase());
     this.busy.set(true);
-    this.edits.preview(this.docId(), this.currentSeq(), find, this.matchCase()).subscribe({
+    this.edits.preview(this.docId(), this.currentSeq(), find, this.matchCase())
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
       next: (job) => {
         if (job.status === 'succeeded') {
           this.busy.set(false);
@@ -648,6 +650,7 @@ export class Edit {
     this.edits
       .execute(this.docId(), this.currentSeq(), find, this.replaceText(),
                this.matchCase())
+      .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         // Report what the *server* did, not what we asked for.
         next: (job) => this.onJob(
@@ -687,7 +690,7 @@ export class Edit {
     const input = event.target as HTMLInputElement;
     const file = input.files?.[0];
     if (!file) return;
-    this.docsSvc.uploadImage(file).subscribe({
+    this.docsSvc.uploadImage(file).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (asset) => {
         this.wmImageRef.set(asset.ref);
         this.toast.success('Image ready — apply the watermark');
@@ -741,7 +744,7 @@ export class Edit {
 
   /** Stamp a page of another document over (or under) this one — letterheads. */
   protected loadOverlaySources(): void {
-    this.docsSvc.list({}).subscribe({
+    this.docsSvc.list({}).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (page) => this.overlayDocs.set(
         page.results
           .filter((d) => d.id !== this.docId())
@@ -806,16 +809,17 @@ export class Edit {
   // ------------------------------------------------------------------ //
   private run(type: string, params: unknown, label: string): void {
     this.busy.set(true);
-    this.edits.run(this.docId(), this.currentSeq(), type, params).subscribe({
+    this.edits.run(this.docId(), this.currentSeq(), type, params)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
       next: (job) => this.onJob(job, label),
       error: () => this.fail(),
     });
   }
 
   private track(job$: ReturnType<EditFacade['run']>, label: string): void {
-    job$ = job$.pipe(takeUntilDestroyed(this.destroyRef));
     this.busy.set(true);
-    job$.subscribe({
+    job$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (job) => this.onJob(job, label),
       error: () => this.fail(),
     });

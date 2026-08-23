@@ -116,6 +116,36 @@ export class AnnotationsFacade {
     return id ? (this.all().find((a) => a.id === id) ?? null) : null;
   });
 
+  // ------------------------------------------------------------------ //
+  // The custom stamp (2026-08-23)
+  // ------------------------------------------------------------------ //
+  /**
+   * The image this session uploaded to stamp with, and a local preview of it.
+   *
+   * Session state, not document state, so it is deliberately **not** cleared by
+   * `clear()`: an `uploads/…` image asset is scoped to the principal (§13), not
+   * to a file, and someone stamping the same mark onto three documents should
+   * not have to upload it three times.
+   *
+   * It lives here rather than in the panel because the panel is destroyed every
+   * time the person leaves Annotate. Uploading a stamp armed the `image_stamp`
+   * tool and nothing in the palette said so; switching to Select to move the
+   * mark then lost the stamp with no way back to it but another upload.
+   *
+   * `preview` is an object URL over the file that was uploaded, not a fetch of
+   * what the server kept: an `<img>` cannot send the JWT (the same reason
+   * thumbnails come down as blobs), and the bytes are already in hand.
+   */
+  private _stamp = signal<{ ref: string; preview: string } | null>(null);
+  readonly stamp = this._stamp.asReadonly();
+
+  /** Remember the uploaded stamp, releasing the one it replaces. */
+  useStamp(ref: string, file: Blob): void {
+    const previous = this._stamp();
+    if (previous) URL.revokeObjectURL(previous.preview);
+    this._stamp.set({ ref, preview: URL.createObjectURL(file) });
+  }
+
   wordsFor(page: number): WordBox[] {
     return this._words().get(page) ?? [];
   }

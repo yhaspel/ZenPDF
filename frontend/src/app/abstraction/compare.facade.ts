@@ -43,6 +43,48 @@ export class CompareFacade {
 
   readonly summary = computed(() => this._report()?.summary ?? null);
 
+  /**
+   * The summary as one honest sentence.
+   *
+   * "**4** of 2 page(s) differ" was on screen whenever the other document was
+   * the longer one (2026-08-21 report, smaller observations). The two numbers
+   * are not the same denominator: `changed_pages` counts the positions
+   * compared — the **union** of both documents, because "page 3 was added" is
+   * exactly the change a reader is looking for — while `a_pages` is only this
+   * document's length. Where the pages do not line up the sentence now says so
+   * in as many words, and names both lengths so the larger count has somewhere
+   * to have come from.
+   *
+   * The unpaired pages are counted off `report.pages` rather than from
+   * `|a_pages − b_pages|`, because the alignment offset can leave a page
+   * unmatched on *each* side while the two documents are the same length: at
+   * offset 1 over two 3-page files, B's first page and A's last have no
+   * counterpart. `null` while there is no report, and while the two are
+   * identical — that sentence is its own.
+   */
+  readonly summaryLine = computed<string | null>(() => {
+    const report = this._report();
+    if (!report || report.summary.identical) return null;
+    const { a_pages, b_pages, changed_pages, text_changes } = report.summary;
+    const onlyA = report.pages.filter((page) => page.b_page === null).length;
+    const onlyB = report.pages.filter((page) => page.a_page === null).length;
+    const changes = `${text_changes} text ${plural(text_changes, 'change')}`;
+
+    // The noun counts the set, the verb counts the subject: "1 of 3 pages
+    // differs", "4 pages differ".
+    const differ = plural(changed_pages, 'differs', 'differ');
+
+    if (!onlyA && !onlyB) {
+      return `${changed_pages} of ${a_pages} ${plural(a_pages, 'page')} ${differ} · ${changes}`;
+    }
+    const unpaired = [
+      onlyA ? `${onlyA} only ${plural(onlyA, 'exists', 'exist')} in this document` : '',
+      onlyB ? `${onlyB} only ${plural(onlyB, 'exists', 'exist')} in the other document` : '',
+    ].filter(Boolean).join(', ');
+    return `Compared ${a_pages} ${plural(a_pages, 'page')} against ${b_pages} — `
+      + `${changed_pages} ${plural(changed_pages, 'page')} ${differ} (${unpaired}) · ${changes}`;
+  });
+
   /** Every change, in page order, as one flat list the UI can walk. */
   readonly changes = computed<ChangeRow[]>(() => {
     const report = this._report();
@@ -129,6 +171,11 @@ export class CompareFacade {
       return job;
     }), finalize(() => this._running.set(false)));
   }
+}
+
+/** `plural(1, 'page')` → "page"; `plural(2, 'page')` → "pages". */
+function plural(count: number, one: string, many = `${one}s`): string {
+  return count === 1 ? one : many;
 }
 
 function describe(kind: string, a: string, b: string): string {

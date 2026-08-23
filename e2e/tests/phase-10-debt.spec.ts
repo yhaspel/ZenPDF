@@ -83,3 +83,64 @@ test('phase 10: a long document does not fetch every thumbnail at once', async (
   expect(rendered).toBeGreaterThan(10);
   expect(thumbnailRequests.length).toBeLessThan(rendered);
 });
+
+/**
+ * …and when it *is* refused, it waits rather than giving up (2026-08-23).
+ *
+ * The other half of L9. Lazy loading made the 429 rarer; it did not make it
+ * impossible — a guest gets 40 requests a minute — and until now the first
+ * refusal put a tile straight into its failed state. A rail that met the limit
+ * became a wall of retry buttons, which is a manual backoff performed by the
+ * person.
+ *
+ * The refusal is injected here rather than by lowering `THROTTLE_GUEST`: the
+ * dev-env route needs the api container restarted, and what is under test is
+ * what the tile does with a 429, not that the server can produce one — which
+ * `test_throttling.py` already proves.
+ */
+test('phase 10: a throttled rail waits and fills, rather than showing a wall of retries',
+  async ({ page }) => {
+    test.setTimeout(300_000);
+    await registerAndLogin(page, 'p10backoff');
+    await uploadFiles(page, ['large-generated.pdf']);
+    await expect(page.locator('[data-test=doc-card]').first()).toBeVisible({
+      timeout: 60_000,
+    });
+
+    // Two refusals per tile, then through: inside the four attempts a tile is
+    // allowed, so every one of them must arrive without anybody clicking.
+    const refused = new Map<string, number>();
+    await page.route('**/thumbnail/**', async (route) => {
+      const url = route.request().url();
+      const seen = refused.get(url) ?? 0;
+      if (seen < 2) {
+        refused.set(url, seen + 1);
+        await route.fulfill({
+          status: 429,
+          headers: { 'Retry-After': '1', 'content-type': 'application/json' },
+          body: JSON.stringify({ error: { code: 'throttled', message: 'Slow down.' } }),
+        });
+        return;
+      }
+      await route.continue();
+    });
+
+    await page.locator('[data-test=doc-card] [data-test=open-doc]').first().click();
+    await expect(page).toHaveURL(/\/app\/doc\//);
+    await expect(page.locator('[data-test=rail-thumb]').first()).toBeVisible({
+      timeout: 60_000,
+    });
+
+    // Refused, and still in its loading state — the distinction is the fix.
+    await expect(page.locator('[data-test=thumb-failed]')).toHaveCount(0);
+    await expect(page.locator('[data-test=thumb-loading]').first()).toBeVisible();
+
+    // It arrives on its own.
+    await expect(page.locator('[data-test=rail-thumb] img').first()).toBeVisible({
+      timeout: 60_000,
+    });
+    await page.waitForTimeout(3000);
+
+    expect(refused.size).toBeGreaterThan(1);
+    await expect(page.locator('[data-test=thumb-failed]')).toHaveCount(0);
+  });

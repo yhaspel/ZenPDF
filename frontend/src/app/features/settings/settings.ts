@@ -3,11 +3,13 @@ import { HttpClient } from '@angular/common/http';
 import {
   ChangeDetectionStrategy,
   Component,
+  DestroyRef,
   ElementRef,
   inject,
   signal,
   viewChild,
 } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 
@@ -275,6 +277,7 @@ export class Settings {
   protected readonly adsEnabled = () => this.config.ads().enabled;
   protected verification = inject(VerificationService);
   private jobsSvc = inject(JobsService);
+  private destroyRef = inject(DestroyRef);
   protected jobs = signal<Job[]>([]);
   protected jobFilter = signal('');
   protected readonly jobFilters = [
@@ -310,6 +313,7 @@ export class Settings {
     this.exporting.set(true);
     this.http
       .get(`${environment.apiUrl}/users/me/export/`, { responseType: 'blob' })
+      .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (blob) => {
           this.exporting.set(false);
@@ -339,6 +343,7 @@ export class Settings {
       .request('delete', `${environment.apiUrl}/users/me/delete/`, {
         body: { password: this.deletePassword },
       })
+      .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (result) => {
           this.busyDeleting.set(false);
@@ -375,7 +380,7 @@ export class Settings {
   }
 
   private loadJobs(): void {
-    this.jobsSvc.list(this.jobFilter() || undefined).subscribe({
+    this.jobsSvc.list(this.jobFilter() || undefined).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (page) => this.jobs.set(page.results.slice(0, 20)),
       error: () => this.jobs.set([]),
     });
@@ -386,7 +391,9 @@ export class Settings {
   }
 
   save(): void {
-    this.auth.updateProfile({ display_name: this.displayName }).subscribe({
+    this.auth.updateProfile({ display_name: this.displayName })
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
       next: () => this.toast.success('Profile updated'),
       error: () => this.toast.error('Could not update profile'),
     });
