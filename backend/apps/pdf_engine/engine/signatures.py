@@ -22,7 +22,12 @@ import os
 import fitz
 
 from ..exceptions import EngineError, InvalidParams
-from ..geometry import NormRect, apply_matrix_rect, norm_to_page_rect
+from ..geometry import (
+    NormRect,
+    apply_matrix_rect,
+    content_rotation,
+    norm_to_page_rect,
+)
 
 # Vendored so the ceremony makes no third-party request (see module docstring).
 FONT_DIR = os.path.join(os.path.dirname(__file__), "..", "fonts")
@@ -34,6 +39,11 @@ TYPED_FONTS = {
 }
 
 MAX_PLACEMENTS = 100
+# The envelope footer, in points. Absolute rather than a fraction of the page:
+# see `stamp_envelope_footer`.
+FOOTER_SIZE = 7.0
+FOOTER_BAND = 20.0
+FOOTER_MARGIN = 10.0
 # A signature image is small by nature; this is a decompression ceiling, not a
 # quality one.
 MAX_SIGNATURE_PIXELS = 8_000_000
@@ -196,44 +206,64 @@ def normalize_signature(data: bytes) -> bytes:
     return trim_transparent(png)
 
 
-def _counter_rotation(page) -> int:
-    """How far to turn placed content back so it reads upright on the page."""
-    return (360 - (page.rotation % 360)) % 360
+def _content_rotation(page) -> int:
+    """`geometry.content_rotation` for a page — see there for why it is `N`."""
+    return content_rotation(page.rotation)
+
+
+def _derotate(page, rect: fitz.Rect) -> tuple[float, float, float, float]:
+    """A display-space rect → the page's unrotated space."""
+    return apply_matrix_rect(rect.x0, rect.y0, rect.x1, rect.y1,
+                             tuple(page.derotation_matrix))
 
 
 def _place_rect(page, norm: NormRect) -> fitz.Rect:
     """A §8 normalized rect → where `insert_image`/`insert_textbox` want it.
 
-    Both write in the page's **unrotated** space, like annotations and unlike
-    `insert_htmlbox` (§8's per-API table; `content.py::_watermark_image` says
-    the same thing about the same call). Without the de-rotation a signature
-    placed at the top-left of a landscape page lands off the right edge.
+    **Every** PyMuPDF writer takes the page's unrotated space — including
+    `insert_htmlbox`, which §8's table used to exempt and which measurement
+    says is no different (see §8's amendment of 2026-08-23). Without the
+    de-rotation a signature placed at the top-left of a landscape page lands
+    off the right edge. De-rotating the box is only half of it: the content
+    also has to be turned, which is `_content_rotation`.
     """
     x0, y0, x1, y1 = norm_to_page_rect(norm, page.rect.width, page.rect.height)
-    x0, y0, x1, y1 = apply_matrix_rect(x0, y0, x1, y1,
-                                       tuple(page.derotation_matrix))
-    return fitz.Rect(x0, y0, x1, y1)
+    return fitz.Rect(*_derotate(page, fitz.Rect(x0, y0, x1, y1)))
 
 
 def fit_text(page, rect: fitz.Rect, text: str, *, max_size: float = 9,
-             color=(0, 0, 0)) -> float:
+             color=(0, 0, 0), align=fitz.TEXT_ALIGN_LEFT) -> float:
     """Write `text` inside `rect`, shrinking until it fits. Returns the size used.
+
+    `rect` is in the page's **unrotated** space (what `_place_rect` returns);
+    the rotation is taken from the page, so no caller can forget it. Without it
+    the glyphs are laid along the wrong axis of a rotated box and wrap every
+    two or three characters — the date came out as `202|6-0|8-2|3`, which still
+    *extracts* as the right characters and so fooled every text assertion.
 
     `insert_textbox` returns a negative number and **writes nothing** when the
     text does not fit — so a date in a box a person drew thin, or a tick in a
     small square, simply vanished from the finished document while the signer
     was told it was filled in.
     """
+    rotate = _content_rotation(page)
     size = max_size
     while size >= 4:
         if page.insert_textbox(rect, text, fontsize=size, fontname="helv",
-                               color=color) >= 0:
+                               color=color, rotate=rotate, align=align) >= 0:
             return size
         size -= 1
     # Nothing fits the box. Draw it anyway, on the baseline, rather than
-    # silently dropping what somebody typed.
-    page.insert_text((rect.x0, rect.y1), text, fontsize=4, fontname="helv",
-                     color=color)
+    # silently dropping what somebody typed. `insert_text` has no `rotate=` of
+    # its own — a morph about the baseline anchor is the only way to turn it —
+    # and the anchor has to be the *displayed* bottom-left, which on a rotated
+    # page is a different corner of the unrotated rect.
+    display = rect * page.rotation_matrix
+    anchor = apply_matrix_rect(display.x0, display.y1, display.x0, display.y1,
+                               tuple(page.derotation_matrix))[:2]
+    page.insert_text(fitz.Point(*anchor), text, fontsize=4, fontname="helv",
+                     color=color,
+                     morph=(fitz.Point(*anchor), fitz.Matrix(rotate)))
     return 4
 
 
@@ -272,17 +302,24 @@ def self_sign(data: bytes, *, placements, images: dict[str, bytes],
             rect = _place_rect(page, norm)
             # `keep_proportion` is the default and is wanted: a signature
             # stretched to the box is not the signature that was drawn.
-            # `rotate` counters the page's own rotation — without it the
-            # signature lands in the right place on a landscape page and is
-            # drawn lying on its side (the same nuance the Phase-3 review queue
-            # noted for image stamps).
+            # `rotate` turns the image with the page — without it the signature
+            # lands in the right place on a landscape page and is drawn lying
+            # on its side (the same nuance the Phase-3 review queue noted for
+            # image stamps).
             page.insert_image(rect, stream=image, overlay=True,
-                              rotate=_counter_rotation(page))
+                              rotate=_content_rotation(page))
 
             if include_date and date_text:
-                below = fitz.Rect(rect.x0, rect.y1, rect.x1, rect.y1 + 16)
-                fit_text(page, below, date_text, max_size=8,
-                         color=(0.25, 0.28, 0.33))
+                # "Below" is a statement about what the reader sees, so it is
+                # measured in display space and de-rotated — exactly as
+                # `_place_rect` does for the signature itself. Building it from
+                # the already-de-rotated `rect` put the date *above* the
+                # signature on a /Rotate 90 page and to its right on 270.
+                display = rect * page.rotation_matrix
+                below = fitz.Rect(display.x0, display.y1,
+                                  display.x1, display.y1 + 16)
+                fit_text(page, fitz.Rect(*_derotate(page, below)), date_text,
+                         max_size=8, color=(0.25, 0.28, 0.33))
         return doc.tobytes(garbage=3, deflate=True)
     finally:
         doc.close()
@@ -301,10 +338,22 @@ def stamp_envelope_footer(data: bytes, *, code: str, verify_url: str) -> bytes:
         for page in doc:
             # Along the foot of the page as *displayed*, which on a rotated
             # page is not the foot of the unrotated one.
-            foot = NormRect(0.03, 0.972, 0.94, 0.02)
-            rect = _place_rect(page, foot)
-            page.insert_textbox(rect, line, fontsize=7, fontname="helv",
-                                color=(0.42, 0.45, 0.5), align=fitz.TEXT_ALIGN_CENTER)
+            #
+            # The band's height is in **points, not a fraction of the page**.
+            # It used to be 0.02 of the display height, which is 17pt on a
+            # portrait A4 and 8pt on a rotated A5 — under the line height. With
+            # the rotation now honoured, `insert_textbox` answers a band that
+            # short by writing *nothing* and returning a negative number that
+            # nobody read, so the envelope code would have disappeared from
+            # exactly the small rotated pages this fix exists to serve. Going
+            # through `fit_text` means the worst case is small type rather than
+            # a missing line of evidence.
+            w, h = page.rect.width, page.rect.height
+            band = fitz.Rect(w * 0.03, h - FOOTER_MARGIN - FOOTER_BAND,
+                             w * 0.97, h - FOOTER_MARGIN)
+            fit_text(page, fitz.Rect(*_derotate(page, band)), line,
+                     max_size=FOOTER_SIZE, color=(0.42, 0.45, 0.5),
+                     align=fitz.TEXT_ALIGN_CENTER)
         return doc.tobytes(garbage=3, deflate=True)
     finally:
         doc.close()

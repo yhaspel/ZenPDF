@@ -263,8 +263,81 @@ def test_a_signature_lands_where_it_was_put_on_a_rotated_page(fixture_bytes):
         assert 42 <= box.x0 <= 295 and 42 <= box.x1 <= 295, box
         assert abs(box.y0 - 0.05 * page.rect.height) < 2, box
         assert abs(box.y1 - 0.15 * page.rect.height) < 2, box
-        # …and the right way up: a signature lying on its side is not a
-        # signature, and only a geometry assertion catches it.
+        # …and not lying on its side. This catches a *quarter* turn, which
+        # changes the box's proportions. It cannot catch a **half** turn —
+        # 180° is a symmetry of a bounding box, so this assertion passed for
+        # months on upside-down output. That is what the rendered-pixel test
+        # below is for; keep both, they catch different things.
         assert box.width > box.height, f"the signature is sideways: {box}"
     finally:
         doc.close()
+
+
+def _asymmetric_ink(width=300, height=120) -> bytes:
+    """A signature with an unmistakable top: a bar across the top quarter.
+
+    Deliberately not symmetric under any rotation, because the defect this
+    guards against is a 180° flip and every symmetric mark is blind to it.
+    """
+    doc = fitz.open()
+    page = doc.new_page(width=width, height=height)
+    page.draw_rect(fitz.Rect(0, 0, width, height * 0.25),
+                   color=None, fill=(1, 0, 0))
+    page.draw_line((40, height * 0.7), (260, height * 0.6), width=3)
+    data = page.get_pixmap(alpha=True).tobytes("png")
+    doc.close()
+    return data
+
+
+@pytest.mark.parametrize("rotation", [0, 90, 180, 270])
+def test_a_signature_is_upright_at_every_page_rotation(rotation):
+    """The half-turn the bounding-box assertion above cannot see.
+
+    §8's product law is that placed content reads upright **to the reader**
+    whatever the page's `/Rotate`. Proving that needs the one PyMuPDF API which
+    applies the rotation — `get_pixmap` — because every other lens is blind to
+    it: a round-trip cancels the error out, a bounding box is symmetric under
+    it, and `get_text` returns the same glyphs whichever way up they are.
+
+    0 and 180 are in the parametrize as controls, not padding: the old formula
+    and the correct one **agree** at exactly those two, so a test that omitted
+    them could not distinguish "fixed" from "broken in the other direction".
+    """
+    doc = fitz.open()
+    page = doc.new_page(width=595, height=842)
+    page.set_rotation(rotation)
+    source = doc.tobytes()
+    doc.close()
+
+    out = SG.self_sign(
+        source,
+        placements=[{"signature_upload_ref": "sig", "page": 0,
+                     "rect": {"x": 0.10, "y": 0.50, "w": 0.40, "h": 0.10}}],
+        images={"sig": _asymmetric_ink()},
+    )
+
+    doc = fitz.open(stream=out, filetype="pdf")
+    try:
+        page = doc[0]
+        pixmap = page.get_pixmap(dpi=72)  # the reader's view: rotation applied
+        red = [(x, y)
+               for y in range(pixmap.height)
+               for x in range(pixmap.width)
+               if _is_red(pixmap, x, y)]
+        assert red, "the signature did not render at all"
+        centre_y = sum(y for _, y in red) / len(red) / pixmap.height
+        # The placed box spans 0.50–0.60 of the displayed height and the bar is
+        # in its top quarter, so upright puts the red near 0.51 and a half turn
+        # puts it near 0.59. Asserting against the middle of the box separates
+        # them with room to spare either side.
+        assert centre_y < 0.55, (
+            f"the signature is upside down at /Rotate {rotation}: "
+            f"red centroid at y={centre_y:.3f}, expected the top of the box"
+        )
+    finally:
+        doc.close()
+
+
+def _is_red(pixmap, x, y) -> bool:
+    pixel = pixmap.pixel(x, y)
+    return pixel[0] > 180 and pixel[1] < 90 and pixel[2] < 90

@@ -24,6 +24,7 @@ from ..geometry import (
     NormRect,
     apply_matrix_point,
     apply_matrix_rect,
+    content_rotation,
     norm_to_page_point,
     norm_to_page_rect,
     page_point_to_norm,
@@ -336,8 +337,16 @@ def _embed_images(doc: fitz.Document, images: dict[str, bytes]) -> dict[str, int
     return out
 
 
+_AP_ROTATION = {
+    0: "[1 0 0 1 0 0]",
+    90: "[0 1 -1 0 0 0]",
+    180: "[-1 0 0 -1 0 0]",
+    270: "[0 -1 1 0 0 0]",
+}
+
+
 def _write_image_ap(doc: fitz.Document, annot: fitz.Annot, rect: fitz.Rect,
-                    img_xref: int, ref: str) -> None:
+                    img_xref: int, ref: str, rotate: int = 0) -> None:
     """Give a Stamp annot our own appearance stream drawing an embedded image.
 
     The alternative sanctioned by phase-03 — drawing the image straight into page
@@ -346,19 +355,29 @@ def _write_image_ap(doc: fitz.Document, annot: fitz.Annot, rect: fitz.Rect,
     appearance-stream path renders the pixels *and* keeps a real, addressable
     annotation object, so the fallback would trade interop away for nothing.
 
-    Pure xref writes — no page objects, so it is safe to call inside the op loop.
+    `rotate` is the page's own rotation (`geometry.content_rotation`). An
+    appearance stream is drawn in the page's unrotated space and turns with the
+    page, so without it a stamp placed on a /Rotate 90 page renders a quarter
+    turn from how the user placed it. The turn goes in the **`/Matrix`**, which
+    is the mechanism PDF 32000-1 §12.5.5 provides for exactly this: the BBox is
+    transformed by Matrix and the *bounding box of the result* is then mapped
+    onto the annotation's `/Rect`. So the content is laid out at the displayed
+    size and the rotated result lands back on the rect it was given.
     """
     annot.update()
     kind, ap = doc.xref_get_key(annot.xref, "AP/N")
     if kind != "xref":
         raise InvalidParams("could not build the image stamp appearance")
     ap_xref = int(str(ap).split()[0])
+    # At a quarter turn the drawn box is the rect with its sides swapped: it is
+    # the *displayed* box, which is what the image has to fill.
+    quarter = rotate in (90, 270)
+    dw = rect.height if quarter else rect.width
+    dh = rect.width if quarter else rect.height
     doc.xref_set_key(ap_xref, "Resources", f"<</XObject<</ZenIm {img_xref} 0 R>>>>")
-    doc.xref_set_key(ap_xref, "BBox", f"[0 0 {rect.width} {rect.height}]")
-    doc.xref_set_key(ap_xref, "Matrix", "[1 0 0 1 0 0]")
-    doc.update_stream(
-        ap_xref, f"q {rect.width} 0 0 {rect.height} 0 0 cm /ZenIm Do Q".encode()
-    )
+    doc.xref_set_key(ap_xref, "BBox", f"[0 0 {dw} {dh}]")
+    doc.xref_set_key(ap_xref, "Matrix", _AP_ROTATION[rotate])
+    doc.update_stream(ap_xref, f"q {dw} 0 0 {dh} 0 0 cm /ZenIm Do Q".encode())
     doc.xref_set_key(annot.xref, _IMAGE_STAMP_KEY, fitz.get_pdf_str(ref))
 
 
@@ -395,6 +414,11 @@ def _add_annotation(page: fitz.Page, spec: dict, author: str,
         annot = page.add_freetext_annot(
             rect,
             str(spec.get("contents") or ""),
+            # A comment is typed onto the page the reader is looking at, so it
+            # reads upright to that reader — the same rule the burnt-in
+            # surfaces follow. Without this it turns with the page and a note
+            # on a /Rotate 90 scan arrives sideways.
+            rotate=content_rotation(page.rotation),
             fontsize=float(spec.get("font_size") or 12),
             text_color=parse_color(spec.get("color")) or (0, 0, 0),
             fill_color=parse_color(spec.get("fill")),
@@ -447,7 +471,8 @@ def _add_annotation(page: fitz.Page, spec: dict, author: str,
         rect = _rect_of(spec, page)
         annot = page.add_stamp_annot(rect, stamp=0)
         _apply_common(annot, spec, author, title=title)
-        _write_image_ap(page.parent, annot, rect, img_xref, ref)
+        _write_image_ap(page.parent, annot, rect, img_xref, ref,
+                        rotate=content_rotation(page.rotation))
         return annot
 
     _apply_common(annot, spec, author, set_colors=kind != "free_text", title=title)

@@ -189,17 +189,41 @@ def find_envelope_code(data: bytes) -> str:
     The verification page uses it to look the envelope up in our own records —
     which is what turns "this file has a valid seal" into "this is envelope
     ZEN-8F3KQ2, completed on the 2nd, and here is its fingerprint".
+
+    **Two passes, and the second one is a repair.** Envelopes completed before
+    2026-08-23 on a page carrying `/Rotate 90` or `270` had the footer laid out
+    down a narrow strip, so `get_text()` returns it broken across lines —
+    `En\\nvel\\nope\\nZE\\nN-\\n8F\\n3K\\nQ2` — and the strict pattern misses a
+    code that is plainly there. Those files cannot be repaired at the source:
+    re-stamping would change the bytes, and the bytes are what the PAdES seal
+    covers and what `final_sha256` promised on a certificate their signers
+    already hold. So the reader is where it gets fixed.
+
+    Squashing whitespace can in principle splice a match out of two adjacent
+    runs, which is why it is a *fallback* rather than the rule — and why the
+    cost of a wrong candidate is nil: it is looked up in our own records and
+    simply fails to match.
     """
     import re
 
     import fitz
 
+    strict = re.compile(r"\bZEN-[A-Z2-9]{6}\b")
+    squashed = re.compile(r"ZEN-[A-Z2-9]{6}")
+    fallback = ""
     doc = fitz.open(stream=data, filetype="pdf")
     try:
         for page in doc:
-            match = re.search(r"\bZEN-[A-Z2-9]{6}\b", page.get_text())
+            text = page.get_text()
+            match = strict.search(text)
             if match:
+                # A clean match anywhere beats a squashed one, so this returns
+                # at once — the ordinary envelope never pays for the repair.
                 return match.group(0)
-        return ""
+            if not fallback:
+                match = squashed.search(re.sub(r"\s+", "", text))
+                if match:
+                    fallback = match.group(0)
     finally:
         doc.close()
+    return fallback

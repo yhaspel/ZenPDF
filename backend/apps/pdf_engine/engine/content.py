@@ -29,6 +29,7 @@ from ..geometry import (
     NormRect,
     apply_matrix_point,
     apply_matrix_rect,
+    content_rotation,
     norm_to_page_rect,
 )
 
@@ -95,9 +96,12 @@ def _norm(value, what: str) -> NormRect:
 def _display_rect(value, page: fitz.Page, what: str = "rect") -> fitz.Rect:
     """Normalized → **display** space, i.e. `page.rect` (§8).
 
-    For `insert_htmlbox`, which is the one PyMuPDF writer that applies the page
-    rotation itself. Measured, because the family is not consistent — see
-    `_raw_rect`.
+    What the client means and what the reader sees. Nothing writes here: every
+    PyMuPDF writer takes unrotated space, so this is the input to `_raw_rect`
+    rather than a destination. *(Until 2026-08-23 this said `insert_htmlbox`
+    was "the one PyMuPDF writer that applies the page rotation itself".
+    Measured on PyMuPDF 1.28.0: it does not, and that sentence is why page
+    numbers, headers and Bates numbers landed mid-page on rotated documents.)*
     """
     x0, y0, x1, y1 = norm_to_page_rect(_norm(value, what), page.rect.width, page.rect.height)
     return fitz.Rect(x0, y0, x1, y1)
@@ -106,9 +110,11 @@ def _display_rect(value, page: fitz.Page, what: str = "rect") -> fitz.Rect:
 def _raw_rect(value, page: fitz.Page, what: str = "rect") -> fitz.Rect:
     """Normalized → the page's **unrotated** space (§8).
 
-    For `draw_rect`, `insert_image`, `add_redact_annot` and `insert_link`, none
-    of which apply the page rotation. On a /Rotate 90 page the difference is a
-    quarter turn, so mixing the two puts content on the wrong side of the page.
+    For `draw_rect`, `insert_image`, `insert_textbox`, `insert_htmlbox`,
+    `show_pdf_page`, `add_redact_annot` and `insert_link` — which is to say all
+    of them; none apply the page rotation. On a /Rotate 90 page the difference
+    is a quarter turn, so mixing the two puts content on the wrong side of the
+    page. Content that must *read* upright also needs `content_rotation`.
     """
     return fitz.Rect(*_derotate(_display_rect(value, page, what), page))
 
@@ -692,7 +698,11 @@ def add_image(data: bytes, *, page: int, rect: dict, image: bytes,
     doc = _open(data)
     try:
         pg = _page(doc, page)
-        pg.insert_image(_raw_rect(rect, pg), stream=image, keep_proportion=keep_aspect)
+        # De-rotated box, and turned with the page: without the `rotate` an
+        # image placed on a /Rotate 90 page lands correctly and lies on its side.
+        pg.insert_image(_raw_rect(rect, pg), stream=image,
+                        keep_proportion=keep_aspect,
+                        rotate=content_rotation(pg.rotation))
         return doc.tobytes(**_SAVE)
     finally:
         doc.close()
@@ -846,14 +856,18 @@ def _draw_band(page: fitz.Page, position: str, text: str, style: dict,
     align = "center" if position.endswith("center") else (
         "right" if position.endswith("right") else "left"
     )
-    # `_band` is computed in display space and handed straight to
-    # `insert_htmlbox`, which is the writer that applies the page rotation
-    # itself — so a footer on a rotated page lands where the reader sees the
-    # bottom, reading the right way up.
+    # `_band` is display space, and `insert_htmlbox` — despite what §8's table
+    # said until 2026-08-23 — writes in the page's **unrotated** space like
+    # every other writer. Handing it the display band directly put a
+    # bottom-centre page number in the *middle* of a /Rotate 90 page, reading
+    # sideways, and a top-left header at the top *right*. Both halves are
+    # needed: de-rotate the box, and turn the content.
+    band = _band(page, position, margin, size * 2.2)
     page.insert_htmlbox(
-        _band(page, position, margin, size * 2.2),
+        fitz.Rect(*_derotate(band, page)),
         _html_block(text, {**style, "align": align}, default_size=size),
         scale_low=0.5,
+        rotate=content_rotation(page.rotation),
     )
 
 
@@ -981,9 +995,12 @@ def _watermark_text(page, text, opacity, rotation, scale, color, size, tiled, un
     text_width = fitz.get_text_length(text, fontname=fontname, fontsize=size)
     rgb = parse_color(color) if color is not None else (0.5, 0.5, 0.5)
     derot = tuple(page.derotation_matrix)
-    # The page's own rotation is applied on display, so subtract it to land at
-    # the angle the user asked for *as seen*.
-    angle = (float(rotation) - page.rotation) % 360
+    # The angle the user asked for is what they want to *see*, so it is added
+    # to the page's own content rotation, not subtracted from it. Subtracting
+    # put the watermark a half-turn out at /Rotate 90 and 270 — the default
+    # −45° diagonal came out running the other way — while agreeing at 0 and
+    # 180, which is why the angle test (written at rotation 0 only) never saw it.
+    angle = (float(rotation) + content_rotation(page.rotation)) % 360
 
     for box in _watermark_positions(page, tiled, text_width, size * 1.6):
         centre_x = (box.x0 + box.x1) / 2
@@ -1004,10 +1021,12 @@ def _watermark_image(page, image, opacity, scale, tiled, under):
     w = page.rect.width * 0.5 * float(scale)
     h = page.rect.height * 0.5 * float(scale)
     for box in _watermark_positions(page, tiled, w, h):
-        # insert_image does *not* apply the page rotation — unlike the
-        # insert_htmlbox path above it.
+        # insert_image does *not* apply the page rotation — and neither does
+        # the insert_htmlbox path above it, which is what §8's table got wrong
+        # until 2026-08-23. So the box is de-rotated and the image is turned.
         page.insert_image(fitz.Rect(*_derotate(box, page)), stream=image,
-                          overlay=not under, alpha=-1, keep_proportion=True)
+                          overlay=not under, alpha=-1, keep_proportion=True,
+                          rotate=content_rotation(page.rotation))
 
 
 def overlay_pdf(data: bytes, overlay: bytes, *, mode: str = "foreground",
@@ -1023,10 +1042,12 @@ def overlay_pdf(data: bytes, overlay: bytes, *, mode: str = "foreground",
         for page_index in _resolve_pages(doc, range):
             page = doc[page_index]
             # `show_pdf_page` places in unrotated space, so a rotated page needs
-            # both the de-rotated target *and* a counter-rotation, or the
-            # letterhead arrives sideways.
+            # both the de-rotated target *and* the page's own rotation, or the
+            # letterhead arrives sideways. It used to pass `-page.rotation`,
+            # which is the same half-turn error as everywhere else in this file.
             page.show_pdf_page(fitz.Rect(*_derotate(page.rect, page)), src,
-                               overlay_page, rotate=(-page.rotation) % 360,
+                               overlay_page,
+                               rotate=content_rotation(page.rotation),
                                overlay=mode == "foreground")
         return doc.tobytes(**_SAVE)
     finally:

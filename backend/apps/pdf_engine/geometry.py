@@ -79,6 +79,33 @@ def apply_matrix_point(x: float, y: float, m: Matrix) -> tuple[float, float]:
     return (a * x + c * y + e, b * x + d * y + f)
 
 
+def content_rotation(page_rotation: int) -> int:
+    """How far to turn placed content so it reads upright **to the reader**.
+
+    The other half of `apply_matrix_rect(…, derotation_matrix)`. De-rotating the
+    box says *where* on a rotated page content goes; this says which way up it
+    is drawn, and getting one without the other is the whole bug class fixed on
+    2026-08-23.
+
+    It is the page's rotation, not its opposite. `/Rotate N` turns the page N
+    clockwise for display, while `insert_image`, `insert_textbox`,
+    `insert_htmlbox`, `show_pdf_page` and an `insert_text` `morph` all turn
+    their content *anti*-clockwise by the angle given — so the net turn the
+    reader sees is `N - angle`, and the angle has to be `N`.
+
+    The value used before, `(360 - N) % 360`, left a net of `2N - 360`: **zero
+    at 0 and 180, a half-turn at 90 and 270.** That is why it survived so long.
+    Every unrotated fixture agreed with it, and a 180° error is invisible to a
+    bounding-box assertion because it *is* a symmetry of the bounding box —
+    which is exactly how `test_a_signature_lands_where_it_was_put_on_a_rotated_page`
+    passed on upside-down output for the whole of its life.
+
+    `% 360` is defensive only: MuPDF normalizes `page.rotation` to
+    {0, 90, 180, 270} for any raw `/Rotate`, including negative and >360.
+    """
+    return page_rotation % 360
+
+
 def apply_matrix_rect(x0: float, y0: float, x1: float, y1: float,
                       m: Matrix) -> tuple[float, float, float, float]:
     """Apply a matrix to a rect and re-normalize it.

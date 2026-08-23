@@ -666,22 +666,80 @@ def test_encrypted_documents_are_refused(fixture_bytes, call):
         call(fixture_bytes("encrypted.pdf"))
 
 
-def test_stamps_land_correctly_on_a_rotated_page(fixture_bytes):
-    """Same trap as phase 3: what PyMuPDF *writes* is unrotated space (§8)."""
-    out = C.page_numbers(fixture_bytes("rotated-90.pdf"), format="P{page}")
+@pytest.mark.parametrize("rotation", [0, 90, 180, 270])
+def test_stamps_land_correctly_on_a_rotated_page(rotation):
+    """Same trap as phase 3: what PyMuPDF *writes* is unrotated space (§8).
+
+    **Rewritten 2026-08-23, because the previous version was a false green.**
+    It asked `page.search_for`, which answers in the page's *unrotated* space,
+    and compared the answer against `page.rect`, which is *display* space.
+    Mixing the two produced a thoroughly convincing bottom-centre — normalized
+    (0.493, 0.919) — for a page number that a reader saw in the **middle of the
+    page, sideways**, at display (0.336, 0.698). The test passed for as long as
+    the bug existed, and its docstring named the exact trap it had fallen into.
+
+    So: convert to display space with `page.rotation_matrix` before asserting,
+    and check the writing direction as well as the position. A stamp in the
+    right place, upside down, is still wrong — and a Bates number in the wrong
+    place is a legal-discovery problem, not a cosmetic one.
+    """
+    doc = fitz.open()
+    page = doc.new_page(width=595, height=842)
+    page.insert_text((72, 120), "Body", fontsize=11)
+    page.set_rotation(rotation)
+    source = doc.tobytes()
+    doc.close()
+
+    out = C.page_numbers(source, format="P{page}")
     assert "P1" in _text(out, 0)
 
     doc = fitz.open(stream=out, filetype="pdf")
     try:
         page = doc[0]
-        found = page.search_for("P1")
-        assert found, "the stamp must be findable in display space"
-        # bottom-center by default: low on the page, horizontally central.
-        hit = found[0]
-        assert hit.y0 > page.rect.height * 0.75, f"stamped at y={hit.y0}"
-        assert page.rect.width * 0.3 < hit.x0 < page.rect.width * 0.7
+        span = _span_containing(page, "P1")
+        assert span is not None, "the stamp must be findable"
+
+        # `span["bbox"]` and `line["dir"]` are both unrotated; the reader sees
+        # them through `rotation_matrix`.
+        rect = fitz.Rect(span["bbox"]) * page.rotation_matrix
+        x = rect.x0 / page.rect.width
+        y = rect.y0 / page.rect.height
+        assert y > 0.85, f"/Rotate {rotation}: stamped at display y={y:.3f}"
+        assert 0.3 < x < 0.7, f"/Rotate {rotation}: stamped at display x={x:.3f}"
+
+        direction = _display_direction(page, "P1")
+        assert direction == (1.0, 0.0), (
+            f"/Rotate {rotation}: the page number reads {direction} to the "
+            f"reader, not left-to-right"
+        )
     finally:
         doc.close()
+
+
+def _spans(page):
+    for block in page.get_text("dict")["blocks"]:
+        for line in block.get("lines", []):
+            for span in line.get("spans", []):
+                yield line, span
+
+
+def _span_containing(page, needle):
+    for _, span in _spans(page):
+        if needle in span["text"]:
+            return span
+    return None
+
+
+def _display_direction(page, needle):
+    """The writing direction the reader sees, rounded to the nearest unit."""
+    matrix = page.rotation_matrix
+    for line, span in _spans(page):
+        if needle in span["text"]:
+            # A direction is a vector: rotate it, do not translate it.
+            rotate_only = fitz.Matrix(matrix.a, matrix.b, matrix.c, matrix.d, 0, 0)
+            point = fitz.Point(*line["dir"]) * rotate_only
+            return (round(point.x, 3), round(point.y, 3))
+    return None
 
 
 # --------------------------------------------------------------------------- #
@@ -1011,3 +1069,160 @@ def test_page_images_does_not_multiply_duplicate_placements(fixture_bytes):
 
     images = C.page_images(data, 0)["images"]
     assert len(images) == 8, f"expected 8 placements, got {len(images)}"
+
+
+# --------------------------------------------------------------------------- #
+# Rotated pages, every stamping surface (2026-08-23)
+#
+# One rule, measured on PyMuPDF 1.28.0 and now written into §8: **no** PyMuPDF
+# writer applies the page rotation. Every one of them needs a de-rotated box
+# *and* `geometry.content_rotation` as its own rotation. These tests exist
+# because the whole family got it wrong in five different ways at once, and
+# because each of the obvious lenses is blind to at least one of them.
+# --------------------------------------------------------------------------- #
+def _rotated_source(rotation: int, width: float = 595, height: float = 842) -> bytes:
+    doc = fitz.open()
+    page = doc.new_page(width=width, height=height)
+    page.insert_text((72, 120), "Body", fontsize=11)
+    page.set_rotation(rotation)
+    data = doc.tobytes()
+    doc.close()
+    return data
+
+
+def _marker_png(width=240, height=120) -> bytes:
+    """Four coloured quadrants — red top-left. Asymmetric under every rotation."""
+    pix = fitz.Pixmap(fitz.csRGB, fitz.IRect(0, 0, width, height), False)
+    pix.set_rect(fitz.IRect(0, 0, width // 2, height // 2), (255, 0, 0))
+    pix.set_rect(fitz.IRect(width // 2, 0, width, height // 2), (0, 160, 0))
+    pix.set_rect(fitz.IRect(0, height // 2, width // 2, height), (0, 0, 255))
+    pix.set_rect(fitz.IRect(width // 2, height // 2, width, height), (255, 210, 0))
+    return pix.tobytes("png")
+
+
+def _red_is_top_left(data: bytes) -> bool:
+    """Render as the reader sees it and ask where the red quadrant went.
+
+    Rendering is the point: a quarter turn moves the bounding box, but a half
+    turn does not, so only pixels can tell upright from upside down.
+    """
+    doc = fitz.open(stream=data, filetype="pdf")
+    try:
+        pixmap = doc[0].get_pixmap(dpi=72)
+        reds, all_marks = [], []
+        for y in range(0, pixmap.height, 2):
+            for x in range(0, pixmap.width, 2):
+                r, g, b = pixmap.pixel(x, y)[:3]
+                strong = (r > 180 and g < 90 and b < 90) or \
+                         (r < 90 and 110 < g < 210 and b < 90) or \
+                         (r < 90 and g < 90 and b > 180) or \
+                         (r > 180 and g > 160 and b < 90)
+                if strong:
+                    all_marks.append((x, y))
+                    if r > 180 and g < 90 and b < 90:
+                        reds.append((x, y))
+        assert reds and all_marks, "the marker did not render"
+        cx = sum(x for x, _ in all_marks) / len(all_marks)
+        cy = sum(y for _, y in all_marks) / len(all_marks)
+        rx = sum(x for x, _ in reds) / len(reds)
+        ry = sum(y for _, y in reds) / len(reds)
+        return rx < cx and ry < cy
+    finally:
+        doc.close()
+
+
+@pytest.mark.parametrize("rotation", [0, 90, 180, 270])
+@pytest.mark.parametrize("position", ["top-left", "bottom-right"])
+def test_header_footer_reads_upright_in_the_right_corner(rotation, position):
+    out = C.header_footer(_rotated_source(rotation), segments={position: "HDR"})
+    doc = fitz.open(stream=out, filetype="pdf")
+    try:
+        page = doc[0]
+        span = _span_containing(page, "HDR")
+        assert span is not None, f"/Rotate {rotation}: nothing was stamped"
+        rect = fitz.Rect(span["bbox"]) * page.rotation_matrix
+        x = rect.x0 / page.rect.width
+        y = rect.y0 / page.rect.height
+        if position == "top-left":
+            assert x < 0.2 and y < 0.15, f"/Rotate {rotation}: at ({x:.3f}, {y:.3f})"
+        else:
+            assert x > 0.6 and y > 0.85, f"/Rotate {rotation}: at ({x:.3f}, {y:.3f})"
+        assert _display_direction(page, "HDR") == (1.0, 0.0)
+    finally:
+        doc.close()
+
+
+@pytest.mark.parametrize("rotation", [0, 90, 180, 270])
+def test_bates_reads_upright_on_a_rotated_page(rotation):
+    """A Bates number is a legal-discovery artifact: sideways or mid-page is a
+    compliance problem, not a cosmetic one."""
+    out, report = C.bates(_rotated_source(rotation), prefix="AB", start=1)
+    doc = fitz.open(stream=out, filetype="pdf")
+    try:
+        page = doc[0]
+        assert report["first"] == "AB000001"
+        assert _display_direction(page, "AB") == (1.0, 0.0), (
+            f"/Rotate {rotation}: the Bates number does not read left-to-right"
+        )
+        rect = fitz.Rect(_span_containing(page, "AB")["bbox"]) * page.rotation_matrix
+        assert rect.y0 / page.rect.height > 0.85
+    finally:
+        doc.close()
+
+
+@pytest.mark.parametrize("rotation", [0, 90, 180, 270])
+def test_an_added_image_is_upright_on_a_rotated_page(rotation):
+    out = C.add_image(_rotated_source(rotation), page=0,
+                      rect={"x": 0.2, "y": 0.3, "w": 0.4, "h": 0.2},
+                      image=_marker_png())
+    assert _red_is_top_left(out), f"/Rotate {rotation}: the image is not upright"
+
+
+@pytest.mark.parametrize("rotation", [0, 90, 180, 270])
+def test_an_image_watermark_is_upright_on_a_rotated_page(rotation):
+    out = C.watermark(_rotated_source(rotation), image=_marker_png(), tiled=False)
+    assert _red_is_top_left(out), f"/Rotate {rotation}: the watermark is not upright"
+
+
+@pytest.mark.parametrize("rotation", [0, 90, 180, 270])
+def test_a_letterhead_overlay_is_upright_on_a_rotated_page(rotation):
+    doc = fitz.open()
+    page = doc.new_page(width=595, height=842)
+    page.insert_image(fitz.Rect(100, 100, 340, 220), stream=_marker_png())
+    letterhead = doc.tobytes()
+    doc.close()
+
+    out = C.overlay_pdf(_rotated_source(rotation), letterhead)
+    assert _red_is_top_left(out), f"/Rotate {rotation}: the overlay is not upright"
+
+
+@pytest.mark.parametrize("rotation", [0, 90, 180, 270])
+def test_a_text_watermark_keeps_its_angle_whatever_the_page_rotation(rotation):
+    """The angle is what the user *sees*, so it must not move with `/Rotate`.
+
+    The existing angle test runs at rotation 0 only, which is exactly why it
+    could not see that the page rotation was being subtracted instead of added
+    — the two agree at 0 and 180 and are a half turn apart at 90 and 270.
+    """
+    flat = C.watermark(_rotated_source(rotation), text="FLAT", rotation=0,
+                       tiled=False)
+    doc = fitz.open(stream=flat, filetype="pdf")
+    try:
+        assert _display_direction(doc[0], "FLAT") == (1.0, 0.0), (
+            f"/Rotate {rotation}: a 0° watermark does not read horizontally"
+        )
+    finally:
+        doc.close()
+
+    angled = C.watermark(_rotated_source(rotation), text="DRAFT", rotation=-45,
+                         tiled=False)
+    doc = fitz.open(stream=angled, filetype="pdf")
+    try:
+        direction = _display_direction(doc[0], "DRAFT")
+        assert direction is not None
+        assert abs(abs(direction[0]) - 0.707) < 0.02, direction
+        assert abs(abs(direction[1]) - 0.707) < 0.02, direction
+        # …and the same diagonal at every rotation, not its mirror.
+        assert direction[0] > 0, f"/Rotate {rotation}: the diagonal flipped"
+    finally:
+        doc.close()

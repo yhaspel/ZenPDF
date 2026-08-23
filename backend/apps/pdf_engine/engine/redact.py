@@ -29,6 +29,10 @@ import fitz
 from ..exceptions import EngineError, InvalidParams
 from ..geometry import NormRect, apply_matrix_rect, norm_to_page_rect, page_rect_to_norm_clamped
 
+# `fit_text` is general text-in-a-box fitting that happens to live next to the
+# signature code; the redaction label needs the same shrink-don't-vanish rule.
+from .signatures import fit_text
+
 # Presets are deliberately conservative: a pattern that also matches ordinary
 # prose would redact a document into uselessness, and the user cannot see what
 # it took until afterwards. Each one is unit-tested against near-misses.
@@ -414,15 +418,25 @@ def redact(data: bytes, *, areas=None, patterns=None, search_text: str = "",
         for index, rects in by_page.items():
             page = doc[index]
             for rect in rects:
-                page.add_redact_annot(rect, text=label or None,
-                                      fill=colour, text_color=(1, 1, 1),
-                                      fontsize=8)
+                # The label is **not** handed to `add_redact_annot`: it draws
+                # in the page's unrotated space with no way to turn it, so on a
+                # /Rotate 90 scan the overlay read sideways. It is drawn below
+                # instead, after the content underneath is gone.
+                page.add_redact_annot(rect, fill=colour)
                 applied += 1
             # `images=PDF_REDACT_IMAGE_PIXELS` is the default and is the whole
             # difference from whiteout: the pixels under the box are destroyed,
             # not covered. Without it a redacted photograph is recoverable by
             # anyone who opens the file in an editor.
             page.apply_redactions(images=fitz.PDF_REDACT_IMAGE_PIXELS)
+            if label:
+                # Strictly after `apply_redactions`, which is the ordering that
+                # matters: drawn before, the label would be destroyed along with
+                # the secret it labels. `fit_text` takes the rotation from the
+                # page and shrinks rather than silently writing nothing.
+                for rect in rects:
+                    fit_text(page, rect, label, max_size=8, color=(1, 1, 1),
+                             align=fitz.TEXT_ALIGN_CENTER)
 
         out = doc.tobytes(garbage=4, deflate=True, clean=True)
     finally:
