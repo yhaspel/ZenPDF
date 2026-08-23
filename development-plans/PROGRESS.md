@@ -1101,7 +1101,7 @@ Handoff programme (the nine CLI prompts from the 2026-08-21 status review) is tr
 | 2026-08-02 | **Nothing rendered the PDF in any test until Phase 5.** The viewer's credential was broken for every principal and no test noticed, because the suite asserted the viewer *element* was present, never that a page had drawn. Fixed and now covered incidentally by the forms fill spec. Worth a deliberate "the document renders" assertion in the Phase-1 spec so it is not left to a later phase's coincidence. | 1/10 | No | ⬜ |
 | 2026-08-02 | **Signing on a real phone — one manual check.** Phase 8's second criterion asks for a phone-sized viewport, and the e2e drives the whole two-signer loop at 390×844 in Chromium — but a finger on a canvas is not a mouse, and iOS Safari's dynamic viewport is its own genre of bug. Worth ten minutes signing something from an actual phone before launch. | 8 | No | ⬜ |
 | 2026-08-02 | **A completed envelope in Acrobat — one manual check.** pyHanko validates our own output (it is the reference implementation, and the byte-flip test proves the seal is real), but "Acrobat shows the blue banner" is a rendering judgement no test makes. Worth opening one completed document in Acrobat and one in Preview. | 8 | No | ⬜ |
-| 2026-08-02 | **Production signing certificate.** Everything is sealed with the self-signed development certificate `up.sh` generates, and `/verify` says so in as many words. A real deployment needs a certificate from a CA (or an explicit decision to stay self-signed and keep that copy). Owner-executed; Phase 10 checklist. | 8/10 | **Yes** | ⬜ |
+| 2026-08-02 | **Production signing certificate.** Everything is sealed with the self-signed development certificate `up.sh` generates, and `/verify` says so in as many words. A real deployment needs a certificate from a CA (or an explicit decision to stay self-signed and keep that copy). Owner-executed; Phase 10 checklist. | 8/10 | **Yes** | 🔵 **In progress 2026-08-23** — `docs/h1-seal-proof`, prompt 9 of the handoff programme. Proving on the local stack, with the production `.p12`, that the certificate production is configured with can actually seal; then that production's own `/api/verify/` accepts the result. See the session log **"2026-08-23 — H1 — production seal proof"**. |
 | 2026-08-02 | **Legal review of the ESIGN disclosure.** `apps/esign/legal.py` is versioned, hashed into every consent event, and written to be honest (SES + platform seal, explicitly *not* QES). It has not been read by a lawyer. Worth doing before real agreements are signed through it — and any change must bump `VERSION`. | 8/10 | **Yes** | ⬜ |
 | 2026-08-02 | **Email deliverability (SPF/DKIM).** Dev delivers to Mailpit; production needs the DNS records, or every signing invitation goes to spam and the product does not work. phase-08 names it as a Phase-10 checklist item. | 8/10 | No | ⬜ |
 | 2026-08-02 | **Permissions in a third-party viewer — one manual check.** Phase 7's second acceptance criterion asks for a spot-check of print-restricted output, and is ticked `[~]` for that reason. The permission *bits* are asserted through pikepdf for every level of both graded permissions, and accessibility is proven never restricted — but "Preview greys out the print button" is a rendering judgement no test makes. Worth five minutes with a protected export in Preview and Acrobat. | 7 | No | ⬜ |
@@ -1141,6 +1141,19 @@ Handoff programme (the nine CLI prompts from the 2026-08-21 status review) is tr
 | 2026-08-20 | **The workspace on a phone is stacked, not designed.** Below `md` the rails now become full-width sections above and below the page (§3 workspace panes) — which makes every control reachable and stops the page scrolling sideways, but it is a rescue, not a phone layout. A designed treatment would probably make the rails drawers with a persistent bottom bar. Worth a designer's eye before any mobile push. | 10 | No | ⬜ *(2026-08-21: the row above the page now wraps rather than overflowing, so the page no longer scrolls sideways and the app is no longer drawn at ~64 % — but that is a repair, not a design. Row stays open.)* |
 
 ## Session log
+
+**2026-08-23 — H1 — production seal proof**
+
+Branch `docs/h1-seal-proof`, prompt 9 of the nine on `docs/reviews/handoffs/TRACKING.md`. In
+progress; this entry is opened with the first commit and filled as each step lands. No product
+code changes — the deliverable is evidence.
+
+The question: **the production signing certificate has never sealed a document.** `SIGNING_CERT_B64`
+demonstrably decodes on every Railway service (the start command `base64 -d > /tmp/certs/zenpdf.p12
+&& exec …` means a running gunicorn proves the decode exited 0), but the seal itself runs only at
+multi-party finalize, finalize needs a signer to open a tokenised invitation, and SMTP is off in
+production — so the path is unreachable there. The proof is therefore made on the **local stack with
+the production `.p12`**, and only the final verification is made against the **live** `/api/verify/`.
 
 **2026-08-22 — E2E and gate hardening**
 

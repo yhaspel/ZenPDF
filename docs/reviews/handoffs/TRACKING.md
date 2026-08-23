@@ -46,7 +46,7 @@ one's branch is unmerged.
 | 6 | `handoff-to-cli-mobile-workspace.md` | Queue row "The workspace on a phone is stacked, not designed" (2026-08-20); design contract §3/§4 phone-workspace spec (new); Phase 12 D8 rail-reachability on touch | ⬜ | — | — |
 | 7 | `handoff-to-cli-type-aware-eslint.md` | Queue row "Type-aware ESLint" (2026-08-02); Decisions-log follow-through of "Type-aware ESLint is deliberately not in this change" (2026-08-02); `01-architecture.md` §18 CI note | ⬜ | — | — |
 | 8 | `handoff-to-cli-launch-gate-evidence.md` | Phase 10 acceptance criteria 2 (Lighthouse), 4 (three consecutive full runs), 6 (p95) — `[~]` → evidenced; queue rows "Lighthouse on the deployed prod build", "`@full` suite, three consecutive nightly runs", "Load test (`locust`) and p95 budgets", "The p95 number itself" (all 2026-08-02); `docs/10-launch-checklist.md` "Final" evidence notes; `docs/ops/release.md` | ⬜ | — | — |
-| 9 | `handoff-to-cli-h1-production-seal-proof.md` | **GATE** queue row "Production signing certificate" (2026-08-02); `docs/ops/railway-handoff-claude-cli.md` H1; `docs/10-launch-checklist.md` "Signing" (certificate + `TSA_URL` evidence notes); Phase 8 criterion "Completed PDF opens in any validator…" on the production certificate | ⬜ | — | — |
+| 9 | `handoff-to-cli-h1-production-seal-proof.md` | **GATE** queue row "Production signing certificate" (2026-08-02); `docs/ops/railway-handoff-claude-cli.md` H1; `docs/10-launch-checklist.md` "Signing" (certificate + `TSA_URL` evidence notes); Phase 8 criterion "Completed PDF opens in any validator…" on the production certificate | 🔵 in progress — `docs/h1-seal-proof`, 2026-08-23 | `docs/h1-seal-proof` | — |
 
 ## Landed before the programme (for orientation — not tracked here)
 
