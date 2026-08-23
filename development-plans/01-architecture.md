@@ -411,9 +411,16 @@ SEED_ADMIN_EMAIL=admin@zenpdf.local  SEED_ADMIN_PASSWORD=admin12345
 # Proxy topology — how many hops append to X-Forwarded-For before us.
 # Get this wrong and per-IP throttling silently collapses onto the edge's address.
 NUM_PROXIES=1     # default (base.py:190) — correct behind NO proxy
-#           =2    # compose: TLS terminator → nginx → gunicorn (infra/.env.prod.example:35)
-#           =3    # Railway production — MEASURED, not guessed (docs/ops/railway.md:101).
-#                 # Set in the Railway dashboard only; nothing under infra/railway/ sets it.
+#           =2    # compose: TLS terminator → nginx → gunicorn (infra/.env.prod.example)
+#           =3    # Railway production — MEASURED, not guessed (docs/ops/railway.md gotcha 4).
+#                 # *Amended 2026-08-23:* set in the image (`ENV NUM_PROXIES=3` in
+#                 # infra/railway/api.Dockerfile), not only in the Railway dashboard —
+#                 # a project rebuilt from this repo used to get the default of 1 and
+#                 # collapse every per-IP throttle onto the edge's address. A service
+#                 # variable still overrides the image. Held by
+#                 # apps/core/tests/test_client_ip_topology.py, which parses the
+#                 # Dockerfile (the api container mounts infra/railway/ read-only so
+#                 # the hermetic suite can actually open it).
 # Cache — separate Redis db from the broker (base.py:337). Throttle counters,
 # password-failure buckets and the guest-session cache all live here.
 CACHE_URL=redis://redis:6379/1        # default: REDIS_URL with db 1

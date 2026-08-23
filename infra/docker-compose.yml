@@ -93,6 +93,17 @@ services:
     volumes:
       - ../backend:/app
       - ./certs:/certs:ro
+      # Read-only, and mounted at the path the repo has it at, so
+      # `Path(__file__).parents[4] / "infra" / "railway" / …` resolves the same
+      # from inside this container as it does on a host-side pytest run.
+      #
+      # It exists for one assertion: `test_client_ip_topology.py` reads
+      # `NUM_PROXIES` back out of the deployed image's Dockerfile, because that
+      # number lived only in a Railway dashboard and a rebuild would silently
+      # have used the repo default of 1. A test of a value in a file the suite
+      # cannot open is not a test — and the alternative, a second copy of the
+      # number inside `backend/`, is the defect being fixed.
+      - ./railway:/infra/railway:ro
     ports:
       - "${API_PORT:-8000}:8000"
     depends_on:

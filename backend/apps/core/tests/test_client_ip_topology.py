@@ -72,3 +72,55 @@ def test_short_chain_does_not_index_past_the_start():
     resolves to the leftmost address rather than raising."""
     with _two_proxies():
         assert client_ip(_request(CLIENT)) == CLIENT
+
+
+# --------------------------------------------------------------------------- #
+# The deployed value, not just the helper's arithmetic
+# --------------------------------------------------------------------------- #
+#: What production measured (docs/ops/railway.md gotcha 4): browser → Railway
+#: edge → our nginx → gunicorn. Three appending hops, established empirically on
+#: 2026-08-08 rather than predicted.
+RAILWAY_HOP_COUNT = 3
+
+
+def test_the_railway_image_defaults_to_the_measured_hop_count():
+    """The number has to be in the image, not only in a dashboard.
+
+    `base.py` defaults to 1 (right behind no proxy), `.env.prod.example` says 2
+    (right for the compose topology), and production measured 3 — and until
+    2026-08-23 nothing under `infra/railway/` said anything at all. A project
+    rebuilt from this repo would therefore have got 1, which resolves every
+    caller to the edge's address: one throttle bucket for the whole internet,
+    which is the QA report's H1 failure.
+
+    The Dockerfile is parsed rather than the setting read, because the setting
+    under test is not this process's — it is the one the deployed image will
+    boot with. A "simplification" back to 2 now has to argue with a test.
+    """
+    import pathlib
+    import re
+
+    dockerfile = (pathlib.Path(__file__).resolve().parents[4]
+                  / "infra" / "railway" / "api.Dockerfile")
+    assert dockerfile.is_file(), f"{dockerfile} has moved; this test must follow it"
+
+    found = re.findall(r"^ENV\s+NUM_PROXIES=(\d+)\s*$",
+                       dockerfile.read_text(), flags=re.MULTILINE)
+    assert found, (
+        "infra/railway/api.Dockerfile no longer sets NUM_PROXIES. Production "
+        "would fall back to base.py's default of 1 and collapse every per-IP "
+        "throttle onto Railway's edge address."
+    )
+    assert [int(v) for v in found] == [RAILWAY_HOP_COUNT], (
+        f"the Railway image sets NUM_PROXIES={found}; the measured chain is "
+        f"{RAILWAY_HOP_COUNT} hops (docs/ops/railway.md gotcha 4)"
+    )
+
+
+def test_the_compose_default_is_unchanged():
+    """Writing the Railway value into the Railway image must not move the value
+    every other deployment reads. `base.py` stays at 1 — correct behind no
+    proxy, and the only safe default for a machine nobody has configured."""
+    from decouple import config
+
+    assert config("NUM_PROXIES", default=1, cast=int) == 1
