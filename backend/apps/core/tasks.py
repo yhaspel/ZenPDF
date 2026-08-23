@@ -562,6 +562,7 @@ def account_assets_purge(days: int | None = None) -> dict:
     from apps.pdf_engine.storage import get_storage
 
     from . import limits as L
+    from .assets import principal_prefix
 
     window = settings.ASSET_RETENTION_DAYS if days is None else days
     cutoff = timezone.now() - timedelta(days=window)
@@ -569,7 +570,11 @@ def account_assets_purge(days: int | None = None) -> dict:
     stats = {"users": 0, "blobs": 0, "bytes": 0, "kept": 0}
 
     for user in get_user_model().objects.all().iterator():
-        prefix = f"uploads/u/{user.pk}/"
+        # Derived, never spelled out: `principal_prefix` is the one place that
+        # knows a key's shape, and a hand-built `uploads/u/{pk}/` here is a
+        # second copy that a change to §13's layout would leave pointing at
+        # nothing — a sweep that silently deletes zero blobs for ever.
+        prefix = principal_prefix(user)
         try:
             entries = storage.list_prefix_detailed(prefix)
         except Exception:  # noqa: BLE001

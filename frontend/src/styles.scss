@@ -292,6 +292,11 @@ small, .muted { color: var(--color-ink-muted); }
   color: var(--color-ink);
   font: 400 13.5px/1.6 var(--font-ui);
 }
+/* Four tones because the contract specs four (§3) and a screen that needs
+   `danger` should not have to amend it again. `warning` and `info` are the two
+   in use today; `success` and `danger` are the pair the audit-chain line in
+   `request-detail.html` already draws by hand, and are here for it to adopt
+   whenever that file is next opened for its own reasons. */
 .notice-success { border-color: var(--color-success); background: var(--color-success-surface); }
 .notice-warning { border-color: var(--color-warning); background: var(--color-warning-surface); }
 .notice-danger { border-color: var(--color-danger); background: var(--color-danger-surface); }
