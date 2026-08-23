@@ -40,10 +40,18 @@ def _plan(queryset) -> str:
 #: Query plans are backend-specific, and the hermetic suite runs on SQLite —
 #: where `assert "Seq Scan" not in plan` is vacuous. These run under
 #: `config.settings.dev` (Postgres): `./infra/test.sh --pg`.
-PG_ONLY = pytest.mark.skipif(
+#:
+#: Two markers, one decorator: `pg_only` is how `--pg` *selects* them (so a new
+#: Postgres-only file is picked up without editing the shell script), and the
+#: skipif is what keeps them from failing loudly on the hermetic run.
+_NEEDS_PG = pytest.mark.skipif(
     connection.vendor != "postgresql",
     reason="query plans are backend-specific; the suite's SQLite would make "
            "this assertion vacuous")
+
+
+def PG_ONLY(func):  # noqa: N802 - it reads as a marker at every call site
+    return pytest.mark.pg_only(_NEEDS_PG(func))
 
 
 @PG_ONLY
