@@ -258,7 +258,7 @@ export class ToolPage {
     // Mint the guest session *before* uploading in parallel. Minting is
     // per-request, so two concurrent tokenless uploads would create two
     // sessions — and a merge across them would then see only one file (§21.2).
-    this.guests.ensureSession().subscribe({
+    this.guests.ensureSession().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: () => (IMPORT_KINDS.has(this.tool().kind) ? this.importAll() : this.uploadAll()),
       error: (err) => this.fail(err),
     });
@@ -288,7 +288,7 @@ export class ToolPage {
     }
 
     files.forEach((file, index) => {
-      this.docsSvc.upload(file).subscribe({
+      this.docsSvc.upload(file).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
         next: (event) => {
           const body = (event as { body?: DocumentModel }).body;
           if (body?.id) {
@@ -317,7 +317,7 @@ export class ToolPage {
     const job$ = files.length > 1
       ? this.convert.importImages(files)
       : this.convert.importFile(files[0]);
-    job$.subscribe({
+    job$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (job) => {
         if (typeof job.progress === 'number') this.runningProgress.set(job.progress);
         if (job.status === 'succeeded') {
@@ -513,7 +513,7 @@ export class ToolPage {
     let remaining = target.length;
     const docs: DocumentModel[] = [];
     target.forEach((id, i) => {
-      this.docsSvc.get(id).subscribe({
+      this.docsSvc.get(id).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
         next: (d) => {
           // Slot, not push: the fetches race, and for "a separate PDF for each
           // page" the rows must read in page order, not network order. Split's
@@ -587,7 +587,7 @@ export class ToolPage {
     const job = this.exportJob();
     if (!job) return;
     const info = job.result?.['export'] as { filename?: string } | undefined;
-    this.convert.download(job).subscribe({
+    this.convert.download(job).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (blob) => saveBlob(blob, info?.filename ?? 'converted'),
       error: () => this.error.set('That download has expired. Convert it again.'),
     });
@@ -603,7 +603,7 @@ export class ToolPage {
   }
 
   download(doc: DocumentModel): void {
-    this.docsSvc.download(doc.id).subscribe({
+    this.docsSvc.download(doc.id).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (blob) => saveBlob(blob, `${doc.title}.pdf`),
       error: () => this.error.set('Download failed.'),
     });

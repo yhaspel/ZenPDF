@@ -178,7 +178,7 @@ export class Dashboard {
     if (images.length > 1) {
       const label = `${images.length} images`;
       this.importing.update((names) => [...names, label]);
-      this.convert.importImages(images).subscribe({
+      this.convert.importImages(images).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
         next: (job) => this.onImported(job, label),
         error: (err) => this.failImport(label, err?.error?.error?.message),
       });
@@ -187,7 +187,7 @@ export class Dashboard {
     }
     for (const file of rest) {
       this.importing.update((names) => [...names, file.name]);
-      this.convert.importFile(file).subscribe({
+      this.convert.importFile(file).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
         next: (job) => this.onImported(job, file.name),
         error: (err) => this.failImport(file.name, err?.error?.error?.message),
       });
@@ -198,7 +198,7 @@ export class Dashboard {
     const url = this.importUrl().trim();
     if (!url) return;
     this.importing.update((names) => [...names, url]);
-    this.convert.importUrl(url).subscribe({
+    this.convert.importUrl(url).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (job) => {
         this.onImported(job, url);
         if (job.status === 'succeeded') this.importUrl.set('');
@@ -255,7 +255,7 @@ export class Dashboard {
 
   download(doc: DocumentModel): void {
     this.menuId.set(null);
-    this.docsSvc.download(doc.id).subscribe({
+    this.docsSvc.download(doc.id).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (blob) => saveBlob(blob, `${doc.title}.pdf`),
       error: () => this.toast.error('Download failed'),
     });

@@ -1,4 +1,5 @@
-import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, DestroyRef, inject, signal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { HttpClient } from '@angular/common/http';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 
@@ -53,6 +54,7 @@ import { environment } from '../../../environments/environment';
 export class UnsubscribePage {
   private route = inject(ActivatedRoute);
   private http = inject(HttpClient);
+  private destroyRef = inject(DestroyRef);
 
   protected state = signal<'working' | 'done' | 'error'>('working');
   protected email = signal('');
@@ -61,7 +63,7 @@ export class UnsubscribePage {
     const token = this.route.snapshot.paramMap.get('token') ?? '';
     this.http.post<{ unsubscribed: boolean; email: string }>(
       `${environment.apiUrl}/mail/unsubscribe/`, { token },
-    ).subscribe({
+    ).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (body) => {
         this.email.set(body.email);
         this.state.set('done');

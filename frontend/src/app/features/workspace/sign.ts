@@ -1,6 +1,7 @@
 import {
   ChangeDetectionStrategy,
   Component,
+  DestroyRef,
   computed,
   effect,
   inject,
@@ -9,6 +10,7 @@ import {
   signal,
   viewChild,
 } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 
@@ -56,6 +58,7 @@ export class Sign {
   private esignSvc = inject(EsignService);
   private router = inject(Router);
   private toast = inject(ToastService);
+  private destroyRef = inject(DestroyRef);
 
   protected page = signal(0);
   protected zoom = signal(680);
@@ -140,7 +143,7 @@ export class Sign {
   protected onSignature(dataUrl: string): void {
     // Kept for reuse only when the user asked and has somewhere to keep it.
     if (this.keepIt() && this.isAccount()) {
-      this.esign.save(dataUrl).subscribe({
+      this.esign.save(dataUrl).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
         next: () => {
           this.padOpen.set(false);
           this.toast.success('Signature saved');
@@ -149,7 +152,7 @@ export class Sign {
       });
       return;
     }
-    this.esign.useImage(dataUrl).subscribe({
+    this.esign.useImage(dataUrl).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: () => {
         this.padOpen.set(false);
         this.toast.info('Now click where it goes');
@@ -208,6 +211,7 @@ export class Sign {
       return;
     }
     this.esign.apply(this.docId(), this.currentSeq(), this.includeDate())
+      .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (job) => {
           if (job.status === 'succeeded') {

@@ -3,6 +3,8 @@ const eslint = require('@eslint/js');
 const { defineConfig } = require('eslint/config');
 const tseslint = require('typescript-eslint');
 const angular = require('angular-eslint');
+const subscriptionsDieWithTheComponent =
+  require('./tools/eslint-rules/subscriptions-die-with-the-component');
 
 module.exports = defineConfig([
   {
@@ -30,6 +32,16 @@ module.exports = defineConfig([
         { type: 'attribute', prefix: ['app', 'zen'], style: 'camelCase' },
       ],
     },
+  },
+  {
+    // Components only. Facades and services under `abstraction/` and `core/`
+    // are `providedIn: 'root'` — they live as long as the app does, so there is
+    // no destruction for a subscription to be tied to, and `DestroyRef` there
+    // would be a lie. Specs subscribe to outputs on purpose.
+    files: ['src/app/features/**/*.ts', 'src/app/shared/**/*.ts'],
+    ignores: ['**/*.spec.ts'],
+    plugins: { zen: { rules: { 'subscriptions-die-with-the-component': subscriptionsDieWithTheComponent } } },
+    rules: { 'zen/subscriptions-die-with-the-component': 'error' },
   },
   {
     files: ['**/*.html'],

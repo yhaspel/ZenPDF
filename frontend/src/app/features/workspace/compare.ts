@@ -1,12 +1,14 @@
 import {
   ChangeDetectionStrategy,
   Component,
+  DestroyRef,
   computed,
   effect,
   inject,
   input,
   signal,
 } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
 
 import { CompareFacade, ChangeRow } from '../../abstraction/compare.facade';
@@ -38,6 +40,7 @@ export class Compare {
   protected compare = inject(CompareFacade);
   private docsSvc = inject(DocumentsService);
   private toast = inject(ToastService);
+  private destroyRef = inject(DestroyRef);
 
   protected candidates = signal<DocumentModel[]>([]);
   protected page = signal(0);
@@ -69,7 +72,7 @@ export class Compare {
       // Candidates are the caller's *other* documents — compare is by
       // definition a two-document operation, and offering this one is noise.
       const id = this.docId();
-      this.docsSvc.list({}).subscribe({
+      this.docsSvc.list({}).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
         next: (page) => this.candidates.set(page.results.filter((d) => d.id !== id)),
         error: () => this.candidates.set([]),
       });
@@ -99,7 +102,7 @@ export class Compare {
       this.toast.info('Choose a document to compare against');
       return;
     }
-    job$.subscribe({
+    job$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (job) => {
         if (job.status === 'succeeded') {
           this.page.set(0);

@@ -826,7 +826,7 @@ export class Annotate {
       return;
     }
     this.busy.set(true);
-    job$.subscribe({
+    job$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (job) => {
         if (job.status === 'succeeded') {
           this.busy.set(false);
@@ -864,7 +864,9 @@ export class Annotate {
     );
     if (!ok) return;
     this.busy.set(true);
-    this.annotations.flatten(this.docId(), this.currentSeq()).subscribe({
+    this.annotations.flatten(this.docId(), this.currentSeq())
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
       next: (job) => {
         if (job.status === 'succeeded') {
           this.busy.set(false);
@@ -907,6 +909,7 @@ export class Annotate {
           base_version_seq: this.currentSeq(),
         }),
       )
+      .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (job) => {
           if (job.status === 'succeeded') {

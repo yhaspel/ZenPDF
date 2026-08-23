@@ -1,12 +1,14 @@
 import {
   ChangeDetectionStrategy,
   Component,
+  DestroyRef,
   computed,
   effect,
   inject,
   signal,
   viewChild,
 } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 
@@ -136,7 +138,7 @@ export class RequestBuilder {
   constructor() {
     const docId = this.route.snapshot.paramMap.get('docId') ?? '';
     this.docId.set(docId);
-    this.esign.createRequest({ document: docId }).subscribe({
+    this.esign.createRequest({ document: docId }).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (row) => {
         this.request.set(row);
         this.message.set(row.message);
@@ -209,7 +211,9 @@ export class RequestBuilder {
       return;
     }
     this.busy.set(true);
-    this.esign.patchRequest(request.id, { recipients: rows }).subscribe({
+    this.esign.patchRequest(request.id, { recipients: rows })
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
       next: (updated) => {
         this.request.set(updated);
         // The ids come back from the server; the field step binds to them.
@@ -334,7 +338,9 @@ export class RequestBuilder {
       return;
     }
     this.busy.set(true);
-    this.esign.patchRequest(request.id, { fields: this.fields() }).subscribe({
+    this.esign.patchRequest(request.id, { fields: this.fields() })
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
       next: (updated) => {
         this.request.set(updated);
         this.busy.set(false);
@@ -356,7 +362,7 @@ export class RequestBuilder {
       message: this.message(),
       expires_in_days: this.expiresInDays(),
       reminder_every_days: this.reminderDays(),
-    }).subscribe({
+    }).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (updated) => {
         this.request.set(updated);
         this.busy.set(false);
@@ -373,7 +379,7 @@ export class RequestBuilder {
     const request = this.request();
     if (!request) return;
     this.busy.set(true);
-    this.esign.sendRequest(request.id).subscribe({
+    this.esign.sendRequest(request.id).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: () => {
         this.busy.set(false);
         this.toast.success('Sent — the first signer has been emailed.');
@@ -395,6 +401,7 @@ export class RequestBuilder {
   /** The verification gate, answered where it is hit (§9B). */
   protected needsVerification = signal(false);
   protected verification = inject(VerificationService);
+  private destroyRef = inject(DestroyRef);
 
   protected fieldsFor(recipientId: string): number {
     return this.fields().filter((f) => f.recipient_id === recipientId).length;

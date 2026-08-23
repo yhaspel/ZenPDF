@@ -1,6 +1,7 @@
 import {
   ChangeDetectionStrategy,
   Component,
+  DestroyRef,
   computed,
   effect,
   inject,
@@ -8,6 +9,7 @@ import {
   output,
   signal,
 } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
 
 import { ConvertFacade } from '../../abstraction/convert.facade';
@@ -50,6 +52,7 @@ export class Convert {
   protected convert = inject(ConvertFacade);
   private toast = inject(ToastService);
   private confirm = inject(ConfirmService);
+  private destroyRef = inject(DestroyRef);
 
   protected readonly languages = OCR_LANGUAGES;
   protected readonly formats = this.convert.exportFormats;
@@ -102,7 +105,7 @@ export class Convert {
       rotate_pages: this.rotatePages(),
       clean: this.clean(),
       force: this.force(),
-    }).subscribe({
+    }).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (job) => this.onJob(job, 'Text recognised — it is now selectable and editable'),
       error: () => this.fail(),
     });
@@ -113,7 +116,7 @@ export class Convert {
     this.convert.exportAs(this.docId(), this.currentSeq(), format, {
       dpi: this.imageDpi(),
       imageFormat: this.imageFormat(),
-    }).subscribe({
+    }).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (job) => {
         if (job.status === 'succeeded') {
           this.toast.success('Ready to download');
@@ -132,7 +135,7 @@ export class Convert {
   protected downloadExport(): void {
     const job = this.convert.lastExport();
     if (!job) return;
-    this.convert.download(job).subscribe({
+    this.convert.download(job).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (blob) => saveBlob(blob, this.convert.exportName() || 'export'),
       error: () => this.toast.error(
         'That download has expired. Run the export again.',
@@ -145,7 +148,9 @@ export class Convert {
       'Rebuild this document’s internal structure? The pages and text are '
       + 'untouched; a new version is created either way.', 'Repair',
     ))) return;
-    this.convert.repair(this.docId(), this.currentSeq()).subscribe({
+    this.convert.repair(this.docId(), this.currentSeq())
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
       next: (job) => this.onJob(job, 'Document repaired'),
       error: () => this.fail(),
     });

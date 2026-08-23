@@ -1,5 +1,6 @@
 import { DOCUMENT } from '@angular/common';
-import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, DestroyRef, inject, signal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { Meta, Title } from '@angular/platform-browser';
 import { RouterLink } from '@angular/router';
 
@@ -59,6 +60,7 @@ export class DisclosurePage {
   private title = inject(Title);
   private meta = inject(Meta);
   private doc = inject(DOCUMENT);
+  private destroyRef = inject(DestroyRef);
 
   protected text = signal('');
   protected version = signal('');
@@ -73,7 +75,7 @@ export class DisclosurePage {
     });
     // Prerendered and listed in the sitemap, so it needs a canonical of its own.
     setCanonical(this.doc, this.meta, `${SITE_URL}/legal/esign-disclosure`);
-    this.esign.disclosure().subscribe({
+    this.esign.disclosure().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (body) => {
         this.text.set(body.text);
         this.version.set(body.version);

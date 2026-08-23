@@ -1,6 +1,7 @@
 import {
   ChangeDetectionStrategy,
   Component,
+  DestroyRef,
   computed,
   effect,
   inject,
@@ -9,6 +10,7 @@ import {
   signal,
   viewChild,
 } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
 
 import { SecurityFacade } from '../../abstraction/security.facade';
@@ -80,6 +82,7 @@ export class Protect {
   protected security = inject(SecurityFacade);
   private toast = inject(ToastService);
   private confirm = inject(ConfirmService);
+  private destroyRef = inject(DestroyRef);
 
   protected readonly presets = REDACT_PRESETS;
   protected readonly sanitizeItems = SANITIZE_ITEMS;
@@ -228,7 +231,7 @@ export class Protect {
         copy: this.allowCopy(),
         modify: this.modifyLevel(),
       },
-    }).subscribe({
+    }).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (job) => {
         if (job.status === 'succeeded') {
           // The user just chose it, so there is no reason to ask again. With no
@@ -246,7 +249,9 @@ export class Protect {
 
   protected applyUnlock(): void {
     const password = this.unlockPassword();
-    this.security.unlock(this.docId(), this.currentSeq(), password).subscribe({
+    this.security.unlock(this.docId(), this.currentSeq(), password)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
       next: (job) => {
         if (job.status === 'succeeded') this.security.forget(this.docId());
         this.onJob(job, 'Password removed');
@@ -273,7 +278,7 @@ export class Protect {
     this.security.changePermissions(this.docId(), this.currentSeq(),
                                     this.ownerPassword(), {
       print: this.printLevel(), copy: this.allowCopy(), modify: this.modifyLevel(),
-    }).subscribe({
+    }).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (job) => this.onJob(job, 'Restrictions updated'),
       error: () => this.fail(),
     });
@@ -376,7 +381,9 @@ export class Protect {
       return;
     }
     this.security.preview(this.docId(), this.currentSeq(), this.patterns(),
-                          this.searchText().trim(), this.matchCase()).subscribe({
+                          this.searchText().trim(), this.matchCase())
+                            .pipe(takeUntilDestroyed(this.destroyRef))
+                            .subscribe({
       next: (job) => {
         if (job.status === 'succeeded') {
           const count = this.security.report()?.count ?? 0;
@@ -426,7 +433,7 @@ export class Protect {
       matchCase: this.matchCase(),
       cleanCopy: this.cleanCopy(),
       label: this.redactLabel().trim(),
-    }).subscribe({
+    }).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (job) => {
         if (job.status === 'succeeded') {
           const residual = (job.result?.['report'] as
@@ -465,7 +472,9 @@ export class Protect {
       this.toast.info('Choose at least one thing to remove');
       return;
     }
-    this.security.sanitize(this.docId(), this.currentSeq(), chosen).subscribe({
+    this.security.sanitize(this.docId(), this.currentSeq(), chosen)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
       next: (job) => {
         if (job.status === 'succeeded') {
           this.toast.success(describeSanitize(job));

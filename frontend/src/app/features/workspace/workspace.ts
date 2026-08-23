@@ -378,7 +378,7 @@ export class Workspace {
     const d = this.viewer.doc();
     const q = this.searchQuery().trim();
     if (!d || !q) return;
-    this.docsSvc.search(d.id, q).subscribe({
+    this.docsSvc.search(d.id, q).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (res) => {
         this.searchHits.set(res.hits);
         this.searched.set(true);
@@ -402,7 +402,7 @@ export class Workspace {
   download(): void {
     const d = this.viewer.doc();
     if (!d) return;
-    this.docsSvc.download(d.id).subscribe({
+    this.docsSvc.download(d.id).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (blob) => saveBlob(blob, `${d.title}.pdf`),
       error: () => this.toast.error('Download failed'),
     });
@@ -794,6 +794,19 @@ export class Workspace {
    * Called by the route guard. Navigation is not an exit, so it does not
    * interrogate the user — it commits the work and lets them go. Closing the
    * tab is the exit case, and that is what the `beforeunload` guard covers.
+   *
+   * **The one subscription in `features/` that deliberately outlives its
+   * component** (decided 2026-08-23, with the `takeUntilDestroyed` sweep). The
+   * guard runs *because* this component is about to be destroyed, so piping the
+   * save through `takeUntilDestroyed(this.destroyRef)` would cancel it the
+   * instant the person left — which is precisely the work the autosave exists
+   * to not lose. `AnnotationsFacade` and `ToastService` are both root
+   * singletons, so nothing here reaches into a dead component: the save
+   * completes against the facade, and a failure still reaches the person on
+   * whatever screen they landed on, which is where they can act on it.
+   *
+   * Exempted by name in the lint guard (`eslint.config.js`,
+   * `zen/subscriptions-die-with-the-component`), not by an untracked silence.
    */
   confirmLeave(): boolean {
     const doc = this.viewer.doc();

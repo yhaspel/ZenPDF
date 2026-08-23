@@ -1,4 +1,5 @@
-import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, DestroyRef, computed, inject, signal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 
@@ -218,6 +219,7 @@ export class Register {
   private router = inject(Router);
   private route = inject(ActivatedRoute);
   protected guests = inject(GuestFacade);
+  private destroyRef = inject(DestroyRef);
 
   protected readonly reasonCopy = computed(() => {
     const reason = this.route.snapshot.queryParamMap.get('reason');
@@ -234,10 +236,10 @@ export class Register {
         password: this.password,
         display_name: this.displayName,
         accept_terms: true,
-      }).subscribe({
+      }).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: () => {
         // auto-login after successful registration
-        this.auth.login(this.email, this.password).subscribe({
+        this.auth.login(this.email, this.password).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
           next: () => this.router.navigateByUrl(this.next()),
           error: () => this.router.navigate(['/auth/login']),
         });

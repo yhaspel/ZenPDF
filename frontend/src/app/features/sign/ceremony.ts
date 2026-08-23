@@ -1,4 +1,5 @@
-import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, DestroyRef, computed, inject, signal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 
@@ -28,6 +29,7 @@ type Screen = 'loading' | 'consent' | 'sign' | 'wait' | 'done' | 'closed' | 'err
 export class Ceremony {
   private route = inject(ActivatedRoute);
   private esign = inject(EsignService);
+  private destroyRef = inject(DestroyRef);
 
   protected token = signal('');
   protected screen = signal<Screen>('loading');
@@ -114,14 +116,14 @@ export class Ceremony {
   constructor() {
     this.token.set(this.route.snapshot.paramMap.get('token') ?? '');
     this.load();
-    this.esign.disclosure().subscribe({
+    this.esign.disclosure().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (body) => this.disclosure.set(body.text),
       error: () => this.disclosure.set(''),
     });
   }
 
   private load(): void {
-    this.esign.ceremony(this.token()).subscribe({
+    this.esign.ceremony(this.token()).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (meta) => {
         this.meta.set(meta);
         this.filled.set(Object.fromEntries(
@@ -151,7 +153,7 @@ export class Ceremony {
   protected consent(): void {
     if (!this.agreed()) return;
     this.busy.set(true);
-    this.esign.consent(this.token()).subscribe({
+    this.esign.consent(this.token()).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: () => {
         this.busy.set(false);
         this.screen.set('sign');
@@ -177,6 +179,7 @@ export class Ceremony {
     this.busy.set(true);
     this.esign.fillField(this.token(),
                          { field_id: field.id, signature_image: dataUrl })
+      .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: () => {
           this.filled.update((map) => ({ ...map, [field.id]: true }));
@@ -211,6 +214,7 @@ export class Ceremony {
   protected saveValue(field: SignFieldModel, value: string | boolean): void {
     this.values.update((map) => ({ ...map, [field.id]: String(value) }));
     this.esign.fillField(this.token(), { field_id: field.id, value })
+      .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (res) => {
           this.saved[field.id] = String(value);
@@ -222,7 +226,7 @@ export class Ceremony {
 
   protected finish(): void {
     this.busy.set(true);
-    this.esign.complete(this.token()).subscribe({
+    this.esign.complete(this.token()).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (res) => {
         this.busy.set(false);
         this.screen.set('done');
@@ -243,7 +247,9 @@ export class Ceremony {
 
   protected decline(): void {
     this.busy.set(true);
-    this.esign.decline(this.token(), this.declineReason()).subscribe({
+    this.esign.decline(this.token(), this.declineReason())
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
       next: () => {
         this.busy.set(false);
         this.declining.set(false);
@@ -263,7 +269,7 @@ export class Ceremony {
       return;
     }
     setTimeout(() => {
-      this.esign.ceremony(this.token()).subscribe({
+      this.esign.ceremony(this.token()).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
         next: (meta) => {
           this.meta.set(meta);
           if (meta.status === 'completed') {
@@ -281,7 +287,9 @@ export class Ceremony {
   protected report(): void {
     this.busy.set(true);
     this.reportError.set('');
-    this.esign.report(this.token(), this.reportReason()).subscribe({
+    this.esign.report(this.token(), this.reportReason())
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
       next: (res) => {
         this.busy.set(false);
         this.reporting.set(false);
