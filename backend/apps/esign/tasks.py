@@ -56,7 +56,7 @@ def _burn_fields(data: bytes, sign_request) -> bytes:
                     continue
                 page.insert_image(rect, stream=storage.get_bytes(field.image_key),
                                   overlay=True,
-                                  rotate=SG._counter_rotation(page))
+                                  rotate=SG._content_rotation(page))
             elif field.type == SignField.Type.DATE_SIGNED:
                 when = field.recipient.completed_at or timezone.now()
                 # `fit_text`, not `insert_textbox`: the latter returns a

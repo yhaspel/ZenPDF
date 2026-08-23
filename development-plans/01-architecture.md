@@ -168,14 +168,30 @@ Client sends geometry as **normalized page coordinates in visual space**: origin
 | `page.rect` | **display** (rotation applied) |
 | `page.search_for` | **unrotated** — measured; an unrotated page makes it indistinguishable from display, so this is easy to get wrong and invisible until a rotated page shows up |
 | `page.get_text("words" \| "dict")` | **unrotated** |
-| `page.insert_htmlbox` | **display** — the one writer that applies the rotation itself |
-| `page.draw_rect`, `page.insert_image`, `page.show_pdf_page` | **unrotated** |
+| `page.insert_htmlbox` | **unrotated** — ⚠ *corrected 2026-08-23; this row said "**display** — the one writer that applies the rotation itself" and it was wrong* |
+| `page.draw_rect`, `page.insert_image`, `page.insert_textbox`, `page.insert_text`, `page.show_pdf_page` | **unrotated** |
 | `annot.rect`, `annot.vertices`, every `page.add_*_annot` | **unrotated** |
 | `page.set_cropbox` | **unrotated** (phase 2's `crop_pages` already de-rotated) |
+| `page.get_pixmap` | **display** — the only API that applies `/Rotate`, and therefore the only one that can prove what a reader sees |
+
+⚠ **Corrected 2026-08-23.** The `insert_htmlbox` row above was false, and it was load-bearing: `content.py::_draw_band` cited it in a comment and handed `insert_htmlbox` a display rect, so **page numbers, headers/footers and Bates numbers landed in the middle of a rotated page, reading sideways** — measured on the real fixture at display (0.336, 0.698) for a bottom-centre stamp. Measured on PyMuPDF 1.28.0 / MuPDF 1.29.0: handed the *same* rect, `insert_htmlbox` writes to identical coordinates at `/Rotate 0` and `/Rotate 90`. It is no different from its siblings.
+
+**The rule, restated without exceptions: no PyMuPDF writer applies the page rotation.** De-rotating the box is therefore only half of a correct placement — the content must also be *turned*, or it lands in the right place lying on its side. The turn is `geometry.content_rotation(page.rotation)`, which is the page's own rotation:
+
+| Writer | How the turn is expressed |
+|---|---|
+| `insert_image`, `insert_textbox`, `insert_htmlbox`, `show_pdf_page` | `rotate=content_rotation(page.rotation)` |
+| `insert_text` (no `rotate=` of its own) | `morph=(pivot, fitz.Matrix(content_rotation(page.rotation)))` |
+| `add_freetext_annot` | `rotate=content_rotation(page.rotation)` |
+| a Stamp annotation's appearance stream | `/Matrix` on the Form XObject (PDF 32000-1 §12.5.5) |
+
+It is the rotation itself, **not its complement**. `(360 − N) % 360` — which five call sites used, in three different spellings — leaves a net turn of `2N − 360`: zero at 0° and 180°, a **half turn** at 90° and 270°. That is why it survived from phase 3 to 2026-08-23: every unrotated fixture agreed with it, and the two candidate formulas are indistinguishable at exactly the two rotations most tests use.
+
+**Three lenses are blind to this class, which is why the tests must render.** A *round-trip* cancels the error (write and read use the same de-rotation — the trap this section already recorded in 2026-08-01). A *bounding box* is symmetric under a half turn, so `assert box.width > box.height` passed for months on upside-down output. *Text extraction* returns the same glyphs whichever way up they are, so `assert "P1" in text` passes on a sideways ribbon. Only `get_pixmap` plus deliberately **asymmetric** ink can tell upright from inverted, and every rotation test must include 0 and 180 as controls or it cannot distinguish "fixed" from "broken the other way".
 
 So on a `/Rotate 90` page the two spaces differ by a quarter turn. The rule is therefore: **normalized geometry is always display space on the wire; the engine de-rotates on the way in (`page.derotation_matrix`) and re-rotates on the way out (`page.rotation_matrix`)** via `geometry.apply_matrix_rect` / `apply_matrix_point`. Omitting it is not a visible error in a round-trip — write and read cancel out, so create→extract agrees perfectly while the *file* disagrees with both. Only a rendered-pixel assertion catches it (`test_a_mark_on_a_rotated_page_renders_where_it_was_placed`).
 
-**Replacing text is the exception to the rule.** `edit_text`/`add_text`/`find_replace` write in the page's *unrotated* space with the rotation temporarily zeroed, because the glyphs they replace were laid down there — the replacement then rotates with the page exactly as the original did. Using the display rect instead fails outright on a /Rotate 90 page: the display box of a normal line of text is tall and narrow, so horizontal layout cannot fit it. Stamps (headers, page numbers, Bates) do the opposite and use display space, because a page number should read upright *to the viewer* regardless of how the page is rotated.
+**Replacing text is the exception to the rule.** `edit_text`/`add_text`/`find_replace` write in the page's *unrotated* space with the rotation temporarily zeroed, because the glyphs they replace were laid down there — the replacement then rotates with the page exactly as the original did. Using the display rect instead fails outright on a /Rotate 90 page: the display box of a normal line of text is tall and narrow, so horizontal layout cannot fit it. Stamps (headers, page numbers, Bates) do the opposite — they are *placed* from display space and *turned* with `content_rotation` — because a page number should read upright *to the viewer* regardless of how the page is rotated. *(Clarified 2026-08-23: "use display space" previously read as though the display rect were handed to the writer. It is not, and cannot be; it is de-rotated first, and the turn is what makes it read upright.)*
 
 ## 9. Data model (canonical — phases may add fields only by amending this doc)
 
