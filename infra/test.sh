@@ -204,8 +204,15 @@ fi
 # re-learn a number we already have.
 APPS_FLOOR=85
 ENGINE_FLOOR=90
-apps_pct="$(grep -oE '^APPS_PCT=[0-9.]+' "$pytest_log" | head -1 | cut -d= -f2)"
-engine_pct="$(grep -oE '^ENGINE_PCT=[0-9.]+' "$pytest_log" | head -1 | cut -d= -f2)"
+# `|| true` is what makes the guard below reachable at all. Without it, `set -e`
+# plus `pipefail` abort the script *on the assignment* when grep matches nothing
+# — so the five lines of explanation underneath could never be printed, and a
+# missing coverage number would surface as a bare `exit 1` with no cause
+# attached. That is the exact failure this script exists to prevent, committed
+# inside the check written to prevent it. Found by an adversarial review of this
+# very commit and reproduced before fixing.
+apps_pct="$(grep -oE '^APPS_PCT=[0-9.]+' "$pytest_log" | head -1 | cut -d= -f2 || true)"
+engine_pct="$(grep -oE '^ENGINE_PCT=[0-9.]+' "$pytest_log" | head -1 | cut -d= -f2 || true)"
 if [ -z "$apps_pct" ] || [ -z "$engine_pct" ]; then
   echo "ERROR: coverage did not report a number. The gate must not pass a coverage"
   echo "       check it could not perform — that is the whole lesson of the skip set."
