@@ -1279,20 +1279,33 @@ none to heal. It is also the strongest evidence available that `charged_bytes` m
 the product actually charges, on data no test wrote: 57 principals locally, 37 in
 production, zero disagreement in either place.
 
-**The reinforced gate immediately caught a race in my own test.** The first run of `test.sh`
-with the new steps exited **1** on `phase-1: a document under a signature request cannot be
-deleted forever` — a test added on this branch, which had passed on two earlier gate runs. It
-clicked `trash-toggle` straight after `confirm-ok`, and the facade's trash is optimistic: the
-trash list can load before the DELETE has committed, come back empty, and nothing retries. The
-smoke test three functions above it has asserted the count between those two steps all along,
-for exactly this reason; mine did not. Both of my specs now assert `toHaveCount(0)` before
-switching views, and pass repeatedly. Worth writing down as the gate's first catch: a check
-that had been claimed rather than run found a real defect within minutes of actually running.
+**The reinforced gate immediately caught a race in my own test — and my first fix for it was
+wrong.** The first run of `test.sh` with the new steps exited **1** on `phase-1: a document under
+a signature request cannot be deleted forever`, a spec added on the previous branch and green on
+two earlier gate runs. It clicked `trash-toggle` straight after `confirm-ok`, and switching view
+triggers a fresh `load()`: if the DELETE has not committed, that load returns an empty list and
+nothing retries.
 
-*(Also observed, not mine and not fixed: `@smoke phase 1` failed once in about ten runs while
-the machine was busy with a production build, and passed 6/6 consecutively when it was quiet.
-Recorded rather than chased — one failure under load with no reproduction is a note, not a
-finding, and inventing a mechanism for it would be the guessing this record exists to avoid.)*
+My first fix asserted `toHaveCount(0)` before toggling, reasoning that the smoke test three
+functions above had "asserted the count between those two steps all along, for exactly this
+reason". **Both halves of that were false**, and an adversarial review of the diff caught it.
+`DocumentsFacade.trash()` calls `removeLocal(id)` — which mutates the `_documents` signal
+synchronously — *before* dispatching the DELETE, so the count assertion is satisfied by the
+client's own optimistic redraw and says nothing about the server. The smoke test's own
+`toHaveCount(1)`/`toHaveCount(0)` are vacuous in exactly the same way, and `restore()` has the
+same shape.
+
+Measured rather than argued, with a throwaway spec that held the DELETE open for six seconds:
+**`toHaveCount(0)` was satisfied after 24 ms, with the request demonstrably unanswered.** A fix
+that passes five runs in a row and cannot be explained is not a fix; that is the same standard
+this branch applied to the concurrency lock, and it should have been applied here first.
+
+The real barrier is `page.waitForResponse` on the DELETE itself, asserted 204, armed before the
+click that fires it — now in a `trashAndAwaitServer` helper used by all three specs. The smoke
+test's restore leg gets the matching wait on its POST. That leg is **the likeliest mechanism for
+this spec's occasional unexplained failure under load**, which an earlier draft of this entry
+recorded as unexplained and declined to guess at; the guess is no longer needed, because the
+review supplied the mechanism and the throttled spec confirmed it.
 
 **Browser.** Both themes, 1280 px and 390 px, console clean (**no errors and no warnings**);
 screenshots and the full method in `docs/reviews/evidence/backend-debt/` behind its own `README.md`.
