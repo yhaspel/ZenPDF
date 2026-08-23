@@ -21,8 +21,8 @@ Twelve days of work happened after this handoff was written. Three things in it 
 - **SMTP on or off for launch.** Multi-party signing is unreachable until it is on, and H1 cannot be exercised *in production* without it (locally it can).
 - **A custom root domain** (Phase 11 P1) → Cloudflare session, Railway custom domains + TXT, Search Console. Phase 11 is gated on this.
 - **Three legal reviews** — Privacy, Terms, and the e-sign disclosure — including the AdSense cookie-disclosure check. These are GATE rows.
-- **A Railway dashboard session:** `TSA_URL` (the docs disagree on whether it is set), the storage-volume backup schedule, `SENTRY_DSN`, the worker recycle drill, and **the restore drill** (needs a token — it has never been run).
-- **The certificate decision**, recorded in the checklist: stay self-signed for v1, or buy one.
+- **A Railway dashboard session:** the storage-volume backup schedule, `SENTRY_DSN`, the worker recycle drill, and **the restore drill** (needs a token — it has never been run). *(`TSA_URL` is off this list as of 2026-08-23: it is **set on all five Django services** and its value is exactly `http://timestamp.digicert.com` — read from the dashboard, and independently confirmed by a production seal that carries a real DigiCert timestamp token. Nothing to do there.)*
+- **The certificate decision**, recorded in the checklist: stay self-signed for v1, or buy one. *(2026-08-23: the certificate itself is proven — it seals, and production verifies the seal. Only the decision is left, and `docs/10-launch-checklist.md` "Signing" now carries the sentence to tick or reverse.)*
 - **Five minutes with a viewer** (Acrobat/Preview) for annotations, filled forms, permissions and a sealed envelope; **ten minutes signing from a real phone**; the **twenty-minute screen-reader script** (`docs/10-accessibility-screen-reader-script.md`).
 - **Skim the twelve guides** before any AdSense submission, and decide the ad-revenue sanity check.
 - **Tag `v1.0.0`** only when `docs/10-launch-checklist.md` has no unticked box.
@@ -96,9 +96,13 @@ assertion the queue asked for, so it cannot return.
    `docs/ops/railway-handoff-claude-cli.md`. This is the only *new* item
    today and it belongs first: it is a real production defect on a core
    surface.
-2. **H1 — prove the production signing certificate seals** (BLOCKING, gates
-   launch). The self-contained prompt is in the same handoff doc; it needs
-   your Mac (local stack + Mailpit + the p12).
+2. ~~**H1 — prove the production signing certificate seals**~~ — **done
+   2026-08-23.** It seals: whole-document, PAdES, B-T with DigiCert's TSA,
+   and production's own `/verify` accepts the result. See
+   `development-plans/PROGRESS.md` session log *"2026-08-23 — H1 —
+   production seal proof"* and `docs/reviews/evidence/h1/`. **Launch is no
+   longer gated on the certificate** — only on SMTP, the two legal reviews
+   and your own ticks.
 3. **Two decisions, both one-liners to record:**
    - **SMTP on or off for launch.** Multi-party signing is unusable until
      on. Recipe: `RAILWAY-SECRETS.md` (Gmail app password; ~10 min). SPF/
@@ -119,9 +123,10 @@ assertion the queue asked for, so it cannot return.
    - The sealed-envelope check (P8) waits for H1 + SMTP.
 5. **Railway dashboard session (~10 min)** — my session had no API token
    (the deploy token's value was never written to disk, which is correct):
-   - Set `TSA_URL=http://timestamp.digicert.com` on api + all three
-     workers + beat (checklist "Signing"; without it, seals stop verifying
-     when the cert expires).
+   - ~~Set `TSA_URL=http://timestamp.digicert.com` on api + all three
+     workers + beat~~ — **already set on all five, confirmed 2026-08-23**,
+     and a production seal carries a real DigiCert timestamp token, so it
+     works rather than merely being present.
    - Confirm the **storage volume** has a daily backup schedule (Postgres
      has one; the handoff flagged storage as unconfirmed).
    - `SENTRY_DSN` when you want error reporting (wiring ships inert).

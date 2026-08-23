@@ -1,0 +1,98 @@
+{
+  "cert": {
+    "subject_cn": "ZenPDF Document Sealing",
+    "subject_o": "ZenPDF",
+    "self_signed": true,
+    "serial": "458038234647621122148599486114237673069358345324",
+    "not_valid_before": "2026-08-08T09:29:15+00:00",
+    "not_valid_after": "2029-08-07T09:29:15+00:00",
+    "key": "RSA-3072",
+    "sig_algo": "sha256_rsa"
+  },
+  "fixture": {
+    "bytes": 2898,
+    "sha256": "9b0c4d12ff12bb731ef288a78ec7afb69f27ba20423f2f6bbefd36b78bd7a6c4"
+  },
+  "A1-with-TSA": {
+    "seal_report": {
+      "sealed": true,
+      "level": "B-T",
+      "field": "ZenPDF-Seal",
+      "timestamped": true
+    },
+    "sealed_bytes": 27998,
+    "sealed_sha256": "c76dc1d3710799b56ed0eb59cb049c460fe4672019ef749f6b3916307b003848",
+    "subfilter": [
+      "/ETSI.CAdES.detached"
+    ],
+    "verify": {
+      "sealed": true,
+      "signatures": [
+        {
+          "field": "ZenPDF-Seal",
+          "signer": "ZenPDF Document Sealing",
+          "intact": true,
+          "valid": true,
+          "coverage": "ENTIRE_FILE",
+          "whole_document": true,
+          "signing_time": "2026-08-23T05:59:43+00:00",
+          "timestamp": true,
+          "trusted": false,
+          "reason": "H1 step A \u2014 production certificate proof"
+        }
+      ],
+      "integrity": "intact",
+      "appended_after_signing": false
+    }
+  },
+  "A2-no-TSA": {
+    "seal_report": {
+      "sealed": true,
+      "level": "B-B",
+      "field": "ZenPDF-Seal",
+      "timestamped": false
+    },
+    "sealed_bytes": 9827,
+    "sealed_sha256": "670d0d9c9d41f168b4b0ef4bc40651d1a116fb8276a4d2c50da4d2483f0c911a",
+    "subfilter": [
+      "/ETSI.CAdES.detached"
+    ],
+    "verify": {
+      "sealed": true,
+      "signatures": [
+        {
+          "field": "ZenPDF-Seal",
+          "signer": "ZenPDF Document Sealing",
+          "intact": true,
+          "valid": true,
+          "coverage": "ENTIRE_FILE",
+          "whole_document": true,
+          "signing_time": "2026-08-23T05:59:45+00:00",
+          "timestamp": false,
+          "trusted": false,
+          "reason": "H1 step A \u2014 production certificate proof"
+        }
+      ],
+      "integrity": "intact",
+      "appended_after_signing": false
+    }
+  },
+  "A3-tamper": {
+    "offset": 130,
+    "integrity": "modified",
+    "signatures": [
+      {
+        "field": "ZenPDF-Seal",
+        "signer": "ZenPDF Document Sealing",
+        "intact": false,
+        "valid": true,
+        "coverage": "ENTIRE_FILE",
+        "whole_document": true,
+        "signing_time": "2026-08-23T05:59:43+00:00",
+        "timestamp": true,
+        "trusted": false,
+        "reason": "H1 step A \u2014 production certificate proof"
+      }
+    ]
+  }
+}

@@ -1,0 +1,19 @@
+--- probe starting (this line is eaten by railway ssh) ---
+SIGNING_CERT_PATH       /tmp/certs/zenpdf.p12
+TSA_URL                 'http://timestamp.digicert.com'
+cert bytes / sha256     3427 45a196df78be5d58ade6e6f30396d2722068d010270726623566ef865bd9ad34
+subject                 OrderedDict({'common_name': 'ZenPDF Document Sealing', 'organization_name': 'ZenPDF'})
+issuer                  OrderedDict({'common_name': 'ZenPDF Document Sealing', 'organization_name': 'ZenPDF'})
+serial                  458038234647621122148599486114237673069358345324
+not_valid_after         2029-08-07T09:29:15+00:00
+probe pdf bytes         866
+SEAL REPORT             {'sealed': True, 'level': 'B-T', 'field': 'ZenPDF-Seal', 'timestamped': True}
+sealed bytes            25958
+subfilter               ['/ETSI.CAdES.detached']
+verify integrity        intact
+  signer CN             'ZenPDF Document Sealing'
+  intact / valid        True True
+  coverage              ENTIRE_FILE whole_document: True
+  timestamp present     True
+  trusted               False
+PROBE OK

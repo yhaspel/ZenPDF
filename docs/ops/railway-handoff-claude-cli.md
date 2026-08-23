@@ -12,15 +12,15 @@ the full local stack (docker, Mailpit, a real network) exists.
 
 Do **H1 first** — it is the only one that gates launch.
 
-> **Status, 2026-08-22 — two of the three are done.**
+> **Status, 2026-08-23 — all three are done.**
 >
-> - **H1 — OPEN, and still the only one that gates launch.** The production certificate has never sealed a document. The prompt in §H1 below is kept **verbatim** because it is what `docs/reviews/handoffs/handoff-to-cli-h1-production-seal-proof.md` reuses; run that.
+> - **H1 — ✅ done 2026-08-23. The production certificate seals.** Verified whole-document (`ENTIRE_FILE`), **PAdES**, **B-T** with DigiCert's TSA, and B-B without; a one-byte edit flips it to `modified`. Proven by the engine on a fixture, by a **real two-signer envelope** (`ZEN-QUJVGF`) finalized under the production certificate — signer CN `ZenPDF Document Sealing`, where the dev certificate's is `ZenPDF Dev Signing` — and by **production's own `/api/verify/`** accepting that file (`envelope_match.known: false`, correctly). The environment side was verified rather than inferred: all four signing variables are set on all five Django services, production's `SIGNING_CERT_B64` decodes byte-identical to the local `.p12`, and a read-only probe **inside production's `worker-heavy`** sealed and verified a document with the file production decoded at start. Recorded in `development-plans/PROGRESS.md`, session log **"2026-08-23 — H1 — production seal proof"**; evidence in `docs/reviews/evidence/h1/`; prompt archived at `docs/archived/2026-08-23-handoff-to-cli-h1-production-seal-proof.md`. The §H1 prompt below is kept for the record. **What still blocks multi-party signing in production is SMTP, not the certificate.**
 > - **H2 — ✅ done 2026-08-21.** `@smoke` against production: **4 passed, 2 environmental.** `phase-8:91` failed inside the suite on production's real rate limiter (the whole suite runs from one IP) and **passes standalone**; `phase-8:135` polls Mailpit on `localhost:8025`, which production has no equivalent of, so it is structurally local-only. Neither is a defect in the deploy. Recorded in `development-plans/PROGRESS.md`, session log **2026-08-21 "Deployed, and verified in production. The viewer draws."**
 > - **H3 — ✅ done 2026-08-21.** `./infra/test.sh --e2e` on the Mac: **59/60 twice** that morning (a different test failing each run, both green in isolation), and **63/63** the same night on the Phase-12 gate. Recorded in PROGRESS's session log **2026-08-21 "The UI audit patch landed"** and **"(night) — The phase-12 local gate"**.
 
 ---
 
-## H1 — Verify the production signing certificate actually seals (BLOCKING)
+## H1 — Verify the production signing certificate actually seals (~~BLOCKING~~ — **done 2026-08-23**, see the status note above)
 
 **Why it is still open.** The platform seal (`apps/pdf_engine/engine/seal.py`,
 invoked from `apps/esign/tasks.py`) only runs at multi-party *finalize*. Reaching
