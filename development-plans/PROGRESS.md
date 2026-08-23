@@ -1167,7 +1167,12 @@ and re-verified as still open on 2026-08-21. Seven are closed above with their e
 eighth stays open **on purpose**, because its remaining half is a product decision and not code.
 
 Three of the eight turned out to be different from what the record said, and one of the prompt's
-own instructions rested on an assumption the code contradicts. Those four are below, because the
+own **stated facts** turned out to be false — a distinction worth keeping, because every
+*instruction* in the prompt was carried out. §4's parenthetical about saved signatures is wrong,
+and §4 is the thing that says to confirm it before relying on it. §6's prescribed check cannot
+observe what it names, so the property was proven properly **and** the prescribed command run and
+recorded. §7 was implemented at exactly the named path under exactly the named function, and needed
+one enabling mount to be able to open the file it asserts about. Those four are below, because the
 rest is in the queue rows and repeating it here would be a second copy that drifts.
 
 **1. The prompt was wrong about where saved signatures live, and it was the load-bearing part.**
