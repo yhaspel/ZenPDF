@@ -1,0 +1,24 @@
+{
+  "sealed": true,
+  "signatures": [
+    {
+      "field": "ZenPDF-Seal",
+      "signer": "ZenPDF Document Sealing",
+      "intact": true,
+      "valid": true,
+      "coverage": "ENTIRE_FILE",
+      "whole_document": true,
+      "signing_time": "2026-08-23T06:01:21+00:00",
+      "timestamp": true,
+      "trusted": false,
+      "reason": "Completed via ZenPDF envelope ZEN-QUJVGF"
+    }
+  ],
+  "integrity": "intact",
+  "appended_after_signing": false,
+  "envelope_match": {
+    "found_code": "ZEN-QUJVGF",
+    "known": false,
+    "sha256_match": false
+  }
+}

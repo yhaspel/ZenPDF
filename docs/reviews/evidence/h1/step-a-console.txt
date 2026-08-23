@@ -1,0 +1,79 @@
+ Container zenpdf-api-run-e8afe1e91dfb Creating 
+ Container zenpdf-api-run-e8afe1e91dfb Created 
+27 objects imported automatically (use -v 2 for details).
+
+==============================================================================
+H1 STEP A — the production certificate, in the api container
+==============================================================================
+SIGNING_CERT_PATH                      /prodcerts/zenpdf-prod.p12
+SIGNING_CERT_PASSWORD set?             True
+TSA_URL                                'http://timestamp.digicert.com'
+certificate subject                    OrderedDict({'common_name': 'ZenPDF Document Sealing', 'organization_name': 'ZenPDF'})
+certificate issuer                     OrderedDict({'common_name': 'ZenPDF Document Sealing', 'organization_name': 'ZenPDF'})
+self-signed?                           True
+serial                                 458038234647621122148599486114237673069358345324
+not_valid_before                       2026-08-08T09:29:15+00:00
+not_valid_after                        2029-08-07T09:29:15+00:00
+public key algo/size                   rsa/3072
+signature algo                         sha256_rsa
+fixture bytes                          2898
+fixture sha256                         9b0c4d12ff12bb731ef288a78ec7afb69f27ba20423f2f6bbefd36b78bd7a6c4
+
+------------------------------------------------------------------------------
+A1-with-TSA  (TSA_URL='http://timestamp.digicert.com')
+------------------------------------------------------------------------------
+seal report                            {'sealed': True, 'level': 'B-T', 'field': 'ZenPDF-Seal', 'timestamped': True}
+sealed bytes                           27998
+sealed sha256                          c76dc1d3710799b56ed0eb59cb049c460fe4672019ef749f6b3916307b003848
+subfilter in the file                  ['/ETSI.CAdES.detached']
+
+
+verify integrity                       intact
+verify appended_after_signing          False
+  field                                ZenPDF-Seal
+  signer CN                            'ZenPDF Document Sealing'
+  intact                               True
+  valid                                True
+  coverage                             ENTIRE_FILE
+  whole_document                       True
+  signing_time                         2026-08-23T05:59:43+00:00
+  timestamp present                    True
+  trusted                              False
+  reason                               'H1 step A — production certificate proof'
+
+------------------------------------------------------------------------------
+A2-no-TSA  (TSA_URL='')
+------------------------------------------------------------------------------
+seal report                            {'sealed': True, 'level': 'B-B', 'field': 'ZenPDF-Seal', 'timestamped': False}
+sealed bytes                           9827
+sealed sha256                          670d0d9c9d41f168b4b0ef4bc40651d1a116fb8276a4d2c50da4d2483f0c911a
+subfilter in the file                  ['/ETSI.CAdES.detached']
+
+
+verify integrity                       intact
+verify appended_after_signing          False
+  field                                ZenPDF-Seal
+  signer CN                            'ZenPDF Document Sealing'
+  intact                               True
+  valid                                True
+  coverage                             ENTIRE_FILE
+  whole_document                       True
+  signing_time                         2026-08-23T05:59:45+00:00
+  timestamp present                    False
+  trusted                              False
+  reason                               'H1 step A — production certificate proof'
+
+------------------------------------------------------------------------------
+A3-tamper — one byte flipped inside a page object
+------------------------------------------------------------------------------
+page object at offset                  130
+byte at +300                           111 -> 112
+
+
+verify integrity                       modified
+  intact                               [False]
+  whole_document                       [True]
+
+==============================================================================
+STEP A DONE — report written to /h1out/step-a.json
+==============================================================================

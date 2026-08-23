@@ -1,3 +1,22 @@
+> **Executed 2026-08-23 — result: sealed.** All four steps pass. Step A: the production `.p12`
+> seals in the api container, B-T with DigiCert's TSA and B-B without, both `intact` /
+> `ENTIRE_FILE` / PAdES (`/ETSI.CAdES.detached`), signer CN `ZenPDF Document Sealing`; a
+> one-byte edit inside a page object → `modified`. Step B: the suite's two-signer ceremony
+> passed with the production certificate in api + all three workers — envelope `ZEN-QUJVGF`,
+> sealed by `worker-heavy`. Step C: production's own `/api/verify/` accepts it, with
+> `envelope_match.known: false`, which is the correct answer. Step D: **verified, not inferred**
+> — the `railway` CLI was logged in, so all four signing variables were confirmed set on all
+> five Django services, production's `SIGNING_CERT_B64` was shown to decode byte-identical to
+> the local `.p12`, and a read-only probe inside production's own `worker-heavy` sealed and
+> verified a document with the file production decoded at start.
+>
+> Recorded in `development-plans/PROGRESS.md`, session log **"2026-08-23 — H1 — production seal
+> proof"**; GATE row "Production signing certificate" closed; evidence in
+> `docs/reviews/evidence/h1/`. One unrelated, pre-existing defect was found by §6's by-eye pass
+> and filed as a Human-review-queue row: signatures burn in 180° from upright on `/Rotate 90`
+> and `270` pages, and the envelope footer becomes a vertical ribbon that also breaks
+> `/verify`'s envelope match. No product code was changed by this branch.
+
 # Handoff — H1: prove the production signing certificate actually seals (2026-08-21, revision 2 — unchanged by Phase 12 except this header)
 
 **For:** Claude CLI on the Mac in `~/Documents/Claude/Projects/ZenPDF` — it needs the local Docker stack, Mailpit, and the production `.p12` at `infra/certs/prod/zenpdf-prod.p12` (gitignored; password in `infra/certs/prod/RAILWAY-SECRETS.md`).

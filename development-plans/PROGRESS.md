@@ -1061,6 +1061,7 @@ Handoff programme (the nine CLI prompts from the 2026-08-21 status review) is tr
 
 | Added | Item | Phase | GATE? | Resolved |
 |---|---|---|---|---|
+| 2026-08-23 | **A signature burnt onto a `/Rotate 90` or `/Rotate 270` page comes out 180° from upright, and the envelope footer becomes an unreadable vertical ribbon that also breaks `/verify`'s envelope match.** Found by H1's by-eye pass (§6) on envelope `ZEN-N6EV78`, whose source document is the `Rotated scan` fixture; **pre-existing — that branch changed no product code**, and an unrotated control from the same code path is correct in every respect (`evidence/h1/rotated-page-defect.png` versus `final.pdf`). Two distinct faults, one shared cause — orientation is not handled where position is. **(1) The 180°.** `signatures.py:199 _counter_rotation()` returns `(360 − page.rotation) % 360`, and it should be `page.rotation % 360`. The two agree at 0° and 180° and differ by exactly 180° at 90° and 270°, which is why nothing caught it: measured directly by inserting the same image on synthetic `/Rotate 0/90/180/270` pages both ways — at 90° and 270°, `_counter_rotation`'s value renders upside down and `page.rotation % 360` renders upright. It reaches the finished document through **both** signing paths: `esign/tasks.py:59 _burn_fields` (the ceremony) and `signatures.py:280 self_sign` (self-sign). **(2) The footer.** `signatures.py:291 stamp_envelope_footer` de-rotates its rect with `_place_rect` — so the box lands at the displayed foot, correctly — and then calls `insert_textbox` with **no `rotate=` argument at all**, unlike its two neighbours. On a rotated page that wide-and-short strip is a tall narrow column in unrotated space, so the line is laid out down it two characters at a time: `get_text()` returns `'En\nvel\nope\nZE\nN-\nN6\nEV\n78 …'`, `seal.py:200`'s `\bZEN-[A-Z2-9]{6}\b` matches nothing, and **`/verify` reports `found_code: None, known: false` for an envelope it owns** — measured against the local stack, where that envelope *is* in the database. `fit_text` (`signatures.py:218`) has the same omission, so date, checkbox and text fields are mis-oriented on rotated pages too. Not fixed here because the H1 branch is evidence-only. Worth a rendered-pixel assertion at 90° and 270° rather than a round-trip, which is the exact trap the 2026-08-01 §8 decision already records for annotations. | 8 | No | ⬜ |
 | 2026-08-22 | **`phase-12`'s nudge assertion meets an unsettled frame more often on `fix/e2e-gate-hardening` than on `main`, and nobody knows why.** `settledBox` (`phase-12.spec.ts:54`) polls `boundingBox()` until two readings agree, and asserted non-null on the reading — so a null came back as `Cannot read properties of null (reading 'x')` rather than as "poll again". **Measured before the helper was hardened: 3 red in 12 on the branch, 0 red in 20 on `main`**, always the same crash. Bisected without a verdict: `main` + only the page-overlay change was 1 in 12, and the branch *minus* the page-overlay change was also 1 in 12 — no single edit accounts for it. What it is **not**: the final DOM carries the outline at the right size in the right place, and sampling `[data-test=overlay-selection]` inside the page at animation-frame resolution across the whole copy → paste → right-click-delete → undo → select sequence found **0 absent frames and 0 zero-sized frames in 181 samples**. With the helper polling instead of asserting, **14 of 14 green**. The plausible-but-unproven mechanism is that `drewUrl.set()` in `onImageLoad` adds one change-detection pass per raster load, widening the window in which Playwright reads a box mid-layout — `aspect.set()` alone used to be a no-op notification when the value repeated. Worth ten minutes from whoever next opens `page-overlay.ts`; the assertion itself is now honest either way. | 12 | No | ⬜ |
 | 2026-08-22 | **The annotate autosave can still dispatch a stale `base_version_seq`.** Found while proving the main `version_conflict` race gone, and deliberately not fixed in the same change. Across the ten proof runs the database recorded **1 failed job in 382**: an `annotate_batch` created 30 s after a successful save on the same document, carrying `base_version_seq = 1` while the document was at v2 — the 30-second autosave interval (`annotate.ts:72 AUTOSAVE_MS`, fired at `:290`). `save()` at `annotate.ts:820` reads `this.currentSeq()`, which is the component's **`[currentSeq]` input snapshot**, not the facade at dispatch time; `confirmLeave()` in `workspace.ts` gets this right by reading `viewer.currentSeq()` directly, which is the shape to copy. It costs nothing today — the save is refused, the drafts are kept, and the toast says "Document changed — your marks were kept" — and it failed no test. Recorded rather than fixed because the honest fix is inside `annotate.ts`, and the prompt that owns this branch was told to keep annotate/workspace-cursor changes apart from the receiver fix. **The exact trigger is unconfirmed**: it was reconstructed from two job rows (`p3text` document, jobs 30.0 s apart, both `base=1`), not observed. Owner: `docs/reviews/handoffs/handoff-to-cli-workspace-debt-batch.md`. | 3/8 | No | ⬜ |
 | 2026-08-22 | **A long local test session exhausts Postgres's connection budget, and the whole suite goes red for a reason that is not the product.** Measured during the e2e-gate-hardening run, after roughly thirty consecutive Playwright runs on one stack: `db` logs `FATAL: sorry, too many clients already` continuously, `/api/health/` reports `{"status":"degraded","checks":{"db":false,…,"workers":true}}`, and **7 of 11 specs fail at `registerAndLogin`** — with **zero failed job rows**, which is exactly what distinguishes it from a product defect and is the first thing to check. `pg_stat_activity` climbs from 11 after a restart to 46 within three runs. Mechanism: `conn_max_age=600` (`base.py:96`) against the container's default `max_connections=100` — every dev-server request thread holds its connection for ten minutes and the suite makes them faster than they expire. `docker compose restart api worker-default worker-heavy worker-render beat` drops them and health returns to `ok`. **Half-mitigated the same day:** `infra/test.sh --e2e` now refuses to start unless `/api/health/` says `status: ok`, so the gate names the cause instead of producing a dozen mysterious failures — asking only about `checks.workers` would have sailed straight past this, because the workers were fine. The accumulation itself is untouched: worth lowering `conn_max_age` in dev, raising `max_connections`, or recycling the api container inside `test.sh` before a long run. Same family as the stale-worker row — the environment lying to the gate. | 0/10 | No | ⬜ |
@@ -1101,7 +1102,7 @@ Handoff programme (the nine CLI prompts from the 2026-08-21 status review) is tr
 | 2026-08-02 | **Nothing rendered the PDF in any test until Phase 5.** The viewer's credential was broken for every principal and no test noticed, because the suite asserted the viewer *element* was present, never that a page had drawn. Fixed and now covered incidentally by the forms fill spec. Worth a deliberate "the document renders" assertion in the Phase-1 spec so it is not left to a later phase's coincidence. | 1/10 | No | ⬜ |
 | 2026-08-02 | **Signing on a real phone — one manual check.** Phase 8's second criterion asks for a phone-sized viewport, and the e2e drives the whole two-signer loop at 390×844 in Chromium — but a finger on a canvas is not a mouse, and iOS Safari's dynamic viewport is its own genre of bug. Worth ten minutes signing something from an actual phone before launch. | 8 | No | ⬜ |
 | 2026-08-02 | **A completed envelope in Acrobat — one manual check.** pyHanko validates our own output (it is the reference implementation, and the byte-flip test proves the seal is real), but "Acrobat shows the blue banner" is a rendering judgement no test makes. Worth opening one completed document in Acrobat and one in Preview. | 8 | No | ⬜ |
-| 2026-08-02 | **Production signing certificate.** Everything is sealed with the self-signed development certificate `up.sh` generates, and `/verify` says so in as many words. A real deployment needs a certificate from a CA (or an explicit decision to stay self-signed and keep that copy). Owner-executed; Phase 10 checklist. | 8/10 | **Yes** | ⬜ |
+| 2026-08-02 | **Production signing certificate.** Everything is sealed with the self-signed development certificate `up.sh` generates, and `/verify` says so in as many words. A real deployment needs a certificate from a CA (or an explicit decision to stay self-signed and keep that copy). Owner-executed; Phase 10 checklist. | 8/10 | **Yes** | ✔ **Resolved 2026-08-23** (`docs/h1-seal-proof`, prompt 9) — **the production certificate seals.** It verifies whole-document (`ENTIRE_FILE`), **PAdES** (subfilter `/ETSI.CAdES.detached`, read back out of the file), **B-T** with DigiCert's TSA, and B-B without it; a one-byte edit inside a page object flips it to `modified`. Proven three ways: the engine in the api container on a fixture; a **real two-signer envelope** (`ZEN-QUJVGF`) finalized by `worker-heavy` under the production cert, whose signer CN is `ZenPDF Document Sealing` where the dev certificate's is `ZenPDF Dev Signing`; and **production's own `/api/verify/`** accepting that file (`envelope_match.known: false`, correctly — the envelope is in the local database, not production's). Environment: **verified, not inferred** — `SIGNING_CERT_PASSWORD`, `TSA_URL`, `SIGNING_CERT_B64` and `SIGNING_CERT_PATH` are set on all five Django services, production's `SIGNING_CERT_B64` decodes **byte-identical** to the local `.p12`, and a read-only probe inside production's `worker-heavy` sealed and verified a document with the file production decoded at start. Evidence: `docs/reviews/evidence/h1/`; narrative: session log **"2026-08-23 — H1 — production seal proof"**. The certificate *decision* (self-signed for v1, or buy from a CA) stays the owner's, and is now in `docs/10-launch-checklist.md` "Signing" ready to tick. |
 | 2026-08-02 | **Legal review of the ESIGN disclosure.** `apps/esign/legal.py` is versioned, hashed into every consent event, and written to be honest (SES + platform seal, explicitly *not* QES). It has not been read by a lawyer. Worth doing before real agreements are signed through it — and any change must bump `VERSION`. | 8/10 | **Yes** | ⬜ |
 | 2026-08-02 | **Email deliverability (SPF/DKIM).** Dev delivers to Mailpit; production needs the DNS records, or every signing invitation goes to spam and the product does not work. phase-08 names it as a Phase-10 checklist item. | 8/10 | No | ⬜ |
 | 2026-08-02 | **Permissions in a third-party viewer — one manual check.** Phase 7's second acceptance criterion asks for a spot-check of print-restricted output, and is ticked `[~]` for that reason. The permission *bits* are asserted through pikepdf for every level of both graded permissions, and accessibility is proven never restricted — but "Preview greys out the print button" is a rendering judgement no test makes. Worth five minutes with a protected export in Preview and Acrobat. | 7 | No | ⬜ |
@@ -1141,6 +1142,105 @@ Handoff programme (the nine CLI prompts from the 2026-08-21 status review) is tr
 | 2026-08-20 | **The workspace on a phone is stacked, not designed.** Below `md` the rails now become full-width sections above and below the page (§3 workspace panes) — which makes every control reachable and stops the page scrolling sideways, but it is a rescue, not a phone layout. A designed treatment would probably make the rails drawers with a persistent bottom bar. Worth a designer's eye before any mobile push. | 10 | No | ⬜ *(2026-08-21: the row above the page now wraps rather than overflowing, so the page no longer scrolls sideways and the app is no longer drawn at ~64 % — but that is a repair, not a design. Row stays open.)* |
 
 ## Session log
+
+**2026-08-23 — H1 — production seal proof**
+
+Branch `docs/h1-seal-proof`, prompt 9 of the nine on `docs/reviews/handoffs/TRACKING.md` —
+archived on completion at `docs/archived/2026-08-23-handoff-to-cli-h1-production-seal-proof.md`.
+No product code changed; the deliverable is evidence, and it is in
+`docs/reviews/evidence/h1/` with an index of what each file proves.
+
+The question: **the production signing certificate had never sealed a document.** `SIGNING_CERT_B64`
+demonstrably decodes on every Railway service (the start command `base64 -d > /tmp/certs/zenpdf.p12
+&& exec …` means a running gunicorn proves the decode exited 0), but the seal itself runs only at
+multi-party finalize, finalize needs a signer to open a tokenised invitation, and SMTP is off in
+production — so the path is unreachable there. The proof is therefore made on the **local stack with
+the production `.p12`**, and only the final verification against the **live** `/api/verify/`.
+
+**Answer: it seals. All four steps pass.**
+
+**Step A — the engine seals with the production p12.** In the api container, prod cert mounted
+read-only, everything printed rather than assumed. The certificate carries what
+`RAILWAY-SECRETS.md` says it does: subject *and* issuer `CN=ZenPDF Document Sealing, O=ZenPDF`
+(so, self-signed), serial `458038234647621122148599486114237673069358345324`, **RSA-3072 /
+sha256_rsa**, valid `2026-08-08` → `2029-08-07`. Sealing the 2 898-byte
+`tests/fixtures/pdfs/text.pdf`: **B-T** with `TSA_URL=http://timestamp.digicert.com` → 27 998
+bytes, and **B-B** with `TSA_URL` empty → 9 827 bytes. That ~18 KB difference *is* the DigiCert
+timestamp token, which is the cheapest proof the TSA was really reached rather than silently
+skipped. Both verify `integrity: intact`, `coverage: ENTIRE_FILE`, `whole_document: true`,
+signer CN `ZenPDF Document Sealing`, and the subfilter **read back out of the file** is
+`/ETSI.CAdES.detached` — PAdES, not the legacy Adobe profile the seal module's own comment warns
+about. `trusted: false`, correctly, and `/verify` says so in as many words. Then one byte flipped
+inside a page object at offset 130+300 → **`modified`**, `intact: false` while `whole_document`
+stays true, which is the shape that distinguishes a tampered file from an appended one. Run
+twice; identical except the timestamps. Transcript: `evidence/h1/step-a-console.txt`.
+
+**Step B — a real two-signer envelope, sealed with the production certificate.** A throwaway
+compose override put the prod cert into api + all three workers (password from the shell, never
+in a file — the override is deleted at the end of the run and was never committed). All four
+services confirmed to be running it before the test. Then the suite's own ceremony:
+`npx playwright test -g "two signers in order, sealed, certified and verifiable"` — **1 passed
+(29.8s)**. Envelope `ZEN-QUJVGF`. The discriminator that makes this Step B rather than a repeat
+of any previous green run: the dev certificate's CN is **`ZenPDF Dev Signing`** and this file's
+is **`ZenPDF Document Sealing`**. Local `/api/verify/` on the downloaded final: `sealed: true`,
+`integrity: intact`, `ENTIRE_FILE`, `timestamp: true`, `envelope_match.known: true`,
+`sha256_match: true`. The certificate of completion prints `Seal Applied — level=B-T,
+sealed=True, timestamped=True` and a verifying chain. Every address in it is `@e2e.local`, which
+is why it was safe to commit; checked, not assumed.
+
+**Step C — production verifies its own seal.** `POST` of `final.pdf` to
+`https://zenpdf.up.railway.app/api/verify/`: `sealed: true`, `integrity: intact`,
+`coverage: ENTIRE_FILE`, `whole_document: true`, signer CN `ZenPDF Document Sealing` matching
+Step A, `timestamp: true`, `trusted: false`. `envelope_match.known` is **false** — the correct
+answer, and worth stating plainly: the envelope lives in the *local* database, not production's,
+so production recognises the seal without recognising the envelope. `known: true` would have
+meant something was wrong. Full JSON: `evidence/h1/production-verify.json`.
+
+**Step D — the environment side, verified rather than inferred.** The prompt expected this to be
+owner-only for want of a Railway token; the `railway` CLI turned out to be logged in, so it was
+measured. On **all five** Django services (`api`, `worker-default`, `worker-heavy`,
+`worker-render`, `beat`): `SIGNING_CERT_PASSWORD`, `TSA_URL`, `SIGNING_CERT_B64` and
+`SIGNING_CERT_PATH` are all set. No value was printed; identity was established by comparison
+instead — production's `SIGNING_CERT_B64` **decodes to bytes byte-identical to the local
+`.p12`** (3427 bytes, sha256 `45a196df…9ad34`), the password hashes equal to the local secret,
+and `TSA_URL` equals `http://timestamp.digicert.com` exactly. So Steps A and B are not
+analogous to production — they are production's own bytes, password and TSA.
+
+Then the check the prompt did not ask for, because it became possible: a **read-only probe inside
+production's `worker-heavy` container** over `railway ssh`. It loads the file production itself
+decoded at start (`/tmp/certs/zenpdf.p12`, 3427 bytes, the same sha256), seals an in-memory PDF
+and verifies it: `level: B-T`, `timestamped: True`, subfilter `/ETSI.CAdES.detached`,
+`integrity: intact`, `ENTIRE_FILE`, CN `ZenPDF Document Sealing`. **Production seals, in
+production, with its own certificate, and reaches DigiCert's TSA from Railway's network** — which
+also closes the launch checklist's "`TSA_URL`: unverified" line. Nothing was written to the
+database, to storage or to a queue. Transcript: `evidence/h1/production-worker-seal-probe.txt`.
+
+**The by-eye pass (§6), and the one thing it found.** A fresh two-signer envelope (`ZEN-N6EV78`)
+walked in Chrome rather than headless: signer 1 at **390 × 844 in dark**, signer 2 at
+**1280 × 900 in light**, both from their Mailpit invitations. Consent screen (disclosure text,
+version `2026-08-02` and its fingerprint line, "Agree and continue" dead until the box is
+ticked), the pad (Draw / Type / Upload, all four fonts, live preview), the done screen, and —
+after signer 2 — "Everyone has signed" with both downloads. Signer 2's invitation arrived only
+after signer 1 finished, so sequential routing is right. The theme toggle cycles Light → Dark →
+System and persists across navigation with no first-paint flash. **Zero console errors or
+warnings across both ceremonies.** `/verify` was driven through its own file picker in both
+themes: green headline, "Sealed by ZenPDF Document Sealing", "Covers: the whole document",
+"Timestamp: from an independent authority", "not from a trusted authority — the seal is valid,
+but nothing outside this file vouches for who made it", the envelope match, and recipient
+addresses masked. The certificate opened in Chrome's PDF viewer: both pages, every event, the
+chain line.
+
+What it found is unrelated to H1 and is **pre-existing** — this branch changed no product code —
+but it is real, and it is recorded as a queue row below: **on a page with `/Rotate 90` or `270`,
+burnt-in signatures are drawn 180° from upright and the envelope footer becomes an unreadable
+vertical ribbon**, which additionally breaks `find_envelope_code` so `/verify` loses the envelope
+match on such documents. Measured against an unrotated control from the same code path, which is
+correct in every respect. Evidence: `evidence/h1/rotated-page-defect.png`.
+
+**What remains for the owner** (none of it engineering): the **SMTP** decision, which still makes
+multi-party signing unreachable on the hosted service; the **certificate decision** — stay
+self-signed for v1, or buy from a CA — now copied into the launch checklist's "Signing" note
+ready to tick or reverse; and the two legal reviews, which are separate GATE rows.
 
 **2026-08-22 — E2E and gate hardening**
 
