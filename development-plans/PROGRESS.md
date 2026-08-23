@@ -1226,6 +1226,10 @@ defect. Recorded as a queue row rather than decided quietly.
 24 of them fail**, which is the only evidence that matters here: the previous guards passed either
 way, and a test that cannot go red is what let this ship in the first place.
 
+**Shipped and verified in production.** PR #26, merged `97acfc7`, auto-deployed (`backend/**` rebuilds api + three workers + beat). Rolled out inside ~60 s and confirmed **inside production's own container**, not inferred from the build log: `content_rotation(90)` answers **90** where the old formula gave 270, and `page_numbers` on synthetic `/Rotate 0/90/180/270` pages lands bottom-centre reading `(1.0, 0.0)` at all four — measured through `rotation_matrix` on production's api service. Production's `/api/verify/` now recovers **`ZEN-N6EV78`** — H1's own by-eye envelope, sealed that morning on a rotated document, which returned `found_code: null` before this deploy — with its seal still `intact`.
+
+*After-deploy `@smoke` against production: **5 passed, 2 environmental**, matching the pre-existing baseline (H2's "4 passed, 2 environmental" in the six-spec era, plus `smoke-viewer` since).* Neither failure is a regression, and both were checked rather than waved through, which is what H2's prompt asks for. `phase-8:135` is **structurally local-only** — it polls Mailpit on `localhost:8025`, which production has no equivalent of. The second failure **moved between runs** — `smoke-viewer` in the first, `phase-2b` in the second — which is the fingerprint of production's real per-IP rate limiter meeting a whole suite run from one address. Both pass standalone: `smoke-viewer` immediately (canvas 1041×1473, 64 distinct colours), `phase-2b` once the throttle window cleared — it failed a standalone run started straight after the suite, then passed, which is the confirmation rather than the assumption.
+
 *The gate's memory flake cost a whole run again, for the second recorded time.* The first attempt
 died at the frontend-unit leg — **7 spec files, 1 test each, every one a `Hook timed out` or `Test
 timed out`**, in specs this branch does not touch (it changes **zero** frontend files). `docker
