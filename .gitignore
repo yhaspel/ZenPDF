@@ -73,3 +73,10 @@ _to_delete/
 
 # Disposable deploy staging (docs/ops/railway-deploy-plan.md B2); already in .railwayignore.
 .stage/
+
+# macOS virtiofs drops stale `foo 2.ext` copies beside `foo.ext` in the bind
+# mount. `frontend/eslint.config.js` has ignored them since the redesign so the
+# lint does not report findings that were fixed in the real file — but nothing
+# stopped `git add -A` from committing one, and on 2026-08-23 a stale
+# `tsconfig.app 2.json` reached `main` that way (PR #27). Ignored here too.
+* [0-9].*
