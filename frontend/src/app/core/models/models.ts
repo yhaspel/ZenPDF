@@ -609,6 +609,14 @@ export interface SignRequestModel {
   recipients: SignRecipient[];
   fields_: SignFieldModel[];
   page_count: number;
+  /**
+   * Why the signed copy never landed as a new version of the source document,
+   * or null. Best-effort by design (the envelope and the sealed file are
+   * unaffected), so this is the only place the owner can learn it happened —
+   * it used to be a server log line and nothing else. Cleared when a later
+   * resume succeeds.
+   */
+  source_append_error: string | null;
 }
 
 /** What a recipient sees at `/s/:token` — never another recipient's fields. */

@@ -37,6 +37,18 @@
       </ul>
 
       @if (request.status === 'completed') {
+        @if (request.source_append_error) {
+          <!-- The append is best-effort by design, so nothing failed from the
+               signer's side and there is no job to show. This is the only place
+               the owner can learn it happened — it used to be a server log line
+               and nothing else. The downloads live inside the notice because the
+               sentence points at them. -->
+          <p class="notice notice-warning mt-4" data-test="append-error">
+            The signed copy could not be added to your document:
+            {{ request.source_append_error }} The sealed file and certificate are
+            unaffected — download them here.
+          </p>
+        }
         <div class="mt-4 flex flex-wrap gap-2">
           <!-- The screen's single primary: the thing everyone came back for. -->
           <button class="btn btn-primary"

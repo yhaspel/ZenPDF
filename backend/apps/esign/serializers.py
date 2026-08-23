@@ -64,9 +64,14 @@ class SignRequestSerializer(serializers.ModelSerializer):
         fields = ("id", "document", "document_title", "title", "message", "status",
                   "envelope_code", "expires_at", "reminder_every_days", "sent_at",
                   "completed_at", "final_sha256", "created_at", "recipients",
-                  "fields_", "page_count")
+                  "fields_", "page_count", "source_append_error")
+        # `source_append_error` is the **owner's** serializer only, and read-only
+        # here as well as by nature: it is written by the finalize worker, and a
+        # PATCH that could set it would let an owner author a sentence the UI
+        # presents as something the system observed.
         read_only_fields = ("id", "status", "envelope_code", "sent_at",
-                            "completed_at", "final_sha256", "created_at")
+                            "completed_at", "final_sha256", "created_at",
+                            "source_append_error")
 
     def get_page_count(self, obj) -> int:
         version = obj.source_version or obj.document.current_version
