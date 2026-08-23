@@ -62,18 +62,17 @@ function isTakeUntilDestroyed(argument) {
     && argument.callee.name === 'takeUntilDestroyed';
 }
 
-/** The nearest enclosing method / constructor name, for the exemption list. */
+/**
+ * The nearest enclosing member's name, for the exemption list.
+ *
+ * A constructor's `key` is an `Identifier` named `constructor`, so it needs no
+ * case of its own — which is what lets `PdfThumbnail`'s `effect` be exempted
+ * by the member it is written in.
+ */
 function enclosingMember(node) {
   for (let current = node.parent; current; current = current.parent) {
-    if (current.type === 'MethodDefinition' && current.key.type === 'Identifier') {
-      return current.key.name;
-    }
-    if (current.type === 'MethodDefinition' && current.kind === 'constructor') {
-      return 'constructor';
-    }
-    if (current.type === 'PropertyDefinition' && current.key.type === 'Identifier') {
-      return current.key.name;
-    }
+    const named = current.type === 'MethodDefinition' || current.type === 'PropertyDefinition';
+    if (named && current.key.type === 'Identifier') return current.key.name;
   }
   return '';
 }

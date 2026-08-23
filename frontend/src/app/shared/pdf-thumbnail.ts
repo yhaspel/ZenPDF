@@ -144,9 +144,7 @@ export class PdfThumbnail implements AfterViewInit, OnDestroy {
         delay: (error, retryCount) => {
           // A 404 or a 423 is an answer, not a refusal: asking again is rude
           // and cannot change it. Those fail at once, as they always have.
-          if (!this.scheduler.worthRetrying(error, retryCount)) {
-            return throwError(() => error);
-          }
+          if (!this.scheduler.isRefusal(error)) return throwError(() => error);
           return timer(this.scheduler.refused(error, retryCount));
         },
       }),

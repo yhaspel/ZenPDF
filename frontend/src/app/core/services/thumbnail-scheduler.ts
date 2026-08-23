@@ -60,9 +60,15 @@ export class ThumbnailScheduler {
     return remaining + Math.floor(Math.random() * JITTER_MS);
   }
 
-  /** Whether asking again could possibly help. */
-  worthRetrying(error: unknown, attempt: number): boolean {
-    return attempt < MAX_ATTEMPTS && RETRYABLE.has(statusOf(error));
+  /**
+   * Whether asking again could possibly help.
+   *
+   * How *many* times is not asked here: the attempt cap is `MAX_ATTEMPTS` at
+   * the one call site, and a second copy of it would only be a second place to
+   * change.
+   */
+  isRefusal(error: unknown): boolean {
+    return RETRYABLE.has(statusOf(error));
   }
 
   /**

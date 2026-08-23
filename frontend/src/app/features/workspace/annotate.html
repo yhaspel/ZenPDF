@@ -62,7 +62,7 @@
                   : 'Upload a custom stamp below to use this'"
                 (click)="setTool('image_stamp')" data-test="tool-image-stamp">
           @if (annotations.stamp(); as stamp) {
-            <img [src]="stamp.preview" alt="" class="border-border h-6 w-6 shrink-0 rounded-[2px] border object-contain" />
+            <img [src]="stamp.preview" alt="" class="border-border rounded-1 h-6 w-6 shrink-0 border object-contain" />
           }
           <span>Image stamp</span>
         </button>
