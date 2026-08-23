@@ -1,7 +1,34 @@
 import { expect, test } from '@playwright/test';
+import type { Page } from '@playwright/test';
 
 import { expectPageDrew } from './drew';
 import { registerAndLogin, registerVerifiedAndLogin, uploadFiles } from './helpers';
+
+/**
+ * Trash a document and wait for the **server** to have done it.
+ *
+ * `DocumentsFacade.trash()` calls `removeLocal(id)` — which mutates the
+ * `_documents` signal synchronously — and only then dispatches the DELETE. So
+ * the card disappears from the grid before the request is even sent, and
+ * `expect(doc-card).toHaveCount(0)` is satisfied entirely by the client's own
+ * optimistic update. It carries no information about the server at all.
+ *
+ * That matters because switching to the trash view triggers a fresh `load()`.
+ * If the DELETE has not committed, that load returns an empty list and nothing
+ * retries — the view is simply, permanently, wrong for that run. Waiting on the
+ * response is the only barrier that is actually causal.
+ */
+async function trashAndAwaitServer(page: Page, card = page.locator('[data-test=doc-card]').first()) {
+  await card.locator('[data-test=doc-menu]').click();
+  await card.locator('[data-test=trash]').click();
+  // Armed before the click that fires the request, or it can be missed.
+  const deleted = page.waitForResponse(
+    (r) => r.request().method() === 'DELETE'
+      && /\/api\/documents\/[^/?]+\/$/.test(r.url()),
+  );
+  await page.click('[data-test=confirm-ok]');
+  expect((await deleted).status()).toBe(204);
+}
 
 test('@smoke phase 1: upload, view, search, rename, trash, restore', async ({ page }) => {
   await registerAndLogin(page, 'p1');
@@ -43,9 +70,11 @@ test('@smoke phase 1: upload, view, search, rename, trash, restore', async ({ pa
   const renamed = page
     .locator('[data-test=doc-card]')
     .filter({ has: page.locator('[data-test=doc-title]', { hasText: 'Renamed Report' }) });
-  await renamed.locator('[data-test=doc-menu]').click();
-  await renamed.locator('[data-test=trash]').click();
-  await page.click('[data-test=confirm-ok]');
+  // The count assertion below is NOT the barrier it looks like — `removeLocal`
+  // has already dropped the row from the signal, so it passes without the server
+  // having done anything. Wait for the DELETE itself, then assert the count as
+  // the *product* claim it actually is (one document left, not two).
+  await trashAndAwaitServer(page, renamed);
   await expect(page.locator('[data-test=doc-card]')).toHaveCount(1);
 
   // Trash view → restore
@@ -54,7 +83,14 @@ test('@smoke phase 1: upload, view, search, rename, trash, restore', async ({ pa
     .locator('[data-test=doc-card]')
     .filter({ has: page.locator('[data-test=doc-title]', { hasText: 'Renamed Report' }) });
   await trashed.locator('[data-test=doc-menu]').click();
+  // Same shape on the way back: `restore()` is optimistic too, and the toggle
+  // below reloads. This is the likeliest mechanism for this spec's occasional
+  // unexplained failure under load.
+  const restored = page.waitForResponse(
+    (r) => r.request().method() === 'POST' && /\/api\/documents\/[^/]+\/restore\/$/.test(r.url()),
+  );
   await trashed.locator('[data-test=restore]').click();
+  expect((await restored).status()).toBe(200);
   await expect(page.locator('[data-test=doc-card]')).toHaveCount(0);
 
   // Back in the library it is restored
@@ -123,10 +159,7 @@ test('phase 1: a document under a signature request cannot be deleted forever',
 
   // Trash it, then look at it in the trash.
   await page.reload();
-  const card = page.locator('[data-test=doc-card]').first();
-  await card.locator('[data-test=doc-menu]').click();
-  await card.locator('[data-test=trash]').click();
-  await page.click('[data-test=confirm-ok]');
+  await trashAndAwaitServer(page);
   await page.click('[data-test=trash-toggle]');
 
   const trashedCard = page.locator('[data-test=doc-card]').first();
@@ -148,13 +181,11 @@ test('phase 1: an ordinary trashed document still offers Delete forever',
   await registerAndLogin(page, 'p1plain');
   await uploadFiles(page, ['text.pdf']);
 
-  const card = page.locator('[data-test=doc-card]').first();
-  await card.locator('[data-test=doc-menu]').click();
-  await card.locator('[data-test=trash]').click();
-  await page.click('[data-test=confirm-ok]');
+  await trashAndAwaitServer(page);
   await page.click('[data-test=trash-toggle]');
 
   const trashedCard = page.locator('[data-test=doc-card]').first();
+  await expect(trashedCard).toBeVisible();
   await trashedCard.locator('[data-test=doc-menu]').click();
   await expect(trashedCard.locator('[data-test=purge]')).toBeVisible();
   await expect(trashedCard.locator('[data-test=undeletable]')).toHaveCount(0);
