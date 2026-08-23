@@ -41,6 +41,14 @@ export interface DocumentModel {
   trashed_at: string | null;
   created_at: string;
   updated_at: string;
+  /**
+   * A signature request points at this document, so permanent deletion will be
+   * refused: `source_version` is `PROTECT` and the signed record has to keep
+   * pointing at what was signed. Read it *before* offering "Delete forever" —
+   * the refusal used to arrive as a toast that faded, leaving the nightly purge
+   * retry as the only remaining explanation, in a log nobody can read.
+   */
+  has_sign_requests: boolean;
 }
 
 export interface DocumentVersion {

@@ -220,9 +220,21 @@ class DocumentListCreateView(generics.ListCreateAPIView):
         return [*super().get_throttles(), UploadThrottle()]
 
     def get_queryset(self):
+        from django.db.models import Exists, OuterRef
+
+        from apps.esign.models import SignRequest
+
         qs = owned_by(
             Document.objects.select_related("current_version"), _principal(self.request)
         )
+        # `has_sign_requests` tells the trash view not to offer a "Delete
+        # forever" that `_purge` will refuse. One EXISTS subquery for the page,
+        # rather than the fifty-one queries a per-row `.exists()` would cost on
+        # the single most-run query in the product (§10.2). Measured without it:
+        # listing 6 documents cost 9 queries and listing 2 cost 5.
+        qs = qs.annotate(sign_requests_exist=Exists(
+            SignRequest.objects.filter(document=OuterRef("pk"))
+        ))
         # Default library hides trashed docs; ?trashed=true surfaces them.
         if "trashed" not in self.request.query_params:
             qs = qs.filter(trashed_at__isnull=True)

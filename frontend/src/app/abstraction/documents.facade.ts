@@ -7,6 +7,21 @@ import { DocListParams, DocumentsService } from '../core/services/documents.serv
 /** Mirrors DRF's `DefaultPagination.default_limit` (01-architecture.md §6). */
 const PAGE_SIZE = 50;
 
+/**
+ * The server's own sentence, or a plain fallback — never a status code.
+ *
+ * `_purge` writes the reason a document cannot be deleted, and it is the only
+ * place that sentence exists. Rewriting it here would be a second copy that
+ * drifts; showing "403" instead would be no explanation at all.
+ */
+function purgeMessage(err: unknown): string {
+  const shape = err as { error?: { error?: { message?: string } } } | null;
+  return (
+    shape?.error?.error?.message
+    ?? 'That document could not be deleted. Try again in a moment.'
+  );
+}
+
 @Injectable({ providedIn: 'root' })
 export class DocumentsFacade {
   private docsSvc = inject(DocumentsService);
@@ -164,9 +179,42 @@ export class DocumentsFacade {
     this.docsSvc.restore(id).subscribe({ error: () => this.load() });
   }
 
+  /**
+   * Why a permanent deletion was refused, keyed by document id.
+   *
+   * A refusal here is not a transient failure to retry — it is a standing fact
+   * about the document ("a signature request points at it") that will be just
+   * as true tomorrow. The old handler discarded it entirely: `error: () =>
+   * this.load()` put the row back and said nothing, so the user pressed Delete
+   * forever, watched the card vanish and reappear, and was told nothing at all.
+   * The card renders this next to the document it is about.
+   */
+  private _purgeErrors = signal<Record<string, string>>({});
+  readonly purgeErrors = this._purgeErrors.asReadonly();
+
   purge(id: string): void {
     this.removeLocal(id);
-    this.docsSvc.purge(id).subscribe({ next: () => this.refreshUsage(), error: () => this.load() });
+    // A retry starts with a clean slate: the previous refusal may have been
+    // fixed (the request cancelled) and leaving it up would contradict the
+    // card that just disappeared.
+    this.clearPurgeError(id);
+    this.docsSvc.purge(id).subscribe({
+      next: () => this.refreshUsage(),
+      error: (err: unknown) => {
+        this._purgeErrors.update((errors) => ({ ...errors, [id]: purgeMessage(err) }));
+        this.load();
+      },
+    });
+  }
+
+  /** Forget a refusal — the row is gone from view, so its explanation is too. */
+  clearPurgeError(id: string): void {
+    this._purgeErrors.update((errors) => {
+      if (!(id in errors)) return errors;
+      const rest = { ...errors };
+      delete rest[id];
+      return rest;
+    });
   }
 
   /** The row left the current result set on the server too, so the window we

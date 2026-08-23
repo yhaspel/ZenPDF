@@ -30,6 +30,20 @@ function isPdf(file: File): boolean {
   return file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
 }
 
+/**
+ * The standing explanation for a trashed document that cannot be deleted.
+ *
+ * Deliberately shorter than `_purge`'s sentence and says the same thing: this
+ * one appears on a grid card before any request has been refused, where the
+ * server has not spoken and there is nothing to quote. The server's own wording
+ * still wins whenever a refusal actually arrives (`undeletableReason`), so the
+ * authoritative copy stays in one place — this is the caption, not a second
+ * version of it.
+ */
+const UNDELETABLE = 'Sent for signature, so it cannot be deleted — the signed '
+  + 'record has to keep pointing at what was signed. Cancel the request first '
+  + 'if it is still open.';
+
 @Component({
   selector: 'app-dashboard',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -279,6 +293,23 @@ export class Dashboard {
       this.docs.purge(doc.id);
       this.toast.info('Deleted');
     }
+  }
+
+  /**
+   * Why this trashed document has no "Delete forever", or null.
+   *
+   * Two sources, one slot. The server's own sentence wins when it has spoken —
+   * `_purge` owns that copy and it is the only place it exists — and the
+   * standing line below covers the ordinary case, where the button is never
+   * offered so there is no refusal to quote. Without the standing line a user
+   * would find a trashed document that simply cannot be got rid of, with
+   * nothing on screen saying so.
+   */
+  protected undeletableReason(doc: DocumentModel): string | null {
+    if (!this.docs.trashed()) return null;
+    const refused = this.docs.purgeErrors()[doc.id];
+    if (refused) return refused;
+    return doc.has_sign_requests ? UNDELETABLE : null;
   }
 
   toggleSelect(doc: DocumentModel): void {

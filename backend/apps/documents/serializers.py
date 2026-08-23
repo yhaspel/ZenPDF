@@ -52,15 +52,40 @@ class DocumentVersionSerializer(serializers.ModelSerializer):
 
 class DocumentSerializer(serializers.ModelSerializer):
     current_version = VersionRefSerializer(read_only=True)
+    has_sign_requests = serializers.SerializerMethodField()
 
     class Meta:
         model = Document
         fields = ("id", "title", "status", "page_count", "size_bytes", "is_encrypted",
                   "starred", "folder", "metadata", "current_version", "last_opened_at",
-                  "trashed_at", "created_at", "updated_at")
+                  "trashed_at", "created_at", "updated_at", "has_sign_requests")
         read_only_fields = ("id", "status", "page_count", "size_bytes", "is_encrypted",
                             "metadata", "current_version", "last_opened_at", "trashed_at",
-                            "created_at", "updated_at")
+                            "created_at", "updated_at", "has_sign_requests")
+
+    def get_has_sign_requests(self, obj) -> bool:
+        """Whether permanent deletion will be refused (`_purge`, §9).
+
+        `source_version` is `on_delete=PROTECT` and `_purge` refuses before it
+        touches a blob, so this document cannot be deleted for as long as any
+        request points at it. The client needs to know *before* it offers the
+        action: the trash card used to show "Delete forever", take the refusal,
+        and turn it into a toast that faded — leaving the nightly `trash_purge`
+        retry as the user's only remaining explanation, and that one is written
+        to a log they cannot read.
+
+        A boolean, not the reason: the reason is one sentence that belongs to
+        `_purge` and stays there, so there is one copy of it.
+
+        The list view annotates this with one `EXISTS` subquery so fifty rows
+        cost one query rather than fifty-one; every other caller serializes a
+        single document, where the fallback is the same single query the
+        annotation would have been.
+        """
+        annotated = getattr(obj, "sign_requests_exist", None)
+        if annotated is not None:
+            return bool(annotated)
+        return obj.sign_requests.exists()
 
     def validate_folder(self, value):
         # `folder` is a writable relation whose default queryset is unscoped;

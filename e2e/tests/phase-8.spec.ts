@@ -279,6 +279,13 @@ test('@smoke @mobile phase 8: two signers in order, sealed, certified and verifi
     timeout: 90_000,
   });
   await expect(page.locator('[data-test=final-hash]')).toContainText(/[0-9a-f]{64}/);
+  // …and is told nothing about an append that did not fail. The notice exists
+  // because `_append_to_source_document` can decline (quota, page cap, a
+  // trashed document) and used to say so only in a server log; a version that
+  // rendered it unconditionally would be the obvious regression, and this is
+  // the assertion that catches it. The happy path here has room for the
+  // version, so the signed copy landed and there is nothing to report.
+  await expect(page.locator('[data-test=append-error]')).toHaveCount(0);
   await page.click('[data-test=tab-audit]');
   await expect(page.locator('[data-test=chain-status]')).toContainText('verifies');
   await expect(page.locator('[data-test=audit-row]').filter({ hasText: 'signed' }))
