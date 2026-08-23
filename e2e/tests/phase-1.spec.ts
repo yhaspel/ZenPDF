@@ -127,6 +127,13 @@ test('phase 1: a document under a signature request cannot be deleted forever',
   await card.locator('[data-test=doc-menu]').click();
   await card.locator('[data-test=trash]').click();
   await page.click('[data-test=confirm-ok]');
+  // Wait for the library to actually empty before switching views. The trash is
+  // optimistic in the facade, so toggling straight away can load the trash list
+  // before the DELETE has committed — the list comes back empty and nothing
+  // retries. Measured: this passed twice and failed on the third gate run, on a
+  // machine that had just done a production build. The smoke test above already
+  // asserts the count for the same reason.
+  await expect(page.locator('[data-test=doc-card]')).toHaveCount(0);
   await page.click('[data-test=trash-toggle]');
 
   const trashedCard = page.locator('[data-test=doc-card]').first();
@@ -152,9 +159,12 @@ test('phase 1: an ordinary trashed document still offers Delete forever',
   await card.locator('[data-test=doc-menu]').click();
   await card.locator('[data-test=trash]').click();
   await page.click('[data-test=confirm-ok]');
+  // Same reason as the test above: prove the DELETE landed before changing view.
+  await expect(page.locator('[data-test=doc-card]')).toHaveCount(0);
   await page.click('[data-test=trash-toggle]');
 
   const trashedCard = page.locator('[data-test=doc-card]').first();
+  await expect(trashedCard).toBeVisible();
   await trashedCard.locator('[data-test=doc-menu]').click();
   await expect(trashedCard.locator('[data-test=purge]')).toBeVisible();
   await expect(trashedCard.locator('[data-test=undeletable]')).toHaveCount(0);

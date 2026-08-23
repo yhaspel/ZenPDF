@@ -82,6 +82,23 @@ echo "======================================================"
 docker compose run --rm -T api sh -c "ruff check . && mypy apps config"
 
 echo "======================================================"
+echo " Backend correctness checks (django, migrations, OpenAPI)"
+echo "======================================================"
+# All three are named in the Definition of Done (§20) and in every handoff's
+# gate section, and until 2026-08-23 this script ran none of them — so each was
+# something a person had to remember, which means each was something a person
+# could report without having run. That is not a hypothetical: the backend-debt
+# session log claimed `manage.py check` and `build + verify:prerender` and had
+# run neither. They passed when finally run, which is luck, not a gate.
+#
+# `makemigrations --check` catches a model edited without its migration, which
+# is the failure that only shows up on somebody else's fresh database.
+docker compose run --rm -T -e DJANGO_SETTINGS_MODULE=config.settings.test api sh -c "
+  python manage.py check &&
+  python manage.py makemigrations --check --dry-run &&
+  python manage.py spectacular --fail-on-warn > /dev/null && echo 'OpenAPI schema: 0 warnings'"
+
+echo "======================================================"
 echo " Conversion dependency (gotenberg)"
 echo "======================================================"
 # Fail here, with a cause, rather than ten tests later with a skip nobody reads:
@@ -147,9 +164,22 @@ rm -rf "$selftest"
 # env var wins over pyproject — so pass it explicitly for eager Celery + fs storage.
 # `-rs` is what makes the skip set readable at all; without it the gate can only
 # see a count, and a count cannot tell you what it did not run.
+#
+# Run under coverage, because §18 states "Coverage gate: apps 85%, pdf_engine
+# 90%" and §20's Definition of Done item 3 says the gates hold — and until
+# 2026-08-23 nothing measured them. Not `fail_under`: that is a single global
+# number, and the two thresholds are different and per-package. The assertion
+# is below, next to the skip guard, for the same reason as the skip guard.
+#
+# COVERAGE_FILE points inside the container so no `.coverage` lands in the repo.
 pytest_log="$(mktemp)"
 trap 'rm -f "$pytest_log"' EXIT
-docker compose run --rm -T -e DJANGO_SETTINGS_MODULE=config.settings.test api pytest -q -rs \
+docker compose run --rm -T -e DJANGO_SETTINGS_MODULE=config.settings.test \
+  -e COVERAGE_FILE=/tmp/.coverage.gate api sh -c "
+    pytest -q -rs --cov=apps --cov-report= &&
+    echo '--- coverage ---' &&
+    printf 'APPS_PCT=' && coverage report --format=total --precision=2 &&
+    printf 'ENGINE_PCT=' && coverage report --format=total --precision=2 --include='apps/pdf_engine/*'" \
   | tee "$pytest_log"
 
 skipped="$(count_skips "$pytest_log")"
@@ -167,6 +197,30 @@ if [ "$PG" -eq 1 ]; then
 else
   echo "${skipped} skipped, all query plans — pass --pg to exercise them."
 fi
+
+# The coverage gate §18 states and §20 requires. Asserted here rather than by
+# `fail_under` because the two floors differ per package, and read out of the
+# run above rather than measured again — a second pass would be two minutes to
+# re-learn a number we already have.
+APPS_FLOOR=85
+ENGINE_FLOOR=90
+apps_pct="$(grep -oE '^APPS_PCT=[0-9.]+' "$pytest_log" | head -1 | cut -d= -f2)"
+engine_pct="$(grep -oE '^ENGINE_PCT=[0-9.]+' "$pytest_log" | head -1 | cut -d= -f2)"
+if [ -z "$apps_pct" ] || [ -z "$engine_pct" ]; then
+  echo "ERROR: coverage did not report a number. The gate must not pass a coverage"
+  echo "       check it could not perform — that is the whole lesson of the skip set."
+  exit 1
+fi
+# Two decimal places, compared with awk rather than with `[ -ge ]`, because the
+# integer form ROUNDS: 89.6% renders as "90" and would clear a 90% floor it is
+# actually under. A gate that rounds up into passing is the false pass this
+# script exists to make impossible.
+below() { awk -v a="$1" -v b="$2" 'BEGIN { exit !(a + 0 < b + 0) }'; }
+cov_failed=0
+below "$apps_pct" "$APPS_FLOOR" && { echo "ERROR: apps coverage ${apps_pct}% is below the ${APPS_FLOOR}% gate (§18)."; cov_failed=1; }
+below "$engine_pct" "$ENGINE_FLOOR" && { echo "ERROR: pdf_engine coverage ${engine_pct}% is below the ${ENGINE_FLOOR}% gate (§18)."; cov_failed=1; }
+[ "$cov_failed" -eq 0 ] || exit 1
+echo "coverage: apps ${apps_pct}% (gate ${APPS_FLOOR}), pdf_engine ${engine_pct}% (gate ${ENGINE_FLOOR}) — both hold."
 
 echo "======================================================"
 echo " Frontend lint (eslint via ng lint)"
@@ -199,11 +253,27 @@ echo "======================================================"
 # above exists to prevent.
 docker compose stop web >/dev/null 2>&1 || true
 docker compose run --rm -T --no-deps web npx ng test --watch=false
-# …and put it back, whether or not `--e2e` follows. A gate that leaves the
+
+echo "======================================================"
+echo " Production build + prerender (SSR is build-time)"
+echo "======================================================"
+# §9 asks for "build + verify:prerender" and this script ran neither, so the
+# only thing standing between a broken prerender and a release was somebody
+# remembering. SSR here is build-time (`outputMode: static`, see AGENTS.md), so
+# a prerender that silently stops emitting routes is a silent SEO outage — the
+# same shape as the viewer that rendered nothing in production for ten days
+# while every check stayed green.
+#
+# Runs while `web` is still stopped, deliberately: this is a full production
+# build and it loses the same race the vitest step does.
+docker compose run --rm -T --no-deps web npm run build
+docker compose run --rm -T --no-deps web npm run verify:prerender
+
+# …and put `web` back, whether or not `--e2e` follows. A gate that leaves the
 # developer's dev server stopped has fixed one surprise by introducing another;
 # the e2e leg's own `up -d web` then just waits for a container already coming
-# up. `set -e` is active, so this runs only on a green unit leg — which is what
-# we want: a red one leaves the stack exactly as it was for inspection.
+# up. `set -e` is active, so this runs only on a green run — which is what we
+# want: a red one leaves the stack exactly as it was for inspection.
 docker compose up -d web >/dev/null 2>&1 || true
 
 if [ "$PG" -eq 1 ]; then
