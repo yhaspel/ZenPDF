@@ -1211,13 +1211,26 @@ check was run on every new assertion in this change that claims to catch somethi
 
 **Gate.** `ruff` clean, `mypy` **0 issues across 179 files**, `manage.py check`,
 `makemigrations --check` "No changes detected", `spectacular --fail-on-warn` **0 warnings**.
-Backend **1158 passed, 6 skipped** (baseline 1061/4 — the 2 extra skips are the new
-`@PG_ONLY` concurrency pair, which the gate's skip guard was widened to accept, 4 → 6).
+Backend **1159 passed, 6 skipped** (baseline 1061/4 — the 2 extra skips are the new
+`@PG_ONLY` concurrency pair, which the gate's skip guard was widened to accept, 4 → 6; the
+full gate ran at 1158 and gained one test from the self-review below).
 `-m pg_only` against Postgres: **6 passed**. Frontend **466 passed** across 54 files, `ng lint`
 clean, build + `verify:prerender` clean. E2E **68 passed** on the restarted stack (63 before, plus
 the two new `phase-1` cases and three that landed with prompt 3). Migrations idempotent from zero:
 `./infra/reset.sh --yes` applied `esign/0007` among the rest, and a second `up.sh` reported
 **"No migrations to apply."**
+
+**Self-review found one thing worth fixing.** The *ops* lens asked what a nightly sweep does
+when one principal fails. `guest_purge`, `exports_purge`, `jobs_purge` and `trash_purge` all
+guard their storage calls and carry on; `usage_recompute` did not, so a single unreachable
+prefix or lock timeout would have abandoned every principal after it and reported a crash
+rather than a count. It now counts `failed` separately from `skipped` — the first is a fault,
+the second a decision the task made on purpose — and a test proves one broken principal does
+not stop the others being healed. The other three lenses found nothing: ownership goes
+through `owned_by`/`principal_prefix` at every site (and the prefix's trailing slash is what
+stops `uploads/u/1/` matching `uploads/u/10/`), the counter-examples were written before the
+reconciler, `throttling.py` and `authentication.py` are untouched, and the compose default of
+`NUM_PROXIES=1` is asserted by a test of its own.
 
 **Browser.** Both themes, 1280 px and 390 px, console clean (**no errors and no warnings**);
 screenshots and the full method in `docs/reviews/evidence/backend-debt/` behind its own `README.md`.

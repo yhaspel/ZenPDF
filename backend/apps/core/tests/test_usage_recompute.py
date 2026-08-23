@@ -281,6 +281,39 @@ def test_targeting_one_principal_leaves_the_others_alone(api, other_api,
     assert _counter(other_user) == bobs_drifted_counter
 
 
+def test_one_broken_principal_does_not_abandon_the_rest(api, other_api, uploaded_doc,
+                                                        fixture_bytes, user,
+                                                        other_user, monkeypatch):
+    """A nightly sweep that dies on its first fault heals nobody.
+
+    One unreachable storage prefix or one lock timeout must be a counted
+    failure, not a crash — the same stance `trash_purge` takes.
+    """
+    from apps.core import tasks
+
+    upload = SimpleUploadedFile("text.pdf", fixture_bytes("text.pdf"),
+                                content_type="application/pdf")
+    assert other_api.post("/api/documents/", {"file": upload},
+                          format="multipart").status_code == 201
+    _skew(other_user, 4096)
+    truth = charged_bytes(other_user)
+
+    real = tasks._reconcile_one
+
+    def explode_for_alice(subject, **kwargs):
+        if subject.pk == user.pk:
+            raise OSError("the bucket is not answering")
+        return real(subject, **kwargs)
+
+    monkeypatch.setattr(tasks, "_reconcile_one", explode_for_alice)
+
+    stats = tasks.usage_recompute()
+
+    assert stats["failed"] == 1
+    assert stats["healed"] >= 1, "the other principals were abandoned"
+    assert _counter(other_user) == truth
+
+
 def test_an_unknown_principal_id_changes_nothing(api, uploaded_doc, user):
     _skew(user, 777)
     stats = usage_recompute(principal=str(uuid.uuid4()))

@@ -467,8 +467,8 @@ def usage_recompute(principal: str = "", dry_run: bool = False) -> dict:
 
     from .models import GuestSession
 
-    stats: dict = {"checked": 0, "healed": 0, "skipped": 0, "drift_bytes": 0,
-                   "dry_run": bool(dry_run), "drifts": []}
+    stats: dict = {"checked": 0, "healed": 0, "skipped": 0, "failed": 0,
+                   "drift_bytes": 0, "dry_run": bool(dry_run), "drifts": []}
 
     if principal:
         subjects = _one_principal(principal)
@@ -483,7 +483,19 @@ def usage_recompute(principal: str = "", dry_run: bool = False) -> dict:
 
     for subject in subjects:
         stats["checked"] += 1
-        record = _reconcile_one(subject, dry_run=bool(dry_run))
+        try:
+            record = _reconcile_one(subject, dry_run=bool(dry_run))
+        except Exception:  # noqa: BLE001
+            # One unreachable prefix or one lock timeout must not abandon the
+            # rest of the night's principals — the same stance `trash_purge`
+            # takes, and for the same reason: a sweep that dies on its first
+            # fault heals nobody and reports it as a crash rather than as a
+            # count. Counted separately from `skipped`, which is a decision
+            # this task made on purpose.
+            stats["failed"] += 1
+            logger.exception("usage_recompute: failed on %s %s",
+                             _kind_of(subject), subject.pk)
+            continue
         if record is None:
             continue
         if record.get("skipped"):
@@ -503,10 +515,11 @@ def usage_recompute(principal: str = "", dry_run: bool = False) -> dict:
                 " [dry run — not written]" if dry_run else "",
             )
 
-    if stats["healed"] or stats["skipped"]:
+    if stats["healed"] or stats["skipped"] or stats["failed"]:
         logger.info(
             "usage_recompute: checked %(checked)s, healed %(healed)s, "
-            "skipped %(skipped)s, net %(drift_bytes)s bytes", stats)
+            "skipped %(skipped)s, failed %(failed)s, net %(drift_bytes)s bytes",
+            stats)
     return stats
 
 
