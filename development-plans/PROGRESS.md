@@ -1244,6 +1244,21 @@ stops `uploads/u/1/` matching `uploads/u/10/`), the counter-examples were writte
 reconciler, `throttling.py` and `authentication.py` are untouched, and the compose default of
 `NUM_PROXIES=1` is asserted by a test of its own.
 
+**Production, after the merge** (PR #28, `757eeea`; the Railway `api` deploy reports SUCCESS).
+`/api/health/` ok on every check throughout the deploy. The `/api/` security-header set is
+intact and unchanged — CSP `default-src 'none'; frame-ancestors 'none'; sandbox`, HSTS,
+`nosniff`, `DENY`, `same-origin`, `noopen`. A guest upload→download round trip works
+(201 → 200, 2 898 bytes, `%PDF-1.7`), and the response carries the new `has_sign_requests`
+field, which is how we know the deployed code is this code and not the last build.
+
+**The first real `recompute_usage --dry-run` on production** (`railway ssh --service api`):
+**37 principals checked, 0 would be corrected, 0 skipped, net +0 bytes.** Production's
+storage counters were already exactly right. That is the best possible first result — the
+reconciler was written to heal drift, and the honest report is that on live data there is
+none to heal. It is also the strongest evidence available that `charged_bytes` models what
+the product actually charges, on data no test wrote: 57 principals locally, 37 in
+production, zero disagreement in either place.
+
 **Browser.** Both themes, 1280 px and 390 px, console clean (**no errors and no warnings**);
 screenshots and the full method in `docs/reviews/evidence/backend-debt/` behind its own `README.md`.
 One line per finding:
