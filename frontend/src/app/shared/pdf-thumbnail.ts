@@ -9,8 +9,10 @@ import {
   input,
   signal,
 } from '@angular/core';
+import { Observable, defer, retry, switchMap, throwError, timer } from 'rxjs';
 
 import { DocumentsService } from '../core/services/documents.service';
+import { MAX_ATTEMPTS, ThumbnailScheduler } from '../core/services/thumbnail-scheduler';
 
 /** Fetches a thumbnail as an authed blob (img cannot send the JWT header). */
 @Component({
@@ -29,8 +31,9 @@ import { DocumentsService } from '../core/services/documents.service';
       </button>
     } @else {
       <div class="bg-surface text-ink-faint flex h-full w-full items-center justify-center"
+           role="status" [attr.aria-label]="'Loading preview of page ' + (page() + 1)"
            data-test="thumb-loading">
-        <span class="text-xs">…</span>
+        <span class="text-xs" aria-hidden="true">…</span>
       </div>
     }
   `,
@@ -47,12 +50,18 @@ export class PdfThumbnail implements AfterViewInit, OnDestroy {
    * `…` placeholder, so a rail that had run into the 429 the lazy-loading
    * comment below describes sat there apparently still working, for ever.
    * A distinct state means the person can see what happened and ask again.
+   *
+   * A tile **backing off is not failed** (2026-08-23): while the automatic
+   * retries below are still to come it stays in its loading state, because
+   * that is what is true — the preview is on its way, just not yet. The failed
+   * state is what is left when four attempts have been spent.
    */
   protected failed = signal(false);
   /** Bumped by `retry()`; the fetch effect reads it, so it re-runs. */
   private attempt = signal(0);
   private current: string | null = null;
   private docsSvc = inject(DocumentsService);
+  private scheduler = inject(ThumbnailScheduler);
   private host = inject(ElementRef<HTMLElement>);
 
   /**
@@ -92,7 +101,7 @@ export class PdfThumbnail implements AfterViewInit, OnDestroy {
       const w = this.width();
       const v = this.version();
       this.attempt();  // the dependency that lets `retry()` re-run this
-      const sub = this.docsSvc.thumbnailBlob(id, page, w, v).subscribe({
+      const sub = this.fetch(id, page, w, v).subscribe({
         next: (blob) => {
           this.revoke();
           this.current = URL.createObjectURL(blob);
@@ -109,6 +118,39 @@ export class PdfThumbnail implements AfterViewInit, OnDestroy {
         this.revoke();
       });
     });
+  }
+
+  /**
+   * The fetch, with the rail's shared pause in front of it and a backoff behind.
+   *
+   * `defer` rather than a plain chain because `retry` resubscribes to what it
+   * is given: the hold has to be read again on each attempt, or a tile that
+   * waited out one window would walk straight into the next.
+   *
+   * A healthy rail pays nothing for this. `holdFor()` is 0 when nothing has
+   * been refused, and zero skips the timer rather than deferring by a tick, so
+   * the unthrottled case is the same call it always was.
+   */
+  private fetch(id: string, page: number, w: number, v: number | undefined): Observable<Blob> {
+    return defer(() => {
+      // The hold is read *before* the request is built, not after: nothing about
+      // a tile that is waiting should exist yet.
+      const hold = this.scheduler.holdFor();
+      const ask = () => this.docsSvc.thumbnailBlob(id, page, w, v);
+      return hold > 0 ? timer(hold).pipe(switchMap(ask)) : ask();
+    }).pipe(
+      retry({
+        count: MAX_ATTEMPTS - 1,
+        delay: (error, retryCount) => {
+          // A 404 or a 423 is an answer, not a refusal: asking again is rude
+          // and cannot change it. Those fail at once, as they always have.
+          if (!this.scheduler.worthRetrying(error, retryCount)) {
+            return throwError(() => error);
+          }
+          return timer(this.scheduler.refused(error, retryCount));
+        },
+      }),
+    );
   }
 
   ngAfterViewInit(): void {
