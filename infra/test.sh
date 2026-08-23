@@ -179,7 +179,32 @@ docker compose run --rm -T --no-deps web npx ng lint
 echo "======================================================"
 echo " Frontend unit tests (vitest via ng test)"
 echo "======================================================"
+# The long-running dev server is stopped first, and this is not tidiness.
+#
+# The unit leg runs in its *own* `--no-deps` container and never talks to the
+# dev server — but they compete for the same Docker VM, and vitest loses. The
+# symptom is the worst kind: N unrelated spec files failing one test each with
+# `Hook timed out in 10000ms`, which reads exactly like the change under test
+# breaking things. It has now been recorded five times on five different
+# branches, twice on branches that changed **zero** frontend files, and the
+# failing set is different every run.
+#
+# Measured here on 2026-08-23, same commit, back to back:
+#   dev server up   → 2 failed / 464 passed, 25.3 s (transform 98.9 s, import 151.0 s)
+#   dev server down → 0 failed / 466 passed,  5.3 s (transform  6.3 s, import  11.1 s)
+#
+# `test.sh` already brings `web` back up before the e2e leg, for a related
+# reason it had also learned the hard way, so this costs nothing downstream.
+# A red gate that does not mean anything is the same failure the skip-set guard
+# above exists to prevent.
+docker compose stop web >/dev/null 2>&1 || true
 docker compose run --rm -T --no-deps web npx ng test --watch=false
+# …and put it back, whether or not `--e2e` follows. A gate that leaves the
+# developer's dev server stopped has fixed one surprise by introducing another;
+# the e2e leg's own `up -d web` then just waits for a container already coming
+# up. `set -e` is active, so this runs only on a green unit leg — which is what
+# we want: a red one leaves the stack exactly as it was for inspection.
+docker compose up -d web >/dev/null 2>&1 || true
 
 if [ "$PG" -eq 1 ]; then
   echo "======================================================"
