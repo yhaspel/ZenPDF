@@ -13,6 +13,7 @@ import logging
 
 from celery import shared_task
 from django.conf import settings
+from django.core.exceptions import ValidationError
 from django.utils import timezone
 
 logger = logging.getLogger("zenpdf")
@@ -295,6 +296,323 @@ def trash_purge() -> dict:
         logger.info("trash_purge: removed %s, kept %s, failed %s",
                     purged, kept, failed)
     return {"purged": purged, "kept": kept, "failed": failed}
+
+
+# --------------------------------------------------------------------------- #
+# Storage-counter reconciliation (§15)
+# --------------------------------------------------------------------------- #
+#: Drift smaller than this is not reported. Not a tolerance — the counter is
+#: still corrected — just a noise floor for the log, so a real 400 MB divergence
+#: is not buried under a hundred one-byte lines.
+DRIFT_LOG_FLOOR_BYTES = 1024
+
+
+def charged_bytes(principal) -> int:
+    """What `principal.storage_bytes_used` *should* read, from what is charged.
+
+    Three namespaces bill against the quota, and this has to agree with every
+    task that credits them back or the reconciler becomes the drift:
+
+    1. **Version blobs** — `DocumentVersion.size_bytes` for every document the
+       principal owns, **trashed included**. Trash still costs until it is
+       purged: `DocumentDetailView._purge` is the only thing that credits the
+       bytes back, and `trash_purge` does not call it until the retention
+       window is up. A reconciler that excluded trashed documents would delete
+       the charge thirty days early and hand everyone free storage.
+
+    2. **`uploads/{u|g}/{id}/`** — stamps, watermarks, conversion sources *and*
+       saved signatures (§13: a `SavedSignature.storage_key` is an asset key in
+       this very prefix, not a namespace of its own). These blobs have no rows
+       at all — the ref is opaque and nothing records a size — so the only
+       honest answer is to add up what is actually in the prefix.
+
+    3. **Live exports** — `exports/{job_id}/`. Presence is read from *storage*,
+       not from `result["export"]["storage_key"]`, and the amount from the row.
+       That is exactly `jobs_purge`'s rule, and it is deliberate: `exports_purge`
+       refunds and then strips the key in two un-transacted steps, so a worker
+       killed between them leaves a row still advertising a key whose blob is
+       gone and already credited. Counting the key would re-charge it for ever.
+
+    Not counted, because nothing charges them: `thumbs/…` (rendered on demand,
+    §13) and `sign/{request}/…` (the sealed file and certificate are the
+    counterparty's evidence, and `_finalize` never calls `bump_storage`).
+    """
+    from django.db.models import Sum
+
+    from apps.documents.models import Document, DocumentVersion
+    from apps.jobs.models import Job
+    from apps.pdf_engine.storage import get_storage
+
+    from .assets import principal_prefix
+    from .principals import owned_by
+
+    storage = get_storage()
+    total = 0
+
+    documents = owned_by(Document.objects.all(), principal)
+    total += int(
+        DocumentVersion.objects.filter(document__in=documents)
+        .aggregate(total=Sum("size_bytes"))["total"] or 0
+    )
+
+    total += sum(int(entry["size"] or 0)
+                 for entry in storage.list_prefix_detailed(principal_prefix(principal)))
+
+    jobs = owned_by(Job.objects.all(), principal).filter(result__has_key="export")
+    for job in jobs.iterator():
+        export = (job.result or {}).get("export") or {}
+        if not export.get("storage_key"):
+            continue
+        if storage.list_prefix(f"exports/{job.id}/"):
+            total += int(export.get("size_bytes") or 0)
+    return total
+
+
+def _has_work_in_flight(principal) -> bool:
+    """A queued or running job means the counter is mid-flight.
+
+    `_save_new_version` charges before the row is visible to us and
+    `_save_export` charges at the end; either way an absolute write computed
+    from a snapshot would clobber a bump that happened after the snapshot. The
+    principal is skipped and reported, and tomorrow's run heals it.
+    """
+    from apps.jobs.models import Job
+
+    from .principals import owned_by
+
+    return owned_by(
+        Job.objects.filter(status__in=[Job.Status.QUEUED, Job.Status.RUNNING]),
+        principal,
+    ).exists()
+
+
+def _reconcile_one(principal, *, dry_run: bool) -> dict | None:
+    """Heal one principal's counter. Returns a drift record, or None.
+
+    The expensive half — listing two storage prefixes — happens *outside* the
+    lock, because holding a row lock across S3 round trips would serialize the
+    whole sweep behind the slowest bucket. What makes that safe is the
+    re-check inside the lock: if the counter moved while we were counting, or a
+    job started, the computed total describes a world that no longer exists and
+    the write is abandoned rather than applied.
+    """
+    from django.db import connection, transaction
+
+    model = type(principal)
+    before = int(principal.storage_bytes_used)
+
+    if _has_work_in_flight(principal):
+        return {"kind": _kind_of(principal), "id": str(principal.pk),
+                "skipped": "job in flight"}
+
+    actual = charged_bytes(principal)
+
+    with transaction.atomic():
+        if connection.features.has_select_for_update:
+            locked = model.objects.select_for_update().filter(pk=principal.pk).first()
+        else:
+            locked = model.objects.filter(pk=principal.pk).first()
+        if locked is None:
+            # Deleted while we counted — an expiring guest, an account closing.
+            return None
+        current = int(locked.storage_bytes_used)
+        if current != before:
+            return {"kind": _kind_of(principal), "id": str(principal.pk),
+                    "skipped": "counter moved while counting"}
+        if _has_work_in_flight(principal):
+            return {"kind": _kind_of(principal), "id": str(principal.pk),
+                    "skipped": "job started while counting"}
+        if current == actual:
+            return None
+        if not dry_run:
+            # Absolute, never `F()`: the whole point is to replace a number
+            # that has drifted, and a relative update would carry the drift.
+            model.objects.filter(pk=principal.pk).update(storage_bytes_used=actual)
+
+    return {"kind": _kind_of(principal), "id": str(principal.pk),
+            "before": before, "after": actual, "drift": actual - before}
+
+
+def _kind_of(principal) -> str:
+    from .principals import label
+
+    return label(principal)
+
+
+@shared_task(name="apps.core.tasks.usage_recompute")
+def usage_recompute(principal: str = "", dry_run: bool = False) -> dict:
+    """Recompute `storage_bytes_used` from what is actually charged (§15).
+
+    §15 named this task from the beginning and PROGRESS's Redis-throttle
+    decision leaned on it ("`usage_recompute` runs daily") — and until
+    2026-08-23 there was no such task and no beat entry. It matters more than it
+    did when it was first written down: the counter it reconciles is the one
+    `enforce_storage` now *refuses* on, so drift is no longer cosmetic. Drift
+    upward locks a user out of their own quota; drift downward hands out storage
+    nobody is paying for.
+
+    Where drift comes from: `bump_storage` is a bare `F()` UPDATE with no floor
+    and no transaction around the blob write it accompanies. A worker killed
+    between `put_bytes` and `bump_storage` under-counts; one killed between
+    `bump_storage` and the row write over-counts; `exports_purge` refunds and
+    strips the key in two steps. None of those is worth a distributed
+    transaction. All of them are worth a nightly reconciliation.
+
+    `principal` is an optional UUID — a `User` or a `GuestSession`, tried in
+    that order. Expired guest sessions are skipped: `guest_purge` hard-deletes
+    them within the hour and healing a counter that is about to be deleted is
+    work for nobody.
+    """
+    from django.contrib.auth import get_user_model
+
+    from .models import GuestSession
+
+    stats: dict = {"checked": 0, "healed": 0, "skipped": 0, "drift_bytes": 0,
+                   "dry_run": bool(dry_run), "drifts": []}
+
+    if principal:
+        subjects = _one_principal(principal)
+        if not subjects:
+            logger.warning("usage_recompute: no principal with id %s", principal)
+            return stats
+    else:
+        subjects = list(get_user_model().objects.all().iterator())
+        subjects += list(
+            GuestSession.objects.filter(expires_at__gt=timezone.now()).iterator()
+        )
+
+    for subject in subjects:
+        stats["checked"] += 1
+        record = _reconcile_one(subject, dry_run=bool(dry_run))
+        if record is None:
+            continue
+        if record.get("skipped"):
+            stats["skipped"] += 1
+            logger.info("usage_recompute: skipped %(kind)s %(id)s — %(skipped)s",
+                        record)
+            stats["drifts"].append(record)
+            continue
+        stats["healed"] += 1
+        stats["drift_bytes"] += record["drift"]
+        stats["drifts"].append(record)
+        if abs(record["drift"]) >= DRIFT_LOG_FLOOR_BYTES:
+            logger.warning(
+                "usage_recompute: %s %s drifted %+d bytes (%d → %d)%s",
+                record["kind"], record["id"], record["drift"],
+                record["before"], record["after"],
+                " [dry run — not written]" if dry_run else "",
+            )
+
+    if stats["healed"] or stats["skipped"]:
+        logger.info(
+            "usage_recompute: checked %(checked)s, healed %(healed)s, "
+            "skipped %(skipped)s, net %(drift_bytes)s bytes", stats)
+    return stats
+
+
+def _one_principal(pk: str) -> list:
+    """A `User` or a `GuestSession` by id — the two are both UUIDs, so try
+    the account first and fall through."""
+    from django.contrib.auth import get_user_model
+
+    from .models import GuestSession
+
+    for model in (get_user_model(), GuestSession):
+        try:
+            found = model.objects.filter(pk=pk).first()
+        except (ValueError, ValidationError):
+            continue
+        if found is not None:
+            return [found]
+    return []
+
+
+# --------------------------------------------------------------------------- #
+# Account-side asset hygiene (§15)
+# --------------------------------------------------------------------------- #
+@shared_task(name="apps.core.tasks.account_assets_purge")
+def account_assets_purge(days: int | None = None) -> dict:
+    """Sweep an account's stale `uploads/u/{id}/` blobs (§13, §15).
+
+    `purge_principal_assets` runs for guest purge and account deletion only, so
+    a guest's stamps die with the session within the hour and an **account's**
+    were never swept at all. §13 calls this namespace ephemeral and means it:
+    stamps, image watermarks and conversion sources are re-uploaded per session
+    by design, and a conversion source is discarded the moment its job finishes.
+    What was actually happening is that every one of them was charged to the
+    account for ever, with no UI anywhere that could free them.
+
+    **Saved signatures are exempt, and that is not a detail.** A
+    `SavedSignature.storage_key` is an ordinary asset key in this very prefix —
+    §13 put it there on purpose so signatures would inherit the quota metering,
+    the principal-derived key and the guest purge rather than needing three new
+    versions of each. They are the one thing here a user deliberately *kept*, so
+    they are excluded by key before anything is deleted. Deleting them would
+    silently destroy a stored image of somebody's signature and leave a row
+    pointing at nothing.
+
+    Guest prefixes are not touched: `guest_purge` owns those and takes the whole
+    prefix at expiry, which is both sooner and more complete.
+    """
+    from datetime import timedelta
+
+    from django.contrib.auth import get_user_model
+
+    from apps.esign.models import SavedSignature
+    from apps.pdf_engine.storage import get_storage
+
+    from . import limits as L
+
+    window = settings.ASSET_RETENTION_DAYS if days is None else days
+    cutoff = timezone.now() - timedelta(days=window)
+    storage = get_storage()
+    stats = {"users": 0, "blobs": 0, "bytes": 0, "kept": 0}
+
+    for user in get_user_model().objects.all().iterator():
+        prefix = f"uploads/u/{user.pk}/"
+        try:
+            entries = storage.list_prefix_detailed(prefix)
+        except Exception:  # noqa: BLE001
+            logger.warning("account_assets_purge: could not list %s", prefix)
+            continue
+        if not entries:
+            continue
+        # Read per user rather than once: the set is small, and a query scoped
+        # to the user is one the isolation sweep can reason about.
+        keep = set(SavedSignature.objects.filter(user=user)
+                   .values_list("storage_key", flat=True))
+        freed = 0
+        removed = 0
+        for entry in entries:
+            if entry["key"] in keep:
+                stats["kept"] += 1
+                continue
+            modified = entry.get("last_modified")
+            if modified is None or modified > cutoff:
+                stats["kept"] += 1
+                continue
+            try:
+                storage.delete(entry["key"])
+            except Exception:  # noqa: BLE001
+                logger.warning("account_assets_purge: could not delete %s",
+                               entry["key"])
+                continue
+            freed += int(entry["size"] or 0)
+            removed += 1
+        if not removed:
+            continue
+        # One credit per user, after the deletes that earned it — `bump_storage`
+        # has no floor, so refunding per key and failing halfway would leave a
+        # counter that owes bytes nothing will ever pay back.
+        L.bump_storage(user, -freed)
+        stats["users"] += 1
+        stats["blobs"] += removed
+        stats["bytes"] += freed
+
+    if stats["blobs"]:
+        logger.info("account_assets_purge: removed %(blobs)s blob(s) from "
+                    "%(users)s account(s), freeing %(bytes)s bytes", stats)
+    return stats
 
 
 def redaction_previews_purge(hours: int = 1) -> int:
