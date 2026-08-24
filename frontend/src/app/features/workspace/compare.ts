@@ -23,6 +23,9 @@ import { WsDrawer } from '../../shared/ws-drawer';
 import { FitWidth } from '../../shared/fit-width';
 import { clampPageWidth } from '../../shared/page-fit';
 
+/** The widest Compare ever draws either page — its desk width. */
+const MAX_PAGE = 420;
+
 /**
  * Compare mode (phase-06).
  *
@@ -32,9 +35,6 @@ import { clampPageWidth } from '../../shared/page-fit';
  * "Synced" then means what it should — clicking a change moves *both* sides to
  * the page it is on and highlights it there.
  */
-/** The widest Compare ever draws either page — its desk width. */
-const MAX_PAGE = 420;
-
 @Component({
   selector: 'app-compare',
   changeDetection: ChangeDetectionStrategy.OnPush,

@@ -90,6 +90,9 @@ export function radioLayout(rect: Rect, count: number): Rect[] {
   }));
 }
 
+/** The widest this pane ever draws a page — its desk width. */
+const MAX_PAGE = 750;
+
 /**
  * Forms mode (phase-05) — fill an AcroForm, or build one.
  *
@@ -105,9 +108,6 @@ export function radioLayout(rect: Rect, count: number): Rect[] {
  * Both stage locally and commit once: one `fill_form` / one
  * `edit_form_fields_batch` per session, one version.
  */
-/** The widest this pane ever draws a page — its desk width. */
-const MAX_PAGE = 750;
-
 @Component({
   selector: 'app-forms',
   changeDetection: ChangeDetectionStrategy.OnPush,

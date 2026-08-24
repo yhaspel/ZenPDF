@@ -58,6 +58,9 @@ const SANITIZE_ITEMS: { key: string; label: string; note: string }[] = [
     note: 'Notes, highlights and drawings.' },
 ];
 
+/** The widest this pane ever draws a page — its desk width. */
+const MAX_PAGE = 680;
+
 /**
  * Protect mode (phase-07): password + permissions, redaction, sanitize.
  *
@@ -65,9 +68,6 @@ const SANITIZE_ITEMS: { key: string; label: string; note: string }[] = [
  * for the same reason find & replace is: this operation cannot be undone, and
  * "it took more than I meant" is only discoverable afterwards.
  */
-/** The widest this pane ever draws a page — its desk width. */
-const MAX_PAGE = 680;
-
 @Component({
   selector: 'app-protect',
   changeDetection: ChangeDetectionStrategy.OnPush,

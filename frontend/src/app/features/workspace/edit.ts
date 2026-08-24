@@ -68,6 +68,9 @@ const POSITIONS: StampPosition[] = [
   'bottom-left', 'bottom-center', 'bottom-right',
 ];
 
+/** The widest this pane ever draws a page — its desk width. */
+const MAX_PAGE = 750;
+
 /**
  * Edit mode (phase-04) — the differentiator cluster.
  *
@@ -75,9 +78,6 @@ const POSITIONS: StampPosition[] = [
  * all become `OverlayItem`s, and the gestures come back as `OverlayDraft`s.
  * That is the whole point of building the overlay generically in Phase 3.
  */
-/** The widest this pane ever draws a page — its desk width. */
-const MAX_PAGE = 750;
-
 @Component({
   selector: 'app-edit',
   changeDetection: ChangeDetectionStrategy.OnPush,

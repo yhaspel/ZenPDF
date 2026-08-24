@@ -35,6 +35,9 @@ import { WsDrawer } from '../../shared/ws-drawer';
 import { FitWidth } from '../../shared/fit-width';
 import { clampPageWidth } from '../../shared/page-fit';
 
+/** The widest this pane ever draws a page — its desk width. */
+const MAX_PAGE = 680;
+
 /**
  * "Sign myself" (phase-08 §8A).
  *
@@ -43,9 +46,6 @@ import { clampPageWidth } from '../../shared/page-fit';
  * already up when there is nothing to pick from. Draw, click the page, Apply:
  * three.
  */
-/** The widest this pane ever draws a page — its desk width. */
-const MAX_PAGE = 680;
-
 @Component({
   selector: 'app-sign',
   changeDetection: ChangeDetectionStrategy.OnPush,
