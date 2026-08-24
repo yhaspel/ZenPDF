@@ -73,12 +73,24 @@ export async function verifyEmail(page: Page, email: string): Promise<void> {
   await expect(page.locator('[data-test=verified]')).toBeVisible({ timeout: 60_000 });
 }
 
-/** Register, log in and confirm the address — for specs that send mail. */
+/**
+ * Register, log in and confirm the address — for specs that send mail.
+ *
+ * The last line asserts rather than hopes, and that is not tidiness. This
+ * helper ended with a bare `goto('/app/dashboard')`, so when the session was
+ * lost on the way through the inbox the failure surfaced twenty lines later in
+ * whatever the caller did next — three specs spent two days reported as
+ * `uploadFiles` timing out on `[data-test=file-input]`, which is not where the
+ * defect was. The cause is fixed (`AuthFacade.loadUser` no longer ends a
+ * session over a 500); this assertion is what makes the next one legible.
+ */
 export async function registerVerifiedAndLogin(
   page: Page, prefix = 'user',
 ): Promise<string> {
   const email = await registerAndLogin(page, prefix);
   await verifyEmail(page, email);
   await page.goto('/app/dashboard');
+  await expect(page, 'the session was lost between registering and the dashboard')
+    .toHaveURL(/\/app\/dashboard/);
   return email;
 }
