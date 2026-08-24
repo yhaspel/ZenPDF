@@ -16,10 +16,15 @@
   </div>
 }
 
-<div class="mx-auto flex w-full max-w-[1360px] gap-6 px-4 py-6 md:px-8">
+<!-- Three columns at `xl`, which is what §4 specifies — and a column below it,
+     which it did not: the sidebar kept its 224 px at every width, so at 390 the
+     main column was 110 px and a file card 47. Now the sidebar is a band above
+     the files and the files get the whole width (§4 dashboard). -->
+<div class="mx-auto flex w-full max-w-[1360px] flex-col gap-6 px-4 py-6 md:px-8 xl:flex-row">
   <!-- Sidebar -->
-  <aside class="w-56 shrink-0 space-y-3">
-    <div class="card p-4">
+  <aside class="flex w-full shrink-0 flex-wrap gap-3 xl:block xl:w-56 xl:space-y-3"
+         data-test="dashboard-sidebar">
+    <div class="card min-w-56 flex-1 p-4 xl:min-w-0">
       <h3 class="kicker mb-2">Storage</h3>
       @if (docs.usage(); as u) {
         <div class="meter"><i [style.width.%]="docs.storagePercent()"></i></div>
@@ -29,7 +34,7 @@
       }
     </div>
 
-    <div class="card p-2.5">
+    <div class="card min-w-56 flex-1 p-2.5 xl:min-w-0">
       <h3 class="kicker mb-2 px-1.5 pt-1">Folders</h3>
       <button (click)="setFolder(null)"
               class="flex w-full items-center gap-2 rounded-2 px-2.5 py-2 text-start text-sm"
@@ -46,12 +51,13 @@
       }
       <div class="mt-2 flex gap-1.5 px-1 pb-1">
         <input [ngModel]="newFolder()" (ngModelChange)="newFolder.set($event)" name="nf" placeholder="New folder"
-               class="input min-w-0 !min-h-9 !px-2.5 text-sm" data-test="new-folder-input" />
+               class="input input-compact min-w-0 !px-2.5 text-sm" data-test="new-folder-input" />
         <button (click)="createFolder()" class="btn btn-secondary btn-sm shrink-0 !px-3" aria-label="Add folder" data-test="add-folder">+</button>
       </div>
     </div>
 
-    <div class="card p-2.5">
+    <!-- Two filters, side by side in the band and stacked in the rail. -->
+    <div class="card flex min-w-56 flex-1 gap-1 p-2.5 xl:block">
       <button (click)="toggleStarFilter()"
               class="flex w-full items-center gap-2 rounded-2 px-2.5 py-2 text-start text-sm"
               [class]="docs.starred() ? 'bg-accent-surface font-medium text-ink-strong' : 'text-ink-muted hover:bg-bg hover:text-ink-strong'"
@@ -169,10 +175,10 @@
             }
             @if (!docs.trashed()) {
               <input type="checkbox" [checked]="isSelected(doc.id)" (change)="toggleSelect(doc)"
-                     class="absolute start-3 top-3 z-10" data-test="select-doc"
+                     class="card-control absolute start-3 top-3 z-10" data-test="select-doc"
                      [attr.aria-label]="'Select ' + doc.title" />
             }
-            <button class="rounded-1 text-ink-faint hover:bg-bg hover:text-ink-strong absolute end-1.5 top-1.5 z-10 flex h-7 w-7 items-center justify-center"
+            <button class="card-control rounded-1 text-ink-faint hover:bg-bg hover:text-ink-strong absolute end-1.5 top-1.5 z-10 flex h-7 w-7 items-center justify-center"
                     (click)="toggleMenu(doc.id)" aria-label="More actions" data-test="doc-menu">
               <svg class="ti" viewBox="0 0 24 24" aria-hidden="true"><circle cx="5.5" cy="12" r="1" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1" fill="currentColor" stroke="none"/><circle cx="18.5" cy="12" r="1" fill="currentColor" stroke="none"/></svg>
             </button>
@@ -204,7 +210,7 @@
 
             <div class="mt-2.5 flex items-start gap-2">
               <button (click)="docs.toggleStar(doc)"
-                      class="mt-0.5 shrink-0"
+                      class="card-control mt-0.5 shrink-0"
                       [class]="doc.starred ? 'text-accent' : 'text-ink-faint hover:text-ink-muted'"
                       [attr.aria-label]="doc.starred ? 'Unstar' : 'Star'"
                       data-test="star-toggle">
