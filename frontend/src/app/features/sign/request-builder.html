@@ -32,15 +32,15 @@
             @for (row of recipients(); track $index) {
               <div class="border-border bg-surface-raised rounded-2 flex flex-wrap items-center gap-2 border p-2"
                    data-test="recipient-row">
-                <input class="input !min-h-9 min-w-48 flex-1"
+                <input class="input input-compact min-w-48 flex-1"
                        placeholder="email@example.com" [ngModel]="row.email"
                        (ngModelChange)="update($index, { email: $event })"
                        [attr.data-test]="'recipient-email-' + $index" />
-                <input class="input !min-h-9 !w-32"
+                <input class="input input-compact !w-32"
                        placeholder="Name" [ngModel]="row.name"
                        (ngModelChange)="update($index, { name: $event })"
                        [attr.data-test]="'recipient-name-' + $index" />
-                <select class="input !min-h-9 !w-auto"
+                <select class="input input-compact !w-auto"
                         [ngModel]="row.role"
                         (ngModelChange)="update($index, { role: $event })"
                         [attr.data-test]="'recipient-role-' + $index">
@@ -49,7 +49,7 @@
                   }
                 </select>
                 <input type="number" min="1" max="50"
-                       class="input !min-h-9 !w-16"
+                       class="input input-compact !w-16"
                        [ngModel]="row.order"
                        (ngModelChange)="update($index, { order: +$event })"
                        [attr.data-test]="'recipient-order-' + $index" />
@@ -215,7 +215,7 @@
             <label>
               Expires after
               <input type="number" min="1" max="365"
-                     class="input !min-h-9 !w-20 ms-1"
+                     class="input input-compact !w-20 ms-1"
                      [ngModel]="expiresInDays()"
                      (ngModelChange)="expiresInDays.set(+$event)"
                      data-test="builder-expiry" /> days
@@ -223,7 +223,7 @@
             <label>
               Remind every
               <input type="number" min="0" max="90"
-                     class="input !min-h-9 !w-20 ms-1"
+                     class="input input-compact !w-20 ms-1"
                      [ngModel]="reminderDays()"
                      (ngModelChange)="reminderDays.set(+$event)"
                      data-test="builder-reminder" /> days (0 = never)
