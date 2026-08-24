@@ -589,16 +589,22 @@ test('phase 10 (mobile): a guest\'s page fits too, and its pane reserves the gut
   // with `scrollWidth` 390 against `clientWidth` 375, Annotate and Protect at
   // 327, same document, same session.
   //
-  // **This suite cannot reproduce that, and the assertion below is shaped
-  // accordingly.** Playwright's chromium gives this element an *overlay*
-  // scrollbar — measured here, `clientWidth` 390 while `scrollHeight` 532
-  // exceeds `clientHeight` 525 — so the content box never changes and the loop
-  // has one fixed point whatever the CSS says. A real desktop Chrome at a
-  // narrow window draws a classic one, which is where the defect lives and
-  // where it was found. So the sweep below guards the guest layout generally,
-  // and the gutter is asserted mechanically: it is the declaration that removes
-  // the coupling, and *it* fails on the unfixed build even though the geometry
-  // cannot.
+  // **This suite cannot reproduce that, and it is not a matter of configuration
+  // — that was measured.** On 2026-08-24 a nested scroller was probed across ten
+  // browser configurations: bundled Chromium and the installed Chrome, headless
+  // and headed, `--disable-features=OverlayScrollbar`, `--hide-scrollbars=false`,
+  // `-webkit-appearance: none` on `::-webkit-scrollbar`, and `overflow-y: scroll`.
+  // Every one gave up **0 px**. So did `scrollbar-gutter: stable` itself, because
+  // an overlay scrollbar has no width to reserve — meaning this browser can see
+  // neither the defect nor the fix.
+  //
+  // Three things follow, and all three are in place rather than one being left
+  // to stand in for the others. The sweep below guards the guest layout
+  // generally. The gutter is asserted **mechanically** here — the declaration is
+  // what removes the coupling, and it fails on the unfixed build even though the
+  // geometry cannot. And the convergence itself, which is arithmetic and
+  // therefore portable, is locked in `page-fit.spec.ts` with the production
+  // numbers it was found with.
   await page.goto('/annotate-pdf');
   await page.locator('[data-test=file-input]').setInputFiles(path.join(FIXTURES, 'text.pdf'));
   await page.click('[data-test=tool-run]');
