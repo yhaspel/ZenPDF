@@ -139,6 +139,12 @@ export class FormsFacade {
       const next = new Map(map);
       for (const [name, raw] of Object.entries(data)) {
         if (!known.has(name)) continue;
+        // The coercion is the point, so the rule is silenced here rather than
+        // globally. The viewer hands back a text field's string, a checkbox's
+        // boolean, a number, and for a multi-select listbox an array — and
+        // `String()` renders that last one `a,b`, which is what the field
+        // should read. Narrowing to primitives would blank it.
+        // eslint-disable-next-line @typescript-eslint/no-base-to-string
         next.set(name, typeof raw === 'boolean' ? raw : String(raw ?? ''));
       }
       return next;

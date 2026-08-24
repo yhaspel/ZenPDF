@@ -199,7 +199,7 @@ export class ViewerFacade {
   adopt(job: Job): void {
     const d = this._doc();
     const seq = Number(job?.result?.['seq']);
-    if (!d || !d.current_version || !Number.isFinite(seq)) {
+    if (!d?.current_version || !Number.isFinite(seq)) {
       this.reload();
       return;
     }

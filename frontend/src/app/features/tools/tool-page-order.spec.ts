@@ -123,7 +123,7 @@ describe('Tool page — the screen the tool is named after', () => {
   };
 
   for (const [slug, mode] of Object.entries(MODES)) {
-    it(`${slug} opens the workspace in ${mode} mode`, async () => {
+    it(`${slug} opens the workspace in ${mode} mode`, () => {
       const navigated: { path: unknown[]; extras?: { queryParams?: Record<string, string> } }[] = [];
       TestBed.configureTestingModule({
         providers: [

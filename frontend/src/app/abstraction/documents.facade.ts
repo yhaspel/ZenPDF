@@ -71,7 +71,7 @@ export class DocumentsFacade {
 
   readonly storagePercent = computed(() => {
     const u = this._usage();
-    if (!u || !u.storage.quota_bytes) return 0;
+    if (!u?.storage.quota_bytes) return 0;
     return Math.min(100, Math.round((u.storage.used_bytes / u.storage.quota_bytes) * 100));
   });
 

@@ -683,7 +683,7 @@ export class Edit {
     // the wrong occurrences.
     const held = this.edits.reportQuery();
     const find = this.findText().trim();
-    if (!held || held.find !== find || held.matchCase !== this.matchCase()) {
+    if (held?.find !== find || held.matchCase !== this.matchCase()) {
       this.edits.setReport(null);
       this.toast.info('The search changed — preview the matches again.');
       return;

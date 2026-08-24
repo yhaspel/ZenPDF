@@ -53,7 +53,10 @@ export class WsDrawer {
   readonly zenWsDrawerBarOpener = input(true);
 
   readonly shell = inject(WorkspaceShellFacade);
-  private host = inject(ElementRef<HTMLElement>);
+  // Not `inject(ElementRef<HTMLElement>)`, which reads as though it types the
+  // host and does not — that is an instantiation expression, and `inject`
+  // resolves it back to `ElementRef<any>`. Same emitted call either way.
+  private host = inject<ElementRef<HTMLElement>>(ElementRef);
   private doc = inject(DOCUMENT);
   private factory = inject(ConfigurableFocusTrapFactory);
 

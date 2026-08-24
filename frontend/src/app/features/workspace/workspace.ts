@@ -467,14 +467,14 @@ export class Workspace {
   private readonly shownSeq = computed(() => {
     const cursor = this.versionCursor();
     const seq = this.viewer.currentSeq() ?? 1;
-    return cursor && cursor.expected === seq ? cursor.content : seq;
+    return cursor?.expected === seq ? cursor.content : seq;
   });
 
   protected readonly canUndoVersion = computed(() => this.shownSeq() > 1);
 
   protected readonly canRedoVersion = computed(() => {
     const cursor = this.versionCursor();
-    if (!cursor || cursor.expected !== (this.viewer.currentSeq() ?? 1)) return false;
+    if (cursor?.expected !== (this.viewer.currentSeq() ?? 1)) return false;
     return cursor.content < cursor.ceiling;
   });
 
@@ -510,7 +510,7 @@ export class Workspace {
   private stepVersion(target: number): void {
     const seq = this.viewer.currentSeq() ?? 1;
     const cursor = this.versionCursor();
-    const live = cursor && cursor.expected === seq;
+    const live = cursor?.expected === seq;
     this.revert(target, { ceiling: live ? cursor.ceiling : seq, content: target, from: seq });
   }
 

@@ -90,7 +90,7 @@ export class EditFacade {
    *  can position itself in exactly the box the overlay renders. */
   aspectFor(page: number): number {
     const model = this._blocks().get(page);
-    if (!model || !model.width) return 842 / 595;
+    if (!model?.width) return 842 / 595;
     return model.height / model.width;
   }
 

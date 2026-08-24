@@ -603,7 +603,7 @@ export class Annotate {
     if (handled) event.preventDefault();
   }
 
-  private runAction(action: ShortcutId | string): boolean {
+  private runAction(action: ShortcutId): boolean {
     switch (action) {
       case 'undo':
         this.undo();
@@ -654,7 +654,7 @@ export class Annotate {
         if (id) this.startEditing(id);
         break;
       case 'delete':
-        if (id) void this.onDeleteRequested(id);
+        if (id) this.onDeleteRequested(id);
         break;
     }
   }
@@ -740,7 +740,7 @@ export class Annotate {
     this.annotations.redo();
   }
 
-  protected async onDeleteRequested(id: string): Promise<void> {
+  protected onDeleteRequested(id: string): void {
     this.annotations.remove(id);
   }
 
