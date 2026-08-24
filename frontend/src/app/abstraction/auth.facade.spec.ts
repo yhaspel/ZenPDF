@@ -124,7 +124,10 @@ describe('AuthFacade', () => {
   };
 
   it('keeps the session when /users/me fails for a reason that is not the credential', () => {
-    for (const status of [0, 429, 500, 502, 503, 504]) {
+    // 403 is `account_required` and 410 is `guest_expired` — the interceptor
+    // hands both straight through, and neither says the JWT is bad. 0 is an
+    // aborted or failed fetch, which is what navigating away produces.
+    for (const status of [0, 403, 410, 429, 500, 502, 503, 504]) {
       failMeWith(status);
       expect(tokenStore.access, `status ${status} must not end the session`).toBe('acc');
     }
