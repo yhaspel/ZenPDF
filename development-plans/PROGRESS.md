@@ -1282,6 +1282,18 @@ being left — on a cold load of `/app/dashboard` that is `/`. The e2e caught it
 "expected /auth/login, got /app/dashboard". It reads `document.location` now, which is
 already correct at that point and is the honest answer to "where is this person".
 
+**Gate**, green end to end: `ruff` + `mypy` clean · pytest **1159 passed, 6 skipped**,
+coverage apps **91.53 %** / pdf_engine **91.87 %** · `ng lint` clean · `ng test` **63 files
+/ 547 tests** (from 542) · build + `verify:prerender` clean, **43** prerendered routes ·
+Playwright **86 passed, 1 skipped of 87**.
+
+*(The first gate caught a mistake of mine, and the right one: `endSession()` was switched
+from `Router.url` to `document.location` while chasing the e2e, and the unit spec was never
+re-run — it still stubbed the router, so it passed against a seam the code no longer read.
+That is the same class of error the implementation had just been fixed for, one level up.
+`Router.url` in the stub is now `/not-read-any-more`, so a regression back to it fails here
+instead of passing quietly.)*
+
 **Verified in both themes** (`docs/reviews/evidence/session-ended/`): the toast is
 `--color-ink` on the raised surface with an `--color-ink-faint` spine and `role="status"`,
 `/merge-pdf` keeps the person where they were, and `/app/dashboard` becomes
