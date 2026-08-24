@@ -73,3 +73,21 @@ scrollable area to the inline start. Confirmed by locating the string in
 `node_modules/ngx-extended-pdf-viewer/fesm2022/ngx-extended-pdf-viewer.mjs`, and it appears
 only once the viewer has initialised. The workspace's own layout mirrors correctly and adds
 no overflow of its own. Recorded in the Human review queue.
+
+## Lighthouse (mobile preset)
+
+| route | `main` | this branch |
+|---|---|---|
+| `/app/doc/<id>` — View, pdf.js on screen | **87** | **86** |
+| `/app/doc/<id>?mode=annotate` — this layout's own markup | — | **100** |
+
+The three failing audits are identical on both sides and every node in them belongs to
+`ngx-extended-pdf-viewer`: `aria-required-attr` on six `pdf-shy-button`s missing
+`aria-checked`, and `tabindex > 0` plus `target-size` on `#primaryZoomOut` /
+`#primaryZoomIn` — the same defects `phase-10-a11y.spec.ts` excludes as vendor.
+
+The 87 → 86 is an **accounting artefact**. The only audit whose state differs between the
+two runs is `image-alt` (weight 10), which goes from *applicable and passing* on `main` to
+`notApplicable` here, because the thumbnails now sit inside a closed sheet: the same
+numerator over a smaller denominator. A **snapshot** audit taken with the Pages drawer open
+has `image-alt` applicable and passing again, which is the proof rather than the story.
