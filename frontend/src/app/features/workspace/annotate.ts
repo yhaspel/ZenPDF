@@ -166,17 +166,14 @@ export class Annotate {
   protected page = signal(0);
   protected tool = signal<AnnotateTool>('select');
   /**
-   * Page width in pixels.
-   *
-   * Seeded from the viewport rather than fixed at 900: a phone is 390 px wide
-   * and a 900 px page does not fit in it, so the row grew, the document grew
-   * with it, and the whole workspace scrolled sideways with the mode nav off
-   * the edge. `zoomOut` stops at 450 by design, so the floor cannot come from
-   * the buttons — it has to be the starting value.
-   */
-  /**
-   * The page's render width — fitted to the pane, unless the person has said
+   * Page width in pixels — fitted to the pane, unless the person has said
    * otherwise.
+   *
+   * Not fixed at 900, and no longer seeded from the viewport either: a phone is
+   * 390 px wide, a 900 px page does not fit in it, and the viewport does not
+   * know about the rails or about the scrollbar the pane has. `zoomOut` stops
+   * at 450 by design, so the floor cannot come from the buttons — it comes from
+   * whatever the pane last measured.
    *
    * Annotate is the only pane with a zoom control, so it is the only one where
    * re-fitting could take something away: `zoomChosen` is what stops a turned
@@ -193,6 +190,7 @@ export class Annotate {
     this.fit.set(clampPageWidth(MAX_PAGE, available));
     if (!this.zoomChosen) this.zoom.set(this.fit());
   }
+
   /**
    * The working colour, remembered per family of tools.
    *
