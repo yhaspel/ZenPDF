@@ -12,6 +12,15 @@ declare module '*seo.mjs' {
   // optional parameter with a localhost default is exactly how production came
   // to ship a sitemap advertising `http://localhost:4200`. Passing nothing now
   // throws at build time — and the spec asserts that it does.
-  export function buildSitemap(slugs: string[], siteUrl: string | undefined): string;
+  //
+  // `guideSlugs` is required for the same reason and gets no default (§11C):
+  // an omitted guide set would produce a sitemap silently missing twelve
+  // pages. The spec calls it through a cast to prove the runtime guard holds
+  // even where the types cannot.
+  export function buildSitemap(
+    slugs: string[],
+    siteUrl: string | undefined,
+    guideSlugs: string[],
+  ): string;
   export function buildRobots(siteUrl: string): string;
 }

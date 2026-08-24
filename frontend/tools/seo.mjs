@@ -48,17 +48,39 @@ function requireBase(siteUrl) {
 export const CONTENT_PAGES = [
   'about',
   'contact',
+  'guides',
   'legal/privacy',
   'legal/terms',
   'legal/esign-disclosure',
 ];
 
-export function buildSitemap(slugs, siteUrl) {
+/**
+ * The whole prerendered surface, in one list (§21.6).
+ *
+ * Guides are the reason this takes a second argument. It used to derive
+ * priority from `slug ? '0.8' : '1.0'` and know nothing of path prefixes,
+ * which cannot express "under `guides/`, at 0.6" — and 0.6 is deliberate: the
+ * tool pages are what the site is *for* and the guides support them.
+ *
+ * `guideSlugs` has **no default**, for the same reason `siteUrl` has none. A
+ * default of `[]` would let a caller that forgot the guides produce a sitemap
+ * that silently omits twelve pages, which is exactly the failure the whole
+ * generate-and-pin arrangement exists to catch.
+ */
+export function buildSitemap(slugs, siteUrl, guideSlugs) {
   const base = requireBase(siteUrl);
-  const urls = ['', ...slugs, ...CONTENT_PAGES]
-    .map((slug) => {
-      const loc = slug ? `${base}/${slug}` : `${base}/`;
-      const priority = slug ? '0.8' : '1.0';
+  if (!Array.isArray(guideSlugs)) {
+    throw new Error('seo: buildSitemap needs the guide slugs — pass [] only if there are none');
+  }
+  const entries = [
+    { path: '', priority: '1.0' },
+    ...slugs.map((slug) => ({ path: slug, priority: '0.8' })),
+    ...CONTENT_PAGES.map((page) => ({ path: page, priority: '0.8' })),
+    ...guideSlugs.map((slug) => ({ path: `guides/${slug}`, priority: '0.6' })),
+  ];
+  const urls = entries
+    .map(({ path, priority }) => {
+      const loc = path ? `${base}/${path}` : `${base}/`;
       return `  <url>\n    <loc>${loc}</loc>\n    <changefreq>weekly</changefreq>\n    <priority>${priority}</priority>\n  </url>`;
     })
     .join('\n');

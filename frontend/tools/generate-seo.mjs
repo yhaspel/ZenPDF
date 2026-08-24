@@ -24,6 +24,16 @@ if (slugs.length === 0) {
   throw new Error('generate-seo: no tool slugs found in src/app/core/tool-pages.ts');
 }
 
-writeFileSync(resolve(root, 'public/sitemap.xml'), buildSitemap(slugs, siteUrl));
+// The same parse against the guide table (§11C) — one function, because the
+// guide table is deliberately shaped like the tool table.
+const guideSlugs = extractSlugs(readFileSync(resolve(root, 'src/app/core/guide-pages.ts'), 'utf8'));
+if (guideSlugs.length === 0) {
+  throw new Error('generate-seo: no guide slugs found in src/app/core/guide-pages.ts');
+}
+
+writeFileSync(resolve(root, 'public/sitemap.xml'), buildSitemap(slugs, siteUrl, guideSlugs));
 writeFileSync(resolve(root, 'public/robots.txt'), buildRobots(siteUrl));
-console.log(`generate-seo: wrote sitemap.xml (${slugs.length} tool pages) and robots.txt`);
+console.log(
+  `generate-seo: wrote sitemap.xml (${slugs.length} tool pages, ${guideSlugs.length} guides) ` +
+    'and robots.txt',
+);

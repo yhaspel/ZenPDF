@@ -136,6 +136,11 @@
     <priority>0.8</priority>
   </url>
   <url>
+    <loc>https://zenpdf.up.railway.app/guides</loc>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
     <loc>https://zenpdf.up.railway.app/legal/privacy</loc>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
@@ -149,5 +154,65 @@
     <loc>https://zenpdf.up.railway.app/legal/esign-disclosure</loc>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://zenpdf.up.railway.app/guides/how-to-merge-pdf-files</loc>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://zenpdf.up.railway.app/guides/compress-pdf-without-losing-quality</loc>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://zenpdf.up.railway.app/guides/fill-and-sign-pdf-without-printing</loc>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://zenpdf.up.railway.app/guides/are-electronic-signatures-legally-binding</loc>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://zenpdf.up.railway.app/guides/what-is-ocr-make-a-scanned-pdf-searchable</loc>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://zenpdf.up.railway.app/guides/pdf-to-word-conversion-explained</loc>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://zenpdf.up.railway.app/guides/how-to-redact-a-pdf-properly</loc>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://zenpdf.up.railway.app/guides/password-protect-pdf-what-encryption-actually-does</loc>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://zenpdf.up.railway.app/guides/organize-scanned-pages-split-reorder-rotate</loc>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://zenpdf.up.railway.app/guides/email-a-pdf-thats-too-big</loc>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://zenpdf.up.railway.app/guides/pdf-page-numbers-and-bates-stamping</loc>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://zenpdf.up.railway.app/guides/flatten-pdf-what-it-means</loc>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
   </url>
 </urlset>
