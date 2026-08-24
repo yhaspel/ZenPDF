@@ -1343,6 +1343,18 @@ docblocks and their `@Component`, orphaning all five — and that the drawer hea
 `data-drawer` discriminator had nothing asserting it, which is not what "fixed and
 asserted" means. Both fixed.
 
+**And one the browser found after the gate was green.** §6's 44 px floor was put on the
+file card's ⋯, star and select checkbox as a *size*; a native checkbox scaled to 44 px
+paints a 44 px empty square, which over a thumbnail on a 164 px card reads as a rendering
+fault rather than a control. The floor is a **target**, not a paint: the checkbox is
+wrapped in a 44 px `<label>` instead — which is the answer §3 already gives for the OCR
+rows, where the box stays 17 px and the row around it is 44 — and anchored at the card's
+corner below `md` so the box centres within 3 px of where it has always sat. The first
+attempt at that moved the **desk** checkbox 6 px, which §10 forbids; it is positioned per
+breakpoint now, and the desk is measured back at the 12 px inset it has had since
+2026-08-06. §4 and the §11 row record all of it, including the reverted version — this is
+the third thing this branch shipped, saw in a browser, and undid.
+
 **The environment, again, and this time it is fixed.** Five specs went red at
 `registerAndLogin` and at the first save with no failed job rows — the documented
 2026-08-22 connection-budget row, **fourth measurement**: 99 idle Postgres connections

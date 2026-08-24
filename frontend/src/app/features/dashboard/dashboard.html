@@ -174,9 +174,19 @@
               <span class="stamp stamp-sm pointer-events-none absolute -top-2 start-2 z-10">Just uploaded</span>
             }
             @if (!docs.trashed()) {
-              <input type="checkbox" [checked]="isSelected(doc.id)" (change)="toggleSelect(doc)"
-                     class="card-control absolute start-3 top-3 z-10" data-test="select-doc"
-                     [attr.aria-label]="'Select ' + doc.title" />
+              <!-- The 44 px target is the label, not the box. A native checkbox
+                   stretched to 44 px paints a 44 px empty square — §3 already
+                   settles this for the OCR rows: the platform keeps the box and
+                   the row around it carries the floor.
+
+                   Anchored at the card's corner below `md` so the 44 px label
+                   centres the box within a pixel or two of where it has always
+                   sat, and back to the inset the desk has used since 2026-08-06
+                   at `md`, where the label is inert and the box is at 12, 12. -->
+              <label class="card-control absolute start-0 top-0 z-10 cursor-pointer md:start-3 md:top-3">
+                <input type="checkbox" [checked]="isSelected(doc.id)" (change)="toggleSelect(doc)"
+                       data-test="select-doc" [attr.aria-label]="'Select ' + doc.title" />
+              </label>
             }
             <button class="card-control rounded-1 text-ink-faint hover:bg-bg hover:text-ink-strong absolute end-1.5 top-1.5 z-10 flex h-7 w-7 items-center justify-center"
                     (click)="toggleMenu(doc.id)" aria-label="More actions" data-test="doc-menu">

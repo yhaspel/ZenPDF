@@ -181,7 +181,14 @@ small, .muted { color: var(--color-ink-muted); }
    Measured at 390 px before the rule: the ⋯ menu 28 × 28, the star 15 × 15 and
    the select checkbox 17 × 17 — three overlapping targets on a card that is
    itself only 164 px wide. They keep their desk size, where a pointer and
-   `:hover` do the work the finger cannot. */
+   `:hover` do the work the finger cannot.
+
+   The floor is a *target*, not a paint. Sizing the select checkbox itself to
+   44 px was tried and reverted the same session: a native checkbox scaled to
+   44 px draws a 44 px empty square, which on a 164 px card over the thumbnail
+   reads as a rendering fault. So the checkbox is wrapped in a `<label>` that
+   carries this class instead — the same answer §3 already gives for the OCR
+   rows, where the box stays 17 px and the row around it is 44. */
 @media (max-width: 767px) {
   .card-control {
     min-inline-size: 44px;
@@ -190,7 +197,6 @@ small, .muted { color: var(--color-ink-muted); }
     align-items: center;
     justify-content: center;
   }
-  input.card-control { inline-size: 44px; block-size: 44px; }
 }
 
 /* The landing masthead (§3, §4 compact landing 2026-08-10): on `/` only, the

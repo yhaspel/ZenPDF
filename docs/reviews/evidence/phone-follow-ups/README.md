@@ -35,11 +35,20 @@ against `visualViewport` rather than pinning 390).
 | header height at 390 | one line, overflowing | **106** (two lines) |
 | main column | 110 | 343 |
 | a file card | **47** | **164** |
-| ⋯ / star / select | 28 × 28 / 15 × 15 / 17 × 17 | **44 × 44** each |
+| ⋯ / star | 28 × 28 / 15 × 15 | **44 × 44** each |
+| select checkbox | 17 × 17, with a 17 × 17 target | 17 × 17, in a **44 × 44** label |
 
 The nav's second line starts at y = 46 under the brand at y = 14; the address ellipsises
 (`scrollWidth > clientWidth`) and carries its full value in `title`. At 1280 the header
 is back to 58 px on one line and the sidebar to its 224 px column.
+
+**The checkbox is the one place the floor is a target and not a size**, and `03`/`04` are
+the second version of that. Sizing the input itself to 44 px was implemented, seen in the
+browser and reverted: a native checkbox stretched to 44 px paints a 44 px empty square
+over the thumbnail. It sits in a 44 px `<label>` now, anchored at the card corner below
+`md` so the box centres at **(15, 15)** against the **(12, 12)** it has always had — and
+on the desk at 1280 it is measured back at exactly **(293, 413)**, unmoved, because the
+first fix had shifted it 6 px there.
 
 The ⋯ menu no longer sits on the button that opens the document. That was never a
 separate defect, just arithmetic downstream of 47 px: `elementFromPoint` at the centre of
