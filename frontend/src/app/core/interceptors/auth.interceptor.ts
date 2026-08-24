@@ -6,9 +6,9 @@ import {
   HttpResponse,
 } from '@angular/common/http';
 import { inject } from '@angular/core';
-import { Router } from '@angular/router';
 import { Observable, catchError, of, switchMap, tap, throwError } from 'rxjs';
 
+import { AuthFacade } from '../../abstraction/auth.facade';
 import { GuestFacade } from '../../abstraction/guest.facade';
 import { AuthService } from '../services/auth.service';
 import { GuestTokenService } from '../services/guest-token.service';
@@ -62,7 +62,7 @@ export const authInterceptor: HttpInterceptorFn = (req, next) => {
   const guestTokens = inject(GuestTokenService);
   const guests = inject(GuestFacade);
   const auth = inject(AuthService);
-  const router = inject(Router);
+  const sessions = inject(AuthFacade);
 
   const access = tokens.access;
   const guestToken = guestTokens.token;
@@ -167,12 +167,21 @@ export const authInterceptor: HttpInterceptorFn = (req, next) => {
               );
             }),
             catchError((refreshErr) => {
-              tokens.clear();
-              router.navigate(['/auth/login']);
+              // Was `tokens.clear()` + a navigate, which cleared *less* than a
+              // sign-out should: the `_user` signal and this tab's document
+              // passwords both survived it, and L7 is the whole reason the
+              // latter must not (a password kept by document id, handed to
+              // whoever uses the machine next). One ending, one method.
+              sessions.endSession();
               return throwError(() => refreshErr);
             }),
           );
         }
+        // A dead access token with no refresh token to spend. This fell through
+        // to the line below with no clear and nothing said, so every subsequent
+        // request 401'd against a credential the client had no way to renew and
+        // the person was never told. It is as over as the branch above.
+        sessions.endSession();
       }
       return throwError(() => err);
     }),

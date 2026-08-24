@@ -6,6 +6,7 @@ import { of, throwError } from 'rxjs';
 import { AuthService } from '../core/services/auth.service';
 import { DocumentPasswords } from '../core/services/document-passwords';
 import { TokenService } from '../core/services/token.service';
+import { ToastService } from '../shared/toast.service';
 import { AuthFacade } from './auth.facade';
 
 describe('AuthFacade', () => {
@@ -137,5 +138,79 @@ describe('AuthFacade', () => {
     failMeWith(401);
     expect(tokenStore.access).toBeNull();
     expect(tokenStore.refresh).toBeNull();
+  });
+  /**
+   * A session that ends without anybody asking must say so — and must not turn
+   * a public page into a login wall on the way (§10 anonymous-first).
+   */
+  const endingFrom = (url: string) => {
+    tokenStore.access = 'acc';
+    tokenStore.refresh = 'ref';
+    const shown: { message: string; type: string }[] = [];
+    const navs: { commands: unknown[]; extras?: Record<string, unknown> }[] = [];
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      providers: [
+        AuthFacade,
+        { provide: AuthService, useValue: fakeAuth },
+        { provide: TokenService, useValue: fakeTokens },
+        {
+          provide: ToastService,
+          useValue: { info: (m: string) => shown.push({ message: m, type: 'info' }) },
+        },
+        {
+          provide: Router,
+          useValue: {
+            url,
+            navigate: (commands: unknown[], extras?: Record<string, unknown>) => {
+              navs.push({ commands, extras });
+            },
+          },
+        },
+      ],
+    });
+    TestBed.inject(AuthFacade).endSession();
+    return { shown, navs };
+  };
+
+  it('says a session ended, and sends the person back to log in from a gated route', () => {
+    const { shown, navs } = endingFrom('/app/dashboard?folder=2');
+    expect(tokenStore.access).toBeNull();
+    expect(shown.length, 'the sign-out must not be silent').toBe(1);
+    expect(shown[0].type).toBe('info');
+    expect(navs.length).toBe(1);
+    // Login, never register: they had an account.
+    expect(navs[0].commands).toEqual(['/auth/login']);
+    expect((navs[0].extras as { queryParams: { next: string } }).queryParams.next)
+      .toBe('/app/dashboard?folder=2');
+  });
+
+  it('does not turn a public page into a login wall', () => {
+    for (const url of ['/', '/merge-pdf', '/verify-email/tok', '/app/doc/abc']) {
+      const { shown, navs } = endingFrom(url);
+      expect(shown.length, `${url} must still be told`).toBe(1);
+      expect(navs.length, `${url} must not be redirected`).toBe(0);
+    }
+  });
+
+  it('ends once however many requests report the same 401', () => {
+    tokenStore.access = 'acc';
+    tokenStore.refresh = 'ref';
+    const shown: string[] = [];
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      providers: [
+        AuthFacade,
+        { provide: AuthService, useValue: fakeAuth },
+        { provide: TokenService, useValue: fakeTokens },
+        { provide: ToastService, useValue: { info: (m: string) => shown.push(m) } },
+        { provide: Router, useValue: { url: '/app/dashboard', navigate: () => undefined } },
+      ],
+    });
+    const facade = TestBed.inject(AuthFacade);
+    facade.endSession();
+    facade.endSession();
+    facade.endSession();
+    expect(shown.length, 'one ending, one toast').toBe(1);
   });
 });
