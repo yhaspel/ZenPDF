@@ -1238,7 +1238,38 @@ Handoff programme (the nine CLI prompts from the 2026-08-21 status review) is tr
 
 ## Session log
 
-**2026-08-24 (last, part three) — The scrollbar blind spot, measured shut**
+**2026-08-24 (last, part four) — Type-aware ESLint: the number was wrong, and so was its root cause**
+
+Branch `chore/type-aware-eslint`. Prompt 7 of the handoff programme. The queue row has
+carried "198 findings, 129 of them one root cause (`HttpErrorResponse.error: any`)" since
+2026-08-02. The prompt said to re-measure rather than redo the analysis. Both halves of the
+row turn out to be wrong on today's tree, and the second half is the interesting one.
+
+**The measurement.** `parserOptions.projectService` against the solution-style tsconfig,
+both presets run over `src/**/*.ts` and `src/**/*.html`:
+
+| Preset | Findings |
+|---|---|
+| `recommendedTypeChecked` | **344** |
+| `strictTypeChecked` | **894** |
+
+Not 198 — but the row's two *cheap* predictions were exactly right, to the finding:
+`no-floating-promises` **14**, `no-misused-promises` **3**.
+
+**The root cause the row names is no longer the largest one.** Of the 344, **246 are in
+spec files and 98 in app code**. And of the 246, **199 are the unsafe-\* family with a
+single origin that has nothing to do with our error handling: Angular types its own test
+surfaces `any`.** Attributed by reading the source line at every one of the 199:
+
+| Origin | Findings |
+|---|---|
+| `ComponentFixture.nativeElement` | 126 |
+| `TestRequest.request.body` | 67 |
+| `DebugElement.nativeElement` | 6 |
+
+That is all 199, with none left over. The `HttpErrorResponse.error: any` family — the thing
+the row is about — is **63 findings in app code**, and it is still the right thing to fix,
+just not the headline.
 
 Branch `fix/scrollbar-blind-spot`. The row asked for a decision between three
 unattractive options. It got a measurement first, which killed two of them.
