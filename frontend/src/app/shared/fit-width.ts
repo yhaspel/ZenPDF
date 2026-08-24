@@ -36,6 +36,14 @@ export class FitWidth {
 
   constructor() {
     afterNextRender(() => {
+      // The unit environment has no `ResizeObserver`, and an error thrown in
+      // `afterNextRender` does not stay local: it surfaced as 59 unhandled
+      // errors across the suite and timed out an unrelated spec that only
+      // builds the `Workspace` component. Degrading here is also the honest
+      // behaviour — a pane that is never measured keeps the desk width its
+      // component was seeded with, which is what a page gets anywhere there is
+      // no layout to fit.
+      if (typeof ResizeObserver === 'undefined') return;
       const observer = new ResizeObserver(([entry]) => {
         const measured = Math.round(entry.contentBoxSize[0].inlineSize);
         // Only on a real change. A page fitted to its pane can make the pane's
