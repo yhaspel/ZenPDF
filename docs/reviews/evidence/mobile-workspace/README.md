@@ -101,3 +101,31 @@ two runs is `image-alt` (weight 10), which goes from *applicable and passing* on
 `notApplicable` here, because the thumbnails now sit inside a closed sheet: the same
 numerator over a smaller denominator. A **snapshot** audit taken with the Pages drawer open
 has `image-alt` applicable and passing again, which is the proof rather than the story.
+
+## Production, after the merge
+
+`https://zenpdf.up.railway.app`, same instrument, 390 × 844 with emulation off, once the
+`web` service had the new bundle (`styles-*.css` containing `.ws-bottom-bar`).
+
+| File | What it shows |
+|---|---|
+| `12-production-pages-drawer-390.png` | dark, View, the **Pages** sheet open over the page |
+| `13-production-annotate-light-390.png` | light, Annotate, the page at fit-to-width with the bar as the last row |
+
+Measured there, as a guest, from `/annotate-pdf` → upload → workspace: the nine modes all
+report `scrollWidth === visualViewport.width === 390`, the bar's bottom edge at **844** and
+the document exactly **844** tall; the drawer openers read Pages / Edit tools / Tools +
+Comments / Fields / Convert & OCR / Compare with / Signature / Protection as they should;
+`viewer-drew` is present; opening a sheet traps focus on its Close, locks the body and
+hands focus back to the opener on close; the **More** sheet carries all six rows and there
+is still exactly **one** `[data-test=download]` in the document; and the theme toggle
+cycles Light → Dark → System on the shrunken bar. Console: clean apart from the same
+vendor `[fluent]` warnings.
+
+**One thing production made visible that the local run had not been asked.** Inside the
+page pane the scroller is 15 px narrower than its content (`scrollWidth` 390,
+`clientWidth` 375) whenever the browser draws a classic vertical scrollbar: the annotate
+zoom seed is `min(900, innerWidth − 48)` and `innerWidth` counts a scrollbar the *pane*
+does not have. The document never scrolls sideways and a phone with overlay scrollbars fits
+exactly; it is a desktop-browser artefact of a pre-existing line. Recorded in the Human
+review queue.
