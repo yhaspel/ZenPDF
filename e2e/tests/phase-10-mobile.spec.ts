@@ -66,11 +66,22 @@ async function expectNoSidewaysScroll(page: Page, where: string): Promise<void> 
  * sideways by design and are not in it. `sr-only` and the vendor toolbar are
  * excluded for the same reason axe excludes them — a 1 px clipped live region
  * and pdf.js's own chrome are not our page.
+ *
+ * **Only what is on screen.** pdf.js parks `#viewsManager` — the sidebar's
+ * thumbnails/outline switcher, which this product never shows because it has a
+ * Pages drawer of its own — at `visibility: hidden` rather than `display: none`,
+ * laid out 197 px wide over the page with its 200 px header inside it. That is
+ * five pixels of overflow in a panel nobody can see, and it is what this
+ * assertion caught first. Computed `visibility` inherits, so testing the element
+ * covers the whole parked subtree; `display: none` needs no test because it
+ * measures `clientWidth === 0` and the filter below already drops it. An
+ * overflow a user can actually reach still fails — proven by injecting one.
  */
 async function expectNoPaneOverflow(page: Page, where: string): Promise<void> {
   const over = await page.evaluate(() =>
     [...document.querySelectorAll('.ws-pane-main, .ws-pane-main *')]
       .filter((el) => !el.closest('#toolbarContainer') && !el.classList.contains('sr-only'))
+      .filter((el) => getComputedStyle(el).visibility !== 'hidden')
       .filter((el) => el.scrollWidth > el.clientWidth + 1 && el.clientWidth > 0)
       .map((el) => ({
         el: el.tagName.toLowerCase() + '.' + String(el.className).slice(0, 40),
@@ -139,17 +150,17 @@ async function openDrawer(page: Page, key: string): Promise<void> {
 /**
  * Into the workspace at 390 px, **through the tool page and not the dashboard**.
  *
- * Not a shortcut: at 390 the dashboard keeps its desktop sidebar beside a
- * two-column grid, so a file card is about 110 px wide and its ⋯ button sits on
- * top of the thumbnail that opens the document — measured here, where every
- * `[data-test=open-doc]` click was refused with *"doc-menu subtree intercepts
- * pointer events"*. That is the open queue row of 2026-08-23, it is
- * `/app/dashboard` and not `/app/doc/:id`, and this prompt's scope is the
- * workspace — so the path around it is recorded rather than papered over with
- * `force: true`, which would have hidden a real defect to test a different one.
+ * It began as a way around a defect: at 390 the dashboard kept its desktop
+ * sidebar beside a two-column grid, a file card measured **47 px**, and its ⋯
+ * button sat on top of the thumbnail that opens the document, so every
+ * `[data-test=open-doc]` click here was refused with *"doc-menu subtree
+ * intercepts pointer events"*. That was recorded rather than papered over with
+ * `force: true`, and it is fixed now — the card is 164 px and *the account
+ * screens at 390* below opens a document from the dashboard to prove it.
  *
- * The tool page is also the honest way in: it is how somebody on a phone
- * actually arrives at a document (§21.6 — the page must *be* the tool).
+ * This route stays anyway, on its own merits: it is how somebody on a phone
+ * actually arrives at a document (§21.6 — the page must *be* the tool), and it
+ * keeps the other tests in this file independent of the dashboard's layout.
  */
 async function openFirstDocument(
   page: Page, prefix: string, fixture: string, tool = 'annotate-pdf',
