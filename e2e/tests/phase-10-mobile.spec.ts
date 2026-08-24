@@ -53,6 +53,34 @@ async function expectNoSidewaysScroll(page: Page, where: string): Promise<void> 
 }
 
 /**
+ * The bar is the last row of a viewport-high column, in this mode too.
+ *
+ * Added after the sideways check let a *vertical* overflow through: in Edit,
+ * Sign and Protect — the three modes whose page renders at 900 px — the
+ * document grew to 1348 px against 844 and the bottom bar went with it, off
+ * the bottom of the screen. `scrollWidth === visualViewport.width` stayed true
+ * throughout, because a vertical scrollbar narrows both of them equally. A bar
+ * that scrolls away is not a persistent bar, so it is measured directly.
+ */
+async function expectBarIsTheLastRow(page: Page, where: string): Promise<void> {
+  const measured = await page.evaluate(() => ({
+    barBottom: Math.round(
+      document.querySelector('[data-test=ws-bottom-bar]')!.getBoundingClientRect().bottom,
+    ),
+    viewport: Math.round(window.innerHeight),
+    documentHeight: document.documentElement.scrollHeight,
+  }));
+  expect(
+    measured.barBottom,
+    `${where}: the bottom bar is not at the bottom — ${JSON.stringify(measured)}`,
+  ).toBeGreaterThanOrEqual(measured.viewport - 1);
+  expect(
+    measured.documentHeight,
+    `${where}: the document scrolls vertically — ${JSON.stringify(measured)}`,
+  ).toBeLessThanOrEqual(measured.viewport + 1);
+}
+
+/**
  * Tap a mode in the bottom bar and wait for its surface.
  *
  * Sign opens its signature pad on arrival when the session has no signature
@@ -135,21 +163,14 @@ test('phase 10 (mobile): the page is first, the modes are at the bottom, nothing
   // at the top — and it actually painted.
   await expectPageDrew(page);
   const geometry = await page.evaluate(() => {
-    const bar = document.querySelector('[data-test=ws-bottom-bar]')!.getBoundingClientRect();
     const pane = document.querySelector('.ws-pane-main')!.getBoundingClientRect();
-    return {
-      barBottom: Math.round(bar.bottom),
-      viewport: Math.round(window.innerHeight),
-      paneWidth: Math.round(pane.width),
-      layout: document.documentElement.clientWidth,
-    };
+    return { paneWidth: Math.round(pane.width), layout: document.documentElement.clientWidth };
   });
-  // The bar is the last row of a full-height column, not a floating strip.
-  expect(Math.abs(geometry.barBottom - geometry.viewport)).toBeLessThanOrEqual(1);
   // The page pane owns the whole width: no rail is standing beside it.
   expect(geometry.paneWidth).toBe(geometry.layout);
 
   await expectNoSidewaysScroll(page, 'view');
+  await expectBarIsTheLastRow(page, 'view');
 
   for (const [key, surface] of [
     ['organize', 'organize-grid'],
@@ -164,6 +185,7 @@ test('phase 10 (mobile): the page is first, the modes are at the bottom, nothing
   ] as const) {
     await mode(page, key, surface);
     await expectNoSidewaysScroll(page, key);
+    await expectBarIsTheLastRow(page, key);
   }
 });
 
