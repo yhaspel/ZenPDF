@@ -78,18 +78,27 @@ async function expectNoSidewaysScroll(page: Page, where: string): Promise<void> 
  * overflow a user can actually reach still fails — proven by injecting one.
  */
 async function expectNoPaneOverflow(page: Page, where: string): Promise<void> {
-  const over = await page.evaluate(() =>
-    [...document.querySelectorAll('.ws-pane-main, .ws-pane-main *')]
-      .filter((el) => !el.closest('#toolbarContainer') && !el.classList.contains('sr-only'))
-      .filter((el) => getComputedStyle(el).visibility !== 'hidden')
-      .filter((el) => el.scrollWidth > el.clientWidth + 1 && el.clientWidth > 0)
-      .map((el) => ({
-        el: el.tagName.toLowerCase() + '.' + String(el.className).slice(0, 40),
-        scrollWidth: el.scrollWidth,
-        clientWidth: el.clientWidth,
-      })),
-  );
-  expect(over, `${where}: content is wider than its pane — ${JSON.stringify(over)}`).toEqual([]);
+  // Polled, not sampled once. Fitting the page to the pane can take a frame or
+  // two to settle — the width sets the height, the height can add or remove the
+  // scroller's vertical scrollbar, and that changes the width the next
+  // measurement sees. A single `evaluate` catches that transient and calls it a
+  // defect; it cost an afternoon reading a mid-convergence number as a real
+  // 15 px overflow. What matters is that it *settles* clean, so that is what is
+  // asserted — a fit that never converges still fails, just at the timeout.
+  await expect
+    .poll(
+      () =>
+        page.evaluate(() =>
+          [...document.querySelectorAll('.ws-pane-main, .ws-pane-main *')]
+            .filter((el) => !el.closest('#toolbarContainer') && !el.classList.contains('sr-only'))
+            .filter((el) => getComputedStyle(el).visibility !== 'hidden')
+            .filter((el) => el.scrollWidth > el.clientWidth + 1 && el.clientWidth > 0)
+            .map((el) => `${el.tagName.toLowerCase()}.${String(el.className).slice(0, 40)}`
+              + ` ${el.scrollWidth}/${el.clientWidth}`),
+        ),
+      { message: `${where}: content stayed wider than its pane`, timeout: 10_000 },
+    )
+    .toEqual([]);
 }
 
 /**
@@ -563,4 +572,67 @@ test('phase 10 (mobile): the account screens fit a phone, and a file can be open
   await page.locator('[data-test=doc-card] [data-test=open-doc]').first().click();
   await expect(page).toHaveURL(/\/app\/doc\//);
   await expect(page.locator('[data-test=ws-bottom-bar]')).toBeVisible();
+});
+
+test('phase 10 (mobile): a guest\'s page fits too, and its pane reserves the gutter',
+  async ({ page }) => {
+  test.setTimeout(240_000);
+  // Every other test in this file signs in first, and a guest's workspace pane
+  // is shorter — **525 px** against a member's **621** at 390 × 844, because a
+  // guest carries the account CTA. That difference is what put the page inside
+  // a band where fitting it does not settle: `FitWidth` sizes the page to the
+  // scroller's content box, the width sets the height, the height decides
+  // whether the scroller needs a vertical scrollbar, and a *classic* scrollbar
+  // changes the content box by 15 px and feeds back in. Two states satisfy that
+  // — 327 with no scrollbar and 342 with one, where 342 does not fit the 327 a
+  // scrollbar leaves. Measured on **production**: Edit and Sign settled at 342
+  // with `scrollWidth` 390 against `clientWidth` 375, Annotate and Protect at
+  // 327, same document, same session.
+  //
+  // **This suite cannot reproduce that, and the assertion below is shaped
+  // accordingly.** Playwright's chromium gives this element an *overlay*
+  // scrollbar — measured here, `clientWidth` 390 while `scrollHeight` 532
+  // exceeds `clientHeight` 525 — so the content box never changes and the loop
+  // has one fixed point whatever the CSS says. A real desktop Chrome at a
+  // narrow window draws a classic one, which is where the defect lives and
+  // where it was found. So the sweep below guards the guest layout generally,
+  // and the gutter is asserted mechanically: it is the declaration that removes
+  // the coupling, and *it* fails on the unfixed build even though the geometry
+  // cannot.
+  await page.goto('/annotate-pdf');
+  await page.locator('[data-test=file-input]').setInputFiles(path.join(FIXTURES, 'text.pdf'));
+  await page.click('[data-test=tool-run]');
+  await expect(page).toHaveURL(/\/app\/doc\//, { timeout: 90_000 });
+  await expect(page.locator('[data-test=ws-bottom-bar]')).toBeVisible();
+  // A guest, and the pane really is the shorter one — otherwise this test is
+  // silently re-running the signed-in sweep.
+  await expect(page.locator('[data-test=nav-email]')).toHaveCount(0);
+
+  for (const [key, surface] of [
+    ['view', 'pdf-viewer'],
+    ['edit', 'edit-mode'],
+    ['annotate', 'annotate-mode'],
+    ['sign', 'sign-mode'],
+    ['protect', 'protect-mode'],
+  ] as const) {
+    await mode(page, key, surface);
+    await expectNoPaneOverflow(page, `guest:${key}`);
+    await expectNoSidewaysScroll(page, `guest:${key}`);
+  }
+
+  // The declaration itself, on the element that carries the directive, at this
+  // width and not at the desk's.
+  const gutter = await page.evaluate(() => {
+    const el = document.querySelector('.ws-pane-main [zenFitWidth]');
+    return el ? getComputedStyle(el).scrollbarGutter : null;
+  });
+  expect(gutter, 'the page pane must reserve its scrollbar gutter below md').toBe('stable');
+
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.waitForTimeout(500);
+  const deskGutter = await page.evaluate(() => {
+    const el = document.querySelector('.ws-pane-main [zenFitWidth]');
+    return el ? getComputedStyle(el).scrollbarGutter : null;
+  });
+  expect(deskGutter, 'the desk must not pay for it (§10)').toBe('auto');
 });
