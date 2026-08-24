@@ -32,6 +32,8 @@ import { SignaturePad } from '../../shared/signature-pad';
 import { ToastService } from '../../shared/toast.service';
 import { WsDrawerHead } from '../../shared/ws-drawer-head';
 import { WsDrawer } from '../../shared/ws-drawer';
+import { FitWidth } from '../../shared/fit-width';
+import { clampPageWidth } from '../../shared/page-fit';
 
 /**
  * "Sign myself" (phase-08 §8A).
@@ -41,10 +43,13 @@ import { WsDrawer } from '../../shared/ws-drawer';
  * already up when there is nothing to pick from. Draw, click the page, Apply:
  * three.
  */
+/** The widest this pane ever draws a page — its desk width. */
+const MAX_PAGE = 680;
+
 @Component({
   selector: 'app-sign',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [FormsModule, PageOverlay, SignaturePad, ZenModal, WsDrawer, WsDrawerHead],
+  imports: [FormsModule, PageOverlay, SignaturePad, ZenModal, WsDrawer, WsDrawerHead, FitWidth],
   templateUrl: './sign.html',
   // Below `md` a mode's host has to be a growing flex item, or the column sizes
   // to its content and the bottom bar floats above the fold — `styles.scss`
@@ -69,7 +74,16 @@ export class Sign {
   private destroyRef = inject(DestroyRef);
 
   protected page = signal(0);
-  protected zoom = signal(680);
+  protected zoom = signal(MAX_PAGE);
+  /**
+   * The pane measured itself; fit the page to it, never wider than the desk
+   * value above (`shared/page-fit.ts`). This pane has no zoom control, so a
+   * page that does not fit cannot be brought into view at all.
+   */
+  protected onFit(available: number): void {
+    this.zoom.set(clampPageWidth(MAX_PAGE, available));
+  }
+
   protected includeDate = signal(true);
   /**
    * Which placement is selected.

@@ -17,7 +17,7 @@
 
       <label class="!flex items-center gap-2">
         Page offset
-        <input type="number" min="-500" max="500" class="input !min-h-9 !w-20"
+        <input type="number" min="-500" max="500" class="input input-compact !w-20"
                [ngModel]="compare.offset()" (ngModelChange)="compare.setOffset(+$event)"
                data-test="compare-offset" />
       </label>
@@ -86,9 +86,14 @@
               class="btn btn-ghost btn-sm" data-test="compare-next">›</button>
     </div>
 
-    <div class="min-h-0 flex-1 overflow-auto p-4">
+    <div zenFitWidth (fitWidth)="onFit($event)"
+         class="min-h-0 flex-1 overflow-auto p-4">
       @if (compare.report()) {
-        <div class="flex justify-center gap-4">
+        <!-- Two pages side by side is a desk figure. Below `md` they stack, so
+             each one gets the pane's full width instead of a share of it —
+             otherwise fit-to-width has to divide 375 px in two and neither copy
+             is readable (§3 workspace panes). -->
+        <div class="flex flex-col items-center gap-4 md:flex-row md:items-start md:justify-center">
           <div class="flex flex-col items-center gap-1">
             <span class="muted text-xs font-medium">This document</span>
             @if (pair().a !== null) {

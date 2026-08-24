@@ -28,6 +28,8 @@ import { resolveShortcut, shortcutTitle } from '../../shared/shortcuts';
 import { ToastService } from '../../shared/toast.service';
 import { WsDrawerHead } from '../../shared/ws-drawer-head';
 import { WsDrawer } from '../../shared/ws-drawer';
+import { FitWidth } from '../../shared/fit-width';
+import { clampPageWidth } from '../../shared/page-fit';
 
 export type ProtectTab = 'protect' | 'redact' | 'sanitize';
 
@@ -63,10 +65,13 @@ const SANITIZE_ITEMS: { key: string; label: string; note: string }[] = [
  * for the same reason find & replace is: this operation cannot be undone, and
  * "it took more than I meant" is only discoverable afterwards.
  */
+/** The widest this pane ever draws a page — its desk width. */
+const MAX_PAGE = 680;
+
 @Component({
   selector: 'app-protect',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [FormsModule, PageOverlay, WsDrawer, WsDrawerHead],
+  imports: [FormsModule, PageOverlay, WsDrawer, WsDrawerHead, FitWidth],
   templateUrl: './protect.html',
   // Below `md` a mode's host has to be a growing flex item, or the column sizes
   // to its content and the bottom bar floats above the fold — `styles.scss`
@@ -97,7 +102,16 @@ export class Protect {
 
   protected tab = signal<ProtectTab>('protect');
   protected page = signal(0);
-  protected zoom = signal(680);
+  protected zoom = signal(MAX_PAGE);
+  /**
+   * The pane measured itself; fit the page to it, never wider than the desk
+   * value above (`shared/page-fit.ts`). This pane has no zoom control, so a
+   * page that does not fit cannot be brought into view at all.
+   */
+  protected onFit(available: number): void {
+    this.zoom.set(clampPageWidth(MAX_PAGE, available));
+  }
+
 
   constructor() {
     // What the phone's bottom bar draws on this mode's behalf (design contract

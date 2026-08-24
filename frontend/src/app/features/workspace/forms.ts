@@ -23,9 +23,13 @@ import {
 import { PageOverlay } from '../../shared/page-overlay/page-overlay';
 import { ShortcutId, resolveShortcut, shortcutTitle } from '../../shared/shortcuts';
 import { saveBlob } from '../../shared/save-blob';
+import { ThemeService } from '../../core/services/theme.service';
 import { ToastService } from '../../shared/toast.service';
 import { WsDrawerHead } from '../../shared/ws-drawer-head';
 import { WsDrawer } from '../../shared/ws-drawer';
+import { FitWidth } from '../../shared/fit-width';
+import { clampPageWidth } from '../../shared/page-fit';
+import { ViewerTabOrder } from '../../shared/viewer-tab-order';
 
 export type FormsTab = 'fill' | 'build';
 
@@ -101,10 +105,13 @@ export function radioLayout(rect: Rect, count: number): Rect[] {
  * Both stage locally and commit once: one `fill_form` / one
  * `edit_form_fields_batch` per session, one version.
  */
+/** The widest this pane ever draws a page — its desk width. */
+const MAX_PAGE = 750;
+
 @Component({
   selector: 'app-forms',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [FormsModule, NgxExtendedPdfViewerModule, PageOverlay, WsDrawer, WsDrawerHead],
+  imports: [FormsModule, NgxExtendedPdfViewerModule, PageOverlay, WsDrawer, WsDrawerHead, FitWidth, ViewerTabOrder],
   templateUrl: './forms.html',
   // Below `md` a mode's host has to be a growing flex item, or the column sizes
   // to its content and the bottom bar floats above the fold — `styles.scss`
@@ -126,6 +133,7 @@ export class Forms {
   private toast = inject(ToastService);
   private confirm = inject(ConfirmService);
   private clipboard = inject(EditorClipboard);
+  protected themes = inject(ThemeService);
   private shell = inject(WorkspaceShellFacade);
   private destroyRef = inject(DestroyRef);
   protected readonly key = shortcutTitle;
@@ -133,7 +141,16 @@ export class Forms {
   protected readonly types = TYPES;
   protected tab = signal<FormsTab>('fill');
   protected page = signal(0);
-  protected zoom = signal(750);
+  protected zoom = signal(MAX_PAGE);
+  /**
+   * The pane measured itself; fit the page to it, never wider than the desk
+   * value above (`shared/page-fit.ts`). This pane has no zoom control, so a
+   * page that does not fit cannot be brought into view at all.
+   */
+  protected onFit(available: number): void {
+    this.zoom.set(clampPageWidth(MAX_PAGE, available));
+  }
+
   protected busy = signal(false);
   /** What the viewer's form layer currently holds, for `[(formData)]`. */
   protected viewerData = signal<FormDataType>({});

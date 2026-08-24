@@ -41,6 +41,8 @@ import { ShortcutId, resolveShortcut, shortcutTitle } from '../../shared/shortcu
 import { ToastService } from '../../shared/toast.service';
 import { WsDrawerHead } from '../../shared/ws-drawer-head';
 import { WsDrawer } from '../../shared/ws-drawer';
+import { FitWidth } from '../../shared/fit-width';
+import { clampPageWidth } from '../../shared/page-fit';
 
 /** Every palette entry, including the two that are not annotations. */
 export type AnnotateTool = AnnotationType | 'select' | 'crop';
@@ -95,16 +97,8 @@ function familyOf(tool: AnnotateTool): ToolFamily {
   return MARKUP.includes(tool as AnnotationType) ? 'markup' : 'ink';
 }
 
-/**
- * The widest page that fits without making the browser scroll the whole app.
- *
- * 900 on a desk, the viewport less the page pane's padding on a phone. Guarded
- * for prerender, where there is no window at all.
- */
-function fitZoom(): number {
-  if (typeof window === 'undefined') return 900;
-  return Math.max(280, Math.min(900, window.innerWidth - 48));
-}
+/** The widest Annotate ever draws a page — its desk width. */
+const MAX_PAGE = 900;
 
 /**
  * A mark without whose-it-is.
@@ -138,7 +132,7 @@ function uuid(): string {
 @Component({
   selector: 'app-annotate',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [FormsModule, PageOverlay, WsDrawer, WsDrawerHead],
+  imports: [FormsModule, PageOverlay, WsDrawer, WsDrawerHead, FitWidth],
   templateUrl: './annotate.html',
   // Below `md` a mode's host has to be a growing flex item, or the column sizes
   // to its content and the bottom bar floats above the fold — `styles.scss`
@@ -180,7 +174,25 @@ export class Annotate {
    * the edge. `zoomOut` stops at 450 by design, so the floor cannot come from
    * the buttons — it has to be the starting value.
    */
-  protected zoom = signal(fitZoom());
+  /**
+   * The page's render width — fitted to the pane, unless the person has said
+   * otherwise.
+   *
+   * Annotate is the only pane with a zoom control, so it is the only one where
+   * re-fitting could take something away: `zoomChosen` is what stops a turned
+   * phone, an opened drawer or a resized window from undoing a deliberate zoom.
+   * Seeded at the desk width because that is the honest answer before any
+   * layout has happened, including on a server that will never have one.
+   */
+  protected zoom = signal(MAX_PAGE);
+  /** The widest page the pane can currently hold — the floor `zoomOut` stops at. */
+  private fit = signal(MAX_PAGE);
+  private zoomChosen = false;
+
+  protected onFit(available: number): void {
+    this.fit.set(clampPageWidth(MAX_PAGE, available));
+    if (!this.zoomChosen) this.zoom.set(this.fit());
+  }
   /**
    * The working colour, remembered per family of tools.
    *
@@ -964,11 +976,13 @@ export class Annotate {
   }
 
   protected zoomIn(): void {
+    this.zoomChosen = true;
     this.zoom.update((z) => Math.min(1600, z + 150));
   }
 
   protected zoomOut(): void {
-    this.zoom.update((z) => Math.max(Math.min(450, fitZoom()), z - 150));
+    this.zoomChosen = true;
+    this.zoom.update((z) => Math.max(Math.min(450, this.fit()), z - 150));
   }
 
   protected trackAnnotation = (_: number, a: Annotation): string => a.id;

@@ -27,6 +27,8 @@ import { ShortcutId, resolveShortcut, shortcutTitle } from '../../shared/shortcu
 import { ToastService } from '../../shared/toast.service';
 import { WsDrawerHead } from '../../shared/ws-drawer-head';
 import { WsDrawer } from '../../shared/ws-drawer';
+import { FitWidth } from '../../shared/fit-width';
+import { clampPageWidth } from '../../shared/page-fit';
 
 /** Which sub-tool of the Edit tab is active. */
 export type EditMode = 'text' | 'add-text' | 'whiteout' | 'image' | 'link';
@@ -73,10 +75,13 @@ const POSITIONS: StampPosition[] = [
  * all become `OverlayItem`s, and the gestures come back as `OverlayDraft`s.
  * That is the whole point of building the overlay generically in Phase 3.
  */
+/** The widest this pane ever draws a page — its desk width. */
+const MAX_PAGE = 750;
+
 @Component({
   selector: 'app-edit',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [FormsModule, PageOverlay, ZenModal, WsDrawer, WsDrawerHead],
+  imports: [FormsModule, PageOverlay, ZenModal, WsDrawer, WsDrawerHead, FitWidth],
   templateUrl: './edit.html',
   // Below `md` a mode's host has to be a growing flex item, or the column sizes
   // to its content and the bottom bar floats above the fold — `styles.scss`
@@ -104,7 +109,16 @@ export class Edit {
   protected tab = signal<EditTab>('edit');
   protected mode = signal<EditMode>('text');
   protected page = signal(0);
-  protected zoom = signal(750);
+  protected zoom = signal(MAX_PAGE);
+  /**
+   * The pane measured itself; fit the page to it, never wider than the desk
+   * value above (`shared/page-fit.ts`). This pane has no zoom control, so a
+   * page that does not fit cannot be brought into view at all.
+   */
+  protected onFit(available: number): void {
+    this.zoom.set(clampPageWidth(MAX_PAGE, available));
+  }
+
   protected busy = signal(false);
 
   // text editing
