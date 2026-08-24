@@ -1,3 +1,4 @@
+import { DOCUMENT } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { TestBed } from '@angular/core/testing';
 import { Router } from '@angular/router';
@@ -158,10 +159,18 @@ describe('AuthFacade', () => {
           provide: ToastService,
           useValue: { info: (m: string) => shown.push({ message: m, type: 'info' }) },
         },
+        // `endSession()` reads the *browser's* location, not `Router.url` — the
+        // router has not committed the new URL while `loadUser()` runs from a
+        // constructor. Stubbing the router here instead is what made this spec
+        // pass while the real redirect never fired.
+        {
+          provide: DOCUMENT,
+          useValue: { location: { pathname: url.split('?')[0], search: url.includes('?') ? `?${url.split('?')[1]}` : '' } },
+        },
         {
           provide: Router,
           useValue: {
-            url,
+            url: '/not-read-any-more',
             navigate: (commands: unknown[], extras?: Record<string, unknown>) => {
               navs.push({ commands, extras });
             },
@@ -204,6 +213,7 @@ describe('AuthFacade', () => {
         { provide: AuthService, useValue: fakeAuth },
         { provide: TokenService, useValue: fakeTokens },
         { provide: ToastService, useValue: { info: (m: string) => shown.push(m) } },
+        { provide: DOCUMENT, useValue: { location: { pathname: '/app/dashboard', search: '' } } },
         { provide: Router, useValue: { url: '/app/dashboard', navigate: () => undefined } },
       ],
     });
