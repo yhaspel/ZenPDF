@@ -539,10 +539,16 @@ test('phase 10 (mobile): the account screens fit a phone, and a file can be open
     return {
       card: Math.round(el.getBoundingClientRect().width),
       openIsOnTop: at === opener || opener.contains(at),
+      // §6's floor is a *target*, so the box measured is the label where there
+      // is one. The select checkbox is native and keeps its 17 px platform
+      // paint — sizing the input itself to 44 was tried and reverted, because
+      // a stretched native checkbox draws a 44 px empty square over the
+      // thumbnail. Its 44 px comes from the `<label>` around it, exactly as
+      // §3 already specifies for the OCR rows.
       small: [...el.querySelectorAll(
         '[data-test=doc-menu], [data-test=star-toggle], [data-test=select-doc]')]
         .map((c) => {
-          const b = c.getBoundingClientRect();
+          const b = (c.closest('label') ?? c).getBoundingClientRect();
           return { t: c.getAttribute('data-test'), w: Math.round(b.width), h: Math.round(b.height) };
         })
         .filter((m) => m.w < 44 || m.h < 44),
