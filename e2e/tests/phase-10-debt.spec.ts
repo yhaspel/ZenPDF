@@ -144,3 +144,48 @@ test('phase 10: a throttled rail waits and fills, rather than showing a wall of 
     expect(refused.size).toBeGreaterThan(1);
     await expect(page.locator('[data-test=thumb-failed]')).toHaveCount(0);
   });
+test('phase 10: a server blip does not log you out', async ({ page }) => {
+  test.setTimeout(180_000);
+  // `AuthFacade.loadUser` used to end the session on **any** error from
+  // `/api/users/me/`, not just a rejected credential. So a 500 from a busy box,
+  // a 429, or a request aborted because somebody clicked a link while it was in
+  // flight silently deleted `zen_access` and `zen_refresh` — and the next
+  // guarded route bounced to `/auth/register` wearing a stranger's chrome, with
+  // no sign-out anywhere.
+  //
+  // It was found as an intermittent e2e failure that looked like three
+  // different flakes: `uploadFiles` timing out on `[data-test=file-input]`, ~1
+  // in 3 on a loaded machine. A probe trapping every write to `zen_*` caught
+  // `TokenService.clear` under `AuthFacade.clearSession` under that error
+  // callback, on a run where four unrelated endpoints were answering 500.
+  //
+  // Induced here rather than waited for: one 500 on the *next* `/users/me/`,
+  // which is deterministic and fails on the unfixed build.
+  await registerAndLogin(page, 'p10blip');
+
+  let blipped = false;
+  await page.route('**/api/users/me/', async (route) => {
+    if (blipped) return route.continue();
+    blipped = true;
+    await route.fulfill({ status: 500, contentType: 'application/json', body: '{}' });
+  });
+
+  // A fresh load, so `loadUser()` runs and meets the 500.
+  await page.goto('/app/settings');
+  await expect(page.locator('[data-test=nav-email]')).toBeVisible();
+  expect(blipped, 'the 500 never fired, so this asserts nothing').toBe(true);
+
+  const stored = await page.evaluate(() => ({
+    access: !!localStorage.getItem('zen_access'),
+    refresh: !!localStorage.getItem('zen_refresh'),
+  }));
+  expect(stored, 'a 500 from /users/me must not end the session').toEqual({
+    access: true, refresh: true,
+  });
+
+  // And the session is still usable: a guarded route renders instead of
+  // bouncing to the register page.
+  await page.goto('/app/dashboard');
+  await expect(page).toHaveURL(/\/app\/dashboard/);
+  await expect(page.locator('[data-test=file-input]')).toHaveCount(1);
+});

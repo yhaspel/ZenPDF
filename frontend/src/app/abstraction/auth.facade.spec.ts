@@ -1,6 +1,7 @@
+import { HttpErrorResponse } from '@angular/common/http';
 import { TestBed } from '@angular/core/testing';
 import { Router } from '@angular/router';
-import { of } from 'rxjs';
+import { of, throwError } from 'rxjs';
 
 import { AuthService } from '../core/services/auth.service';
 import { DocumentPasswords } from '../core/services/document-passwords';
@@ -92,4 +93,49 @@ describe('AuthFacade', () => {
         resolve();
       });
     }));
+  /**
+   * A transient server error is not a sign-out.
+   *
+   * `loadUser` used to clear the session on *any* error from `/users/me/`, so a
+   * 500 from a busy box — or a request aborted because the person navigated
+   * away while it was in flight — silently threw the tokens away and bounced
+   * the next guarded route to `/auth/register`. Measured 2026-08-24 as the
+   * cause of three intermittently failing e2e specs.
+   */
+  const failMeWith = (status: number) => {
+    tokenStore.access = 'acc';
+    tokenStore.refresh = 'ref';
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      providers: [
+        AuthFacade,
+        {
+          provide: AuthService,
+          useValue: {
+            ...fakeAuth,
+            me: () => throwError(() => new HttpErrorResponse({ status })),
+          },
+        },
+        { provide: TokenService, useValue: fakeTokens },
+        { provide: Router, useValue: { navigate: () => { /* not under test */ } } },
+      ],
+    });
+    TestBed.inject(AuthFacade).loadUser();
+  };
+
+  it('keeps the session when /users/me fails for a reason that is not the credential', () => {
+    // 403 is `account_required` and 410 is `guest_expired` — the interceptor
+    // hands both straight through, and neither says the JWT is bad. 0 is an
+    // aborted or failed fetch, which is what navigating away produces.
+    for (const status of [0, 403, 410, 429, 500, 502, 503, 504]) {
+      failMeWith(status);
+      expect(tokenStore.access, `status ${status} must not end the session`).toBe('acc');
+    }
+  });
+
+  it('ends the session only when the credential is actually rejected', () => {
+    failMeWith(401);
+    expect(tokenStore.access).toBeNull();
+    expect(tokenStore.refresh).toBeNull();
+  });
 });

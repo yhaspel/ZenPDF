@@ -1,3 +1,4 @@
+import { HttpErrorResponse } from '@angular/common/http';
 import { Injectable, computed, inject, signal } from '@angular/core';
 import { Router } from '@angular/router';
 import { Observable, map, switchMap, tap, throwError } from 'rxjs';
@@ -24,11 +25,42 @@ export class AuthFacade {
   readonly lastClaim = this._lastClaim.asReadonly();
   readonly isAuthenticated = computed(() => !!this._user() || this.tokens.isAuthenticated);
 
+  /**
+   * Fetch the signed-in user, and end the session **only if the credential was
+   * rejected**.
+   *
+   * This used to be `error: () => this.clearSession()` — any failure at all,
+   * and the tokens were gone. So a 500 from an overloaded box, a 429, a
+   * DNS blip, or a request aborted because the person clicked a link while it
+   * was in flight all logged them out and threw the session away. There is no
+   * user-visible sign-out either: the tokens vanish, and the next guarded route
+   * bounces to `/auth/register` (`accountGuard`) with the reason chrome of a
+   * brand-new visitor.
+   *
+   * Measured 2026-08-24, which is how it was finally caught: a probe that trapped
+   * every write to `zen_*` recorded `TokenService.clear` under
+   * `AuthFacade.clearSession` under this `error` callback, on a run where
+   * `/api/documents/`, `/api/folders/`, `/api/config/` and `/api/jobs/` were all
+   * answering **500**. Nothing had refused the credential — the box was simply
+   * busy. Three e2e specs had been failing on it intermittently for two days
+   * (~1 in 3 on a loaded machine, ~1 in 6 otherwise) and it was being read as a
+   * test flake.
+   *
+   * **401 is the only status that means "this credential is no good".** By the
+   * time one reaches here the interceptor has already tried to refresh and
+   * failed, or there was no refresh token to try — either way the access token
+   * is unrecoverable and the session really is over. Every other status leaves
+   * it alone: the tokens are still valid, and the next request can succeed.
+   */
   loadUser(): void {
     if (this.tokens.isAuthenticated && !this._user()) {
       this.authSvc.me().subscribe({
         next: (u) => this._user.set(u),
-        error: () => this.clearSession(),
+        error: (err: unknown) => {
+          if (err instanceof HttpErrorResponse && err.status === 401) {
+            this.clearSession();
+          }
+        },
       });
     }
   }
