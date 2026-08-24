@@ -2,8 +2,10 @@
 # Run tests: backend pytest + frontend unit; optional Playwright e2e (--e2e).
 # 01-architecture.md §18. The e2e suite assumes the stack is already up (up.sh).
 #
-# Two things this gate is required to be honest about, both learned the hard
-# way and both recorded in the PROGRESS Human review queue (2026-08-21):
+# What this gate is required to be honest about — each learned the hard way,
+# each recorded in the PROGRESS Human review queue. The list is not numbered by
+# a count in this sentence, because a count goes stale silently and a list does
+# not; it went from two to three on 2026-08-24 and this line would have lied.
 #
 #   1. **It must not call itself green with tests it never ran.** The
 #      2026-08-21 evening run reported "1051 passed, 14 skipped" and was read as
@@ -20,7 +22,12 @@
 #      by letting ten skips through. It is a shell check and not a pytest,
 #      because the thing under test is this file.
 #
-#   2. **It must not test stale backend code.** Celery does not hot-reload, so
+#   2. **It must not be stopped by a file nobody wrote.** virtiofs duplicates
+#      (`fit-width 2.ts`) are gitignored, so `git status` is clean and the only
+#      signal is a compiler error naming a *generated sibling* of the stray.
+#      Checked first, because one is enough to fail every leg after it.
+#
+#   3. **It must not test stale backend code.** Celery does not hot-reload, so
 #      a stack left up across a backend change runs the old task code while the
 #      api container (Django autoreload) runs the new. That is exactly how
 #      `phase-2b:130` was misdiagnosed twice in one day — once as a product
@@ -41,6 +48,46 @@ done
 
 env_val() { grep -E "^$1=" .env 2>/dev/null | tail -1 | cut -d= -f2; }
 API_PORT="$(env_val API_PORT)"; API_PORT="${API_PORT:-8000}"
+
+echo "======================================================"
+echo " Stray virtiofs duplicates"
+echo "======================================================"
+# macOS + Docker Desktop's virtiofs mount occasionally leaves a copy of a file
+# beside it — `fit-width 2.ts`, `tsconfig.app 2.json`, `helpers 3.ts`. Nobody
+# writes them and nothing imports them, but the TypeScript program includes
+# every file under `src`, so one is enough to stop a build that has nothing
+# wrong with it.
+#
+# The reason this is a gate check and not a lint rule is that **`git status`
+# cannot see them**: `.gitignore` has disowned the shape since `1e1919a`, which
+# keeps them out of commits and equally out of every "is my tree clean?" answer.
+# So the first and only signal was the compiler, and it does not name the real
+# problem. Measured 2026-08-24, the third recorded occurrence: a build that had
+# just succeeded printed `Prerendered 0 static routes.` and then
+# `TS6053: File '/app/src/app/shared/fit-width 2.ngtypecheck.ts' not found` —
+# an error about a file nobody wrote, referring to a *generated* sibling of a
+# stray, two indirections from the truth. It cost a full gate run.
+#
+# Fails rather than deleting. The pattern is a heuristic — `report 2.md` is a
+# perfectly ordinary name — and a gate that quietly removes files it guessed
+# about is worse than one that stops and shows its working. `up.sh` takes the
+# same line with stale workers, for the same reason.
+STRAY_PRUNE=( -name node_modules -o -name .angular -o -name dist -o -name test-results -o -name .venv -o -name __pycache__ )
+strays="$(find ../frontend ../e2e ../backend \( "${STRAY_PRUNE[@]}" \) -prune -o -name '* [0-9].*' -print 2>/dev/null || true)"
+if [ -n "$strays" ]; then
+  echo "ERROR: virtiofs left duplicate files in the tree. They are gitignored, so"
+  echo "       'git status' is clean and the only other signal is a compiler error"
+  echo "       naming a file nobody wrote."
+  echo
+  printf '%s\n' "$strays" | sed 's|^\.\./|  |'
+  echo
+  echo "       Check they are the artefact and not something you meant to keep,"
+  echo "       then from the repo root:"
+  echo "         find frontend e2e backend \\( -name node_modules -o -name .angular \\"
+  echo "           -o -name dist -o -name test-results \\) -prune -o -name '* [0-9].*' -print -delete"
+  exit 1
+fi
+echo "None."
 
 echo "======================================================"
 echo " Infra consistency (SSRF layer-2 deny-list copies)"
