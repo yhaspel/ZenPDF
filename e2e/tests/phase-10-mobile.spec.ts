@@ -53,6 +53,35 @@ async function expectNoSidewaysScroll(page: Page, where: string): Promise<void> 
 }
 
 /**
+ * The same question, asked of the scrollers *inside* the page.
+ *
+ * `documentElement.scrollWidth` is blind to this by construction: the pane is a
+ * scroller, so content too wide for it stays inside it and the document stays
+ * exactly 390. Measured 2026-08-24 while the sweep above was green in all nine
+ * modes — **Edit drew its page at 750 px and Protect and Sign at 680, inside a
+ * pane 327 px wide**, and five of the six panes have no zoom control, so there
+ * was no way to bring the page into view at all.
+ *
+ * Scoped to `.ws-pane-main`: the bottom bar's opener and mode rows scroll
+ * sideways by design and are not in it. `sr-only` and the vendor toolbar are
+ * excluded for the same reason axe excludes them — a 1 px clipped live region
+ * and pdf.js's own chrome are not our page.
+ */
+async function expectNoPaneOverflow(page: Page, where: string): Promise<void> {
+  const over = await page.evaluate(() =>
+    [...document.querySelectorAll('.ws-pane-main, .ws-pane-main *')]
+      .filter((el) => !el.closest('#toolbarContainer') && !el.classList.contains('sr-only'))
+      .filter((el) => el.scrollWidth > el.clientWidth + 1 && el.clientWidth > 0)
+      .map((el) => ({
+        el: el.tagName.toLowerCase() + '.' + String(el.className).slice(0, 40),
+        scrollWidth: el.scrollWidth,
+        clientWidth: el.clientWidth,
+      })),
+  );
+  expect(over, `${where}: content is wider than its pane — ${JSON.stringify(over)}`).toEqual([]);
+}
+
+/**
  * The bar is the last row of a viewport-high column, in this mode too.
  *
  * Added after the sideways check let a *vertical* overflow through: in Edit,
@@ -186,6 +215,7 @@ test('phase 10 (mobile): the page is first, the modes are at the bottom, nothing
     await mode(page, key, surface);
     await expectNoSidewaysScroll(page, key);
     await expectBarIsTheLastRow(page, key);
+    await expectNoPaneOverflow(page, key);
   }
 });
 
@@ -383,4 +413,137 @@ test('phase 10 (mobile): axe finds nothing serious in the phone workspace',
   await scan('the phone workspace, annotate');
   await openDrawer(page, 'end');
   await scan('the Comments drawer, open');
+});
+
+test('phase 10 (mobile): nothing scrolls sideways under dir="rtl" either',
+  async ({ page }) => {
+  test.setTimeout(240_000);
+  // The LTR sweep cannot catch this class of defect and never could: the
+  // scrollable overflow region starts at the inline-start corner, so a box at
+  // x = −10000 is unreachable under `dir="ltr"` and scrollable under `rtl`.
+  // The offender was `ngx-extended-pdf-viewer`'s own live region and its inline
+  // `left: -10000px` — measured at 10 400 px of document against a 414 px
+  // phone — which is why this is asserted only after the viewer has painted,
+  // and why it also checks the region is still a live region: hiding it would
+  // "fix" the number by silencing a screen reader.
+  await openFirstDocument(page, 'p10mrtl', 'text.pdf');
+  await expectPageDrew(page);
+  await page.evaluate(() => { document.documentElement.dir = 'rtl'; });
+
+  const region = page.locator('body > .sr-only[aria-live]');
+  await expect(region).toHaveCount(1);
+
+  await expectNoSidewaysScroll(page, 'view, rtl');
+
+  const stuck = await page.evaluate(() => {
+    const el = document.scrollingElement!;
+    el.scrollLeft = -5000;
+    const got = el.scrollLeft;
+    el.scrollLeft = 0;
+    return got;
+  });
+  expect(stuck, 'the document scrolled to the inline end').toBe(0);
+
+  // Still announced: hidden by clipping, not by removal.
+  const state = await page.evaluate(() => {
+    const el = document.querySelector('body > .sr-only[aria-live]') as HTMLElement;
+    const cs = getComputedStyle(el);
+    return {
+      display: cs.display,
+      visibility: cs.visibility,
+      insideAriaHidden: el.closest('[aria-hidden="true"]') !== null,
+      live: el.getAttribute('aria-live'),
+    };
+  });
+  expect(state).toEqual({
+    display: 'block', visibility: 'visible', insideAriaHidden: false, live: 'polite',
+  });
+});
+
+test('phase 10 (mobile): pdf.js does not put 152 controls in front of ours',
+  async ({ page }) => {
+  test.setTimeout(240_000);
+  // `ngx-extended-pdf-viewer` renumbers every focusable element under the
+  // viewer with a positive tabindex — measured at **152**, numbered 1 to 152 —
+  // and a positive tabindex is visited before every `tabindex="0"` in the
+  // document. A keyboard user met 152 vendor controls, most of them invisible,
+  // before the back link. `ViewerTabOrder` flattens them; this is the assertion
+  // that says so, and it fails on the unfixed build.
+  await openFirstDocument(page, 'p10mtab', 'text.pdf');
+  await expectPageDrew(page);
+
+  const positive = await page.evaluate(() =>
+    [...document.querySelectorAll<HTMLElement>('[tabindex]')]
+      .filter((el) => el.tabIndex > 0)
+      .map((el) => ({ id: el.id, tabIndex: el.tabIndex })));
+  expect(positive, `positive tabindex: ${JSON.stringify(positive.slice(0, 5))}`).toEqual([]);
+
+  // And the editor radiogroup the `show*Editor` inputs already turned off is
+  // out of the accessibility tree, not merely wearing an invisible button.
+  const radios = await page.evaluate(() =>
+    [...document.querySelectorAll('pdf-shy-button[role=radio]')]
+      .filter((el) => el.getClientRects().length > 0).length);
+  expect(radios, 'editor radio hosts still rendered').toBe(0);
+});
+
+test('phase 10 (mobile): the account screens fit a phone, and a file can be opened',
+  async ({ page }) => {
+  test.setTimeout(240_000);
+  // The defect this asserts against, measured at 390 × 844 on 2026-08-24 with an
+  // empty library: `/app/dashboard` and `/app/settings` both drew a **546 px**
+  // document, because the app-shell nav's min-content floor is 417 px with the
+  // address at zero width. And the sidebar kept its 224 px column at every
+  // width, so the main column was 110 px, a file card **47**, and the card's ⋯
+  // menu sat on top of the 14 × 18 button that opens the document — which is
+  // why `openFirstDocument` in this very file goes in through the tool page.
+  await registerAndLogin(page, 'p10mdash');
+  // Assert the signed-in header on the page the helper landed on, before any
+  // `goto`: a fresh document load re-reads the token from storage, and this
+  // spec is about the header's *width*, not about the session.
+  await expect(page.locator('[data-test=nav-settings]')).toBeVisible();
+  await expectNoSidewaysScroll(page, '/app/dashboard');
+
+  await page.click('[data-test=nav-settings]');
+  await expect(page).toHaveURL(/\/app\/settings/);
+  await expect(page.locator('[data-test=nav-dashboard]')).toBeVisible();
+  await expectNoSidewaysScroll(page, '/app/settings');
+
+  await page.click('[data-test=nav-dashboard]');
+  await expect(page).toHaveURL(/\/app\/dashboard/);
+  await page.locator('[data-test=file-input]').setInputFiles(path.join(FIXTURES, 'text.pdf'));
+  const card = page.locator('[data-test=doc-card]').first();
+  await expect(card).toBeVisible({ timeout: 60_000 });
+  await expectNoSidewaysScroll(page, '/app/dashboard with a card');
+
+  // A card wide enough to be a card, and every one of its controls reachable.
+  // Scrolled into view first: `elementFromPoint` answers about the viewport, so
+  // a card below the fold reports `null` and the check would pass or fail for a
+  // reason that has nothing to do with what covers what.
+  await card.scrollIntoViewIfNeeded();
+  const geometry = await page.evaluate(() => {
+    const el = document.querySelector('[data-test=doc-card]')!;
+    const opener = el.querySelector('[data-test=open-doc]')!;
+    const box = opener.getBoundingClientRect();
+    const at = document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2);
+    return {
+      card: Math.round(el.getBoundingClientRect().width),
+      openIsOnTop: at === opener || opener.contains(at),
+      small: [...el.querySelectorAll(
+        '[data-test=doc-menu], [data-test=star-toggle], [data-test=select-doc]')]
+        .map((c) => {
+          const b = c.getBoundingClientRect();
+          return { t: c.getAttribute('data-test'), w: Math.round(b.width), h: Math.round(b.height) };
+        })
+        .filter((m) => m.w < 44 || m.h < 44),
+    };
+  });
+  expect(geometry.card, 'the file card is too narrow to use').toBeGreaterThan(120);
+  expect(geometry.openIsOnTop, 'something covers the button that opens the document').toBe(true);
+  expect(geometry.small, `card controls under the 44 px floor: ${JSON.stringify(geometry.small)}`)
+    .toEqual([]);
+
+  // And the thing the whole detour existed for: it opens.
+  await page.locator('[data-test=doc-card] [data-test=open-doc]').first().click();
+  await expect(page).toHaveURL(/\/app\/doc\//);
+  await expect(page.locator('[data-test=ws-bottom-bar]')).toBeVisible();
 });
