@@ -1294,6 +1294,19 @@ wrote; and the `registerVerifiedAndLogin` session loss, whose own 2026-08-23 row
 pins it to `zen_access` being absent at guard time. The last is why the e2e leg is a
 separate invocation, as it was for #32.
 
+**Production verified after the deploy, in the configuration that found it** — a guest at
+390 × 844 on `zenpdf.up.railway.app`, all nine modes: every pane **327**, computed
+`scrollbar-gutter: stable`, **nothing in `.ws-pane-main` wider than its own box in any
+mode**, document 390 = visual viewport, bottom bar's edge exactly 844. Two hours earlier,
+same site, same document, same guest path: Edit and Sign at **342 with 390/375**. And the
+desk at 1280 reports `scrollbar-gutter: auto` with no overflow — §10 held, measured rather
+than asserted.
+
+*(The deploy itself is worth a note: PR #33's only TypeScript change was comments, so
+`main-*.js` kept its hash and a watcher polling it would have waited for ever. The fix is
+a CSS rule and it landed in `styles-QPZ3RLVR.css`. Watch the artefact the change is
+actually in.)*
+
 **One more correction to this branch's own work.** `expectNoPaneOverflow` sampled once.
 Fitting takes a frame or two, and a single sample reads the transient as a defect — which
 is exactly how the first production reading was misread before the settled state was
