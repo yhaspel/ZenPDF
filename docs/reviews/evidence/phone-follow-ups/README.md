@@ -35,7 +35,7 @@ against `visualViewport` rather than pinning 390).
 | header height at 390 | one line, overflowing | **106** (two lines) |
 | main column | 110 | 343 |
 | a file card | **47** | **164** |
-| ⋯ / star / select | 36 / 36 / 21 | **44 × 44** each |
+| ⋯ / star / select | 28 × 28 / 15 × 15 / 17 × 17 | **44 × 44** each |
 
 The nav's second line starts at y = 46 under the brand at y = 14; the address ellipsises
 (`scrollWidth > clientWidth`) and carries its full value in `title`. At 1280 the header
