@@ -47,6 +47,7 @@ function requireBase(siteUrl) {
  */
 export const CONTENT_PAGES = [
   'about',
+  'contact',
   'legal/privacy',
   'legal/terms',
   'legal/esign-disclosure',

@@ -98,6 +98,14 @@ export const routes: Routes = [
       import('./features/legal/legal-page').then((m) => m.LegalPage),
   },
   {
+    // The trust surface (§11B): an address, not a form — outbound SMTP is off
+    // by owner decision, so a form would be a control that does nothing.
+    path: 'contact',
+    data: { kind: 'contact' },
+    loadComponent: () =>
+      import('./features/legal/legal-page').then((m) => m.LegalPage),
+  },
+  {
     // Somebody who clicked "unsubscribe" in a mail footer. No auth: the token
     // in the message is the authority (§9B).
     path: 'unsubscribe/:token',

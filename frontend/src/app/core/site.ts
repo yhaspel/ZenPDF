@@ -23,6 +23,27 @@ import { Meta } from '@angular/platform-browser';
 export const SITE_URL = 'https://zenpdf.up.railway.app';
 
 /**
+ * The address on `/contact` — the single place it is written down (§11B).
+ *
+ * Deliberately **not** `support@<domain>` yet: there is no domain. The one
+ * thing Phase 11A cannot be parameterised around is a mailbox that does not
+ * exist, so until the owner buys the domain and switches on Cloudflare Email
+ * Routing, this is the owner's own address with a plus-tag — the same inbox
+ * that already receives `ABUSE_CONTACT_EMAIL` mail from production, so nothing
+ * new is exposed that outbound mail footers were not exposing already.
+ *
+ * The tag earns its keep twice: it makes ZenPDF mail filterable on arrival,
+ * and if this address ever turns up on a spam list it says exactly where it
+ * was scraped from. `docs/ops/domain-cutover.md` replaces this line with
+ * `support@<apex>` in the same edit that moves `SITE_URL`.
+ *
+ * Never a contact *form*: outbound SMTP is off by owner decision (phase-11
+ * P5), so a form would be a control that silently does nothing — which is the
+ * design contract's no-dead-affordances rule (§10), not a matter of taste.
+ */
+export const SUPPORT_EMAIL = 'yuval3000+support@gmail.com';
+
+/**
  * Point `<link rel="canonical">` and `og:url` at the same absolute URL.
  *
  * One helper because four pages need it and three of them had drifted: the

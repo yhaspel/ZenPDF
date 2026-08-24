@@ -31,6 +31,7 @@ export const serverRoutes: ServerRoute[] = [
   { path: 'legal/privacy', renderMode: RenderMode.Prerender },
   { path: 'legal/terms', renderMode: RenderMode.Prerender },
   { path: 'about', renderMode: RenderMode.Prerender },
+  { path: 'contact', renderMode: RenderMode.Prerender },
   { path: 'unsubscribe/:token', renderMode: RenderMode.Client },
   { path: 'verify-email/:token', renderMode: RenderMode.Client },
   { path: '**', renderMode: RenderMode.Client },

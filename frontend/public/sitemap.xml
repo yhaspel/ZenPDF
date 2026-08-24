@@ -131,6 +131,11 @@
     <priority>0.8</priority>
   </url>
   <url>
+    <loc>https://zenpdf.up.railway.app/contact</loc>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
     <loc>https://zenpdf.up.railway.app/legal/privacy</loc>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>

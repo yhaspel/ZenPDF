@@ -188,7 +188,10 @@
         </p>
       }
 
-      @default {
+      <!-- Explicit, where this used to be the @switch's @default: a route
+           added with a kind nobody wrote a case for now renders nothing at
+           all, loudly, instead of quietly serving About under a second URL. -->
+      @case ('about') {
         <h1 data-test="legal-h1">
           About ZenPDF
         </h1>
@@ -222,6 +225,90 @@
           to a third-party API to be processed, and they are deleted on the
           schedule in the
           <a routerLink="/legal/privacy">privacy policy</a>.
+        </p>
+
+        <h2 class="mt-8">Who runs this</h2>
+        <p class="mt-3 text-base leading-[1.75]" data-test="about-identity">
+          ZenPDF is an independent product, built and operated by its developer
+          rather than by a company with a support department. That is worth
+          knowing in both directions: nobody is going to sell your documents to
+          anyone, and there is no overnight shift to escalate to. If you need
+          something — a bug, a question, a report of misuse — there is a real
+          address on the
+          <a routerLink="/contact" data-test="about-contact-link">contact page</a>,
+          and a person reads it.
+        </p>
+      }
+
+      @case ('contact') {
+        <h1 data-test="legal-h1">
+          Contact
+        </h1>
+        <p class="muted mt-3 text-base leading-[1.75]">
+          One address, read by a person. There is no contact form on this page
+          on purpose — a form that quietly failed to send would be worse than
+          no form at all.
+        </p>
+
+        <h2 class="mt-8">Write to us</h2>
+        <p class="mt-3 text-base leading-[1.75]">
+          <a [href]="'mailto:' + supportEmail" data-test="contact-mailto">{{ supportEmail }}</a>
+          — for anything at all: a tool that misbehaved, a file that came back
+          wrong, a question about what we store, a request to remove something,
+          or a report of somebody misusing the service.
+        </p>
+
+        <h2 class="mt-8">What to put in the message</h2>
+        <p class="mt-3 text-base leading-[1.75]">
+          The more of this you can include, the faster it gets fixed. None of
+          it is required.
+        </p>
+        <ul class="mt-3 list-disc ps-5 text-base leading-[1.75]">
+          <li>
+            <strong>What you were doing</strong> — the tool or the page you were
+            on, and its address if you still have it.
+          </li>
+          <li>
+            <strong>What happened, and what you expected instead.</strong> The
+            exact wording of any error message helps more than a description of
+            it.
+          </li>
+          <li>
+            <strong>When</strong>, roughly, and which browser you were using.
+          </li>
+          <li>
+            <strong>Please do not attach the document itself</strong> unless we
+            ask. Most problems are diagnosable without it, and sending us a file
+            we did not need is a copy of your document in a mailbox for no
+            reason.
+          </li>
+        </ul>
+
+        <h2 class="mt-8">Reporting a signature request</h2>
+        <p class="mt-3 text-base leading-[1.75]">
+          If you were emailed a document to sign and you did not expect it, the
+          fastest route is not this address: every signing page carries a
+          <strong>“Report this request”</strong> link in its own footer. That
+          one goes straight to the request, tells the sender's account, and
+          pauses the request outright once three different recipients have used
+          it. Writing here works too — it is just slower, because we have to
+          find the request first.
+        </p>
+
+        <h2 class="mt-8">What to expect back</h2>
+        <p class="mt-3 text-base leading-[1.75]">
+          Replies are best-effort and come from one person, so they are not
+          instant and there is no ticket number. Anything about a document
+          being wrong, lost or exposed gets looked at first. Note that guest
+          files are deleted automatically within
+          {{ retention().guest_hours }} hours — if a job went wrong without an
+          account, tell us quickly, because after that there is nothing left on
+          our side to look at.
+        </p>
+        <p class="mt-3 text-base leading-[1.75]">
+          To download or delete everything we hold on an account, you do not
+          need us at all: <strong>Settings → Your data</strong> does both, in
+          the product, without asking anyone.
         </p>
       }
     }
