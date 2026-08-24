@@ -63,6 +63,16 @@ contract: native checkbox and file inputs, and three number/select fields carryi
 Tab → Tab stays inside the sheet → Escape closes it and focus is back on the opener, with
 the body scroll lock released.
 
+**Contrast, both themes**, computed from the rendered colours: the mode row's 11 px label
+**6.71:1** light / **8.32:1** dark on the bar; the selected mode's ink stamp **14.99 / 16.68**;
+a drawer opener **6.71 / 8.32**; a sheet title **15.95 / 15.74**. The grip is
+`--color-border-strong` on the sheet, which is a hairline value and reads as one — it is
+`aria-hidden` decoration beside a title and a close button, not a control.
+
+**No layout thrash on open.** A performance trace over **four open/close cycles** records
+**CLS 0.00**: the sheet is `position: fixed` and moves by `transform`, so nothing under it
+is measured or moved.
+
 **Console.** Clean apart from `ngx-extended-pdf-viewer`'s own `[fluent] Missing
 translations` warnings, which are vendor and pre-existing.
 
