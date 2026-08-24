@@ -64,12 +64,28 @@ describe('guide pages', () => {
     expect(new Set(GUIDE_PAGES.map((g) => g.metaDescription)).size).toBe(GUIDE_PAGES.length);
     expect(new Set(GUIDE_PAGES.map((g) => g.h1)).size).toBe(GUIDE_PAGES.length);
     for (const guide of GUIDE_PAGES) {
-      expect(guide.title.length).toBeGreaterThan(20);
-      // Doubles as the one-line description on `/guides`, so it has to read as
-      // a sentence as well as fit a search snippet.
-      expect(guide.metaDescription.length).toBeGreaterThan(60);
-      expect(guide.metaDescription.length).toBeLessThan(200);
+      // Upper bounds are where search results truncate: a title past ~65
+      // characters and a description past ~160 lose their tail in the snippet.
+      // Not a penalty, but the clipped part is wasted writing — and the
+      // description doubles as the one-line entry on `/guides`, so it has to
+      // read as a whole sentence in both places. Seven descriptions and three
+      // titles were over on the first draft and were tightened rather than
+      // excused.
+      expect(`${guide.slug} title`).toBe(
+        `${guide.slug} title${guide.title.length > 20 && guide.title.length <= 65 ? '' : ` OUT OF RANGE (${guide.title.length})`}`,
+      );
+      expect(`${guide.slug} desc`).toBe(
+        `${guide.slug} desc${guide.metaDescription.length > 60 && guide.metaDescription.length <= 160 ? '' : ` OUT OF RANGE (${guide.metaDescription.length})`}`,
+      );
     }
+  });
+
+  // A duplicate title across the two tables is duplicate content under two
+  // URLs, which is one of the things a thin-content review looks for.
+  it('shares no title, description or H1 with a tool page', () => {
+    const guideStrings = GUIDE_PAGES.flatMap((g) => [g.title, g.metaDescription, g.h1]);
+    const toolStrings = TOOL_PAGES.flatMap((t) => [t.title, t.metaDescription, t.h1]);
+    expect(guideStrings.filter((s) => toolStrings.includes(s))).toEqual([]);
   });
 
   // A guide that names a tool we do not have is a dead affordance in prose,

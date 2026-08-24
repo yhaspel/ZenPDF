@@ -74,7 +74,7 @@ export interface GuidePageDef {
 export const GUIDE_PAGES: GuidePageDef[] = [
   {
     slug: 'how-to-merge-pdf-files',
-    title: 'How to merge PDF files: order, batches and what gets lost | ZenPDF',
+    title: 'How to merge PDF files: order, batches and what is lost | ZenPDF',
     metaDescription:
       'How merging a PDF actually works: how page order is decided, what happens to bookmarks and links, and how to combine more files than one pass allows.',
     h1: 'How to merge PDF files',
@@ -96,18 +96,18 @@ export const GUIDE_PAGES: GuidePageDef[] = [
         ],
       },
       {
-        heading: 'What does not survive a merge',
+        heading: 'What survives a merge, and what does not',
         paragraphs: [
-          'A merged PDF gets a fresh, flat structure. Bookmarks — the outline pane your reader shows down the side — are not carried across from the source files, and neither are internal links that pointed from one page to another inside a source document. This is worth planning for rather than discovering: if you are assembling a 400-page report out of twelve chapter files, each with its own outline, the merged file will open with no outline at all.',
-          'The fix is to rebuild the outline after merging rather than expecting it to survive. That is one deliberate pass over a finished document instead of an outline stitched together out of twelve partial ones, which in practice is also the better outline.',
-          'What does survive is everything on the page. Pages are copied across as they are, not re-rendered, so text stays selectable, images keep their original resolution, and nothing is recompressed behind your back. A merged file is roughly the sum of its parts in size, and if that is a problem, compression is a separate step you choose rather than one that happens to you.',
+          'Bookmarks survive, and they are reorganised rather than discarded. The merged document gets a new outline with one top-level entry per source file, and each source\'s own bookmarks nested underneath it. So twelve chapter files, each with its own outline, become one document whose outline opens as twelve chapters you can expand — which is usually the outline you wanted anyway.',
+          'Internal links survive too, and their targets are renumbered. A link that pointed from page 1 to page 2 of the third source file still points at those same two pages after the merge, at whatever numbers they now have. Links out to the web are unaffected, because they never depended on page numbers.',
+          'Everything on the page survives unchanged. Pages are copied across as they are, not re-rendered, so text stays selectable, images keep their original resolution, and nothing is recompressed behind your back. A merged file is roughly the sum of its parts in size, and if that is a problem, compression is a separate step you choose rather than one that happens to you.',
           'Annotations, form fields and existing signatures travel with their pages. That last one has a consequence worth stating plainly: merging a signed document into a larger one breaks the signature on it. The signature was a claim about a specific file, and the merged file is not that file. If a signed document has to end up inside a compilation, keep the signed original separately as the thing that can actually be verified.',
         ],
       },
       {
         heading: 'Limits, batches and encrypted sources',
         paragraphs: [
-          'There is no fixed limit on how many files you can combine in one pass, but each file has to fit the per-file limits. Without an account that is 25 MB and 300 pages per file; a free account raises both to 100 MB and 2,000 pages. When you are working with a stack of scanned chapters that individually exceed the limit, the shape of the answer is to merge in batches and then merge the batches — merging is associative, so the result is identical either way.',
+          'There is no fixed limit on how many files you can combine in one pass, but each file has to fit the per-file limits. Without an account that is 25 MB and 300 pages per file; a free account raises both to 100 MB and 2,000 pages. When you are working with a stack of scanned chapters that individually exceed the limit, the shape of the answer is to merge in batches and then merge the batches. The pages come out in exactly the same order either way; the only difference is the outline, which gains a level of nesting for each round of merging.',
           'If one of the sources is password-protected, you will be asked to unlock it before the merge runs. This is deliberate and slightly annoying by design: the alternative is silently skipping a file you explicitly asked to include, and a merged document that is quietly missing a chapter is a worse outcome than an error message. The same applies to a damaged file, which is offered a repair pass on upload rather than being dropped.',
           'Files you merge without an account are deleted automatically within 24 hours, and that clock is on the uploaded sources as well as the result. Download what you need before you close the tab. With an account the result stays in your library until you delete it, which is the practical reason accounts exist here — not a feature gate, just a place to put things.',
         ],
@@ -124,7 +124,7 @@ export const GUIDE_PAGES: GuidePageDef[] = [
 
   {
     slug: 'compress-pdf-without-losing-quality',
-    title: 'Compress a PDF without wrecking it: what actually gets traded | ZenPDF',
+    title: 'Compress a PDF without wrecking it: what gets traded | ZenPDF',
     metaDescription:
       'What PDF compression really trades away, why some files barely shrink, and how to tell which of the three presets is the right one for the file in front of you.',
     h1: 'Compressing a PDF without wrecking it',
@@ -178,7 +178,7 @@ export const GUIDE_PAGES: GuidePageDef[] = [
     slug: 'fill-and-sign-pdf-without-printing',
     title: 'Fill and sign a PDF without printing it | ZenPDF',
     metaDescription:
-      'The print-sign-scan cycle is avoidable. How to tell a real PDF form from a flat one, how to fill each, and how to sign the result and send it so it stays as you left it.',
+      'The print-sign-scan cycle is avoidable. How to tell a real PDF form from a flat one, how to fill each, and how to sign the result so it stays as you left it.',
     h1: 'Filling and signing a PDF without printing it',
     published: '2026-08-24',
     updated: '2026-08-24',
@@ -229,7 +229,7 @@ export const GUIDE_PAGES: GuidePageDef[] = [
     slug: 'are-electronic-signatures-legally-binding',
     title: 'Are electronic signatures legally binding? | ZenPDF',
     metaDescription:
-      'How ESIGN, UETA and eIDAS treat electronic signatures, what the three eIDAS tiers mean, and exactly what a simple electronic signature with a platform seal does and does not prove.',
+      'How ESIGN, UETA and eIDAS treat electronic signatures, what the three eIDAS tiers mean, and what a simple electronic signature with a platform seal proves.',
     h1: 'Are electronic signatures legally binding?',
     published: '2026-08-24',
     updated: '2026-08-24',
@@ -295,7 +295,7 @@ export const GUIDE_PAGES: GuidePageDef[] = [
     slug: 'what-is-ocr-make-a-scanned-pdf-searchable',
     title: 'What is OCR? Making a scanned PDF searchable | ZenPDF',
     metaDescription:
-      'What OCR adds to a scanned PDF, how to tell whether your file needs it, which languages are available including Hebrew, and where optical recognition reliably fails.',
+      'What OCR adds to a scanned PDF, how to tell whether your file needs it, which languages are available including Hebrew, and where recognition fails.',
     h1: 'What OCR is, and how to make a scan searchable',
     published: '2026-08-24',
     updated: '2026-08-24',
@@ -402,9 +402,9 @@ export const GUIDE_PAGES: GuidePageDef[] = [
 
   {
     slug: 'how-to-redact-a-pdf-properly',
-    title: 'How to redact a PDF properly (a black box is not redaction) | ZenPDF',
+    title: 'How to redact a PDF properly: a black box is not enough | ZenPDF',
     metaDescription:
-      'Why drawing a black rectangle over text leaves it fully readable, what real redaction removes, when to use areas rather than patterns, and how to verify the result.',
+      'Why a black rectangle over text leaves it fully readable, what real redaction removes, when to use areas rather than patterns, and how to verify it.',
     h1: 'How to redact a PDF properly',
     published: '2026-08-24',
     updated: '2026-08-24',
@@ -517,7 +517,7 @@ export const GUIDE_PAGES: GuidePageDef[] = [
     slug: 'organize-scanned-pages-split-reorder-rotate',
     title: 'Organising scanned pages: split, reorder, rotate | ZenPDF',
     metaDescription:
-      'What to do with the one long file a scanner produces: rotating sideways pages, fixing the order, splitting into real documents, and handling a two-pass duplex scan.',
+      'What to do with the one long file a scanner produces: rotating sideways pages, fixing the order, splitting it up, and handling a two-pass duplex scan.',
     h1: 'Organising scanned pages: split, reorder, rotate',
     published: '2026-08-24',
     updated: '2026-08-24',
@@ -570,7 +570,7 @@ export const GUIDE_PAGES: GuidePageDef[] = [
     slug: 'email-a-pdf-thats-too-big',
     title: 'How to email a PDF that is too big | ZenPDF',
     metaDescription:
-      'Why a 25 MB attachment limit is really about 18 MB, which of compression and splitting to reach for, and the approaches that do not help despite seeming as though they should.',
+      'Why a 25 MB attachment limit is really about 18 MB, which of compression and splitting to reach for, and the approaches that only look as if they help.',
     h1: 'How to email a PDF that is too big',
     published: '2026-08-24',
     updated: '2026-08-24',
@@ -631,7 +631,7 @@ export const GUIDE_PAGES: GuidePageDef[] = [
     slug: 'pdf-page-numbers-and-bates-stamping',
     title: 'Page numbers and Bates stamping: which one you need | ZenPDF',
     metaDescription:
-      'Page numbers count within a document; Bates numbers identify pages across a production. What each is for, how ranges and starting values work, and why rotated pages matter.',
+      'Page numbers count within a document; Bates numbers identify pages across a production. What each is for, and why rotated pages matter.',
     h1: 'Page numbers and Bates stamping',
     published: '2026-08-24',
     updated: '2026-08-24',

@@ -112,7 +112,7 @@ describe('guide page', () => {
   it('sets the title and canonical from the table, never from document.location', async () => {
     await renderGuide('how-to-redact-a-pdf-properly');
     expect(TestBed.inject(Title).getTitle()).toBe(
-      'How to redact a PDF properly (a black box is not redaction) | ZenPDF',
+      'How to redact a PDF properly: a black box is not enough | ZenPDF',
     );
     const canonical = document
       .querySelector('link[rel="canonical"]')!

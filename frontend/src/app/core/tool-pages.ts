@@ -67,7 +67,7 @@ export const TOOL_PAGES: ToolPageDef[] = [
       'Page order follows the order you add the files. If you need a different arrangement — moving individual pages around, rotating some of them, or removing a few — open the merged file in the workspace afterwards and organize it there.',
       'Creating a free account is optional. It keeps your documents in a library instead of expiring, raises the file-size and page limits, and lets you send documents for signature.',
       'There is no fixed limit on how many files you can combine in one go, though each file has to fit the guest limits: 25 MB and 300 pages. If you are working with a stack of scanned chapters, merge them in batches and then merge the batches.',
-      'Bookmarks and internal links from the source files are not carried across — a merged PDF gets a fresh, flat structure. If you depend on an outline, rebuild it after merging rather than expecting it to survive.',
+      'Bookmarks and internal links are carried across. The merged file gets an outline with one entry per source document and each source\'s own bookmarks nested under it, and a link that pointed from one page to another inside a source still points at those pages under their new numbers.',
       'If a source file is encrypted you will be asked to unlock it first: we do not silently skip a file you asked us to include, because a merged document that is quietly missing a chapter is worse than an error message.',
     ],
     faq: [
