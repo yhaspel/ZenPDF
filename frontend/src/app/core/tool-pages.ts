@@ -122,6 +122,10 @@ export const TOOL_PAGES: ToolPageDef[] = [
         q: 'Is there a page limit?',
         a: 'Guests can work with documents up to 300 pages and 25 MB. A free account raises that to 2000 pages and 100 MB.',
       },
+      {
+        q: 'Does splitting reduce the quality of the pages?',
+        a: 'No. Pages are copied into the new documents rather than re-rendered, so text stays selectable, images keep their original resolution, and each piece is only as large as the content that moved into it.',
+      },
     ],
     minFiles: 1,
     multiple: false,
@@ -157,6 +161,10 @@ export const TOOL_PAGES: ToolPageDef[] = [
         q: 'Is compression free?',
         a: 'Yes, with no account and no watermark.',
       },
+      {
+        q: 'What if compressing does not make it smaller?',
+        a: 'You get your original file back unchanged, with a note saying it was already optimised. If the saving would be under about three per cent we keep your file rather than re-encoding every image for nothing — a slightly smaller, slightly worse file is not a good trade.',
+      },
     ],
     minFiles: 1,
     multiple: false,
@@ -189,6 +197,10 @@ export const TOOL_PAGES: ToolPageDef[] = [
         a: 'On this page the rotation applies to every page. For per-page control, open the file in the workspace and select the pages you want first.',
       },
       { q: 'Do I need an account?', a: 'No.' },
+      {
+        q: 'Does rotating lose any quality?',
+        a: 'No. Every PDF page carries a rotation property, and rotating sets it. Nothing is redrawn and nothing is resampled, so you can rotate as often as you like at no cost.',
+      },
     ],
     minFiles: 1,
     multiple: false,
@@ -221,6 +233,10 @@ export const TOOL_PAGES: ToolPageDef[] = [
         a: 'Yes. Type them into the Pages field — 1, 3, 5-8 — or open the file in the workspace and select the page thumbnails you want gone.',
       },
       { q: 'Is it free?', a: 'Yes, and no account is required.' },
+      {
+        q: 'Can I delete every page?',
+        a: 'No — at least one page has to remain, and the tool refuses rather than handing you an empty document. If what you want is to get rid of the file, delete the document instead of its pages.',
+      },
     ],
     minFiles: 1,
     multiple: false,
@@ -291,6 +307,10 @@ export const TOOL_PAGES: ToolPageDef[] = [
       {
         q: 'How long do my files last without an account?',
         a: 'Guest files are deleted automatically within 24 hours. With a free account they stay in your library until you delete them.',
+      },
+      {
+        q: 'Does organizing change the pages themselves?',
+        a: 'No. Reordering is a permutation of the pages you already have, and rotation sets a property on a page. Nothing is re-rendered, so the text stays selectable and the images keep their resolution however much you rearrange.',
       },
     ],
     minFiles: 1,
@@ -401,6 +421,10 @@ export const TOOL_PAGES: ToolPageDef[] = [
         q: 'Does a watermark stop people copying my document?',
         a: 'No. It makes provenance obvious, which is usually the real goal, but it is not a security control. To remove content permanently, use redaction; to restrict opening or printing, use the protect tool.',
       },
+      {
+        q: 'Can I put the watermark behind the text instead of over it?',
+        a: 'Yes. Drawing it under the page content keeps the document readable and keeps its text selectable and searchable, because the watermark is not sitting in the way of anything. Over the top is the right choice when the mark has to be unmissable.',
+      },
     ],
     minFiles: 1,
     multiple: false,
@@ -419,6 +443,9 @@ export const TOOL_PAGES: ToolPageDef[] = [
       'Numbering starting at any value matters more often than it sounds. A chapter that begins on page 47 of a bound report should say 47, not 1. And a cover page usually should not be numbered at all. Both are single controls in the workspace panel.',
       'The number is drawn into the page content, so it is part of the file and shows up wherever the document is opened or printed. It is not a header a reader can toggle.',
       'Numbers printed onto pages do not renumber themselves if you later add or remove pages — they are content, not a field. Reorder first, number second, and if the document changes afterwards just number it again from the version before.',
+      'Numbers can go in any of six positions — three along the bottom of the page and three along the top. Check the one you choose against what is already there: plenty of documents come with something in the footer, and a number stamped on top of existing content is worse than no number at all.',
+      'The starting value is separate from where in the file the numbering begins, and that separation is what makes covers and contents pages work. A report whose body should begin at 1 on the fourth sheet is numbered over a range that starts at the fourth page while counting from 1. Getting those two confused is the most common page-numbering mistake, and the symptom is a document whose printed numbers are all a few higher than everyone expects.',
+      'Add numbers last. Merging, splitting, inserting and deleting all change which page is which, so a number stamped before one of those operations is a claim that stops being true the moment it runs. The same goes for rotation: stamps are placed to read upright to the viewer, so rotate first and number afterwards.',
       'Free, no account, and nothing is watermarked. A running header or footer and Bates numbering for legal work are in the same Stamps panel.',
     ],
     faq: [
@@ -433,6 +460,10 @@ export const TOOL_PAGES: ToolPageDef[] = [
       {
         q: 'Will the numbers update if I add pages later?',
         a: 'No. They are drawn into the page, not calculated on the fly. Add or remove pages first, then number — or revert to the version before numbering and number it again.',
+      },
+      {
+        q: 'Where on the page can the numbers go?',
+        a: 'Any of six positions: bottom left, centre or right, and the same three along the top. Bottom centre and bottom right are the usual choices, and bottom right is the one to keep free if the document will also carry Bates numbers.',
       },
     ],
     minFiles: 1,
@@ -550,6 +581,10 @@ export const TOOL_PAGES: ToolPageDef[] = [
         q: 'Is the converted file editable?',
         a: 'Yes — it is a real .docx with editable text, not an image in a wrapper.',
       },
+      {
+        q: 'Why did my converted document come out a page longer?',
+        a: 'Almost always font substitution. If the PDF used a typeface Word does not have, Word picks a stand-in with slightly different letter widths, the text takes a little more room per line, and the extra accumulates into an extra page. Fixing the font in Word usually restores the original length.',
+      },
     ],
     minFiles: 1,
     multiple: false,
@@ -584,6 +619,10 @@ export const TOOL_PAGES: ToolPageDef[] = [
         q: 'Do I need Microsoft Word installed?',
         a: 'No. The conversion happens on our servers; you need nothing but a browser.',
       },
+      {
+        q: 'Is my document sent to another company to be converted?',
+        a: 'No. Office formats are converted by a LibreOffice service running in our own infrastructure, in a container of its own. Nothing goes to a third-party conversion API.',
+      },
     ],
     minFiles: 1,
     multiple: false,
@@ -602,6 +641,9 @@ export const TOOL_PAGES: ToolPageDef[] = [
       'Images are fitted to A4 by default, centred and scaled to keep their proportions, which is what you want for something that will be printed or filed. The workspace also offers original size, where each page matches its image exactly — better for screenshots and for images that are already the right shape.',
       'Photographs of documents are worth a second step: run OCR afterwards and the text in the picture becomes searchable and selectable, which turns a photo of a receipt into something you can actually find later.',
       'The image data is embedded as-is rather than re-encoded, so nothing is degraded on the way in. A PDF of photographs is a large file by nature; compress it afterwards if it needs to fit an email.',
+      'PNG, JPEG, TIFF, BMP, GIF and WebP all work, and a multi-page TIFF keeps every one of its pages rather than only the first — which is the case scanner software tends to produce and most converters quietly truncate.',
+      'When you are combining several images, the order you add them is the order they appear, so a set of photographed pages goes in the way you meant rather than the way the filenames happen to sort. That matters more than it sounds: files named 1 through 10 sort as 1, 10, 2 under an alphabetical rule, and a converter that sorts by name puts page ten second.',
+      'A photograph of a document is not the same thing as a scan of it, and it is worth knowing which you have. Photographs come with uneven lighting, a slight curve to the paper and a perspective tilt, none of which a converter removes. They still make a perfectly usable PDF for sending something to somebody; if the result needs to be searchable, run OCR on it afterwards and expect a lower accuracy than a flat scan would give.',
       'No account, no watermark, and nothing is sent to a third party. Guest files are deleted automatically within 24 hours.',
     ],
     faq: [
@@ -616,6 +658,10 @@ export const TOOL_PAGES: ToolPageDef[] = [
       {
         q: 'Are my images re-compressed?',
         a: 'No. The image data is embedded as it arrived, so nothing is degraded. Use the compress tool afterwards if the file needs to be smaller.',
+      },
+      {
+        q: 'Which image formats can I use?',
+        a: 'PNG, JPEG, TIFF, BMP, GIF and WebP. A multi-page TIFF keeps all of its pages rather than just the first, which is the format most scanner software produces.',
       },
     ],
     minFiles: 1,
@@ -635,6 +681,8 @@ export const TOOL_PAGES: ToolPageDef[] = [
       'Resolution is yours to choose in the workspace, from 72 DPI for something that will only ever be looked at on a screen up to 300 DPI for print. Higher DPI means a sharper image and a much larger file — 300 DPI is roughly seventeen times the pixels of 72.',
       'JPEG and PNG are both available. JPEG is smaller and right for pages that are mostly photographs; PNG is lossless and right for pages of text and diagrams, where JPEG artefacts show up as fuzz around the letters.',
       'Converting to images is a one-way door: the result is pixels, with no text layer, so nothing in it can be searched, selected or edited afterwards. That is sometimes exactly what you want — an image of a page cannot be copied out of or reflowed — but it is worth knowing before you send the result to someone who may need the text.',
+      'Be clear about what an image of a page loses, because it is not obvious from looking at one. The text layer goes: the words are pixels now, so nothing can search them, select them, copy them or read them aloud. Links stop being links. Form fields stop being fields. That is the correct trade when you need a picture — a thumbnail, a slide, something to drop into a document that will not take a PDF — and the wrong one when somebody has to work with the content.',
+      'If you find yourself converting to images so that the document cannot be edited, that is worth reconsidering. It makes the file larger, it makes it unusable to a screen reader, and it stops nobody who is determined. Flattening keeps the document a document, and a signature is what actually makes a later change detectable.',
       'The original PDF is untouched. Free, no account, and the zip is kept for 24 hours before it is deleted.',
     ],
     faq: [
@@ -649,6 +697,10 @@ export const TOOL_PAGES: ToolPageDef[] = [
       {
         q: 'Can I get the text back afterwards?',
         a: 'Not from the images — they are pixels. Keep the original PDF, or run OCR on the images if the original is gone.',
+      },
+      {
+        q: 'Will the images be searchable?',
+        a: 'No. An image of a page has no text layer, so nothing can search, select or read out the words — that is what converting to an image gives up. If you need the text, extract it or convert to Word instead.',
       },
     ],
     minFiles: 1,
@@ -684,6 +736,10 @@ export const TOOL_PAGES: ToolPageDef[] = [
       {
         q: 'Can I convert a page by URL?',
         a: 'Yes, from the import box in your library. For safety, addresses inside private networks are refused.',
+      },
+      {
+        q: 'Is the text in the result selectable, or is it a picture?',
+        a: 'Selectable. The page is rendered into a real PDF with real text in it, not photographed, so the result can be searched, copied from and read by a screen reader.',
       },
     ],
     minFiles: 1,
@@ -758,6 +814,10 @@ export const TOOL_PAGES: ToolPageDef[] = [
         q: 'My file will not even upload.',
         a: 'Upload it anyway — a damaged file is offered a repair pass on the way in rather than being rejected.',
       },
+      {
+        q: 'Will repairing bring back content that was deleted?',
+        a: 'No. Repair rebuilds the structure a reader needs to open the file — the cross-reference table, broken object references — from what is still in the bytes. It cannot recover content that is not there, and it does not undo an edit.',
+      },
     ],
     minFiles: 1,
     multiple: false,
@@ -827,6 +887,10 @@ export const TOOL_PAGES: ToolPageDef[] = [
       {
         q: 'What happens to the password I type?',
         a: 'It is used to open the file and then discarded. It is never saved on the document, and it is stripped from the job record as soon as the job finishes.',
+      },
+      {
+        q: 'Does removing the password change anything else in the document?',
+        a: 'No. The pages, text, images, annotations and form fields are all untouched; only the encryption is removed. What you get back is the same document without a lock on it.',
       },
     ],
     minFiles: 1,

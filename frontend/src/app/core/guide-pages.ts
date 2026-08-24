@@ -39,8 +39,17 @@ export interface GuideSection {
    * A standing caution, rendered as the design contract's `.notice`
    * (`.notice-info`) at the end of the section it belongs to — §4 says it sits
    * where the caution applies, not stacked at the top of the page.
+   *
+   * The optional `link` is inside the notice on purpose: §3 says the actions a
+   * notice refers to sit within it, "so the explanation and the way out are
+   * one object". It is also the only inline link a guide can have — the prose
+   * is plain text bound with `{{ }}`, deliberately, because a guide table that
+   * carried markup would be a guide table that could carry anything.
    */
-  note?: string;
+  note?: {
+    text: string;
+    link?: { href: string; label: string };
+  };
 }
 
 export interface GuidePageDef {
@@ -230,7 +239,10 @@ export const GUIDE_PAGES: GuidePageDef[] = [
           'In most of the world, and for most documents, yes. The law generally refuses to treat a signature as invalid merely because it is electronic. That is the easy half of the answer, and it is the half most articles stop at.',
           'The harder and more useful half is that "legally binding" is not one property. A signature that is admissible is not the same as a signature that is easy to prove, and neither is the same as a signature a particular regulator will accept for a particular document. This guide sets out the frameworks, what the tiers mean, and precisely what ZenPDF\'s signature is — so you can tell whether it is the right instrument for what you are signing.',
         ],
-        note: 'This page is general information about how electronic signature law is structured. It is not legal advice, it is not specific to your situation, and it is not a substitute for asking a lawyer about a document that matters.',
+        note: {
+          text: 'This page is general information about how electronic signature law is structured. It is not legal advice, it is not specific to your situation, and it is not a substitute for asking a lawyer about a document that matters. The exact text every signer agrees to is published in full:',
+          link: { href: '/legal/esign-disclosure', label: 'the e-sign disclosure' },
+        },
       },
       {
         heading: 'The frameworks',

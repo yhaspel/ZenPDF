@@ -68,8 +68,13 @@ const AUTHOR = 'the ZenPDF team';
             @for (paragraph of section.paragraphs; track $index) {
               <p class="mt-3 text-base leading-[1.75]">{{ paragraph }}</p>
             }
-            @if (section.note) {
-              <p class="notice notice-info mt-4" data-test="guide-note">{{ section.note }}</p>
+            @if (section.note; as note) {
+              <p class="notice notice-info mt-4" data-test="guide-note">
+                <span>{{ note.text }}</span>
+                @if (note.link; as link) {
+                  <a [routerLink]="link.href" data-test="guide-note-link">{{ link.label }}</a>
+                }
+              </p>
             }
           </section>
         }
