@@ -1280,6 +1280,19 @@ coverage it does give, and the gutter is asserted **mechanically** instead — t
 declaration below `md`, and `auto` at 1280 so §10 is held too. That assertion was run
 against the unfixed build and fails there; the geometry one does not.
 
+**Gate.** `ruff` + `mypy` clean · pytest **1159 passed, 6 skipped**, coverage apps
+**91.53 %** / pdf_engine **91.87 %** · `ng lint` clean · `ng test` **63 files / 540 tests**
+· build + `verify:prerender` clean, **43** prerendered routes · Playwright **82 passed, 1
+skipped of 84**, all nine `phase-10-mobile` tests among them.
+
+Three environment failures cost four runs before that, and none of them was the change:
+the unit false red at its own budget's edge (see the Decisions row — 15 s is the edge, not
+headroom, measured here with three browser pages open); the virtiofs `* 2.*` strays taking
+the prerender leg to **`Prerendered 0 static routes`** with a `TS6053` about a file nobody
+wrote; and the `registerVerifiedAndLogin` session loss, whose own 2026-08-23 row already
+pins it to `zen_access` being absent at guard time. The last is why the e2e leg is a
+separate invocation, as it was for #32.
+
 **One more correction to this branch's own work.** `expectNoPaneOverflow` sampled once.
 Fitting takes a frame or two, and a single sample reads the transient as a defect — which
 is exactly how the first production reading was misread before the settled state was
