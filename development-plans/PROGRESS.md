@@ -1138,7 +1138,7 @@ Handoff programme (the nine CLI prompts from the 2026-08-21 status review) is tr
 
 | Added | Item | Phase | GATE? | Resolved |
 |---|---|---|---|---|
-| 2026-08-24 | **A session that really has ended still ends *silently* — the person finds out at the next guarded route, as a stranger.** Left standing deliberately by `fix/session-survives-a-blip`, which fixed the wrong reason for clearing and not the missing signal. Two paths reach it: `AuthFacade.loadUser()` clearing on a genuine 401, and `auth.interceptor.ts:159` — a 401 where an access token is present but `tokens.refresh` is falsy skips the refresh block entirely and falls through to the bare `throwError` at :177 with no clear and no redirect. In both cases `clearSession()` runs with **no `router.navigate`**, so the page keeps rendering whatever it was showing; the loss is invisible until something guarded is clicked, and then `accountGuard` sends them to `/auth/register` with the reason chrome of a brand-new visitor — not `/auth/login`, and with no explanation that they *had* a session. Contrast the interceptor's own refresh-failure path (:169-173), which clears **and** navigates to `/auth/login`; that is the behaviour a real sign-out should have. Not fixed here because the obvious fix — navigate on a 401 from `loadUser` — would yank somebody off a **public** route mid-task: `App` (`app.ts:22`) calls `loadUser()` on every page load including `/verify-email/:token`, so a stale token would interrupt an email confirmation. Wants a deliberate answer (a toast plus a soft redirect only from `/app/**`, most likely), not a one-liner. | 9/10 | No | ⬜ |
+| 2026-08-24 | **A session that really has ended still ends *silently* — the person finds out at the next guarded route, as a stranger.** Left standing deliberately by `fix/session-survives-a-blip`, which fixed the wrong reason for clearing and not the missing signal. Two paths reach it: `AuthFacade.loadUser()` clearing on a genuine 401, and `auth.interceptor.ts:159` — a 401 where an access token is present but `tokens.refresh` is falsy skips the refresh block entirely and falls through to the bare `throwError` at :177 with no clear and no redirect. In both cases `clearSession()` runs with **no `router.navigate`**, so the page keeps rendering whatever it was showing; the loss is invisible until something guarded is clicked, and then `accountGuard` sends them to `/auth/register` with the reason chrome of a brand-new visitor — not `/auth/login`, and with no explanation that they *had* a session. Contrast the interceptor's own refresh-failure path (:169-173), which clears **and** navigates to `/auth/login`; that is the behaviour a real sign-out should have. Not fixed here because the obvious fix — navigate on a 401 from `loadUser` — would yank somebody off a **public** route mid-task: `App` (`app.ts:22`) calls `loadUser()` on every page load including `/verify-email/:token`, so a stale token would interrupt an email confirmation. Wants a deliberate answer (a toast plus a soft redirect only from `/app/**`, most likely), not a one-liner. | 9/10 | No | ✔ **Resolved 2026-08-24** (`fix/session-ends-out-loud`) — and the deliberate answer is the one this row guessed at, with the scope tightened by reading the routes rather than assuming. `AuthFacade.endSession()` is the involuntary twin of `logout()`: it clears **everything** (which the interceptor's own path did not — it cleared tokens but left `_user` and this tab's document passwords, and L7 is the whole reason the latter must go), says so in an **info toast with the error dwell**, and redirects **only** from the routes `accountGuard` actually gates — to **login** with `next`, because somebody whose session just died has an account. `/app/doc/:id` is deliberately not in that set: it renders for either principal, so a dead token is no reason to interrupt a document being read, and every public route stays put because moving them would be the login wall §10 forbids. The prefix list lives next to the guard and `account.guard.spec.ts` parses `app.routes.ts` to stop the two disagreeing. Idempotent by arithmetic rather than by a flag — the first 401 ends the session and the rest find the tokens already gone. Evidence in `docs/reviews/evidence/session-ended/`. |
 | 2026-08-24 | **The macOS virtiofs `* 2.*` duplicates break the gate with an error that names the wrong problem, and nothing guards against it.** Measured here: `frontend/src/app/shared/fit-width 2.ts` appeared during a run and the prerender leg failed with **`Prerendered 0 static routes.`** followed by `TS6053: File '/app/src/app/shared/fit-width 2.ngtypecheck.ts' not found` — an error about a file nobody wrote, in a build that had just succeeded. `.gitignore` has ignored the shape since `1e1919a`, which keeps them **out of git and therefore out of `git status`**, so the only signal is the compiler falling over. It has now been recorded three times (2026-08-02 tracked orphan; the 2026-08-23 `tsconfig.app 2.json` swept into a PR; this). Cheap guard, in the spirit of the stale-worker and health preflights `test.sh` already has: fail fast at the top of the script when `find frontend/src e2e backend -name '* [0-9].*'` returns anything, printing the list and the `-delete` command — one clear line instead of a TS6053 about a phantom. Not done here because no row asked for it and this branch is a one-declaration fix; it is a five-line change whenever somebody wants it. | 0/10 | No | ⬜ |
 | 2026-08-24 | **The e2e suite cannot see a classic scrollbar, so a whole class of fit defect is invisible to it.** Playwright's chromium gives the workspace page pane an **overlay** vertical scrollbar — measured on this stack: `clientWidth` 390 while `scrollHeight` 532 exceeds `clientHeight` 525 — so the pane's content box never narrows when it scrolls. Real desktop Chrome at a window under 768 px draws a **classic** one, which is exactly the condition that made the page fit settle 15 px too wide on production (see the session log for 2026-08-24, last entry). The guest sweep written for that defect **passed on the unfixed build**, and the fix is held by an assertion on the CSS declaration instead of on the geometry. Anything else that depends on scrollbar width is equally unobservable here. Options, none free: a Playwright project launched with `--force-renderer-accessibility`-style flags does not change it; `Page.addStyleTag` forcing `::-webkit-scrollbar { width: 15px }` on the scroller would restore the geometry at the cost of testing a stylesheet the product does not ship; or accept it and keep asserting declarations, saying so each time. Worth deciding once rather than per-defect. | 10 | No | ⬜ |
 | 2026-08-24 | **About forty-five controls under the 44 px floor on every phone surface the workspace change did not touch — the signing ceremony among them.** The phone workspace raised everything inside a drawer, on the bottom bar and on the workspace bar; nothing else was in scope and nothing else moved. Inventoried by a read-only sweep against §6 ("≥44×44 px for all controls; compact 36 px only inside dense *desktop* toolbars"): **ceremony** (`/s/:token`) — the phone-first, legally sensitive surface — has page prev/next at `btn-sm !min-h-8` = **32 px**, and `goto-…` and `change-…` as `.linklike text-[11px]` ≈ **13–15 px**, where "Change" is the only way to redo a signature you got wrong; **signature pad**, rendered inside that ceremony, has its Draw/Type/Upload `.seg` and its `sig-use` commit at 36; **app shell** nav links and `logout` are bare 14 px text ≈ 17–20 px on every `/app` page; **dashboard** has 12 more beyond the three this change fixed (folder rows, `repair-btn`, the `.linklike` pair); **settings** has seven `.btn-sm` on a form page plus a 36 px `.seg`; **sign request builder** has 16, including `arm-…` and `field-type-…` at ≈23 px next to a sibling that is correctly `h-11 w-11`; **request detail**'s only back affordance is a bare `<a class="text-sm">`. The ceremony is the one to do first: it is the surface a stranger reaches from an email on a phone, §4 already calls it "phone-first", and a 13 px "Change" link is the control they need when they have just signed in the wrong place. | 10 | No | ⬜ |
@@ -1237,6 +1237,69 @@ Handoff programme (the nine CLI prompts from the 2026-08-21 status review) is tr
 | 2026-08-20 | **The workspace on a phone is stacked, not designed.** Below `md` the rails now become full-width sections above and below the page (§3 workspace panes) — which makes every control reachable and stops the page scrolling sideways, but it is a rescue, not a phone layout. A designed treatment would probably make the rails drawers with a persistent bottom bar. Worth a designer's eye before any mobile push. | 10 | No | *(2026-08-21: the row above the page now wraps rather than overflowing, so the page no longer scrolls sideways and the app is no longer drawn at ~64 % — but that is a repair, not a design. Row stayed open.)* ✔ **Resolved 2026-08-24** (`feat/mobile-workspace`, prompt 6) — designed, not rescued: the rails are **bottom sheets** over the page (one at a time, grip + title + 44 px close, Escape / scrim, CDK focus trap, body scroll locked, `translateY` only so reduced motion loses nothing), the nine modes are a **persistent bottom bar** carrying an opener for every rail the mode has and, docked at its end, the mode's own Undo/Redo and its primary, and the **page is first** — fit-to-width at 390 with the pane owning the full width. The workspace bar shrinks to back · title · meta · ⋯ · toggle, its six-button cluster moving into a **More** sheet as *one* set of elements through one `<ng-template>`, so there is still exactly one `[data-test=download]` in the DOM at any width. Design contract amended **first** at §2, §3 (a new **Phone workspace** component), §3 headers, §4, §10 and the §11 log, whose "pending, not yet sanctioned" list this emptied. **Desktop is unchanged and it was measured**: the same geometry script over all nine modes, run with `main`'s `frontend/src` checked out and then with the branch's — **0 differences at 768 px, 0 at 1280 px**. Four things the browser found that no test had: the column outgrowing the screen to **1348 px against 844** in the three 900 px-render modes (the sideways assertion stayed green because a scrollbar narrows both of its sides); the **More sheet shipping with no head**; touch targets sized for a desk, the worst of them the comment row's D8 actions at **16 px**; and a focus ring clipped by the sheet's own scroller. See the session log **"2026-08-24 (later) — A designed phone workspace: drawers and a bottom bar"** and `docs/reviews/evidence/mobile-workspace/`. |
 
 ## Session log
+
+**2026-08-24 (last, part two) — A session that ends now says so**
+
+Branch `fix/session-ends-out-loud`, closing the row opened by the fix before it: stopping
+a session from ending for the *wrong reason* left it still ending in *silence*.
+
+**What silence meant.** `clearSession()` navigates nowhere. So the credential vanished, the
+page carried on rendering as though nothing had happened, and the person found out at the
+next guarded route — where `accountGuard` sends a stranger to **register**. They were not a
+stranger; they had an account, and the page that greeted them explained what an account is
+for. Two paths reached it: a genuine 401 on `me()`, and — worse — a 401 with an access
+token and no refresh token, which fell through the interceptor with **no clear at all**, so
+every subsequent request failed against a credential the client could not renew and nobody
+was told anything.
+
+**`AuthFacade.endSession()`**, the involuntary twin of `logout()`:
+
+- **Clears everything.** The interceptor's own refresh-failure path called `tokens.clear()`
+  directly, which left the `_user` signal set and this tab's document passwords in memory —
+  and L7 is the entire reason the latter must not survive a sign-out. One ending, one
+  method.
+- **Says so.** An info toast with the error dwell — §3's own rule is that a toast is for
+  *"something that just happened and can be missed"*, which is exactly this, and info
+  rather than error because nothing is broken and nobody did anything wrong.
+- **Moves them only where the page has actually stopped working.** Only the routes
+  `accountGuard` gates, and to **login** carrying `next`. Everything else stays: public
+  routes work without an account and `/app/doc/:id` renders for either principal, so a
+  redirect there would be the login wall §10 forbids — and it would interrupt somebody
+  reading a document or confirming an email address.
+- **Idempotent by arithmetic.** Several requests are usually in flight when a credential
+  dies; the first ends the session and the rest find the tokens gone. No flag to keep in
+  step, no stack of toasts.
+
+**The scope is read, not assumed.** `ACCOUNT_GATED_PREFIXES` lives beside the guard, and
+`account.guard.spec.ts` parses `app.routes.ts` and fails if the list and the
+`canActivate: [accountGuard]` routes ever disagree — a second reader of a list defined
+somewhere else is exactly how a list goes stale.
+
+**One thing the browser corrected.** The first implementation read `Router.url`, and the
+redirect silently never happened: `loadUser()` runs from the `App` and `AppShell`
+constructors, i.e. *during* the first navigation, so the router still reports the page
+being left — on a cold load of `/app/dashboard` that is `/`. The e2e caught it as
+"expected /auth/login, got /app/dashboard". It reads `document.location` now, which is
+already correct at that point and is the honest answer to "where is this person".
+
+**Gate**, green end to end: `ruff` + `mypy` clean · pytest **1159 passed, 6 skipped**,
+coverage apps **91.53 %** / pdf_engine **91.87 %** · `ng lint` clean · `ng test` **63 files
+/ 547 tests** (from 542) · build + `verify:prerender` clean, **43** prerendered routes ·
+Playwright **86 passed, 1 skipped of 87**.
+
+*(The first gate caught a mistake of mine, and the right one: `endSession()` was switched
+from `Router.url` to `document.location` while chasing the e2e, and the unit spec was never
+re-run — it still stubbed the router, so it passed against a seam the code no longer read.
+That is the same class of error the implementation had just been fixed for, one level up.
+`Router.url` in the stub is now `/not-read-any-more`, so a regression back to it fails here
+instead of passing quietly.)*
+
+**Verified in both themes** (`docs/reviews/evidence/session-ended/`): the toast is
+`--color-ink` on the raised surface with an `--color-ink-faint` spine and `role="status"`,
+`/merge-pdf` keeps the person where they were, and `/app/dashboard` becomes
+`/auth/login?next=%2Fapp%2Fdashboard` under a **"Welcome back"** heading rather than a
+pitch for an account they already have.
+
 
 **2026-08-24 (last, and it was a product bug) — A server blip logged you out**
 

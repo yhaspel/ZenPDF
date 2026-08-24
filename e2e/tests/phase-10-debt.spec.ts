@@ -189,3 +189,46 @@ test('phase 10: a server blip does not log you out', async ({ page }) => {
   await expect(page).toHaveURL(/\/app\/dashboard/);
   await expect(page.locator('[data-test=file-input]')).toHaveCount(1);
 });
+
+/**
+ * A credential the server refuses, with no refresh token to spend on it — the
+ * state that really does end a session.
+ */
+async function killTheSession(page: import('@playwright/test').Page) {
+  await page.route('**/api/users/me/', (route) =>
+    route.fulfill({ status: 401, contentType: 'application/json', body: '{}' }));
+  await page.evaluate(() => localStorage.removeItem('zen_refresh'));
+}
+
+test('phase 10: a session ending on a public page says so and leaves you there',
+  async ({ page }) => {
+  test.setTimeout(180_000);
+  // Clearing a refused credential used to be silent — no toast, no navigation —
+  // so the page kept rendering signed-in and the person met `/auth/register` at
+  // the next guarded route, as a stranger. Here it is said out loud, and §10's
+  // anonymous-first law holds: a public route must never become a login wall.
+  await registerAndLogin(page, 'p10endpub');
+  await killTheSession(page);
+
+  await page.goto('/merge-pdf');
+  await expect(page.locator('[data-test=toast-info]')).toContainText('session ended');
+  await expect(page).toHaveURL(/\/merge-pdf/);
+  expect(
+    await page.evaluate(() => localStorage.getItem('zen_access')),
+    'a refused credential must still be cleared',
+  ).toBeNull();
+});
+
+test('phase 10: a session ending on a gated page sends you to log in, not register',
+  async ({ page }) => {
+  test.setTimeout(180_000);
+  // The other half. `accountGuard` sends a *stranger* to register, which is
+  // right; somebody whose session just died has an account, so they go to
+  // login — carrying `next`, to land back where they were.
+  await registerAndLogin(page, 'p10endapp');
+  await killTheSession(page);
+
+  await page.goto('/app/dashboard');
+  await expect(page).toHaveURL(/\/auth\/login\?next=%2Fapp%2Fdashboard/);
+  await expect(page.locator('[data-test=toast-info]')).toContainText('session ended');
+});

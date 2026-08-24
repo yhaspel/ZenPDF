@@ -1,13 +1,19 @@
 import { HttpErrorResponse } from '@angular/common/http';
+import { DOCUMENT } from '@angular/common';
 import { Injectable, computed, inject, signal } from '@angular/core';
 import { Router } from '@angular/router';
 import { Observable, map, switchMap, tap, throwError } from 'rxjs';
 
 import { ClaimSummary, User } from '../core/models/models';
+import { isAccountGated } from '../core/guards/account.guard';
 import { AuthService, RegisterPayload } from '../core/services/auth.service';
 import { DocumentPasswords } from '../core/services/document-passwords';
 import { TokenService } from '../core/services/token.service';
+import { ToastService } from '../shared/toast.service';
 import { GuestFacade } from './guest.facade';
+
+/** A sentence to read and act on, so it gets the error dwell rather than a receipt's. */
+const SESSION_ENDED_MS = 9000;
 
 @Injectable({ providedIn: 'root' })
 export class AuthFacade {
@@ -16,6 +22,8 @@ export class AuthFacade {
   private guests = inject(GuestFacade);
   private passwords = inject(DocumentPasswords);
   private router = inject(Router);
+  private toasts = inject(ToastService);
+  private doc = inject(DOCUMENT);
 
   private _user = signal<User | null>(null);
   /** What the last signup/login claimed — the payoff moment must be visible. */
@@ -49,8 +57,10 @@ export class AuthFacade {
    * **401 is the only status that means "this credential is no good".** By the
    * time one reaches here the interceptor has already tried to refresh and
    * failed, or there was no refresh token to try — either way the access token
-   * is unrecoverable and the session really is over. Every other status leaves
-   * it alone: the tokens are still valid, and the next request can succeed.
+   * is unrecoverable and the session really is over — and `endSession()` then
+   * says so out loud, which it did not until 2026-08-24. Every other status
+   * leaves the session alone: the tokens are still valid and the next request
+   * can succeed.
    */
   loadUser(): void {
     if (this.tokens.isAuthenticated && !this._user()) {
@@ -58,7 +68,7 @@ export class AuthFacade {
         next: (u) => this._user.set(u),
         error: (err: unknown) => {
           if (err instanceof HttpErrorResponse && err.status === 401) {
-            this.clearSession();
+            this.endSession();
           }
         },
       });
@@ -105,6 +115,54 @@ export class AuthFacade {
 
   updateProfile(body: Partial<User>): Observable<User> {
     return this.authSvc.updateMe(body).pipe(tap((u) => this._user.set(u)));
+  }
+
+  /**
+   * A session that ended without anybody asking for it.
+   *
+   * The involuntary twin of `logout()`, and it exists because ending one
+   * silently is its own defect: `clearSession()` navigates nowhere, so the page
+   * carried on rendering as though nothing had happened and the person found
+   * out at the next guarded route — bounced to `/auth/register`, wearing the
+   * chrome of somebody who has never had an account. They had one. Two paths
+   * reached that state (a 401 on `me()`, and a 401 with no refresh token to
+   * spend) and neither said a word.
+   *
+   * **Says so, always.** A toast, because §3 is explicit about which pattern
+   * this is: *"a toast is for something that just happened and can be missed"* —
+   * a notice is for a condition somebody arrives at later. Info tone, not error:
+   * nothing is broken and nobody did anything wrong, and §1 keeps the colour off
+   * the words either way. It is given the error dwell time regardless, because
+   * this is a sentence to read and act on rather than a receipt.
+   *
+   * **Moves them only when it must.** Sending everybody to a login form would
+   * be the login wall §10 forbids — every public route works without an account,
+   * and `/app/doc/:id` renders for either principal, so a stale token is no
+   * reason to interrupt a document somebody is reading. Only the routes
+   * `accountGuard` actually gates have become unusable, and only those redirect
+   * — to **login**, not register, carrying `next` so they land back where they
+   * were.
+   *
+   * **Idempotent by arithmetic.** Several requests are usually in flight when a
+   * credential dies and each reports its own 401; the first ends the session and
+   * the rest find the tokens already gone. No stack of toasts, no second
+   * navigation, no flag to keep in step.
+   */
+  endSession(): void {
+    if (!this.tokens.isAuthenticated) return;
+    // The *browser's* URL, not `Router.url`. `loadUser()` runs from the `App`
+    // and `AppShell` constructors, which is during the first navigation — the
+    // router has not committed the new URL yet, so `Router.url` still reads the
+    // page being left. On a cold load of `/app/dashboard` that is `/`, and the
+    // redirect silently never happened. `location` is already correct by then,
+    // and it is also the honest answer to "where is this person".
+    const loc = this.doc.location;
+    const from = loc ? `${loc.pathname}${loc.search}` : '';
+    this.clearSession();
+    this.toasts.info('Your session ended. Please sign in again.', SESSION_ENDED_MS);
+    if (isAccountGated(from)) {
+      this.router.navigate(['/auth/login'], { queryParams: { next: from } });
+    }
   }
 
   logout(): void {
