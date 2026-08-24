@@ -16,6 +16,7 @@ import { Router } from '@angular/router';
 
 import { EsignFacade } from '../../abstraction/esign.facade';
 import { GuestFacade } from '../../abstraction/guest.facade';
+import { WorkspaceShellFacade } from '../../abstraction/workspace-shell.facade';
 import { Job, SavedSignature } from '../../core/models/models';
 import { EsignService } from '../../core/services/esign.service';
 import {
@@ -29,6 +30,8 @@ import { resolveShortcut, shortcutTitle } from '../../shared/shortcuts';
 import { ZenModal } from '../../shared/modal.directive';
 import { SignaturePad } from '../../shared/signature-pad';
 import { ToastService } from '../../shared/toast.service';
+import { WsDrawerHead } from '../../shared/ws-drawer-head';
+import { WsDrawer } from '../../shared/ws-drawer';
 
 /**
  * "Sign myself" (phase-08 §8A).
@@ -41,8 +44,12 @@ import { ToastService } from '../../shared/toast.service';
 @Component({
   selector: 'app-sign',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [FormsModule, PageOverlay, SignaturePad, ZenModal],
+  imports: [FormsModule, PageOverlay, SignaturePad, ZenModal, WsDrawer, WsDrawerHead],
   templateUrl: './sign.html',
+  // Below `md` a mode's host has to be a growing flex item, or the column sizes
+  // to its content and the bottom bar floats above the fold — `styles.scss`
+  // §17c says it once, with the measurement. Inert at ≥ `md` (§10).
+  host: { class: 'ws-pane-host' },
 })
 export class Sign {
   readonly docId = input.required<string>();
@@ -58,6 +65,7 @@ export class Sign {
   private esignSvc = inject(EsignService);
   private router = inject(Router);
   private toast = inject(ToastService);
+  private shell = inject(WorkspaceShellFacade);
   private destroyRef = inject(DestroyRef);
 
   protected page = signal(0);
@@ -97,6 +105,28 @@ export class Sign {
   );
 
   constructor() {
+    // What the phone's bottom bar draws on this mode's behalf (design contract
+    // §3 Phone workspace). Published rather than duplicated: below `md` the
+    // page bar's own pair is `.ws-hoisted`, so exactly one of each is on screen.
+    effect(() => this.shell.setPaneActions({
+      undo: {
+        label: 'Undo the last placement change',
+        disabled: !this.esign.canUndo(),
+        run: () => this.esign.undoPlacements(),
+      },
+      redo: {
+        label: 'Redo',
+        disabled: !this.esign.canRedo(),
+        run: () => this.esign.redoPlacements(),
+      },
+      primary: {
+        label: 'Apply',
+        disabled: this.esign.busy() || !this.esign.placements().length,
+        run: () => this.apply(),
+      },
+    }));
+    this.destroyRef.onDestroy(() => this.shell.reset());
+
     effect(() => {
       this.docId();
       this.esign.reset();

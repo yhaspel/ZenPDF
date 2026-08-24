@@ -12,11 +12,14 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
 
 import { CompareFacade, ChangeRow } from '../../abstraction/compare.facade';
+import { WorkspaceShellFacade } from '../../abstraction/workspace-shell.facade';
 import { DocumentModel } from '../../core/models/models';
 import { DocumentsService } from '../../core/services/documents.service';
 import { OverlayItem } from '../../shared/page-overlay/overlay-model';
 import { PageOverlay } from '../../shared/page-overlay/page-overlay';
 import { ToastService } from '../../shared/toast.service';
+import { WsDrawerHead } from '../../shared/ws-drawer-head';
+import { WsDrawer } from '../../shared/ws-drawer';
 
 /**
  * Compare mode (phase-06).
@@ -30,8 +33,12 @@ import { ToastService } from '../../shared/toast.service';
 @Component({
   selector: 'app-compare',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [FormsModule, PageOverlay],
+  imports: [FormsModule, PageOverlay, WsDrawer, WsDrawerHead],
   templateUrl: './compare.html',
+  // Below `md` a mode's host has to be a growing flex item, or the column sizes
+  // to its content and the bottom bar floats above the fold — `styles.scss`
+  // §17c says it once, with the measurement. Inert at ≥ `md` (§10).
+  host: { class: 'ws-pane-host' },
 })
 export class Compare {
   readonly docId = input.required<string>();
@@ -40,6 +47,7 @@ export class Compare {
   protected compare = inject(CompareFacade);
   private docsSvc = inject(DocumentsService);
   private toast = inject(ToastService);
+  private shell = inject(WorkspaceShellFacade);
   private destroyRef = inject(DestroyRef);
 
   protected candidates = signal<DocumentModel[]>([]);
@@ -68,6 +76,18 @@ export class Compare {
   });
 
   constructor() {
+    // What the phone's bottom bar draws on this mode's behalf (design contract
+    // §3 Phone workspace). Published rather than duplicated: below `md` the
+    // page bar's own pair is `.ws-hoisted`, so exactly one of each is on screen.
+    effect(() => this.shell.setPaneActions({
+      primary: {
+        label: 'Compare',
+        disabled: this.compare.running(),
+        run: () => this.run(),
+      },
+    }));
+    this.destroyRef.onDestroy(() => this.shell.reset());
+
     effect(() => {
       // Candidates are the caller's *other* documents — compare is by
       // definition a two-document operation, and offering this one is noise.

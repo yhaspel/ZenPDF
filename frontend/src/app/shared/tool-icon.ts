@@ -5,6 +5,13 @@ import { ChangeDetectionStrategy, Component, input } from '@angular/core';
  * area, stroke 1.5, round caps/joins, no fills — except the redact bar, which
  * fills with currentColor by specified exception. Icons inherit currentColor.
  *
+ * Plus one glyph that is not a tool: `view`, the workspace's reading mode,
+ * which the phone bottom bar needs (§3 Phone workspace) and no tool supplies.
+ * Eight of the nine modes borrow the icon of the tool they are — Organize is
+ * `organize-pdf`, Annotate is `annotate-pdf` — and reading a page is the one
+ * with nowhere to borrow from. Drawn on the same grid: the default document
+ * with its lines of text.
+ *
  * Drawn inline rather than sprited: they prerender with the page, they need no
  * fetch, and the sanitizer never gets a say.
  */
@@ -49,6 +56,11 @@ import { ChangeDetectionStrategy, Component, input } from '@angular/core';
         @case ('add-page-numbers') {
           <rect x="6.5" y="3.5" width="11" height="13.5" rx="1" />
           <path d="M9.5 20.5h.01M12 20.5h.01M14.5 20.5h.01" />
+        }
+        @case ('view') {
+          <path d="M6.5 3.5h7l4 4v13h-11z" />
+          <path d="M13.5 3.5v4h4" />
+          <path d="M9 9.5h2.5M9 12.5h6M9 15.5h6" />
         }
         @case ('edit-pdf') {
           <path d="m5 19 .9-3.6L16.3 5a1.8 1.8 0 0 1 2.6 0l.5.5a1.8 1.8 0 0 1 0 2.6L9 18.5 5 19Z" />

@@ -1,3 +1,5 @@
+**Executed 2026-08-24 — the phone workspace landed as specified: drawers, a bottom bar and the page first, with the design contract amended before the code (§2, §3 Phone workspace, §3 headers, §4, §10, §11). Two of its suggestions were refused with reasons written into §3 — no mode opens its drawer by default, and the Annotate palette stays a drawer rather than a compact bottom row. Its §5 measurement method changed: Chrome on macOS will not size a window below ~500 px, so the widths were reached with a viewport override at `isMobile: false` — the same instrument Playwright uses, and not the device emulation the prompt warned about. See PROGRESS "2026-08-24 (later) — A designed phone workspace". Historical.**
+
 # Handoff — A designed phone workspace: drawers and a bottom bar instead of a stack (2026-08-21, revision 2 after Phase 12)
 
 **For:** Claude CLI on the Mac in `~/Documents/Claude/Projects/ZenPDF`.

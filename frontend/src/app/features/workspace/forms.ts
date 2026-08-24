@@ -4,6 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { FormDataType, NgxExtendedPdfViewerModule } from 'ngx-extended-pdf-viewer';
 
 import { FormsFacade } from '../../abstraction/forms.facade';
+import { WorkspaceShellFacade } from '../../abstraction/workspace-shell.facade';
 import {
   FormField,
   FormFieldSpec,
@@ -23,6 +24,8 @@ import { PageOverlay } from '../../shared/page-overlay/page-overlay';
 import { ShortcutId, resolveShortcut, shortcutTitle } from '../../shared/shortcuts';
 import { saveBlob } from '../../shared/save-blob';
 import { ToastService } from '../../shared/toast.service';
+import { WsDrawerHead } from '../../shared/ws-drawer-head';
+import { WsDrawer } from '../../shared/ws-drawer';
 
 export type FormsTab = 'fill' | 'build';
 
@@ -101,8 +104,12 @@ export function radioLayout(rect: Rect, count: number): Rect[] {
 @Component({
   selector: 'app-forms',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [FormsModule, NgxExtendedPdfViewerModule, PageOverlay],
+  imports: [FormsModule, NgxExtendedPdfViewerModule, PageOverlay, WsDrawer, WsDrawerHead],
   templateUrl: './forms.html',
+  // Below `md` a mode's host has to be a growing flex item, or the column sizes
+  // to its content and the bottom bar floats above the fold — `styles.scss`
+  // §17c says it once, with the measurement. Inert at ≥ `md` (§10).
+  host: { class: 'ws-pane-host' },
 })
 export class Forms {
   readonly docId = input.required<string>();
@@ -119,6 +126,7 @@ export class Forms {
   private toast = inject(ToastService);
   private confirm = inject(ConfirmService);
   private clipboard = inject(EditorClipboard);
+  private shell = inject(WorkspaceShellFacade);
   private destroyRef = inject(DestroyRef);
   protected readonly key = shortcutTitle;
 
@@ -215,6 +223,35 @@ export class Forms {
   }
 
   constructor() {
+    // What the phone's bottom bar draws on this mode's behalf (design contract
+    // §3 Phone workspace). Published rather than duplicated: below `md` the
+    // page bar's own pair is `.ws-hoisted`, so exactly one of each is on screen.
+    effect(() => {
+      const build = this.tab() === 'build';
+      this.shell.setPaneActions({
+        ...(build ? {
+          undo: {
+            label: 'Undo the last field change',
+            disabled: !this.forms.canUndo(),
+            run: () => this.forms.undo(),
+          },
+          redo: { label: 'Redo', disabled: !this.forms.canRedo(), run: () => this.forms.redo() },
+          primary: {
+            label: 'Save fields',
+            disabled: this.busy() || !this.forms.builderDirty(),
+            run: () => this.saveFields(),
+          },
+        } : {
+          primary: {
+            label: 'Save',
+            disabled: this.busy() || !this.forms.dirty(),
+            run: () => this.save(),
+          },
+        }),
+      });
+    });
+    this.destroyRef.onDestroy(() => this.shell.reset());
+
     let lastSeq: number | null | undefined;
     effect(() => {
       const seq = this.currentSeq();

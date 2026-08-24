@@ -1,5 +1,5 @@
 import { CdkDrag, CdkDragDrop, CdkDropList, moveItemInArray } from '@angular/cdk/drag-drop';
-import { isPlatformBrowser } from '@angular/common';
+import { NgTemplateOutlet, isPlatformBrowser } from '@angular/common';
 import { ChangeDetectionStrategy, Component, DestroyRef, PLATFORM_ID, computed, effect, inject, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
@@ -14,6 +14,7 @@ import { JobsFacade } from '../../abstraction/jobs.facade';
 import { PagesFacade } from '../../abstraction/pages.facade';
 import { SecurityFacade } from '../../abstraction/security.facade';
 import { ViewerFacade } from '../../abstraction/viewer.facade';
+import { WorkspaceShellFacade } from '../../abstraction/workspace-shell.facade';
 import { Job, SearchHit } from '../../core/models/models';
 import { DocumentsService } from '../../core/services/documents.service';
 import { GuestTokenService } from '../../core/services/guest-token.service';
@@ -30,7 +31,10 @@ import { ThemeToggle } from '../../shared/theme-toggle';
 import { saveBlob } from '../../shared/save-blob';
 import { Spinner } from '../../shared/spinner';
 import { ToastService } from '../../shared/toast.service';
+import { WsDrawerHead } from '../../shared/ws-drawer-head';
+import { WsDrawer } from '../../shared/ws-drawer';
 import { Annotate, AnnotateTool } from './annotate';
+import { WorkspaceMode, WsBottomBar } from './ws-bottom-bar';
 import { Compare } from './compare';
 import { Convert } from './convert';
 import { Edit } from './edit';
@@ -46,9 +50,9 @@ type Dialog = null | 'split' | 'scale' | 'nup' | 'compress' | 'insert';
   selector: 'app-workspace',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
-    FormsModule, RouterLink, NgxExtendedPdfViewerModule, CdkDropList, CdkDrag, PdfThumbnail,
-    Annotate, Edit, Forms, Convert, Compare, Protect, Sign, ZenModal, Spinner,
-    Brand, GuestBanner, ThemeToggle, ShortcutsHelp,
+    FormsModule, RouterLink, NgTemplateOutlet, NgxExtendedPdfViewerModule, CdkDropList, CdkDrag,
+    PdfThumbnail, Annotate, Edit, Forms, Convert, Compare, Protect, Sign, ZenModal, Spinner,
+    Brand, GuestBanner, ThemeToggle, ShortcutsHelp, WsDrawer, WsDrawerHead, WsBottomBar,
   ],
   templateUrl: './workspace.html',
   // The host is a flex item of the shell's `main`, and it was not saying so:
@@ -77,11 +81,10 @@ export class Workspace {
   protected auth = inject(AuthFacade);
   private destroyRef = inject(DestroyRef);
 
+  protected shell = inject(WorkspaceShellFacade);
+
   protected leftTab = signal<'thumbs' | 'outline' | 'history'>('thumbs');
-  protected mode = signal<
-    'view' | 'organize' | 'annotate' | 'edit' | 'forms' | 'convert' | 'compare'
-    | 'protect' | 'sign'
-  >('view');
+  protected mode = signal<WorkspaceMode>('view');
   protected annotateTool = signal<AnnotateTool>('select');
   protected protectTab = signal<ProtectTab>('protect');
   /** Set when Annotate was entered *from* the Organize toolbar's Crop button. */
@@ -258,6 +261,15 @@ export class Workspace {
       // them again from a dropdown — the page would stop being the tool.
       const other = params.get('other');
       if (mode === 'compare' && other) this.compares.setOther(other);
+    });
+    // A drawer belongs to the mode that opened it. Leaving the mode with one
+    // open would otherwise leave a sheet — and its scrim — over a pane that no
+    // longer has the panel inside it. The panes' own drawers unregister on
+    // destroy; this covers the mode changes that keep the same rail, and the
+    // More sheet, which outlives every mode.
+    effect(() => {
+      this.mode();
+      this.shell.closeDrawer();
     });
     // reset organize order whenever the version changes
     effect(() => {

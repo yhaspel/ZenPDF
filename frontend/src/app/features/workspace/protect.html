@@ -1,6 +1,7 @@
 <div class="ws-panes" data-test="protect-mode">
   <!-- Left: panel -->
-  <aside class="ws-rail ws-rail-start w-80 overflow-y-auto text-sm">
+  <aside zenWsDrawer="start" zenWsDrawerLabel="Protection" class="ws-rail ws-rail-start w-80 overflow-y-auto text-sm">
+    <app-ws-drawer-head />
     <div class="seg border-border gap-0 border-b px-1 py-1">
       <button class="flex-1 justify-center" [class.seg-active]="tab() === 'protect'"
               [attr.aria-pressed]="tab() === 'protect'"
@@ -340,13 +341,18 @@
       </span>
       <button (click)="nextPage()" [disabled]="page() >= pageCount() - 1"
               class="btn btn-ghost btn-sm" data-test="protect-next">›</button>
-      <span class="bg-border mx-2 h-4 w-px"></span>
-      <button (click)="security.undoAreas()" [disabled]="!security.canUndo()"
-              class="btn btn-ghost btn-sm" [title]="'Undo the last area change (' + key('undo') + ')'"
-              aria-keyshortcuts="Control+Z Meta+Z" data-test="protect-undo">Undo</button>
-      <button (click)="security.redoAreas()" [disabled]="!security.canRedo()"
-              class="btn btn-ghost btn-sm" [title]="'Redo (' + key('redo') + ')'"
-              aria-keyshortcuts="Control+Shift+Z Meta+Shift+Z" data-test="protect-redo">Redo</button>
+      <!-- `ws-hoisted`: the bottom bar draws this pair below `md`, so the page
+           bar does not draw it twice (§3 Phone workspace). `contents` keeps the
+           desktop row byte-identical — the span generates no box. -->
+      <span class="contents ws-hoisted">
+        <span class="bg-border mx-2 h-4 w-px"></span>
+        <button (click)="security.undoAreas()" [disabled]="!security.canUndo()"
+                class="btn btn-ghost btn-sm" [title]="'Undo the last area change (' + key('undo') + ')'"
+                aria-keyshortcuts="Control+Z Meta+Z" data-test="protect-undo">Undo</button>
+        <button (click)="security.redoAreas()" [disabled]="!security.canRedo()"
+                class="btn btn-ghost btn-sm" [title]="'Redo (' + key('redo') + ')'"
+                aria-keyshortcuts="Control+Shift+Z Meta+Shift+Z" data-test="protect-redo">Redo</button>
+      </span>
       @if (security.busy()) {
         <span class="text-accent text-xs" data-test="protect-busy">working…</span>
       }

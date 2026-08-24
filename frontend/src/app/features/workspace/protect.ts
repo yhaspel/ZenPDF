@@ -14,6 +14,7 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
 
 import { SecurityFacade } from '../../abstraction/security.facade';
+import { WorkspaceShellFacade } from '../../abstraction/workspace-shell.facade';
 import { Job, PdfPermissions, RedactPattern } from '../../core/models/models';
 import { ConfirmService } from '../../shared/confirm.service';
 import {
@@ -25,6 +26,8 @@ import {
 import { PageOverlay } from '../../shared/page-overlay/page-overlay';
 import { resolveShortcut, shortcutTitle } from '../../shared/shortcuts';
 import { ToastService } from '../../shared/toast.service';
+import { WsDrawerHead } from '../../shared/ws-drawer-head';
+import { WsDrawer } from '../../shared/ws-drawer';
 
 export type ProtectTab = 'protect' | 'redact' | 'sanitize';
 
@@ -63,8 +66,12 @@ const SANITIZE_ITEMS: { key: string; label: string; note: string }[] = [
 @Component({
   selector: 'app-protect',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [FormsModule, PageOverlay],
+  imports: [FormsModule, PageOverlay, WsDrawer, WsDrawerHead],
   templateUrl: './protect.html',
+  // Below `md` a mode's host has to be a growing flex item, or the column sizes
+  // to its content and the bottom bar floats above the fold — `styles.scss`
+  // §17c says it once, with the measurement. Inert at ≥ `md` (§10).
+  host: { class: 'ws-pane-host' },
 })
 export class Protect {
   readonly docId = input.required<string>();
@@ -82,6 +89,7 @@ export class Protect {
   protected security = inject(SecurityFacade);
   private toast = inject(ToastService);
   private confirm = inject(ConfirmService);
+  private shell = inject(WorkspaceShellFacade);
   private destroyRef = inject(DestroyRef);
 
   protected readonly presets = REDACT_PRESETS;
@@ -92,6 +100,32 @@ export class Protect {
   protected zoom = signal(680);
 
   constructor() {
+    // What the phone's bottom bar draws on this mode's behalf (design contract
+    // §3 Phone workspace). Published rather than duplicated: below `md` the
+    // page bar's own pair is `.ws-hoisted`, so exactly one of each is on screen.
+    effect(() => this.shell.setPaneActions({
+      undo: {
+        label: 'Undo the last area change',
+        disabled: !this.security.canUndo(),
+        run: () => this.security.undoAreas(),
+      },
+      redo: {
+        label: 'Redo',
+        disabled: !this.security.canRedo(),
+        run: () => this.security.redoAreas(),
+      },
+      ...(this.tab() === 'protect'
+        ? {
+            primary: {
+              label: this.isEncrypted() ? 'Re-protect' : 'Protect',
+              disabled: this.security.busy(),
+              run: () => this.applyProtection(),
+            },
+          }
+        : {}),
+    }));
+    this.destroyRef.onDestroy(() => this.shell.reset());
+
     effect(() => this.tab.set(this.initialTab()));
     // Once the session knows the password — from the prompt, or because the
     // user chose it here — the panel stops asking for it again. It is cleared

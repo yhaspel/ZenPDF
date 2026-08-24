@@ -17,6 +17,8 @@ import { ExportFormat, Job } from '../../core/models/models';
 import { ConfirmService } from '../../shared/confirm.service';
 import { saveBlob } from '../../shared/save-blob';
 import { ToastService } from '../../shared/toast.service';
+import { WsDrawerHead } from '../../shared/ws-drawer-head';
+import { WsDrawer } from '../../shared/ws-drawer';
 
 /** The packs the worker image ships (phase-06). */
 export const OCR_LANGUAGES: { code: string; label: string }[] = [
@@ -37,8 +39,12 @@ export const OCR_LANGUAGES: { code: string; label: string }[] = [
 @Component({
   selector: 'app-convert',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [FormsModule],
+  imports: [FormsModule, WsDrawer, WsDrawerHead],
   templateUrl: './convert.html',
+  // Below `md` a mode's host has to be a growing flex item, or the column sizes
+  // to its content and the bottom bar floats above the fold — `styles.scss`
+  // §17c says it once, with the measurement. Inert at ≥ `md` (§10).
+  host: { class: 'ws-pane-host' },
 })
 export class Convert {
   readonly docId = input.required<string>();
