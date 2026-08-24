@@ -147,7 +147,9 @@ export class RequestBuilder {
       error: (err) => {
         this.toast.error(apiError(err).message
                          || 'That document cannot be sent for signature.');
-        this.router.navigate(['/app/doc', docId]);
+        // Bounced back to the document because it cannot be sent; the toast
+        // above carries the reason and is what the person acts on.
+        void this.router.navigate(['/app/doc', docId]);
       },
     });
     effect((onCleanup) => {
@@ -384,7 +386,8 @@ export class RequestBuilder {
       next: () => {
         this.busy.set(false);
         this.toast.success('Sent — the first signer has been emailed.');
-        this.router.navigate(['/app/sign', request.id]);
+        // The request is sent — this only shows them the record of it.
+        void this.router.navigate(['/app/sign', request.id]);
       },
       error: (err) => {
         this.busy.set(false);

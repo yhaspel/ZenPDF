@@ -161,7 +161,9 @@ export class AuthFacade {
     this.clearSession();
     this.toasts.info('Your session ended. Please sign in again.', SESSION_ENDED_MS);
     if (isAccountGated(from)) {
-      this.router.navigate(['/auth/login'], { queryParams: { next: from } });
+      // The toast above has already said what happened; the move is a courtesy
+      // on top of it, and nothing downstream branches on whether it landed.
+      void this.router.navigate(['/auth/login'], { queryParams: { next: from } });
     }
   }
 
@@ -174,7 +176,9 @@ export class AuthFacade {
       });
     }
     this.clearSession();
-    this.router.navigate(['/auth/login']);
+    // The session is already gone by here — `clearSession()` is the logout.
+    // Where the browser ends up afterwards cannot un-log-them-out.
+    void this.router.navigate(['/auth/login']);
   }
 
   clearLastClaim(): void {

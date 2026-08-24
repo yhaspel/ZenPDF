@@ -259,8 +259,20 @@ export class Register {
       next: () => {
         // auto-login after successful registration
         this.auth.login(this.email, this.password).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
-          next: () => this.router.navigateByUrl(this.next()),
-          error: () => this.router.navigate(['/auth/login']),
+          // The claim flow's last step (§21.5): the guest token has been
+          // spent, the account holds the work, and this is where they are
+          // shown it. The destination is `safeNext`-validated and defaults to
+          // `/app/dashboard`, which `accountGuard` cannot refuse — the login
+          // one line above has just written the tokens it reads. `phase-2b`
+          // walks the whole path and asserts the documents are there.
+          next: () => {
+            void this.router.navigateByUrl(this.next());
+          },
+          // Registration succeeded and auto-login did not, so there is an
+          // account to sign in to. Nothing is left holding state for this.
+          error: () => {
+            void this.router.navigate(['/auth/login']);
+          },
         });
       },
       error: (err) => {

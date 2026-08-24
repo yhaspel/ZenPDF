@@ -246,7 +246,8 @@ export class Dashboard {
   }
 
   open(doc: DocumentModel): void {
-    this.router.navigate(['/app/doc', doc.id]);
+    // Opening a row is the whole of this method; there is no next step to gate.
+    void this.router.navigate(['/app/doc', doc.id]);
   }
 
   toggleMenu(id: string): void {
@@ -335,7 +336,10 @@ export class Dashboard {
           this.toast.success('Documents merged');
           this.selected.set([]);
           this.docs.load();
-          if (newId) this.router.navigate(['/app/doc', newId]);
+          // The merge has already succeeded, been announced and reloaded the
+          // list — the move to the new document is the last thing, not a step
+          // anything after it depends on.
+          if (newId) void this.router.navigate(['/app/doc', newId]);
         } else if (job.status === 'failed') {
           this.toast.error(job.error_message || 'Merge failed');
         }

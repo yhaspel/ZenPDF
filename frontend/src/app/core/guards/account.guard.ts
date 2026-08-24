@@ -39,8 +39,14 @@ export const accountGuard: CanActivateFn = (route, state) => {
     return true;
   }
   const reason = (route.data?.['accountReason'] as string) ?? 'account';
-  router.navigate(['/auth/register'], {
+  // A `UrlTree`, not `navigate(…)` + `return false`. This is the one place in
+  // the app where a navigation's *result* decides what happens next, so it is
+  // the one place a floating promise was a real defect rather than a tidiness
+  // one: the old spelling started a second navigation and, without waiting to
+  // see whether it was accepted, told the router the first had been refused.
+  // Returning the tree makes the redirect the router's own business — one
+  // navigation, no race, and nothing left to reject unobserved.
+  return router.createUrlTree(['/auth/register'], {
     queryParams: { next: state.url, reason },
   });
-  return false;
 };

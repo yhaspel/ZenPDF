@@ -340,7 +340,10 @@ export class ToolPage {
     // Compare needs two documents and a place to show the result; the answer is
     // a report, not a file, so the workspace is the only sensible destination.
     if (tool.kind === 'compare') {
-      this.router.navigate(['/app/doc', primary.id], {
+      // The `return` below is the end of `dispatch`; the navigation carries the
+      // whole result in its query params and there is no local state left to
+      // reconcile with whether it succeeded.
+      void this.router.navigate(['/app/doc', primary.id], {
         queryParams: { mode: 'compare', other: docs[1]?.id },
       });
       return;
@@ -380,7 +383,9 @@ export class ToolPage {
       sign: { mode: 'sign' },
     };
     if (tool.kind in interactive) {
-      this.router.navigate(['/app/doc', primary.id], {
+      // As above: the upload is done and the workspace mode travels in the URL,
+      // so this page has nothing further to do either way.
+      void this.router.navigate(['/app/doc', primary.id], {
         queryParams: interactive[tool.kind],
       });
       return;
@@ -611,7 +616,9 @@ export class ToolPage {
   }
 
   openInWorkspace(doc: DocumentModel): void {
-    this.router.navigate(['/app/doc', doc.id]);
+    // The tool has finished and the result is already downloadable on this
+    // page; continuing into the workspace is an offer, not a commitment.
+    void this.router.navigate(['/app/doc', doc.id]);
   }
 
   reset(): void {

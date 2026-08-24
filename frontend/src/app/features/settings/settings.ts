@@ -364,7 +364,9 @@ export class Settings {
             `Account deleted. ${summary.documents} document(s) removed.${kept}`,
             12_000,
           );
-          this.router.navigateByUrl('/');
+          // The account is deleted and the toast says so for 12 s. Landing
+          // somewhere else would not undo it, and nothing here reads the result.
+          void this.router.navigateByUrl('/');
         },
         error: (err) => {
           this.busyDeleting.set(false);
