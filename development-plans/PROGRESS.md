@@ -51,7 +51,7 @@ _(Created by the executing agent per protocol step 2. Keep newest phase at top.)
 
 ### Phase 11 — AdSense review readiness · 🔵 In progress (2026-08-24)
 
-Plan: [phase-11-adsense-review.md](phase-11-adsense-review.md). CLI handoff: `docs/reviews/handoffs/handoff-to-cli-phase-11-adsense-review.md` (revision 2, written 2026-08-21 after Phase 12).
+Plan: [phase-11-adsense-review.md](phase-11-adsense-review.md). CLI handoff: **done** — [2026-08-24-handoff-to-cli-phase-11-adsense-review.md](../docs/archived/2026-08-24-handoff-to-cli-phase-11-adsense-review.md) (revision 2, written 2026-08-21 after Phase 12), executed end to end and archived with an Executed banner.
 
 **This phase is split, and the split is the point.** The work order has five
 workstreams and **three of them cannot start without a domain the owner has not
