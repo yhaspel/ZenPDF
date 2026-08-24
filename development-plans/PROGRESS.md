@@ -1300,6 +1300,18 @@ conclusion that was wrong. A rate that tracks machine load is evidence about the
 *trigger*, not about the owner — and the trigger here was a real defect's precondition,
 not its cause.
 
+**Gate**, green end to end on `e41a628`: `ruff` + `mypy` clean · pytest **1159 passed, 6
+skipped**, coverage apps **91.53 %** / pdf_engine **91.87 %** · `ng lint` clean · `ng test`
+**63 files / 542 tests** (from 540) · build + `verify:prerender` clean, **43** prerendered
+routes · Playwright **84 passed, 1 skipped of 85**.
+
+*(The unit leg went red twice on the way, both times `workspace-drew.spec.ts`'s first case
+and both times the documented false red, not the change: the machine was at load average
+**22.7** and then **36.9**, with a second project's stack in the same Docker VM. Same
+commit at a quiet moment: **63 files / 542 tests in 14.92 s**. The budget row already says
+15 s is the edge and that raising it would stop it measuring anything; this is the second
+and third measurement supporting that.)*
+
 **Method note.** Four independent reads of the auth surface — frontend lifecycle, backend
 tokens, e2e flow, storage write-timing — were run in parallel while the probe was being
 built. All four landed on the same line at high confidence, and the backend read
