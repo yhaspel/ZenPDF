@@ -1282,8 +1282,9 @@ against the unfixed build and fails there; the geometry one does not.
 
 **Gate.** `ruff` + `mypy` clean · pytest **1159 passed, 6 skipped**, coverage apps
 **91.53 %** / pdf_engine **91.87 %** · `ng lint` clean · `ng test` **63 files / 540 tests**
-· build + `verify:prerender` clean, **43** prerendered routes · Playwright **82 passed, 1
-skipped of 84**, all nine `phase-10-mobile` tests among them.
+· build + `verify:prerender` clean, **43** prerendered routes · Playwright **83 passed, 1
+skipped of 84**, all nine `phase-10-mobile` tests among them — the gate's own e2e leg had
+82 with the flake below, and a clean **83** on a separate invocation of the same suite.
 
 Three environment failures cost four runs before that, and none of them was the change:
 the unit false red at its own budget's edge (see the Decisions row — 15 s is the edge, not
