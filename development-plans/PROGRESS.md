@@ -18,7 +18,7 @@ This file is the **single source of truth for execution status**. Every agent se
 | 8 — E-signatures | [phase-08-esignatures.md](phase-08-esignatures.md) | ✅ Complete | 2026-08-02 | 2026-08-02 | Self-sign (guest), multi-party requests, hash-chained audit, PAdES seal, certificate, `/verify`. **2B GATE cleared.** Owner items: legal review + production certificate |
 | 9 — Ads & abuse controls | [phase-09-ads-and-abuse-controls.md](phase-09-ads-and-abuse-controls.md) | ✅ Complete | 2026-08-02 | 2026-08-02 | Ads off by default and launchable; consent gate, legal pages, verification, suppression, abuse reports. Owner: AdSense account + CMP + legal review |
 | 10 — Hardening & release | [phase-10-hardening-release.md](phase-10-hardening-release.md) | 🟠 Awaiting human review | 2026-08-02 | — | Engineering complete; **launch checklist is owner-executed** (`docs/10-launch-checklist.md`). Do not tag v1.0.0 until it has no unticked box |
-| 11 — AdSense review readiness | [phase-11-adsense-review.md](phase-11-adsense-review.md) | ⬜ Not started | — | — | Site-side approval work: domain cutover, `/contact` + guides, application loop. Gated on owner domain purchase (P1); terminal criterion is external (Google review) |
+| 11 — AdSense review readiness | [phase-11-adsense-review.md](phase-11-adsense-review.md) | 🔵 In progress | 2026-08-24 | — | The half that needs no domain is landing: 11B `/contact` + identity, 11C twelve guides + index, the content floors, the tool-page top-up, 11A parameterised. **11A/11D/11E stay owner-gated** on the domain purchase (P1); terminal criterion is external (Google review) |
 | 12 — Usability add-ons | [phase-12-usability-add-ons.md](phase-12-usability-add-ons.md) | ✅ Complete | 2026-08-21 | 2026-08-21 | Right-click menus, keyboard shortcuts, visible Undo/Redo across all six editing surfaces. Local gate green and deployed (PR #20, `ec8a33e`). Fixes 6 defects (D-A right-click acted as left-click · D-B signature placements were unremovable · D-C Protect documented a destructive click · D-D repeated version Undo replayed itself · D-E focus scrolled the page out from under the pointer · D-F a click was recorded as a move) |
 
 Status values: ⬜ Not started · 🔵 In progress · 🟡 Blocked · 🟠 Awaiting human review · ✅ Complete (all acceptance criteria + DoD evidenced below)
@@ -48,6 +48,44 @@ Status values: ⬜ Not started · 🔵 In progress · 🟡 Blocked · 🟠 Await
 ## Phase sections
 
 _(Created by the executing agent per protocol step 2. Keep newest phase at top.)_
+
+### Phase 11 — AdSense review readiness · 🔵 In progress (2026-08-24)
+
+Plan: [phase-11-adsense-review.md](phase-11-adsense-review.md). CLI handoff: `docs/reviews/handoffs/handoff-to-cli-phase-11-adsense-review.md` (revision 2, written 2026-08-21 after Phase 12).
+
+**This phase is split, and the split is the point.** The work order has five
+workstreams and **three of them cannot start without a domain the owner has not
+bought yet**: 11A (the cutover), 11D (the indexing bake) and 11E (the
+application loop). This branch does the other two in full — 11B (contact and
+identity) and 11C (the editorial layer) — plus the mechanical quality floors,
+the tool-page top-up, and 11A reduced to a one-line change for the day the
+domain exists. **The status stays 🔵 and does not go ✅**: the phase's terminal
+criterion is an external one (Google shows the domain approved), and six of the
+eleven criteria below are owner or calendar work.
+
+What this branch can and cannot tick, stated once so the list below is
+readable: it can tick everything that is code, copy, contract or docs
+(`/contact`, the About paragraph, the twelve guides, the floors, the four
+contract sites, §21.6, the README row). It cannot tick anything requiring the
+domain (the 301s, the canonical sweep on the apex, the `support@<domain>` mail
+test), anything requiring a Google property (Search Console, the submission
+gate, the application), or anything requiring a human (the P4 legal review, the
+owner's skim of the twelve guides).
+
+**Acceptance criteria** (copied verbatim from phase-11-adsense-review.md, ticked only with evidence):
+
+- [ ] Old host and `www` 301 to the apex; deploys still pass healthcheck; canonicals, `og:url`, JSON-LD, sitemap and robots all name the apex; `seo-artifacts.spec.ts` green on regenerated artifacts; `FRONTEND_BASE_URL`/`API_BASE_URL` mint links on the new origin.
+- [ ] Search Console: domain property verified, sitemap submitted and read.
+- [ ] `/contact` live, prerendered, in the sitemap, linked from the site footer everywhere; a real mail to `support@<domain>` arrived in the owner's inbox.
+- [ ] About page answers "who runs this" and links `/contact`.
+- [ ] 12 guides + `/guides` index live, prerendered, in the sitemap, each passing the mechanical floor and the extended `verify:prerender`.
+- [ ] All 24 tool pages meet the intro/FAQ floors (4 intros topped up, 15 fourth-FAQs written).
+- [ ] Design contract amended at all four sites (grounding, §3, §4, §10) in the same changes as the UI work; `01-architecture.md` §21.6 amended; README index row added; both themes verified on every new/changed surface.
+- [ ] Privacy policy carries the AdSense-required advertising-cookie disclosure (checked against answer/1348695 as part of the P4 review).
+- [ ] Submission gate met (11D — indexing target or the 4-week timebox).
+- [ ] Owner has skim-read all guides before submission.
+- [ ] Application submitted with ads dark; review-freeze observed; any rejection recorded + classified + acted on per the loop protocol.
+- [ ] **Terminal (external):** AdSense Sites page shows the domain **approved/ready**. Phase closes only on this; until then it parks at 🟠 with the loop live.
 
 ### Phase 12 — Usability add-ons · ✅ Complete (2026-08-21)
 

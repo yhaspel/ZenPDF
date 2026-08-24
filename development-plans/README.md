@@ -2,7 +2,7 @@
 
 **Created:** 2026-07-19 · **Stack verified as of:** 2026-07-19 · **Amended:** 2026-07-31 (anonymous-first access), 2026-08-22 (status line + index reconciled)
 
-**Status:** Phases 0–9 and 12 complete, Phase 10 awaiting owner sign-off, Phase 11 not started; production live on Railway since 2026-08-08 (auto-deploy from `main`). See [PROGRESS.md](PROGRESS.md).
+**Status:** Phases 0–9 and 12 complete, Phase 10 awaiting owner sign-off, Phase 11 part-landed and awaiting the owner's domain; production live on Railway since 2026-08-08 (auto-deploy from `main`). See [PROGRESS.md](PROGRESS.md).
 
 ZenPDF is a free-to-use, ad-supported web application for editing, organizing, converting, securing, and signing PDF documents — **usable with no account at all** — a web-based product covering the table-stakes feature set of Adobe Acrobat / Foxit / Smallpdf-class tools, plus a DocuSign-class e-signature workflow, built entirely on open-source components.
 
@@ -42,7 +42,7 @@ ZenPDF is a free-to-use, ad-supported web application for editing, organizing, c
 | [phase-08-esignatures.md](phase-08-esignatures.md) | Saved signatures, self-sign, sign requests, public signing ceremony, audit trail, PAdES seal, verification |
 | [phase-09-ads-and-abuse-controls.md](phase-09-ads-and-abuse-controls.md) | Ad slots + consent (CMP), landing page, quotas, throttling, anti-abuse |
 | [phase-10-hardening-release.md](phase-10-hardening-release.md) | Security hardening, performance, a11y, E2E suite, prod deploy |
-| [phase-11-adsense-review.md](phase-11-adsense-review.md) | AdSense approval pass: custom-domain cutover, contact page, guides editorial layer, application loop |
+| [phase-11-adsense-review.md](phase-11-adsense-review.md) | AdSense approval pass: custom-domain cutover, contact page, guides editorial layer, application loop. **The half that needs no domain landed 2026-08-24** — `/contact`, the About identity paragraph, twelve guides + `/guides`, the content floors and the tool-page top-up; 11A/11D/11E wait on the owner's domain purchase |
 | [phase-12-usability-add-ons.md](phase-12-usability-add-ons.md) | Right-click menus, keyboard shortcuts, visible Undo/Redo on all six editing surfaces, six defect fixes — **executed 2026-08-21** |
 
 ## How to use this plan
