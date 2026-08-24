@@ -37,8 +37,13 @@ export const REASONS: Record<string, string> = {
  * First field, first message: the form is four fields and the server reports
  * them in declaration order, so the first is the one nearest the top of the
  * screen.
+ *
+ * Exported for its spec, the same way `REASONS` above is. This used to be
+ * three lines walking an `any` inside the error callback, where nothing
+ * reached it — and "that address is already registered" is the single most
+ * likely thing this form ever has to say.
  */
-function firstFieldError(details: Record<string, unknown> | undefined): string | undefined {
+export function firstFieldError(details: Record<string, unknown> | undefined): string | undefined {
   const fields = details?.['fields'];
   if (typeof fields !== 'object' || fields === null) return undefined;
   const first = Object.values(fields)[0] as unknown;
