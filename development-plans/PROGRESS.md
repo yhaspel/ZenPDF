@@ -1361,6 +1361,14 @@ DRF's doing rather than this branch's — `main` renders both cases identically.
 own queue row rather than fixed here, because the fix is server-side and this is a frontend
 change that has promised not to alter behaviour.
 
+**Production, after the deploy.** Steps 2 and 3 repeated on the deployed host, with the
+deploy confirmed by the **bundle hash** rather than by waiting a plausible number of
+minutes: production went from `main-R6WL3ZXN.js` — the hash of a build of `main` taken
+before any of this work — to `main-XNN7UJ7I.js`, the same name the local production build
+produced, so what is being tested is a build of this source. The 404 copy, its `role="alert"`
+and both ways out are identical to local; the 415 reads "Not a PDF (missing %PDF header)."
+as it does locally; console carries the two expected 415s and nothing else.
+
 Branch `fix/scrollbar-blind-spot`. The row asked for a decision between three
 unattractive options. It got a measurement first, which killed two of them.
 

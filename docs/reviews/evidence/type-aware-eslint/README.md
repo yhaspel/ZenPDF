@@ -99,6 +99,23 @@ where an arrow used to hand rxjs a promise. **The order of events did not change
 - all three documents listed: `Merged — claim-one (+1)`, `claim-one`, `claim-two`
 - **console completely clean**
 
+## After the merge — production
+
+`18-PROD-doc-404-1280.png` · `19-PROD-merge-415-1280.png`
+
+Steps 2 and 3 repeated on <https://zenpdf.up.railway.app> once the deploy was live,
+which was confirmed by the bundle hash rather than by a clock: production went from
+`main-R6WL3ZXN.js` (the hash of a build of `main` taken before any of this work) to
+**`main-XNN7UJ7I.js`** — byte-for-byte the same name the local production build produced,
+so the deployed artefact is a build of this source and not a cached previous one. Both
+screenshots carry that hash, read out of the served `<script src>`.
+
+| Check | Production |
+|---|---|
+| `/app/doc/00000000-…` | "We could not find that. It may have been deleted, or it may belong to a session that has ended." · `role="alert"` · "Try again" · "Upload a file" — identical to local |
+| non-PDF to `/merge-pdf` | "Not a PDF (missing %PDF header)." — identical to local |
+| console | the two expected 415s, nothing else |
+
 ## Filed from this pass
 
 One queue row, and it is a pre-existing backend observation rather than anything this branch
