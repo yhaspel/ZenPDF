@@ -102,6 +102,7 @@
     @if (shell.phone()) {
       <aside zenWsDrawer="more" zenWsDrawerLabel="More" [zenWsDrawerBarOpener]="false"
              class="ws-drawer ws-more-sheet flex flex-col">
+        <app-ws-drawer-head />
         <ng-container [ngTemplateOutlet]="barActions" />
       </aside>
     }

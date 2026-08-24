@@ -883,6 +883,20 @@ input[type="color"] {
     );
   }
 
+  /* The shell's `main` is `flex: 1` with `min-height: auto`, which is the
+     default and means "never shorter than my content". Everything below it
+     says `min-h-0` and none of it could take effect: in Edit, Sign and Protect
+     — the three modes whose page renders at 900 px — the column grew to
+     1348 px against an 844 px screen and took the bottom bar with it, off the
+     bottom, which is the one thing a persistent bar may not do.
+
+     Scoped two ways on purpose. `:has(app-workspace)` because every other
+     screen is a document that *should* grow and scroll; and inside this media
+     query because at ≥ `md` the workspace growing past the viewport is the
+     behaviour it has always had, and §10 makes that an invariant. */
+  .page-shell:has(app-workspace) { block-size: 100dvh; }
+  .page-shell > main:has(app-workspace) { min-block-size: 0; }
+
   /* The mode's component host, which is a plain block everywhere else. Without
      this the column sizes to the mode's content and the bottom bar floats
      wherever that ends — measured at 791 px down an 844 px screen, with 53 px
@@ -964,7 +978,6 @@ input[type="color"] {
     flex: none;
     inline-size: 44px;
     block-size: 44px;
-    margin-inline-end: -10px;
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -975,6 +988,34 @@ input[type="color"] {
     cursor: pointer;
   }
   .ws-drawer-close:hover { color: var(--color-ink-strong); background: var(--color-bg); }
+
+  /* §6's 44 px floor, on everything a sheet inherited from a rail.
+     Measured before the rule: the comment row's Edit / Copy / Duplicate /
+     Delete — the very controls D8 requires to be touch-reachable — were 16 px
+     tall, Edit's five mode toggles 30, and the panels' `.seg` tab rows 36.
+     `.seg` is 36 because it is a dense *desktop* toolbar control; a panel's tab
+     row inside a sheet is neither, and it is the only way to reach the panel
+     behind it — the same reading that put the annotate palette at 44 px on
+     2026-08-23. The two native inputs are the annotate rail's colour swatch
+     (32 px) and its sliders. Native checkboxes are left at their platform size:
+     their target is the `<label>` around them, which is already a row. */
+  .ws-drawer button { min-block-size: 44px; }
+  .ws-drawer input[type='range'],
+  .ws-drawer input[type='color'] { min-block-size: 44px; }
+  /* A checkbox stays its platform size; the row that carries it is the target,
+     and a 21 px row is not one. */
+  .ws-drawer label:has(> input[type='checkbox']) { min-block-size: 44px; }
+
+  /* And on the two the shrunken workspace bar keeps. */
+  .ws-bar .ws-back {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-inline-size: 44px;
+    min-block-size: 44px;
+    padding: 0;
+  }
+  .ws-bar .linklike { min-block-size: 44px; }
 
   /* The workspace bar's own overflow, as a sheet: six full-width rows in the
      thumb's reach rather than a popover nobody can hit (§3 headers). */

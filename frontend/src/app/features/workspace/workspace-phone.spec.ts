@@ -87,6 +87,24 @@ describe('Workspace — the phone layout', () => {
     expect(shell.barDrawers().some((d) => d.key === 'more')).toBe(false);
   });
 
+  it('every sheet has a head, including the one with no rail behind it', () => {
+    // The More sheet shipped without one for an hour: the head is a separate
+    // element in each rail's template, and the insertion that added it to the
+    // seven rails matched on a one-line `<aside …>` — the More sheet's opening
+    // tag is two lines. A sheet with no head has no title and no way to close
+    // it but Escape or the scrim, which is exactly the sort of thing that
+    // reads as fine in a diff.
+    build(true);
+    for (const drawer of shell.drawers()) {
+      const sheet = one(`[data-ws-drawer=${drawer.key}]`)!;
+      expect(sheet, drawer.key).not.toBeNull();
+      expect(sheet.querySelector('.ws-drawer-title')?.textContent?.trim(), drawer.key)
+        .toBe(drawer.label);
+      expect(sheet.querySelector('[data-test=ws-drawer-close]'), drawer.key).not.toBeNull();
+    }
+    expect([...shell.drawers()].map((d) => d.key).sort()).toEqual(['more', 'start']);
+  });
+
   it('below md: the view rail is the Pages drawer', () => {
     build(true);
     expect(shell.barDrawers()).toEqual([{ key: 'start', label: 'Pages', barOpener: true }]);
