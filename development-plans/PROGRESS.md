@@ -1234,6 +1234,57 @@ Handoff programme (the nine CLI prompts from the 2026-08-21 status review) is tr
 
 ## Session log
 
+**2026-08-24 (last) — The production check earned its keep: the fit had two answers**
+
+Branch `fix/pane-fit-gutter`, opened straight after PR #32 merged, because the production
+check found a defect that PR had introduced.
+
+**What was measured.** At 390 px on production, as a **guest**, the nine-mode sweep came
+back with Edit and Sign drawing the page at **342** inside a scroller reporting
+`scrollWidth` **390** against `clientWidth` **375** — 15 px of horizontal overflow — while
+Annotate and Protect settled at **327** with none. Same document, same session, same code.
+
+**Why.** `FitWidth` sizes the page to the scroller's content box; the width sets the
+page's height; the height decides whether the scroller needs a vertical scrollbar; and a
+**classic** scrollbar takes 15 px out of the content box and feeds straight back in. Where
+the page is *just* tall enough, two widths satisfy that loop — 327 with no scrollbar, 342
+with one — and 342 does not fit the 327 a scrollbar leaves. It stops wherever the observer
+last emitted. The `FitWidth` docblock claimed "emitting only on change makes that converge
+instead of ringing"; that reasoning was wrong. Emitting only on change suppresses a repeat
+of the same value, not an A/B oscillation.
+
+**Why it was invisible locally.** A guest's workspace pane is **525 px** tall at 390 × 844
+and a signed-in one is **621**, because a guest carries the account CTA — and every test in
+`phase-10-mobile.spec.ts`, and every local browser pass, signed in first. The taller pane
+never needs to scroll at either candidate width, so it has one fixed point. Reproduced
+locally only after opening an isolated guest context: **Sign settled at 342 with 390/375**,
+the other three at 327.
+
+**The fix** is one declaration — `scrollbar-gutter: stable` on the scroller, **below `md`
+only**. It removes the coupling rather than damping it: one content box whether or not the
+pane scrolls, so one fixed point. Scoped below `md` because §10 says the desk does not pay
+for the phone, and because the desk has one fixed point already — its page is far taller
+than its pane at either width, so the scrollbar is needed regardless. On a real phone it
+costs **nothing**: touch scrollbars are overlays and the reserved gutter is 0 px. Verified
+by injecting the rule live before writing it: all nine modes settled at **327**,
+`scrollWidth === clientWidth`, in the exact guest configuration that was bistable.
+
+**What the test can and cannot do, said out loud.** Playwright's chromium gives that
+element an **overlay** scrollbar — measured: `clientWidth` 390 while `scrollHeight` 532
+exceeds `clientHeight` 525 — so the content box never changes and the suite *cannot*
+reproduce the geometry however the CSS is set. A guest sweep was written and it passed on
+the unfixed build, which makes it worthless as a guard for this. It is kept for the guest
+coverage it does give, and the gutter is asserted **mechanically** instead — the
+declaration below `md`, and `auto` at 1280 so §10 is held too. That assertion was run
+against the unfixed build and fails there; the geometry one does not.
+
+**One more correction to this branch's own work.** `expectNoPaneOverflow` sampled once.
+Fitting takes a frame or two, and a single sample reads the transient as a defect — which
+is exactly how the first production reading was misread before the settled state was
+checked. It polls now, so what is asserted is that the fit *settles* clean; a fit that
+never converges still fails, at the timeout.
+
+
 **2026-08-24 (later still) — The follow-ups, and what four of the six turned out to be**
 
 Branch `fix/phone-follow-ups`. Six items were flagged when the phone workspace merged

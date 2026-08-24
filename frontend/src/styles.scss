@@ -925,6 +925,35 @@ input[type="color"] {
 .ws-rail-start { border-inline-end: var(--border-hairline) solid var(--color-border); }
 .ws-rail-end { border-inline-start: var(--border-hairline) solid var(--color-border); }
 
+/* The page pane's scroller reserves its gutter below `md`, and this is the
+   difference between a fit that settles and one that does not.
+
+   `FitWidth` sizes the page to the scroller's content box, and the page's width
+   decides the page's height, and the height decides whether the scroller needs a
+   vertical scrollbar — which changes the content box by 15 px and feeds straight
+   back in. Two states satisfy that loop when the page is *just* tall enough:
+   **327 with no scrollbar**, and **342 with one**, where 342 does not fit the
+   327 the scrollbar leaves. Whichever the observer emitted last is where it
+   stops. Measured 2026-08-24 on production and reproduced locally in a guest
+   context — the guest workspace's pane is 525 px tall against a signed-in 621,
+   which is what puts the page inside the band: at 390 px, **Sign settled at 342
+   with `scrollWidth` 390 against `clientWidth` 375** while Edit, Protect and
+   Annotate settled at 327, on the same document in the same session.
+
+   Reserving the gutter removes the coupling rather than damping it: the content
+   box is 327 whether or not the pane scrolls, so there is one fixed point. It
+   is scoped below `md` because that is where the band was measured and because
+   §10 says the desk does not pay for the phone — on the desk the page is far
+   taller than its pane at both candidate widths, so the scrollbar is needed
+   either way and the loop has one fixed point already.
+
+   On a real phone this costs nothing at all: touch scrollbars are overlays with
+   zero width, so the reserved gutter is 0 px. The 15 px only exists in a desktop
+   browser emulating a phone — which is where the defect lives too. */
+@media (max-width: 767px) {
+  [zenFitWidth] { scrollbar-gutter: stable; }
+}
+
 /* ---------- 17c. Phone workspace (§3 Phone workspace, 2026-08-24) ----------
 
    What was here until today: below `md` the panes *stacked* — rails became

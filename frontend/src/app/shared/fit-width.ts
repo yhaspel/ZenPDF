@@ -46,10 +46,21 @@ export class FitWidth {
       if (typeof ResizeObserver === 'undefined') return;
       const observer = new ResizeObserver(([entry]) => {
         const measured = Math.round(entry.contentBoxSize[0].inlineSize);
-        // Only on a real change. A page fitted to its pane can make the pane's
-        // own vertical scrollbar come and go, which changes the width by 15 px
-        // and would otherwise feed straight back in; emitting only on change
-        // makes that converge instead of ringing.
+        // Only on a real change — which stops a repeat, and nothing more.
+        //
+        // *(Corrected 2026-08-24, the day after this was written. It used to
+        // claim this "makes that converge instead of ringing", and it does not:
+        // suppressing a repeat of the same value does nothing about an A/B
+        // oscillation, which is exactly what this feedback path produces. A page
+        // fitted to its pane sets the page's height, the height decides whether
+        // the pane needs a vertical scrollbar, and a classic scrollbar takes
+        // 15 px out of the content box. Where the page is just tall enough, two
+        // widths satisfy the loop and one of them does not fit — measured on
+        // production at 390 px in a guest workspace, Sign and Edit stopping at
+        // 342 inside a 327 px content box. The coupling is removed in CSS, not
+        // here: the scroller reserves its gutter below `md`, so the content box
+        // is the same whether or not it scrolls. See `styles.scss` and design
+        // contract §3 workspace panes.)*
         if (measured > 0 && measured !== this.last) {
           this.last = measured;
           this.fitWidth.emit(measured);
