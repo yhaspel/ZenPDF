@@ -42,7 +42,22 @@ owner-side account view.
       FAQ + SoftwareApplication JSON-LD and a canonical, and production's
       `sitemap.xml` serves **29 `<loc>` entries**. `robots.txt` on the live site
       allows `/`, disallows `/app/`, `/s/` and `/api/`, and names the sitemap.
-- [ ] **Editorial layer against the "low value content" rejection** — the
+
+      **Extended 2026-08-24 (Phase 11, the pre-domain half).** The surface is
+      now **43 prerendered routes and 43 `<loc>` entries**: the 29 above plus
+      **`/contact`**, **`/guides`** and **twelve guide articles**. The guides
+      are the answer to the item below this one, and they are the reason the
+      count moved. `verify:prerender` was extended with them and now asserts
+      three different things depending on the surface — `FAQPage` +
+      `SoftwareApplication` on a tool page, **`Article` on a guide**, and, for
+      guides specifically, that the *prose itself* is in the served HTML and
+      that every guide is linked from `/guides`. A page whose body only appears
+      after hydration is a page a crawler reads as empty, and an unlinked page
+      in a sitemap is what indexing reports call "Discovered – currently not
+      indexed". All 24 tool pages were also brought to a mechanical floor of
+      **250 intro words and 4 FAQs** (from 200/3), additively, with unit tests
+      holding it.
+- [~] **Editorial layer against the "low value content" rejection** — the
       most common AdSense failure mode for tool sites, which read to the
       reviewer as thin templates (mostly UI, little crawlable prose). The
       24 tool pages + about + legal are a real base; strengthen it with
@@ -50,6 +65,27 @@ owner-side account view.
       10–20 short guides (800–1,200 words) before applying. Applying the
       week the content ships is a known way to collect this rejection —
       let Search Console see it first.
+
+      **The layer shipped 2026-08-24** (Phase 11 §11C): **twelve guides,
+      10,560 words of body prose, 792–1,123 words each** against a 700-word
+      floor held by a unit test, plus a `/guides` index, all prerendered with
+      `Article` JSON-LD and interlinked with the tool pages both ways. Every
+      factual claim in them was checked against the running system —
+      `TIERS`, `core/retention.ts`, and the engine modules for OCR,
+      compression, redaction, encryption, flattening, conversion and stamping
+      — because a guide describing behaviour we do not have is worse for a
+      review than no guide.
+
+      **Still `[~]` and not `[x]`, for two reasons that are not code.** The
+      count is at the bottom of the 10–20 range this item asks for, which is
+      deliberate — 12 good ones beat 20 thin ones, and the rejection protocol
+      in `phase-11-adsense-review.md` §11E says extending toward 20 is the
+      *response* to a low-value-content verdict, not the opening bid. And the
+      owner has not skimmed them yet; that skim is a named acceptance
+      criterion, and AI-flavoured filler is exactly the rejection vector a
+      human read is the cheap defence against. The second sentence of this
+      item — let Search Console see it first — is 11D and is untouched by
+      this: nothing has been submitted.
 - [ ] **Legal pages reviewed by a human.** They are honest drafts written
       against real system behaviour, not lawyer-reviewed text — this is the
       open GATE item in `PROGRESS.md`.

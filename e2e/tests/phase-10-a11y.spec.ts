@@ -75,6 +75,13 @@ test('@smoke phase 10: the public pages have no serious accessibility failures',
     ['/verify', 'verify'],
     ['/auth/login', 'login'],
     ['/auth/register', 'register'],
+    // Added 2026-08-24 (Phase 11). Three new public reading surfaces, and the
+    // guide article is scanned rather than only the index: the article is
+    // where the new markup is — the byline, the `.notice`, the related-tools
+    // cards — and an index that lists twelve links exercises none of it.
+    ['/contact', 'contact'],
+    ['/guides', 'the guides index'],
+    ['/guides/are-electronic-signatures-legally-binding', 'a guide article'],
   ] as const) {
     await page.goto(path);
     await scan(page, `${label} (${path})`);

@@ -1,3 +1,5 @@
+**Executed 2026-08-24 — 11B/11C landed; 11A/11D/11E remain owner-gated (see PROGRESS §Phase 11). Historical.**
+
 # Handoff — Phase 11, the half that needs no domain: contact, identity, twelve guides, the floors, and a one-line cutover (2026-08-21, revision 2 after Phase 12)
 
 **For:** Claude CLI on the Mac in `~/Documents/Claude/Projects/ZenPDF`.

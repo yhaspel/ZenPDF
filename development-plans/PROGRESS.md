@@ -18,7 +18,7 @@ This file is the **single source of truth for execution status**. Every agent se
 | 8 — E-signatures | [phase-08-esignatures.md](phase-08-esignatures.md) | ✅ Complete | 2026-08-02 | 2026-08-02 | Self-sign (guest), multi-party requests, hash-chained audit, PAdES seal, certificate, `/verify`. **2B GATE cleared.** Owner items: legal review + production certificate |
 | 9 — Ads & abuse controls | [phase-09-ads-and-abuse-controls.md](phase-09-ads-and-abuse-controls.md) | ✅ Complete | 2026-08-02 | 2026-08-02 | Ads off by default and launchable; consent gate, legal pages, verification, suppression, abuse reports. Owner: AdSense account + CMP + legal review |
 | 10 — Hardening & release | [phase-10-hardening-release.md](phase-10-hardening-release.md) | 🟠 Awaiting human review | 2026-08-02 | — | Engineering complete; **launch checklist is owner-executed** (`docs/10-launch-checklist.md`). Do not tag v1.0.0 until it has no unticked box |
-| 11 — AdSense review readiness | [phase-11-adsense-review.md](phase-11-adsense-review.md) | ⬜ Not started | — | — | Site-side approval work: domain cutover, `/contact` + guides, application loop. Gated on owner domain purchase (P1); terminal criterion is external (Google review) |
+| 11 — AdSense review readiness | [phase-11-adsense-review.md](phase-11-adsense-review.md) | 🔵 In progress | 2026-08-24 | — | The half that needs no domain is landing: 11B `/contact` + identity, 11C twelve guides + index, the content floors, the tool-page top-up, 11A parameterised. **11A/11D/11E stay owner-gated** on the domain purchase (P1); terminal criterion is external (Google review) |
 | 12 — Usability add-ons | [phase-12-usability-add-ons.md](phase-12-usability-add-ons.md) | ✅ Complete | 2026-08-21 | 2026-08-21 | Right-click menus, keyboard shortcuts, visible Undo/Redo across all six editing surfaces. Local gate green and deployed (PR #20, `ec8a33e`). Fixes 6 defects (D-A right-click acted as left-click · D-B signature placements were unremovable · D-C Protect documented a destructive click · D-D repeated version Undo replayed itself · D-E focus scrolled the page out from under the pointer · D-F a click was recorded as a move) |
 
 Status values: ⬜ Not started · 🔵 In progress · 🟡 Blocked · 🟠 Awaiting human review · ✅ Complete (all acceptance criteria + DoD evidenced below)
@@ -48,6 +48,46 @@ Status values: ⬜ Not started · 🔵 In progress · 🟡 Blocked · 🟠 Await
 ## Phase sections
 
 _(Created by the executing agent per protocol step 2. Keep newest phase at top.)_
+
+### Phase 11 — AdSense review readiness · 🔵 In progress (2026-08-24)
+
+Plan: [phase-11-adsense-review.md](phase-11-adsense-review.md). CLI handoff: **done** — [2026-08-24-handoff-to-cli-phase-11-adsense-review.md](../docs/archived/2026-08-24-handoff-to-cli-phase-11-adsense-review.md) (revision 2, written 2026-08-21 after Phase 12), executed end to end and archived with an Executed banner.
+
+**This phase is split, and the split is the point.** The work order has five
+workstreams and **three of them cannot start without a domain the owner has not
+bought yet**: 11A (the cutover), 11D (the indexing bake) and 11E (the
+application loop). This branch does the other two in full — 11B (contact and
+identity) and 11C (the editorial layer) — plus the mechanical quality floors,
+the tool-page top-up, and 11A reduced to a one-line change for the day the
+domain exists. **The status stays 🔵 and does not go ✅**: the phase's terminal
+criterion is an external one (Google shows the domain approved), and six of the
+eleven criteria below are owner or calendar work.
+
+What this branch can and cannot tick, stated once so the list below is
+readable: it can tick everything that is code, copy, contract or docs
+(`/contact`, the About paragraph, the twelve guides, the floors, the four
+contract sites, §21.6, the README row). It cannot tick anything requiring the
+domain (the 301s, the canonical sweep on the apex, the `support@<domain>` mail
+test), anything requiring a Google property (Search Console, the submission
+gate, the application), or anything requiring a human (the P4 legal review, the
+owner's skim of the twelve guides).
+
+**Acceptance criteria** (copied verbatim from phase-11-adsense-review.md, ticked only with evidence):
+
+- [ ] Old host and `www` 301 to the apex; deploys still pass healthcheck; canonicals, `og:url`, JSON-LD, sitemap and robots all name the apex; `seo-artifacts.spec.ts` green on regenerated artifacts; `FRONTEND_BASE_URL`/`API_BASE_URL` mint links on the new origin. → **owner-gated: the domain does not exist.** Parameterised so the cutover is one commit: `grep -rn zenpdf.up.railway.app frontend/src frontend/tools` returns **exactly one hit**, `core/site.ts:23`, and everything else derives from it. The nginx redirect block is written, commented out, and placed after the app block, which now carries `listen 80 default_server;` explicitly. Both orderings were **run against a real nginx**: correct order → apex `200`, healthcheck `200`, old host and `www` `301` to the apex; wrong order → the apex `301`s to itself and **the Railway healthcheck `301`s, which fails every deploy**. Runbook: `docs/ops/domain-cutover.md`.
+- [ ] Search Console: domain property verified, sitemap submitted and read. → **owner-gated**: needs the domain and a Google property. Nothing has been submitted.
+- [~] `/contact` live, prerendered, in the sitemap, linked from the site footer everywhere; a real mail to `support@<domain>` arrived in the owner's inbox. → **the page half is done; the mailbox half is owner-gated.** `/contact` renders on the legal reading column with a `mailto:` and **zero** `form`/`input`/`textarea`/submit elements (`legal-page.spec.ts`, `phase-11.spec.ts`), is prerendered (`dist/contact/index.html`, `verify-prerender` asserts it), is in the sitemap, and is reachable from the site footer on landing, a tool page and a legal page (clicked, not assumed). The address is `yuval3000+support@gmail.com` — a placeholder the owner chose when asked, because `support@<domain>` cannot exist yet; the mail test is the criterion that stays open.
+- [x] About page answers "who runs this" and links `/contact`. → a "Who runs this" section naming no individual — independent product, no support department, a real address — with `data-test="about-identity"` and a link to `/contact`. `legal-page.spec.ts` *"answers 'who runs this' and links /contact"*; `phase-11.spec.ts` clicks the link through to `/contact`.
+- [x] 12 guides + `/guides` index live, prerendered, in the sitemap, each passing the mechanical floor and the extended `verify:prerender`. → **12 guides, 10,560 words of body prose, 792–1,123 each** against a 700-word floor; `guide-pages.spec.ts` holds words, sections, unique title/meta/H1, resolving `relatedTools`, slug uniqueness across tools **and** guides, well-formed dates, a literal route and a prerender entry per slug, and that no `guides/:slug` route exists. `ng build` → **Prerendered 43 static routes** (29 + `/contact` + `/guides` + 12, checked against the route files). `verify:prerender` asserts each guide's own `<title>`, H1, canonical, `Article` JSON-LD, **that the prose is in the served HTML**, and that every guide is linked from `/guides`. Sitemap: **43 `<loc>`s**, guides at priority 0.6.
+- [x] All 24 tool pages meet the intro/FAQ floors (4 intros topped up, 15 fourth-FAQs written). → **re-measured first; the work order's 2026-08-10 figures were stale.** Actual on 2026-08-24: **3** intros under 250 (`jpg-to-pdf` 218, `add-page-numbers` 223, `pdf-to-jpg` 247) and **14** pages with 3 FAQs — `extract-pdf-pages` had been topped up by the 08-18 options-row work. All now clear: intros **254–411 words**, every page ≥ 4 FAQs. `tool-pages.spec.ts` holds 250/4. A diff of the whole table against `main` shows every pinned field identical and every pre-existing paragraph and FAQ present verbatim, **with one deliberate exception**: the merge-pdf bookmark paragraph, which was factually wrong (see the Decisions log).
+- [x] Design contract amended at all four sites (grounding, §3, §4, §10) in the same changes as the UI work; `01-architecture.md` §21.6 amended; README index row added; both themes verified on every new/changed surface. → contract amended at the grounding list, §3 Footer (five links → seven, with the ceremony footer and the legal crosslink row explicitly excluded), §4 (two new screen entries), §10 (invariants), plus the §11 Amendment log row — landed **before** any UI, in `cb8580e`. §21.6 gains the prerendered surface as a table of four kinds with priorities and where each is generated from. README status line and index row updated. Both themes verified in a real browser at 1280 px and a true 390 px: evidence and measurements in `docs/reviews/evidence/phase-11/`.
+- [ ] Privacy policy carries the AdSense-required advertising-cookie disclosure (checked against answer/1348695 as part of the P4 review). → **owner-gated (the existing P4 GATE)**: this is part of the human legal review, and no wording was changed here. The current copy ("Advertising cookies, set by Google, *only* after you allow them") is untouched by this branch.
+- [ ] Submission gate met (11D — indexing target or the 4-week timebox). → **calendar work**, and it cannot start before the domain.
+- [ ] Owner has skim-read all guides before submission. → **owner-gated, and the one that matters most.** AI-flavoured filler is a rejection vector and a human read is the cheap defence. Twelve guides, ~35 minutes of reading.
+- [ ] Application submitted with ads dark; review-freeze observed; any rejection recorded + classified + acted on per the loop protocol. → **owner-gated.** `ADS_ENABLED` stays `false`; nothing has been submitted.
+- [ ] **Terminal (external):** AdSense Sites page shows the domain **approved/ready**. Phase closes only on this; until then it parks at 🟠 with the loop live.
+
+**Gate for this branch.** `ng test` **508 tests / 58 files** green (from 466 on `main`) · `ng lint` `All files pass linting` · `npm run build` **Prerendered 43 static routes** · `npm run verify:prerender` green · `./infra/test.sh --e2e` green including the new `phase-11.spec.ts` · `data-test` diff **0 removed, 15 added**. Lighthouse on the built bundle, desktop: **100 / 100 / 100** (accessibility, best practices, SEO) on the landing page, `/merge-pdf` and a guide.
 
 ### Phase 12 — Usability add-ons · ✅ Complete (2026-08-21)
 
@@ -561,6 +601,14 @@ them.
 | 2026-08-23 | **`NUM_PROXIES=3` is baked into `infra/railway/api.Dockerfile`, and the repo default stays 1.** | The number had three values in three files, each right for its own topology, and the only one describing production existed solely as a Railway service variable — so a project rebuilt from this repo would have booted with the default of 1 and collapsed every per-IP throttle onto the edge's address. Putting it in the image is what makes the deployment self-describing; a service variable still overrides it, which is how a real topology change is made. The default is deliberately **not** raised to match, because 1 is correct behind no proxy and is the only safe answer for a machine nobody has configured. The test parses the Dockerfile rather than reading the setting, because the setting under test is the one the deployed image boots with — which needed `infra/railway/` mounted read-only into the api container, since the hermetic suite otherwise cannot open the file it is asserting about. | **Yes — §19.** |
 | 2026-08-23 | **`manage.py recompute_usage` defaults to a dry run; the beat task defaults to writing.** | Deliberately opposite, and the asymmetry is the point. The nightly task exists to heal unattended — a reconciler that needs a human to confirm it is not a reconciler. A human running the command is usually already suspicious of a number, and what they need first is the number, not the write: a wrong recompute is a wrong quota for *every* user at once, too low locking people out of storage and too high giving away the one resource the product meters. `--dry-run` is still accepted so a script can say what it means, and passing it together with `--apply` is an error rather than a guess. | **Yes — §15.** |
 | 2026-08-23 | **The asset sweeper exempts saved signatures by key — confirmed by the owner, not just chosen by the implementer.** | §4 of the commissioning prompt contains two written requirements: sweep `uploads/u/<id>/` by age, **and** "saved-signature keys are never touched". Because §13 deliberately puts `SavedSignature.storage_key` in that same prefix, an age-only sweep satisfies the first and breaks the second — it deletes the PNG and leaves the row pointing at nothing. The exemption is the only implementation that satisfies both sentences, and it is what §4's own named test asserts. This was contested during execution (a goal check read §4 as proceeding from its parenthetical that saved signatures "live elsewhere", which the code contradicts), so it was **put to the owner explicitly** with the data-loss consequence stated, and the owner chose to keep the exemption. Recorded here so the next reader inherits a settled decision rather than the argument. The alternative remains available and is one deletion away: remove the `keep` set in `account_assets_purge` and the test named for it. | No — §15 already describes the exemption |
+| 2026-08-24 | **`SUPPORT_EMAIL` is the owner's own address with a plus-tag, not an invented `support@` on a domain that does not exist.** The handoff said to stop and ask rather than invent one. The address *was* findable in the repo — `docs/ops/railway-deploy-plan.md` sets production's `ABUSE_CONTACT_EMAIL` to `yuval3000@gmail.com`, which every outbound mail footer already prints — so the handoff's fallback applied and this was not a blocker. It was still put to the owner, because a mail footer and a page built to be crawled are not the same exposure, and the owner chose the plus-tagged form: same inbox, filterable on arrival, and traceable if it is ever scraped. | Asked rather than assumed; the cutover replaces it with `support@<apex>` in one line, and `docs/ops/domain-cutover.md` says to do that **only after** the Email Routing confirmation mail has been clicked — an address on `/contact` that bounces is worse than a personal one that works. | No |
+| 2026-08-24 | **The guide table's `metaDescription` doubles as the one-line entry on `/guides`; there is no separate `summary` field.** The work order's field list does not name one, and 11C separately asks the index for "a one-line description each". | Two fields would say the same thing in almost the same words and drift apart within a year. One string that has to read as a sentence in a search result *and* under a title on the index is a slightly harder thing to write and a much easier thing to keep true. The spec bounds it at 60–160 characters for exactly this reason. | No |
+| 2026-08-24 | **Guide routes are twelve literal paths, not `guides/:slug`.** | A parameterised route matches every string, so `/guides/nonsense` would render an empty article under a **200** instead of falling through to the real 404 — a soft 404, which is the thing `error_page 404 /index.html` exists to prevent on the rest of the site. `guide-pages.spec.ts` asserts no `guides/:` route exists, so the cheaper-looking version cannot be reintroduced by someone tidying up. | No — §21.6 amended with the surface table |
+| 2026-08-24 | **`buildSitemap` takes the guide set as a required third argument with no default.** | The same lesson `siteUrl` taught when production shipped a sitemap advertising `http://localhost:4200`: a default of `[]` lets a caller that forgot the guides emit a sitemap silently missing twelve pages, and a sitemap is precisely the artifact where a silent omission is invisible until it matters. It throws instead, and the spec calls it through a cast to prove the runtime guard holds where the types cannot. | No |
+| 2026-08-24 | **The tool-page top-up is additive everywhere except one paragraph, which was factually wrong.** `/merge-pdf` had said since Phase 2B that "bookmarks and internal links from the source files are not carried across — a merged PDF gets a fresh, flat structure", and I repeated it in the merge guide before checking. `engine/pages.py::merge` does the opposite and says so in its own docstring: it concatenates each source's TOC under a per-document title parent and calls `set_toc`. **Measured on the running stack**, two fixtures with outlines and internal links: the merged file's outline came out `[1,'Doc A',1] [2,'A-Chapter 1',1] [2,'A-Chapter 2',2] [1,'Doc B',3] [2,'B-Chapter 1',3] [2,'B-Chapter 2',4]`, and both internal links survived **renumbered** to their new pages. | The instruction to extend rather than rewrite exists because H1 and SEO copy semantics are contract-pinned — not to preserve a false statement about the product, and the work order's own copy rule is that every behavioural claim is checked against the real system. No H1, title, meta description, slug or CTA moved; one intro paragraph did, and the guide now describes the better outcome the product actually delivers. | No |
+| 2026-08-24 | **`.notice` carries the guide's only inline link; guide prose stays plain text.** Guide 4 has to link `/legal/esign-disclosure`, and paragraphs are bound with `{{ }}`. | §3 already says the actions a notice refers to sit inside it, "so the explanation and the way out are one object" — so the caution and its link are one object rather than a link bolted beside it. Keeping the prose itself markup-free is deliberate: a guide table that could carry markup could carry anything, and the table is edited far more often than the component. | No — §4 amended with the byline/notice/related-tools pattern |
+| 2026-08-24 | **Two claims I wrote into the design contract were wrong, and the browser is what said so.** §3's new footer paragraph named the wrap point ("breaks after *Verify a signed PDF*") and promised no stranded separator. At a true 390 px it breaks after *E-sign disclosure* — the earlier reading came from a 500 px window, which is what macOS clamps Chrome to — and a middot does end the wrapped line. | Both corrected in the contract rather than in prose that describes them away. The break point is now specified as a *behaviour* (order preserved, no horizontal scroll at any width) with both measurements recorded as illustrations; the stranded separator is **accepted with its reasoning**, because the only layout that avoids it is a gap-based flex row with no middots, which would restyle the five-link footer the contract has pinned since 2026-08-06 — a bigger change than adding two links, and not one this phase was sanctioned to make. | **Yes — §3 Footer rewritten, twice** |
+| 2026-08-24 | **The 404-status e2e assertion `test.skip`s on the dev server instead of asserting 200 and calling it a pass.** The e2e stack serves the frontend with `ng serve`, which answers every unknown path 200 with the SPA shell; nginx keeps the 404 via `error_page 404 /index.html`. | A test that quietly asserts the wrong thing on the only origin it ever runs against is worse than one that says what it cannot check. The spec asserts the *page* on any origin — NotFound renders, no guide chrome, which is what would break if the routes were ever made parameterised — and skips the *status* with the reason spelled out. It was then **run where it does hold**: real nginx, the Railway config, the built bundle, all seven phase-11 tests green including that one, `/guides/does-not-exist` → **404**. | No |
 
 ## Blockers
 
@@ -1161,6 +1209,94 @@ Handoff programme (the nine CLI prompts from the 2026-08-21 status review) is tr
 | 2026-08-20 | **The workspace on a phone is stacked, not designed.** Below `md` the rails now become full-width sections above and below the page (§3 workspace panes) — which makes every control reachable and stops the page scrolling sideways, but it is a rescue, not a phone layout. A designed treatment would probably make the rails drawers with a persistent bottom bar. Worth a designer's eye before any mobile push. | 10 | No | ⬜ *(2026-08-21: the row above the page now wraps rather than overflowing, so the page no longer scrolls sideways and the app is no longer drawn at ~64 % — but that is a repair, not a design. Row stays open.)* |
 
 ## Session log
+
+**2026-08-24 — Phase 11, the half that needs no domain: contact, identity, twelve guides and the content floors**
+
+Branch `feat/phase-11-guides-and-contact`, prompt 5 of the handoff programme
+(`docs/reviews/handoffs/TRACKING.md`). Phase 11 has five workstreams and **three of
+them cannot start without a domain the owner has not bought**: 11A (the cutover), 11D
+(the indexing bake) and 11E (the application loop). This branch does the other two in
+full and reduces 11A to a one-line change for the day the domain exists.
+
+**What landed.** `/contact` as a fourth kind on the existing `legal-page` component —
+a `mailto:` and what to put in the message, on the legal reading column, with **no
+form**, because outbound SMTP is off by owner decision and a form would send nothing.
+The About page gains a "Who runs this" section that names no individual. The site
+footer goes from five links to seven. `core/guide-pages.ts` ships **twelve guides,
+10,560 words of body prose**, with a `/guides` index, `Article` JSON-LD, and a
+related-tools block built from the landing directory's own cards. All 24 tool pages
+were brought to a floor of 250 intro words and 4 FAQs, additively. The design contract
+was amended at its four sites **before** any of it, in the branch's first commit.
+
+**Three traps the work order named turned out to be real, and one it did not.** The
+title/meta map in `legal-page.ts` is indexed by kind and threw `undefined.title` three
+lines from the cause; About was the `@switch`'s `@default`, so an unknown kind rendered
+About under a second URL with About's title. Both fixed, with an explicit `@case` per
+kind and no `@default`. The routes go before the `'**'` catch-alls in both files. The
+one the work order did not name: **`buildSitemap` needed the guide set to be
+required**, for the same reason `siteUrl` is — a default of `[]` produces a sitemap
+silently missing twelve pages.
+
+**Numbers the work order gave were stale, which is why it said to re-measure.** It
+recorded 4 intros under 250 words and 15 pages with 3 FAQs as of 2026-08-10. Today:
+**3 intros** and **14 pages** — `extract-pdf-pages` had been topped up by the
+options-row work on 08-18. Measured before writing anything.
+
+**Four bugs found by checking rather than by trusting.**
+
+1. **A guide byline read "Published 23 August 2026" for `published: '2026-08-24'`.**
+   Angular parses a date-only ISO string as *local* midnight, and the explicit `'UTC'`
+   timezone argument then converted that instant back across the date line on any
+   machine east of Greenwich. Found in the built output, not in a test. Fixed by
+   dropping the argument, and proven deterministic at UTC+14 and UTC−11 as well as UTC.
+2. **`/merge-pdf` has been telling people something untrue since Phase 2B** — that
+   merging discards bookmarks and internal links. It does the opposite: `merge()`
+   concatenates each source's TOC under a per-document parent and calls `set_toc`.
+   Measured on the running stack with two outlined fixtures; the merged outline came
+   out fully nested and both internal links survived **renumbered**. I had copied the
+   claim into the merge guide before checking it. Both corrected.
+3. **Two claims I wrote into the design contract were wrong.** The footer paragraph
+   named the wrong wrap point (I had measured a 500 px window, which is what macOS
+   clamps Chrome to, not the 390 px I thought) and promised no stranded separator,
+   which there is. Both corrected in the contract; the separator is now accepted with
+   the reasoning, because the only layout that avoids it would restyle a footer the
+   contract has pinned since 2026-08-06.
+4. **A stale `dist/` produced a green dev-server run and a red nginx one.** The
+   caution's link was missing from the prerendered HTML because the build predated it.
+   Not a product bug, but exactly the class the built-bundle check exists to catch.
+
+**Also found, and deliberately not "fixed":** the first draft of the tool-page floor
+required 40 characters of answer, and it failed seven existing FAQs — including "No."
+to "Do I need an account?". Those are §1's voice working, not thin answers, and a floor
+that would have had them inflated into paragraphs would have made the pages worse to
+satisfy a number. The floor was removed and the reasoning recorded in the spec.
+
+**Gate, on the owner's Mac.** `./infra/test.sh --e2e`: deny-list identical across 3
+infra copies · `ruff` + `mypy` **All checks passed!** · `pytest` **1159 passed, 6
+skipped** (all query plans, the expected set) · `ng lint` clean · `ng test` **508 tests
+across 58 files** (from 466 on `main`) · `ng build` **Prerendered 43 static routes** ·
+`verify:prerender` green · **Playwright 74 passed, 1 skipped** of 75. The skip is the
+404-status assertion, which `ng serve` cannot express; it was run separately against
+real nginx serving the built bundle with the Railway config, where all seven phase-11
+tests pass and `/guides/does-not-exist` returns **404**. `data-test` diff: **0 removed,
+15 added**.
+
+**Browser evidence** in `docs/reviews/evidence/phase-11/` (six screenshots and the
+measurements behind them): seven footer links in order in both themes on six pages, no
+horizontal scroll at 390/500/1280, contrast computed from rendered pixels (body
+12.07/15.15, notice text 11.18/11.92, notice rule 5.24/7.54 — all clear of AA), the
+640 px reading column, 125 px index rows and 56–58 px cards against the 44 px floor,
+`--color-info` matched exactly in both modes, RTL flipping the notice rule and the list
+padding, the **ceremony footer holding its own five entries** in both themes, and zero
+console messages. Lighthouse on the built bundle: **100/100/100** for accessibility,
+best practices and SEO on landing, `/merge-pdf` and a guide — after showing that the
+first runs' 96 was a `/api/config/` 404 from the sandbox's stripped proxy, not the
+product.
+
+**Status stays 🔵.** Six criteria are owner or calendar work and are listed above with
+a reason each. The nearest thing to a blocker is the smallest: the owner has not read
+the twelve guides, and that read is the cheap defence against the rejection vector the
+whole phase exists to avoid.
 
 **2026-08-23 (later still, backend) — Backend debt: counters that could lie, an append nobody was told about, a reconciler that never existed**
 

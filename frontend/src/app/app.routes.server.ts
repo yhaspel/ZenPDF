@@ -1,5 +1,6 @@
 import { RenderMode, ServerRoute } from '@angular/ssr';
 
+import { GUIDE_SLUGS } from './core/guide-pages';
 import { TOOL_SLUGS } from './core/tool-pages';
 
 /**
@@ -31,6 +32,14 @@ export const serverRoutes: ServerRoute[] = [
   { path: 'legal/privacy', renderMode: RenderMode.Prerender },
   { path: 'legal/terms', renderMode: RenderMode.Prerender },
   { path: 'about', renderMode: RenderMode.Prerender },
+  { path: 'contact', renderMode: RenderMode.Prerender },
+  // The editorial layer (§11C). Prerendered for the same reason the tool pages
+  // are: they exist to be crawled and read, and prose that only appears after
+  // hydration is prose a crawler may never see.
+  { path: 'guides', renderMode: RenderMode.Prerender },
+  ...GUIDE_SLUGS.map(
+    (slug): ServerRoute => ({ path: `guides/${slug}`, renderMode: RenderMode.Prerender }),
+  ),
   { path: 'unsubscribe/:token', renderMode: RenderMode.Client },
   { path: 'verify-email/:token', renderMode: RenderMode.Client },
   { path: '**', renderMode: RenderMode.Client },

@@ -546,6 +546,19 @@ Each page owns: unique `<title>`/meta description/H1, ~300 words of honest task 
 
 Ads render on tool pages (notably the post-result surface — the natural pause, and the highest-value slot); never on the viewer canvas, ceremony, or verify pages.
 
+**The prerendered public surface, amended 2026-08-24 (Phase 11).** The tool pages are the acquisition channel; they are not the whole of what a crawler — or an ad-network reviewer — is looking for. A site whose every page is a widget has no page whose *primary content is prose*, and that absence is what "low value content" rejections are made of. Three kinds of surface therefore prerender, and the sitemap generator knows about all three:
+
+| Surface | Routes | Sitemap priority | Generated from |
+|---|---|---|---|
+| Landing | `/` | 1.0 | — |
+| Tool pages | the 24 slugs above | 0.8 | `core/tool-pages.ts`, parsed |
+| Content pages | `/about`, `/contact`, `/legal/privacy`, `/legal/terms`, `/legal/esign-disclosure`, `/guides` | 0.8 | `CONTENT_PAGES` in `tools/seo.mjs`, listed |
+| Guide articles | `/guides/<slug>` × 12 | **0.6** | `core/guide-pages.ts`, parsed |
+
+`/contact` (Phase 11 §11B) is the trust surface: a `mailto:` address and what to put in the message, on the existing `legal-page` component. There is **no contact form** — outbound SMTP is off by owner decision (phase-11 P5), and a form that cannot send is a dead affordance. `/guides` and the twelve `/guides/<slug>` articles (§11C) are the editorial layer: a static table in `core/`, exactly like the tool pages, each article carrying `Article` JSON-LD and a related-tools block that links back into the tool pages. **Deliberately not a CMS** — no comments, no tags, no RSS, no pagination, no draft state. The guide set grows by editing a TypeScript table and shipping.
+
+Guide priority is 0.6 rather than 0.8 because the tool pages are what the site is *for*; the guides support them. `/verify`, `/s/:token` and `/app/**` stay client-rendered and out of the sitemap, unchanged. Guide pages carry **no ads** — §7 of the design contract fixes the ad surfaces at three, and adding a fourth is a decision Phase 11 explicitly did not make.
+
 ### 21.7 Paid tier — designed for, deferred
 
 Owner decision 2026-07-31: **v1 ships free and ad-supported with no billing.** No payment provider, no checkout, no upgrade UI, no `pro` purchase path. The `pro` row in §16 exists solely so that every limit check already flows through `for_principal()`.

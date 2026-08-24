@@ -1,5 +1,6 @@
 import { Routes } from '@angular/router';
 
+import { GUIDE_PAGES } from './core/guide-pages';
 import { accountGuard } from './core/guards/account.guard';
 import { unsavedWorkGuard } from './core/guards/unsaved-work.guard';
 import { TOOL_PAGES } from './core/tool-pages';
@@ -13,6 +14,21 @@ const toolRoutes: Routes = TOOL_PAGES.map((tool) => ({
   path: tool.slug,
   loadComponent: () => import('./features/tools/tool-page').then((m) => m.ToolPage),
   data: { tool },
+}));
+
+/**
+ * Guide articles (§21.6, §11C) — literal routes from the table, exactly like
+ * `toolRoutes` and for the same reason.
+ *
+ * Deliberately **not** `guides/:slug` with a lookup: a parameterised route
+ * matches every string, so `/guides/nonsense` would render an empty article
+ * with a 200 rather than falling through to the real 404. One literal path per
+ * published guide means an unknown slug is genuinely unknown.
+ */
+const guideRoutes: Routes = GUIDE_PAGES.map((guide) => ({
+  path: `guides/${guide.slug}`,
+  loadComponent: () => import('./features/guides/guide-page').then((m) => m.GuidePage),
+  data: { guide },
 }));
 
 export const routes: Routes = [
@@ -97,6 +113,20 @@ export const routes: Routes = [
     loadComponent: () =>
       import('./features/legal/legal-page').then((m) => m.LegalPage),
   },
+  {
+    // The trust surface (§11B): an address, not a form — outbound SMTP is off
+    // by owner decision, so a form would be a control that does nothing.
+    path: 'contact',
+    data: { kind: 'contact' },
+    loadComponent: () =>
+      import('./features/legal/legal-page').then((m) => m.LegalPage),
+  },
+  {
+    path: 'guides',
+    loadComponent: () =>
+      import('./features/guides/guides-index').then((m) => m.GuidesIndex),
+  },
+  ...guideRoutes,
   {
     // Somebody who clicked "unsubscribe" in a mail footer. No auth: the token
     // in the message is the authority (§9B).

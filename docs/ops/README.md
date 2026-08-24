@@ -16,6 +16,7 @@ actually broken".
 | [release.md](release.md) | what the suites are and when they run |
 | [secrets.md](secrets.md) | where secrets live, and why `SECRET_KEY` is a one-way door |
 | [dependencies.md](dependencies.md) | the monthly engine-library patch pass |
+| [domain-cutover.md](domain-cutover.md) | the custom domain exists and production has to move onto it |
 
 **Production is Railway** — live since 2026-08-08, auto-deploying from `main` since 08-10. These four are the Railway record *(indexed here 2026-08-22; this table listed only `railway.md`)*:
 

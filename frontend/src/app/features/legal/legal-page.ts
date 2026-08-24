@@ -7,15 +7,15 @@ import { ActivatedRoute, RouterLink } from '@angular/router';
 import { AppConfig } from '../../core/models/models';
 import { RETENTION } from '../../core/retention';
 import { ConfigService } from '../../core/services/config.service';
-import { SITE_URL, setCanonical } from '../../core/site';
+import { SITE_URL, SUPPORT_EMAIL, setCanonical } from '../../core/site';
 import { Brand } from '../../shared/brand';
 import { SiteFooter } from '../../shared/site-footer';
 import { ThemeToggle } from '../../shared/theme-toggle';
 
-type LegalKind = 'privacy' | 'terms' | 'about';
+export type LegalKind = 'privacy' | 'terms' | 'about' | 'contact';
 
 /**
- * Privacy, Terms and About (§9A).
+ * Privacy, Terms, About and Contact (§9A, §11B).
  *
  * The retention numbers are **read from `/api/config/`**, not typed into the
  * copy. A privacy policy that says "30 days" while the sweeper says 45 is
@@ -42,6 +42,8 @@ export class LegalPage {
 
   protected kind = signal<LegalKind>('privacy');
   protected config = signal<AppConfig | null>(null);
+  /** The address `/contact` prints, from the one place it is written down. */
+  protected readonly supportEmail = SUPPORT_EMAIL;
 
   /** Live config when it has arrived; otherwise the build-time constant that
    *  the prerendered HTML was rendered from — which a backend test pins to the
@@ -69,7 +71,25 @@ export class LegalPage {
         description: 'What ZenPDF is, how it is paid for, and what it will not do.',
         path: 'about',
       },
+      contact: {
+        title: 'Contact ZenPDF — how to reach us',
+        description:
+          'How to reach the people who run ZenPDF: one address, what to put in the message, and what to expect back.',
+        path: 'contact',
+      },
     }[kind];
+    // The map is indexed by kind, so a route added with a `kind` nobody added
+    // an entry for reads `undefined.title` — a TypeError three lines down,
+    // blaming the wrong thing. Say what actually happened. The template's
+    // `@switch` has an explicit `@case` per kind and no `@default` for the
+    // same reason: silently rendering the About page under a new route's URL
+    // is the failure this pair is built to make impossible.
+    if (!meta) {
+      throw new Error(
+        `legal-page: no title/meta entry for kind '${kind}'. Add one here and ` +
+          'an @case in legal-page.html — there is deliberately no @default.',
+      );
+    }
     this.title.setTitle(meta.title);
     this.meta.updateTag({ name: 'description', content: meta.description });
     // These three prerender and are in the sitemap, but shipped with no
