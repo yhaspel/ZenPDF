@@ -20,6 +20,11 @@ import { PageOverlay } from '../../shared/page-overlay/page-overlay';
 import { ToastService } from '../../shared/toast.service';
 import { WsDrawerHead } from '../../shared/ws-drawer-head';
 import { WsDrawer } from '../../shared/ws-drawer';
+import { FitWidth } from '../../shared/fit-width';
+import { clampPageWidth } from '../../shared/page-fit';
+
+/** The widest Compare ever draws either page — its desk width. */
+const MAX_PAGE = 420;
 
 /**
  * Compare mode (phase-06).
@@ -33,7 +38,7 @@ import { WsDrawer } from '../../shared/ws-drawer';
 @Component({
   selector: 'app-compare',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [FormsModule, PageOverlay, WsDrawer, WsDrawerHead],
+  imports: [FormsModule, PageOverlay, WsDrawer, WsDrawerHead, FitWidth],
   templateUrl: './compare.html',
   // Below `md` a mode's host has to be a growing flex item, or the column sizes
   // to its content and the bottom bar floats above the fold — `styles.scss`
@@ -52,7 +57,21 @@ export class Compare {
 
   protected candidates = signal<DocumentModel[]>([]);
   protected page = signal(0);
-  protected zoom = signal(420);
+  protected zoom = signal(MAX_PAGE);
+
+  /**
+   * Two pages share the pane on a desk and take it in turns on a phone.
+   *
+   * A fixed 420 meant 2 × 420 + a 16 px gap — 856 px of content in a 375 px
+   * pane. Stacking below `md` rather than halving 375 twice: at 171 px a side
+   * neither copy is readable, and a comparison you cannot read is not one.
+   */
+  protected onFit(available: number): void {
+    this.zoom.set(clampPageWidth(MAX_PAGE, available, {
+      columns: this.shell.phone() ? 1 : 2,
+      gap: 16,
+    }));
+  }
   protected view = signal<'all' | 'text' | 'visual'>('all');
 
   protected readonly rows = computed<ChangeRow[]>(() => {

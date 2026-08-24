@@ -91,13 +91,13 @@
         <div class="flex items-center gap-2">
           <label class="!flex items-center gap-1">
             Image DPI
-            <input type="number" min="72" max="300" class="input !min-h-9 !w-20"
+            <input type="number" min="72" max="300" class="input input-compact !w-20"
                    [ngModel]="imageDpi()" (ngModelChange)="imageDpi.set(+$event)"
                    data-test="export-dpi" />
           </label>
           <label class="!flex items-center gap-1">
             as
-            <select class="input !min-h-9 !w-auto"
+            <select class="input input-compact !w-auto"
                     [ngModel]="imageFormat()" (ngModelChange)="imageFormat.set($event)"
                     data-test="export-image-format">
               <option value="png">PNG</option>

@@ -357,7 +357,8 @@
         <span class="text-accent text-xs" data-test="protect-busy">working…</span>
       }
     </div>
-    <div class="min-h-0 flex-1 overflow-auto p-6">
+    <div zenFitWidth (fitWidth)="onFit($event)"
+         class="min-h-0 flex-1 overflow-auto p-6">
       <div class="relative mx-auto w-fit">
         <app-page-overlay
           [docId]="docId()"

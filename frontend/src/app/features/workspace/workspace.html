@@ -290,7 +290,7 @@
           <div class="border-border bg-surface flex flex-wrap items-center gap-2 border-b px-4 py-2">
             <input [ngModel]="searchQuery()" (ngModelChange)="searchQuery.set($event)" (keyup.enter)="doSearch()"
                    placeholder="Find in document…" name="s"
-                   class="input !min-h-9 w-64 text-sm" data-test="find-input" />
+                   class="input input-compact w-64 text-sm" data-test="find-input" />
             <button (click)="doSearch()" class="btn btn-secondary btn-sm" data-test="find-btn">Find</button>
             @if (searched()) {
               <span class="muted text-sm" data-test="find-count">{{ searchHits().length }} result(s)</span>
@@ -306,6 +306,7 @@
                    download in the workspace bar, annotation in Annotate.
                    D7: first paint is fit-to-width, centered, on the backdrop. -->
               <ngx-extended-pdf-viewer
+                zenViewerTabOrder
                 [useInlineScripts]="false"
                 [src]="contentUrl()"
                 [httpHeaders]="authHeaders()"

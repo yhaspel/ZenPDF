@@ -1,0 +1,21 @@
+{
+  "url": "http://localhost:4200/app/doc/564e49b0-407b-4413-9950-760ab58a6008",
+  "formFactor": "mobile",
+  "fetchTime": "2026-08-24T13:32:15.336Z",
+  "scores": {
+    "accessibility": 96,
+    "best-practices": 100,
+    "seo": 54,
+    "agentic-browsing": 67
+  },
+  "accessibilityFailures": [
+    {
+      "id": "target-size",
+      "title": "Touch targets do not have sufficient size or spacing.",
+      "weight": 7,
+      "nodes": [
+        "div#toolbarViewerMiddle > pdf-zoom-out > pdf-shy-button.zoomOut > button#primaryZoomOut"
+      ]
+    }
+  ]
+}

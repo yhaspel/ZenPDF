@@ -86,7 +86,7 @@
                   }
                   @default {
                     @if (field.options.length) {
-                      <select class="input mt-1 !min-h-9 !px-2"
+                      <select class="input input-compact mt-1 !px-2"
                               [ngModel]="stringValue(field)" [disabled]="field.flags.readonly"
                               (ngModelChange)="setValue(field, $event)"
                               [attr.data-test]="'field-' + field.name">
@@ -96,7 +96,7 @@
                         }
                       </select>
                     } @else {
-                      <input class="input mt-1 !min-h-9 !px-2"
+                      <input class="input input-compact mt-1 !px-2"
                              [ngModel]="stringValue(field)" [disabled]="field.flags.readonly"
                              [attr.maxlength]="field.max_len || null"
                              (ngModelChange)="setValue(field, $event)"
@@ -171,7 +171,7 @@
             </p>
             <label class="mt-1 block">
               Name
-              <input class="input mt-0.5 !min-h-9 !px-2"
+              <input class="input input-compact mt-0.5 !px-2"
                      [ngModel]="draftName()" (ngModelChange)="draftName.set($event)"
                      data-test="prop-name" />
             </label>
@@ -281,8 +281,19 @@
     @if (tab() === 'fill') {
       <div class="min-h-0 flex-1">
         @if (src()) {
-          <!-- PDF.js renders the real widgets; `formData` reports them by field name. -->
+          <!-- PDF.js renders the real widgets; `formData` reports them by field name.
+
+               The visibility set and `[theme]` are the same ones View mode has
+               carried since D3, and this instance was missing all of them: it
+               was drawing pdf.js's own download, print, open-file, rotate and
+               annotation-editor buttons inside Forms, where §4 says the
+               workspace bar is "the single owner of every editing affordance",
+               and drawing them from the light palette in dark mode because
+               `[theme]` was never bound (§5). Found 2026-08-24 while auditing
+               the other viewer's accessibility; nothing had ever looked at this
+               one. -->
           <ngx-extended-pdf-viewer
+            zenViewerTabOrder
             [useInlineScripts]="false"
             [src]="src()"
             [httpHeaders]="httpHeaders()"
@@ -290,13 +301,39 @@
             (formDataChange)="onViewerData($event)"
             [textLayer]="true"
             [showBorders]="false"
+            [theme]="themes.resolved()"
+            [showSidebarButton]="false"
+            [showFindButton]="false"
+            [showPagingButtons]="true"
+            [showZoomButtons]="true"
+            [showZoomDropdown]="true"
+            [showPresentationModeButton]="false"
+            [showOpenFileButton]="false"
+            [showPrintButton]="false"
+            [showDownloadButton]="false"
+            [showSecondaryToolbarButton]="false"
+            [showRotateButton]="false"
+            [showRotateCwButton]="false"
+            [showRotateCcwButton]="false"
+            [showHandToolButton]="false"
+            [showScrollingButtons]="false"
+            [showSpreadButton]="false"
+            [showPropertiesButton]="false"
+            [showEditorButtons]="false"
+            [showTextEditor]="false"
+            [showDrawEditor]="false"
+            [showStampEditor]="false"
+            [showHighlightEditor]="false"
+            [showSignatureEditor]="false"
+            [showCommentEditor]="false"
             height="100%"
             data-test="forms-viewer"
           />
         }
       </div>
     } @else {
-      <div class="min-h-0 flex-1 overflow-auto p-6">
+      <div zenFitWidth (fitWidth)="onFit($event)"
+           class="min-h-0 flex-1 overflow-auto p-6">
         <div class="relative mx-auto w-fit">
           <app-page-overlay
             [docId]="docId()"

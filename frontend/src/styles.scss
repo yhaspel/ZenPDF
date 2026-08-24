@@ -147,6 +147,58 @@ small, .muted { color: var(--color-ink-muted); }
 .hdr nav a:hover { color: var(--color-ink-strong); }
 .hdr nav a[aria-current] { color: var(--color-ink-strong); font-weight: 500; }
 
+/* Below `md` the app-shell nav does not fit beside the brand, and cannot be made
+   to. Measured from the shipped font metrics rather than guessed: the signed-in
+   nav's min-content floor is **417 px with the address shrunk to nothing** — 27 px
+   over a 390 px phone before the address contributes a single pixel — and the
+   guest branch is 503, because "Create free account" is a `.btn` and `.btn` sets
+   `white-space: nowrap`. Deleting the address outright still leaves 399. Every
+   variant overflows, which is why `/app/dashboard` and `/app/settings` both
+   reported a 546 px document at 390 with an empty library and no cards at all.
+
+   So it wraps to a second header line — which is exactly what §3's landing
+   masthead already does, for the same reason. The address is the one item that
+   is information rather than navigation, so it is the one that takes the slack
+   and ellipsises; `/app/settings` shows it in full, and it carries a `title`. */
+@media (max-width: 767px) {
+  .hdr { flex-wrap: wrap; row-gap: 4px; }
+  .hdr nav {
+    flex-basis: 100%;
+    margin-inline-start: 0;
+    column-gap: 16px;
+    min-inline-size: 0;
+  }
+  .hdr-email {
+    flex: 1 1 auto;
+    min-inline-size: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
+/* §6's 44 px floor on the file card's own controls, below `md`.
+   Measured at 390 px before the rule: the ⋯ menu 28 × 28, the star 15 × 15 and
+   the select checkbox 17 × 17 — three overlapping targets on a card that is
+   itself only 164 px wide. They keep their desk size, where a pointer and
+   `:hover` do the work the finger cannot.
+
+   The floor is a *target*, not a paint. Sizing the select checkbox itself to
+   44 px was tried and reverted the same session: a native checkbox scaled to
+   44 px draws a 44 px empty square, which on a 164 px card over the thumbnail
+   reads as a rendering fault. So the checkbox is wrapped in a `<label>` that
+   carries this class instead — the same answer §3 already gives for the OCR
+   rows, where the box stays 17 px and the row around it is 44. */
+@media (max-width: 767px) {
+  .card-control {
+    min-inline-size: 44px;
+    min-block-size: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+}
+
 /* The landing masthead (§3, §4 compact landing 2026-08-10): on `/` only, the
    header carries the page's h1 as a motto — display 500 16px ink-muted after a
    hairline divider. Below lg it wraps to a second header line so the h1 stays
@@ -350,6 +402,21 @@ select.input { cursor: pointer; }
 .input:focus { outline: 2px solid var(--color-focus); outline-offset: 0; border-color: transparent; }
 .input[disabled] { background: var(--color-bg); color: var(--color-ink-muted); border-style: dashed; }
 .input-invalid, .input.ng-invalid.ng-touched { border-color: var(--color-danger); }
+
+/* Compact field (§3 inputs). §6 exempts 36 px controls inside dense *desktop*
+   toolbars and rails; these are the fields that take that exemption — a page
+   offset, a DPI, a recipient's order number. Below `md` a rail is a bottom
+   sheet (§3 Phone workspace) and the exemption stops applying, so the 44 px
+   floor comes back.
+
+   A class rather than a utility because this file is unlayered and therefore
+   beats Tailwind's `@layer utilities` — which is the only reason fourteen
+   templates ever wrote `!min-h-9` for a height in the first place. Two class
+   selectors so it wins over `.input` regardless of source order. */
+.input.input-compact { min-height: 36px; }
+@media (max-width: 767px) {
+  .input.input-compact { min-height: 44px; }
+}
 .field-hint { font-size: 12.5px; color: var(--color-ink-faint); margin-block-start: 5px; }
 .field-error { font-size: 13px; color: var(--color-danger); margin-block-start: 5px; }
 .input-wrap { position: relative; }
@@ -1216,6 +1283,54 @@ ngx-extended-pdf-viewer #scaleSelect:focus-visible,
 ngx-extended-pdf-viewer #pageNumber:focus-visible {
   outline: 2px solid var(--color-accent);
   outline-offset: 1px;
+}
+
+/* The editor radiogroup, hidden as well as configured off.
+
+   `workspace.html` sets `showEditorButtons`, `showTextEditor`, `showDrawEditor`,
+   `showStampEditor`, `showHighlightEditor`, `showSignatureEditor` and
+   `showCommentEditor` to false — annotation lives in Annotate, not in pdf.js's
+   toolbar (§4, D3). The library implements "off" by putting `.invisible` on the
+   *inner* `<button>`, while `role="radio"` is a **static attribute** on the
+   `<pdf-shy-button>` host — and Angular writes static attributes onto the host
+   element as well as binding them to the matching input. So six `role="radio"`
+   nodes with no `aria-checked`, wrapped in a `role="radiogroup"`, stayed in the
+   accessibility tree around six buttons nobody can see. Measured on the live
+   page: `pdf-shy-button[role=radio]` × 6, host `display: inline`, inner button
+   `display: none`. That is the whole of Lighthouse's `aria-required-attr`
+   failure on this route, and its only *critical*-impact one.
+
+   A visibility rule, which is exactly what §5 licenses, and it reaches both
+   viewer instances rather than one template's inputs. */
+ngx-extended-pdf-viewer #editorModeButtons { display: none; }
+
+/* The viewer's own live region, re-hidden the way this product hides things.
+
+   `ngx-extended-pdf-viewer` 28.1.0 appends a polite announcer to `<body>` and
+   hides it with an inline `position: absolute; left: -10000px`. Under `dir=ltr`
+   that is unreachable and free; under `dir=rtl` the scrollable overflow region
+   starts at the other edge, so the same 1 px box lands 10 000 px past the
+   inline end and becomes reachable — measured at 414 px: `scrollWidth` **10 400**
+   and `scrollingElement.scrollLeft = -5000` sticking. The service is
+   `providedIn: 'root'` and never removes the node, so once any document has
+   been opened the overflow follows the session onto every other route.
+
+   It has to keep announcing, so it is not hidden — the class it already carries
+   (Tailwind's `.sr-only`: 1×1, `clip-path: inset(50%)`, `overflow: hidden`)
+   hides it correctly in any writing mode, and only the inline inset defeats it.
+   An inline declaration can only be answered by `!important`, and only these
+   two are load-bearing: the inset, written logically because §8 says so, and
+   `fixed`, because a fixed box contributes nothing to the document's scrollable
+   overflow whatever its insets — two independent mechanisms, either sufficient.
+
+   Not `display:none`, `visibility:hidden` or `aria-hidden`: each of those takes
+   the node out of the accessibility tree, which would trade a scrollbar in a
+   locale we do not ship yet for a screen reader that has stopped speaking. The
+   honest fix is upstream; this rule goes when that lands. */
+body > .sr-only[aria-live] {
+  position: fixed !important;
+  inset-block-start: 0 !important;
+  inset-inline-start: 0 !important;
 }
 
 /* ---------- 18. Rendered PDF paper (§3) ---------- */

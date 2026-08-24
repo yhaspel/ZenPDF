@@ -101,6 +101,15 @@ describe('Workspace — the phone layout', () => {
       expect(sheet.querySelector('.ws-drawer-title')?.textContent?.trim(), drawer.key)
         .toBe(drawer.label);
       expect(sheet.querySelector('[data-test=ws-drawer-close]'), drawer.key).not.toBeNull();
+      // And both hooks say *which* sheet they belong to. A phone DOM holds two
+      // or three drawers at once — Annotate's two rails plus the More sheet —
+      // so a bare `[data-test=ws-drawer-close]` resolved to three elements and
+      // a suite had to guess. The bottom bar's opener has always carried the
+      // discriminator; the head it opens shipped without one.
+      for (const hook of ['ws-drawer', 'ws-drawer-close']) {
+        expect(sheet.querySelector(`[data-test=${hook}]`)?.getAttribute('data-drawer'),
+          `${drawer.key}/${hook}`).toBe(drawer.key);
+      }
     }
     expect([...shell.drawers()].map((d) => d.key).sort()).toEqual(['more', 'start']);
   });

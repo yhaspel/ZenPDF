@@ -33,6 +33,7 @@ import { Spinner } from '../../shared/spinner';
 import { ToastService } from '../../shared/toast.service';
 import { WsDrawerHead } from '../../shared/ws-drawer-head';
 import { WsDrawer } from '../../shared/ws-drawer';
+import { ViewerTabOrder } from '../../shared/viewer-tab-order';
 import { Annotate, AnnotateTool } from './annotate';
 import { WorkspaceMode, WsBottomBar } from './ws-bottom-bar';
 import { Compare } from './compare';
@@ -53,6 +54,7 @@ type Dialog = null | 'split' | 'scale' | 'nup' | 'compress' | 'insert';
     FormsModule, RouterLink, NgTemplateOutlet, NgxExtendedPdfViewerModule, CdkDropList, CdkDrag,
     PdfThumbnail, Annotate, Edit, Forms, Convert, Compare, Protect, Sign, ZenModal, Spinner,
     Brand, GuestBanner, ThemeToggle, ShortcutsHelp, WsDrawer, WsDrawerHead, WsBottomBar,
+    ViewerTabOrder,
   ],
   templateUrl: './workspace.html',
   // The host is a flex item of the shell's `main`, and it was not saying so:

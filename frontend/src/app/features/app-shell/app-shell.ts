@@ -41,7 +41,8 @@ import { ThemeToggle } from '../../shared/theme-toggle';
                 data-test="nav-settings"
                 >Settings</a
               >
-              <span class="faint">{{ auth.user()?.email }}</span>
+              <span class="faint hdr-email" [title]="auth.user()?.email ?? ''"
+                    data-test="nav-email">{{ auth.user()?.email }}</span>
               <button type="button" class="linklike" (click)="auth.logout()" data-test="logout">
                 Log out
               </button>

@@ -26,8 +26,9 @@
 #      `phase-2b:130` was misdiagnosed twice in one day — once as a product
 #      defect, once as a Playwright quirk — against workers ten days old. A
 #      false *pass* is the worse case and would be invisible. `--e2e` therefore
-#      restarts the four Celery services and waits for `checks.workers` before
-#      driving a browser.
+#      restarts the four Celery services **and `api`** and waits for
+#      `checks.workers` before driving a browser. `api` is there for a second
+#      reason — it holds the Postgres pool; see the restart itself.
 set -euo pipefail
 cd "$(dirname "$0")"
 
@@ -306,13 +307,23 @@ fi
 
 if [ "$E2E" -eq 1 ]; then
   echo "======================================================"
-  echo " Restarting the Celery services (never test stale code)"
+  echo " Restarting the Django + Celery services"
   echo "======================================================"
   # Celery does not hot-reload. `up.sh` runs `docker compose up -d --build`,
   # which recreates a container only when its image or definition changed, so a
   # stack left up across a backend edit keeps running the old task code — and
   # the e2e suite would be testing it. See the header.
-  docker compose restart worker-default worker-heavy worker-render beat
+  #
+  # `api` is in this list for a different reason: it holds the Postgres pool.
+  # `conn_max_age=600` against the container's `max_connections=100` means a
+  # dev server that has been up all day accumulates one connection per request
+  # thread and never gives them back. Fourth measurement, 2026-08-24: **99 idle
+  # connections from `api` alone, the oldest 5 h 57 m**, and five specs red at
+  # `registerAndLogin` and at the first save — which reads like a product
+  # regression and is a laptop. The health gate below cannot catch it on its
+  # own, because the budget is fine *before* the run and exhausted *during* it.
+  # Restarting `api` costs one autoreload and starts every run from ~10.
+  docker compose restart api worker-default worker-heavy worker-render beat
   # `checks.workers` **and** the overall verdict. Asking only about the workers
   # was not enough: a stack whose Postgres has run out of connections reports
   # `{"status":"degraded","checks":{"db":false,...,"workers":true}}`, and the
@@ -338,7 +349,7 @@ if [ "$E2E" -eq 1 ]; then
     echo "       Check: ./logs.sh api  ·  ./logs.sh db  ·  ./logs.sh worker-default"
     exit 1
   fi
-  for svc in worker-default worker-heavy worker-render beat; do
+  for svc in api worker-default worker-heavy worker-render beat; do
     cid="$(docker compose ps -q "$svc" 2>/dev/null || true)"
     [ -n "$cid" ] && printf '  %-15s started %s\n' "$svc" \
       "$(docker inspect -f '{{.State.StartedAt}}' "$cid")"
