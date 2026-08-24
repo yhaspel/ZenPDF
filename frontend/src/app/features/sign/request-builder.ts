@@ -12,6 +12,7 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 
+import { apiError } from '../../core/api-error';
 import {
   RecipientRole,
   SignFieldType,
@@ -144,7 +145,7 @@ export class RequestBuilder {
         this.message.set(row.message);
       },
       error: (err) => {
-        this.toast.error(err?.error?.error?.message
+        this.toast.error(apiError(err).message
                          || 'That document cannot be sent for signature.');
         this.router.navigate(['/app/doc', docId]);
       },
@@ -230,7 +231,7 @@ export class RequestBuilder {
       },
       error: (err) => {
         this.busy.set(false);
-        this.toast.error(err?.error?.error?.message || 'Could not save that.');
+        this.toast.error(apiError(err).message || 'Could not save that.');
       },
     });
   }
@@ -348,7 +349,7 @@ export class RequestBuilder {
       },
       error: (err) => {
         this.busy.set(false);
-        this.toast.error(err?.error?.error?.message || 'Could not save those.');
+        this.toast.error(apiError(err).message || 'Could not save those.');
       },
     });
   }
@@ -393,7 +394,7 @@ export class RequestBuilder {
           this.needsVerification.set(true);
           return;
         }
-        this.toast.error(err?.error?.error?.message || 'Could not send that.');
+        this.toast.error(apiError(err).message || 'Could not send that.');
       },
     });
   }

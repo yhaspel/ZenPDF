@@ -8,6 +8,7 @@ import { ConvertFacade } from '../../abstraction/convert.facade';
 import { GuestFacade } from '../../abstraction/guest.facade';
 import { JobsFacade } from '../../abstraction/jobs.facade';
 import { UploadFacade } from '../../abstraction/upload.facade';
+import { apiError } from '../../core/api-error';
 import { DocumentModel, Job } from '../../core/models/models';
 import { formatPages, parsePageSpec, toIndices, uniquePages } from '../../core/page-spec';
 import { DocumentsService } from '../../core/services/documents.service';
@@ -593,9 +594,9 @@ export class ToolPage {
     });
   }
 
-  private fail(err: { error?: { error?: { message?: string } } }): void {
+  private fail(err: unknown): void {
     this.phase.set('error');
-    this.error.set(err?.error?.error?.message ?? 'Something went wrong. Try again.');
+    this.error.set(apiError(err).message ?? 'Something went wrong. Try again.');
     // The cached upload may be the reason — a guest session that expired takes
     // its documents with it, and a cached id then 404s on every retry. Dropped,
     // the next run starts clean with a fresh upload instead of failing forever.

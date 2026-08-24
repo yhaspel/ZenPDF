@@ -1,5 +1,6 @@
 import { Injectable, computed, inject, signal } from '@angular/core';
 
+import { apiError } from '../core/api-error';
 import { DocumentModel, Usage } from '../core/models/models';
 import { ConfigService } from '../core/services/config.service';
 import { DocListParams, DocumentsService } from '../core/services/documents.service';
@@ -15,9 +16,8 @@ const PAGE_SIZE = 50;
  * drifts; showing "403" instead would be no explanation at all.
  */
 function purgeMessage(err: unknown): string {
-  const shape = err as { error?: { error?: { message?: string } } } | null;
   return (
-    shape?.error?.error?.message
+    apiError(err).message
     ?? 'That document could not be deleted. Try again in a moment.'
   );
 }

@@ -2,6 +2,7 @@ import { HttpClient } from '@angular/common/http';
 import { Injectable, inject, signal } from '@angular/core';
 
 import { environment } from '../../../environments/environment';
+import { apiError } from '../api-error';
 
 /**
  * "Send me the link again" (§9B).
@@ -34,7 +35,7 @@ export class VerificationService {
         // A cooldown is the expected answer, not a fault — the endpoint mails
         // an address nobody has proved they own, so it is deliberately capped.
         this.failure.set(
-          err?.error?.error?.message || 'Could not send that just now.',
+          apiError(err).message || 'Could not send that just now.',
         );
       },
     });
@@ -44,7 +45,5 @@ export class VerificationService {
 /** Whether an API error is the verification gate (§9B), from the code rather
  *  than the message — the copy is allowed to change. */
 export function isEmailNotVerified(err: unknown): boolean {
-  const code = (err as { error?: { error?: { code?: string } } })?.error?.error
-    ?.code;
-  return code === 'email_not_verified';
+  return apiError(err).code === 'email_not_verified';
 }

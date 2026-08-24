@@ -9,6 +9,7 @@ import { DocumentsFacade } from '../../abstraction/documents.facade';
 import { FoldersFacade } from '../../abstraction/folders.facade';
 import { JobsFacade } from '../../abstraction/jobs.facade';
 import { UploadFacade, UploadItem } from '../../abstraction/upload.facade';
+import { apiError } from '../../core/api-error';
 import { DocumentModel, Job } from '../../core/models/models';
 import { DocumentsService } from '../../core/services/documents.service';
 import { AdSlot } from '../../shared/ad-slot';
@@ -194,7 +195,7 @@ export class Dashboard {
       this.importing.update((names) => [...names, label]);
       this.convert.importImages(images).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
         next: (job) => this.onImported(job, label),
-        error: (err) => this.failImport(label, err?.error?.error?.message),
+        error: (err) => this.failImport(label, apiError(err).message),
       });
     } else {
       rest.push(...images);
@@ -203,7 +204,7 @@ export class Dashboard {
       this.importing.update((names) => [...names, file.name]);
       this.convert.importFile(file).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
         next: (job) => this.onImported(job, file.name),
-        error: (err) => this.failImport(file.name, err?.error?.error?.message),
+        error: (err) => this.failImport(file.name, apiError(err).message),
       });
     }
   }
@@ -217,7 +218,7 @@ export class Dashboard {
         this.onImported(job, url);
         if (job.status === 'succeeded') this.importUrl.set('');
       },
-      error: (err) => this.failImport(url, err?.error?.error?.message),
+      error: (err) => this.failImport(url, apiError(err).message),
     });
   }
 

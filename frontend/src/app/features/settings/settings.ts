@@ -17,6 +17,7 @@ import { environment } from '../../../environments/environment';
 
 import { AuthFacade } from '../../abstraction/auth.facade';
 import { DocumentsFacade } from '../../abstraction/documents.facade';
+import { apiError } from '../../core/api-error';
 import { Job } from '../../core/models/models';
 import { ConfigService } from '../../core/services/config.service';
 import { JobsService } from '../../core/services/jobs.service';
@@ -368,7 +369,7 @@ export class Settings {
         error: (err) => {
           this.busyDeleting.set(false);
           this.deleteError.set(
-            err?.error?.error?.message || 'That did not work. Try again.',
+            apiError(err).message || 'That did not work. Try again.',
           );
         },
       });

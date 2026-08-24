@@ -4,6 +4,7 @@ import { FormsModule } from '@angular/forms';
 
 import { EditFacade } from '../../abstraction/edit.facade';
 import { WorkspaceShellFacade } from '../../abstraction/workspace-shell.facade';
+import { apiError } from '../../core/api-error';
 import {
   Job,
   PageImage,
@@ -600,7 +601,7 @@ export class Edit {
           this.toast.success('Drag a box to place the image');
         }
       },
-      error: (err) => this.toast.error(err?.error?.error?.message ?? 'Upload failed'),
+      error: (err) => this.toast.error(apiError(err).message ?? 'Upload failed'),
     });
     input.value = '';
   }

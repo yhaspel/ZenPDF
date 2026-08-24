@@ -1,6 +1,7 @@
 import { HttpErrorResponse, HttpEventType } from '@angular/common/http';
 import { Injectable, inject, signal } from '@angular/core';
 
+import { apiError } from '../core/api-error';
 import { DocumentsService } from '../core/services/documents.service';
 
 export interface UploadItem {
@@ -59,13 +60,14 @@ export class UploadFacade {
         }
       },
       error: (err: HttpErrorResponse) => {
-        const repairable = err.status === 415 && err.error?.error?.details?.repair_offer === true;
+        const { status, message, details } = apiError(err);
+        const repairable = status === 415 && details?.['repair_offer'] === true;
         this.upsert({
           id,
           name: file.name,
           progress: 0,
           status: repairable ? 'repairable' : 'error',
-          error: err.error?.error?.message ?? 'Upload failed',
+          error: message ?? 'Upload failed',
           file,
         });
       },
