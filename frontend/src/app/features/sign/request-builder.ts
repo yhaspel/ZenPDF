@@ -12,6 +12,7 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 
+import { apiError } from '../../core/api-error';
 import {
   RecipientRole,
   SignFieldType,
@@ -144,9 +145,11 @@ export class RequestBuilder {
         this.message.set(row.message);
       },
       error: (err) => {
-        this.toast.error(err?.error?.error?.message
+        this.toast.error(apiError(err).message
                          || 'That document cannot be sent for signature.');
-        this.router.navigate(['/app/doc', docId]);
+        // Bounced back to the document because it cannot be sent; the toast
+        // above carries the reason and is what the person acts on.
+        void this.router.navigate(['/app/doc', docId]);
       },
     });
     effect((onCleanup) => {
@@ -230,7 +233,7 @@ export class RequestBuilder {
       },
       error: (err) => {
         this.busy.set(false);
-        this.toast.error(err?.error?.error?.message || 'Could not save that.');
+        this.toast.error(apiError(err).message || 'Could not save that.');
       },
     });
   }
@@ -348,7 +351,7 @@ export class RequestBuilder {
       },
       error: (err) => {
         this.busy.set(false);
-        this.toast.error(err?.error?.error?.message || 'Could not save those.');
+        this.toast.error(apiError(err).message || 'Could not save those.');
       },
     });
   }
@@ -383,7 +386,8 @@ export class RequestBuilder {
       next: () => {
         this.busy.set(false);
         this.toast.success('Sent — the first signer has been emailed.');
-        this.router.navigate(['/app/sign', request.id]);
+        // The request is sent — this only shows them the record of it.
+        void this.router.navigate(['/app/sign', request.id]);
       },
       error: (err) => {
         this.busy.set(false);
@@ -393,7 +397,7 @@ export class RequestBuilder {
           this.needsVerification.set(true);
           return;
         }
-        this.toast.error(err?.error?.error?.message || 'Could not send that.');
+        this.toast.error(apiError(err).message || 'Could not send that.');
       },
     });
   }

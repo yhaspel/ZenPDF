@@ -62,7 +62,10 @@ export class PdfThumbnail implements AfterViewInit, OnDestroy {
   private current: string | null = null;
   private docsSvc = inject(DocumentsService);
   private scheduler = inject(ThumbnailScheduler);
-  private host = inject(ElementRef<HTMLElement>);
+  // Not `inject(ElementRef<HTMLElement>)`, which reads as though it types the
+  // host and does not — that is an instantiation expression, and `inject`
+  // resolves it back to `ElementRef<any>`. Same emitted call either way.
+  private host = inject<ElementRef<HTMLElement>>(ElementRef);
 
   /**
    * Nothing is fetched until the tile is near the viewport.
@@ -141,7 +144,7 @@ export class PdfThumbnail implements AfterViewInit, OnDestroy {
     }).pipe(
       retry({
         count: MAX_ATTEMPTS - 1,
-        delay: (error, retryCount) => {
+        delay: (error: unknown, retryCount: number) => {
           // A 404 or a 423 is an answer, not a refusal: asking again is rude
           // and cannot change it. Those fail at once, as they always have.
           if (!this.scheduler.isRefusal(error)) return throwError(() => error);

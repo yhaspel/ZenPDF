@@ -198,7 +198,10 @@ export class PageOverlay {
   private surface = viewChild<ElementRef<HTMLDivElement>>('surface');
   private textEditor = viewChild<ElementRef<HTMLTextAreaElement>>('textEditor');
   private menuEl = viewChild<ElementRef<HTMLDivElement>>('overlayMenu');
-  private host = inject(ElementRef<HTMLElement>);
+  // Not `inject(ElementRef<HTMLElement>)`, which reads as though it types the
+  // host and does not — that is an instantiation expression, and `inject`
+  // resolves it back to `ElementRef<any>`. Same emitted call either way.
+  private host = inject<ElementRef<HTMLElement>>(ElementRef);
   private destroyRef = inject(DestroyRef);
 
   protected imageUrl = signal<string | null>(null);
@@ -612,7 +615,7 @@ export class PageOverlay {
   protected previewLine(): NormPoint[] | null {
     const drag = this.drag();
     const tool = this.tool();
-    if (!drag || drag.kind !== 'draw') return null;
+    if (drag?.kind !== 'draw') return null;
     if (tool !== 'line' && tool !== 'arrow') return null;
     return [drag.start, drag.current];
   }

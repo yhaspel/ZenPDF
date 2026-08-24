@@ -5,6 +5,7 @@ import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 
 import { AuthFacade } from '../../abstraction/auth.facade';
 import { GuestFacade } from '../../abstraction/guest.facade';
+import { apiError } from '../../core/api-error';
 import { safeNext } from '../../core/safe-next';
 import { Brand } from '../../shared/brand';
 import { SiteFooter } from '../../shared/site-footer';
@@ -26,6 +27,29 @@ export const REASONS: Record<string, string> = {
   sign: 'Create a free account to send documents for signature.',
   account: 'Create a free account to use this feature.',
 };
+
+/**
+ * The first field error out of a `validation_error`'s details, if there is one.
+ *
+ * DRF's shape is `details.fields = { email: ["That address is already
+ * registered."] }`, and the field's own sentence beats the envelope's generic
+ * one — "Registration failed" does not tell somebody their email is taken.
+ * First field, first message: the form is four fields and the server reports
+ * them in declaration order, so the first is the one nearest the top of the
+ * screen.
+ *
+ * Exported for its spec, the same way `REASONS` above is. This used to be
+ * three lines walking an `any` inside the error callback, where nothing
+ * reached it — and "that address is already registered" is the single most
+ * likely thing this form ever has to say.
+ */
+export function firstFieldError(details: Record<string, unknown> | undefined): string | undefined {
+  const fields = details?.['fields'];
+  if (typeof fields !== 'object' || fields === null) return undefined;
+  const first = Object.values(fields)[0] as unknown;
+  const message = Array.isArray(first) ? (first[0] as unknown) : first;
+  return typeof message === 'string' ? message : undefined;
+}
 
 @Component({
   selector: 'app-register',
@@ -240,14 +264,25 @@ export class Register {
       next: () => {
         // auto-login after successful registration
         this.auth.login(this.email, this.password).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
-          next: () => this.router.navigateByUrl(this.next()),
-          error: () => this.router.navigate(['/auth/login']),
+          // The claim flow's last step (§21.5): the guest token has been
+          // spent, the account holds the work, and this is where they are
+          // shown it. The destination is `safeNext`-validated and defaults to
+          // `/app/dashboard`, which `accountGuard` cannot refuse — the login
+          // one line above has just written the tokens it reads. `phase-2b`
+          // walks the whole path and asserts the documents are there.
+          next: () => {
+            void this.router.navigateByUrl(this.next());
+          },
+          // Registration succeeded and auto-login did not, so there is an
+          // account to sign in to. Nothing is left holding state for this.
+          error: () => {
+            void this.router.navigate(['/auth/login']);
+          },
         });
       },
       error: (err) => {
-        const details = err.error?.error?.details?.fields;
-        const first = details ? Object.values(details)[0] : null;
-        this.error.set((Array.isArray(first) ? first[0] : first) ?? err.error?.error?.message ?? 'Registration failed.');
+        const { message, details } = apiError(err);
+        this.error.set(firstFieldError(details) ?? message ?? 'Registration failed.');
         this.loading.set(false);
       },
     });

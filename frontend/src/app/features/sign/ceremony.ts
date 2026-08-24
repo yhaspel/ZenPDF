@@ -3,6 +3,7 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 
+import { apiError } from '../../core/api-error';
 import { CeremonyMeta, SignFieldModel } from '../../core/models/models';
 import { EsignService } from '../../core/services/esign.service';
 import { Brand } from '../../shared/brand';
@@ -135,9 +136,12 @@ export class Ceremony {
         this.saved = Object.fromEntries(meta.fields.map((f) => [f.id, f.value ?? '']));
         this.screen.set(this.screenFor(meta));
       },
-      error: (err) => {
-        this.error.set(err?.error?.error?.message || 'This link is not valid.');
-        this.screen.set(err?.status === 410 ? 'closed' : 'error');
+      error: (err: unknown) => {
+        const { message, status } = apiError(err);
+        this.error.set(message || 'This link is not valid.');
+        // 410 is `token_expired` (§6) — expired, completed or cancelled. That
+        // is a closed request, not a broken one, and gets its own screen.
+        this.screen.set(status === 410 ? 'closed' : 'error');
       },
     });
   }
@@ -164,7 +168,7 @@ export class Ceremony {
       },
       error: (err) => {
         this.busy.set(false);
-        this.error.set(err?.error?.error?.message || 'That did not work.');
+        this.error.set(apiError(err).message || 'That did not work.');
       },
     });
   }
@@ -189,7 +193,7 @@ export class Ceremony {
         },
         error: (err) => {
           this.busy.set(false);
-          this.error.set(err?.error?.error?.message || 'That did not work.');
+          this.error.set(apiError(err).message || 'That did not work.');
         },
       });
   }
@@ -240,7 +244,7 @@ export class Ceremony {
       },
       error: (err) => {
         this.busy.set(false);
-        this.error.set(err?.error?.error?.message || 'That did not work.');
+        this.error.set(apiError(err).message || 'That did not work.');
       },
     });
   }
@@ -258,7 +262,7 @@ export class Ceremony {
       },
       error: (err) => {
         this.busy.set(false);
-        this.error.set(err?.error?.error?.message || 'That did not work.');
+        this.error.set(apiError(err).message || 'That did not work.');
       },
     });
   }

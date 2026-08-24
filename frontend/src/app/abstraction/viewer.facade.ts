@@ -1,7 +1,7 @@
-import { HttpErrorResponse } from '@angular/common/http';
 import { Injectable, computed, inject, signal } from '@angular/core';
 import { Observable } from 'rxjs';
 
+import { apiError } from '../core/api-error';
 import { DocumentModel, DocumentVersion, Job, OutlineItem } from '../core/models/models';
 import { DocumentsService } from '../core/services/documents.service';
 
@@ -27,20 +27,21 @@ export interface ViewerError {
  * cancelled request and has no body at all.
  */
 function describe(error: unknown): ViewerError {
-  const response = error as HttpErrorResponse;
-  const envelope = response?.error?.error;
-  if (envelope?.message) {
-    const wait = Number(envelope.details?.retry_after_seconds);
+  const { code, message, status, retryAfter } = apiError(error);
+  // Truthy, not `!== undefined`: an envelope carrying an empty message has
+  // explained nothing, and the status-shaped sentences below are better than
+  // a blank screen.
+  if (message) {
     return {
-      code: String(envelope.code ?? ''),
-      message: String(envelope.message),
-      ...(Number.isFinite(wait) && wait > 0 ? { retryAfter: Math.ceil(wait) } : {}),
+      code: code ?? '',
+      message,
+      ...(retryAfter !== undefined ? { retryAfter } : {}),
     };
   }
-  if (response?.status === 404) {
+  if (status === 404) {
     return { code: 'not_found', message: 'That document could not be found.' };
   }
-  if (response?.status === 0) {
+  if (status === 0) {
     return {
       code: 'offline',
       message: 'We could not reach ZenPDF. Check your connection and try again.',
@@ -198,7 +199,7 @@ export class ViewerFacade {
   adopt(job: Job): void {
     const d = this._doc();
     const seq = Number(job?.result?.['seq']);
-    if (!d || !d.current_version || !Number.isFinite(seq)) {
+    if (!d?.current_version || !Number.isFinite(seq)) {
       this.reload();
       return;
     }

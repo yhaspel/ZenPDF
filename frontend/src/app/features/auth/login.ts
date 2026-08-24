@@ -4,6 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 
 import { AuthFacade } from '../../abstraction/auth.facade';
+import { apiError } from '../../core/api-error';
 import { safeNext } from '../../core/safe-next';
 import { Brand } from '../../shared/brand';
 import { SiteFooter } from '../../shared/site-footer';
@@ -174,9 +175,14 @@ export class Login {
       // account gate was landing on the dashboard, one click away from what
       // they had been doing and with nothing to say why. Validated, never
       // trusted — see `safeNext`.
-      next: () => this.router.navigateByUrl(safeNext(this.route.snapshot.queryParamMap.get('next'))),
+      // A sync wrapper, not an arrow returning the promise: `next` is typed
+      // `(value) => void`, and handing it a `Promise` makes rxjs discard a
+      // rejection *and* the signature a lie.
+      next: () => {
+        void this.router.navigateByUrl(safeNext(this.route.snapshot.queryParamMap.get('next')));
+      },
       error: (err) => {
-        this.error.set(err.error?.error?.message ?? 'Invalid email or password.');
+        this.error.set(apiError(err).message ?? 'Invalid email or password.');
         this.loading.set(false);
       },
     });

@@ -112,6 +112,12 @@ export class RequestDetail {
 
   protected detail(event: AuditEventModel): string {
     return Object.entries(event.metadata || {})
+      // `metadata` is `Record<string, unknown>` because it genuinely is one:
+      // `esign/models.py::record(**metadata)` is called with strings, and at
+      // `tasks.py:352` with a list of emails, which this renders `a@x,b@y`.
+      // The coercion is intended for both, so the rule is silenced at the one
+      // site rather than relaxed for the app.
+      // eslint-disable-next-line @typescript-eslint/restrict-template-expressions
       .map(([key, value]) => `${key}=${value}`)
       .join(', ');
   }

@@ -467,14 +467,14 @@ export class Workspace {
   private readonly shownSeq = computed(() => {
     const cursor = this.versionCursor();
     const seq = this.viewer.currentSeq() ?? 1;
-    return cursor && cursor.expected === seq ? cursor.content : seq;
+    return cursor?.expected === seq ? cursor.content : seq;
   });
 
   protected readonly canUndoVersion = computed(() => this.shownSeq() > 1);
 
   protected readonly canRedoVersion = computed(() => {
     const cursor = this.versionCursor();
-    if (!cursor || cursor.expected !== (this.viewer.currentSeq() ?? 1)) return false;
+    if (cursor?.expected !== (this.viewer.currentSeq() ?? 1)) return false;
     return cursor.content < cursor.ceiling;
   });
 
@@ -510,7 +510,7 @@ export class Workspace {
   private stepVersion(target: number): void {
     const seq = this.viewer.currentSeq() ?? 1;
     const cursor = this.versionCursor();
-    const live = cursor && cursor.expected === seq;
+    const live = cursor?.expected === seq;
     this.revert(target, { ceiling: live ? cursor.ceiling : seq, content: target, from: seq });
   }
 
@@ -642,7 +642,9 @@ export class Workspace {
           const docs = (job.result?.['documents'] as string[]) ?? [];
           this.toast.success(`${label} — ${docs.length} document(s)`);
           this.busy.set(false);
-          if (docs.length) this.router.navigate(['/app/doc', docs[0]]);
+          // The split has already happened and been announced with its
+          // count; opening the first piece is a convenience on top of that.
+          if (docs.length) void this.router.navigate(['/app/doc', docs[0]]);
         } else if (job.status === 'failed') {
           this.handleFailure(job);
         }
@@ -732,7 +734,9 @@ export class Workspace {
     // the work is finished, and what the user wants now is to look at it.
     this.mode.set('view');
     this.protectTab.set('protect');
-    this.router.navigate(['/app/doc', docId]);
+    // The two signals above are this component's own state and are already
+    // correct; the navigation only swaps which document is under them.
+    void this.router.navigate(['/app/doc', docId]);
   }
 
   /** The Protect tool's own unlock box succeeded, or the top-level prompt did. */

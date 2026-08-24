@@ -5,6 +5,7 @@ import {
   ActivatedRouteSnapshot,
   Router,
   RouterStateSnapshot,
+  UrlTree,
   provideRouter,
 } from '@angular/router';
 
@@ -12,31 +13,29 @@ import { TokenService } from '../services/token.service';
 import { ACCOUNT_GATED_PREFIXES, accountGuard, isAccountGated } from './account.guard';
 
 describe('accountGuard', () => {
-  let navigated: { commands: unknown[]; extras?: { queryParams?: Record<string, string> } } | null;
-
+  /**
+   * The real `Router`, not a stub with one method on it.
+   *
+   * It used to be a stub carrying only `navigate`, which was enough while the
+   * guard's answer was "start a second navigation, then say no". Since
+   * 2026-08-24 the guard *returns the redirect* as a `UrlTree` — one
+   * navigation instead of two racing ones — and the honest assertion is the
+   * URL that tree serialises to, which only a real `Router` can produce.
+   */
   function run(url: string, data: Record<string, unknown> = {}) {
     const route = { data } as unknown as ActivatedRouteSnapshot;
     const state = { url } as RouterStateSnapshot;
     return TestBed.runInInjectionContext(() => accountGuard(route, state));
   }
 
+  /** Where a refusal sends them, as a URL. */
+  function redirect(result: unknown): string {
+    return TestBed.inject(Router).serializeUrl(result as UrlTree);
+  }
+
   beforeEach(() => {
     localStorage.clear();
-    navigated = null;
-    TestBed.configureTestingModule({
-      providers: [
-        provideRouter([]),
-        {
-          provide: Router,
-          useValue: {
-            navigate: (commands: unknown[], extras?: { queryParams?: Record<string, string> }) => {
-              navigated = { commands, extras };
-              return Promise.resolve(true);
-            },
-          },
-        },
-      ],
-    });
+    TestBed.configureTestingModule({ providers: [provideRouter([])] });
   });
 
   afterEach(() => localStorage.clear());
@@ -44,27 +43,26 @@ describe('accountGuard', () => {
   it('allows an authenticated account through', () => {
     TestBed.inject(TokenService).set('jwt-access');
     expect(run('/app/dashboard')).toBe(true);
-    expect(navigated).toBeNull();
   });
 
   it('redirects a guest away from /app/dashboard, stating why', () => {
-    expect(run('/app/dashboard', { accountReason: 'library' })).toBe(false);
+    const result = run('/app/dashboard', { accountReason: 'library' });
+
     // Register, not login: a rejection is an upgrade prompt, never a bare wall.
-    expect(navigated!.commands).toEqual(['/auth/register']);
-    expect(navigated!.extras!.queryParams).toEqual({
-      next: '/app/dashboard',
-      reason: 'library',
-    });
+    // A `UrlTree` is also the refusal — returning one both denies the route and
+    // says where to go instead, so there is no separate `false` to disagree
+    // with it.
+    expect(result).not.toBe(true);
+    expect(redirect(result)).toBe('/auth/register?next=%2Fapp%2Fdashboard&reason=library');
   });
 
   it('redirects a guest away from /app/settings', () => {
-    expect(run('/app/settings', { accountReason: 'settings' })).toBe(false);
-    expect(navigated!.extras!.queryParams!['reason']).toBe('settings');
+    expect(redirect(run('/app/settings', { accountReason: 'settings' })))
+      .toBe('/auth/register?next=%2Fapp%2Fsettings&reason=settings');
   });
 
   it('falls back to a generic reason when none is declared', () => {
-    expect(run('/app/whatever')).toBe(false);
-    expect(navigated!.extras!.queryParams!['reason']).toBe('account');
+    expect(redirect(run('/app/whatever'))).toContain('reason=account');
   });
 
   /**

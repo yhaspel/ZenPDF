@@ -259,7 +259,13 @@ export class SignaturePad {
 
   private toDataUrl(blob: Blob): void {
     const reader = new FileReader();
-    reader.onload = () => this.preview.set(String(reader.result));
+    // `readAsDataURL` always yields a string — the union is `FileReader`'s,
+    // covering `readAsArrayBuffer` too, not this call's. Guarded rather than
+    // `String()`d, which would have written "[object ArrayBuffer]" into the
+    // preview if it ever were one.
+    reader.onload = () => {
+      if (typeof reader.result === 'string') this.preview.set(reader.result);
+    };
     reader.readAsDataURL(blob);
   }
 

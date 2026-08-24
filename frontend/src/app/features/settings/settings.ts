@@ -17,6 +17,7 @@ import { environment } from '../../../environments/environment';
 
 import { AuthFacade } from '../../abstraction/auth.facade';
 import { DocumentsFacade } from '../../abstraction/documents.facade';
+import { apiError } from '../../core/api-error';
 import { Job } from '../../core/models/models';
 import { ConfigService } from '../../core/services/config.service';
 import { JobsService } from '../../core/services/jobs.service';
@@ -363,12 +364,14 @@ export class Settings {
             `Account deleted. ${summary.documents} document(s) removed.${kept}`,
             12_000,
           );
-          this.router.navigateByUrl('/');
+          // The account is deleted and the toast says so for 12 s. Landing
+          // somewhere else would not undo it, and nothing here reads the result.
+          void this.router.navigateByUrl('/');
         },
         error: (err) => {
           this.busyDeleting.set(false);
           this.deleteError.set(
-            err?.error?.error?.message || 'That did not work. Try again.',
+            apiError(err).message || 'That did not work. Try again.',
           );
         },
       });

@@ -10,6 +10,7 @@ import { Observable, catchError, of, switchMap, tap, throwError } from 'rxjs';
 
 import { AuthFacade } from '../../abstraction/auth.facade';
 import { GuestFacade } from '../../abstraction/guest.facade';
+import { apiError } from '../api-error';
 import { AuthService } from '../services/auth.service';
 import { GuestTokenService } from '../services/guest-token.service';
 import { TokenService } from '../services/token.service';
@@ -131,7 +132,7 @@ export const authInterceptor: HttpInterceptorFn = (req, next) => {
       }
     }),
     catchError((err: HttpErrorResponse) => {
-      const code = err.error?.error?.code;
+      const { code, message } = apiError(err);
 
       // A guest session ended. Recover in place: start a fresh session and
       // replay the request once, so somebody who comes back a day later just
@@ -144,7 +145,7 @@ export const authInterceptor: HttpInterceptorFn = (req, next) => {
       // An account-only feature. Surfaced as an inline upgrade prompt that
       // names what the account unlocks — never a dead end (§21.3).
       if (err.status === 403 && code === 'account_required') {
-        guests.onAccountRequired(err.error?.error?.message ?? '');
+        guests.onAccountRequired(message ?? '');
         return throwError(() => err);
       }
 
@@ -166,7 +167,7 @@ export const authInterceptor: HttpInterceptorFn = (req, next) => {
                 req.clone({ setHeaders: { Authorization: `Bearer ${res.access}` } }),
               );
             }),
-            catchError((refreshErr) => {
+            catchError((refreshErr: unknown) => {
               // Was `tokens.clear()` + a navigate, which cleared *less* than a
               // sign-out should: the `_user` signal and this tab's document
               // passwords both survived it, and L7 is the whole reason the

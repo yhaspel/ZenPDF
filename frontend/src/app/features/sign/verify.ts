@@ -3,6 +3,7 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { Meta, Title } from '@angular/platform-browser';
 import { RouterLink } from '@angular/router';
 
+import { apiError } from '../../core/api-error';
 import { VerifyReport } from '../../core/models/models';
 import { EsignService } from '../../core/services/esign.service';
 import { Brand } from '../../shared/brand';
@@ -71,7 +72,7 @@ export class Verify {
       },
       error: (err) => {
         this.busy.set(false);
-        this.error.set(err?.error?.error?.message
+        this.error.set(apiError(err).message
                        || 'That file could not be checked.');
       },
     });

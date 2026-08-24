@@ -9,6 +9,7 @@ import { DocumentsFacade } from '../../abstraction/documents.facade';
 import { FoldersFacade } from '../../abstraction/folders.facade';
 import { JobsFacade } from '../../abstraction/jobs.facade';
 import { UploadFacade, UploadItem } from '../../abstraction/upload.facade';
+import { apiError } from '../../core/api-error';
 import { DocumentModel, Job } from '../../core/models/models';
 import { DocumentsService } from '../../core/services/documents.service';
 import { AdSlot } from '../../shared/ad-slot';
@@ -194,7 +195,7 @@ export class Dashboard {
       this.importing.update((names) => [...names, label]);
       this.convert.importImages(images).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
         next: (job) => this.onImported(job, label),
-        error: (err) => this.failImport(label, err?.error?.error?.message),
+        error: (err) => this.failImport(label, apiError(err).message),
       });
     } else {
       rest.push(...images);
@@ -203,7 +204,7 @@ export class Dashboard {
       this.importing.update((names) => [...names, file.name]);
       this.convert.importFile(file).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
         next: (job) => this.onImported(job, file.name),
-        error: (err) => this.failImport(file.name, err?.error?.error?.message),
+        error: (err) => this.failImport(file.name, apiError(err).message),
       });
     }
   }
@@ -217,7 +218,7 @@ export class Dashboard {
         this.onImported(job, url);
         if (job.status === 'succeeded') this.importUrl.set('');
       },
-      error: (err) => this.failImport(url, err?.error?.error?.message),
+      error: (err) => this.failImport(url, apiError(err).message),
     });
   }
 
@@ -245,7 +246,8 @@ export class Dashboard {
   }
 
   open(doc: DocumentModel): void {
-    this.router.navigate(['/app/doc', doc.id]);
+    // Opening a row is the whole of this method; there is no next step to gate.
+    void this.router.navigate(['/app/doc', doc.id]);
   }
 
   toggleMenu(id: string): void {
@@ -334,7 +336,10 @@ export class Dashboard {
           this.toast.success('Documents merged');
           this.selected.set([]);
           this.docs.load();
-          if (newId) this.router.navigate(['/app/doc', newId]);
+          // The merge has already succeeded, been announced and reloaded the
+          // list — the move to the new document is the last thing, not a step
+          // anything after it depends on.
+          if (newId) void this.router.navigate(['/app/doc', newId]);
         } else if (job.status === 'failed') {
           this.toast.error(job.error_message || 'Merge failed');
         }

@@ -4,6 +4,7 @@ import { FormsModule } from '@angular/forms';
 
 import { EditFacade } from '../../abstraction/edit.facade';
 import { WorkspaceShellFacade } from '../../abstraction/workspace-shell.facade';
+import { apiError } from '../../core/api-error';
 import {
   Job,
   PageImage,
@@ -600,7 +601,7 @@ export class Edit {
           this.toast.success('Drag a box to place the image');
         }
       },
-      error: (err) => this.toast.error(err?.error?.error?.message ?? 'Upload failed'),
+      error: (err) => this.toast.error(apiError(err).message ?? 'Upload failed'),
     });
     input.value = '';
   }
@@ -682,7 +683,7 @@ export class Edit {
     // the wrong occurrences.
     const held = this.edits.reportQuery();
     const find = this.findText().trim();
-    if (!held || held.find !== find || held.matchCase !== this.matchCase()) {
+    if (held?.find !== find || held.matchCase !== this.matchCase()) {
       this.edits.setReport(null);
       this.toast.info('The search changed — preview the matches again.');
       return;

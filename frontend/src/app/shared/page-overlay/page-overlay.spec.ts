@@ -29,7 +29,7 @@ describe('PageOverlay', () => {
     finishPending(): void;
   };
 
-  beforeEach(async () => {
+  beforeEach(() => {
     TestBed.configureTestingModule({
       imports: [PageOverlay],
       providers: [provideHttpClient(), provideHttpClientTesting()],
@@ -192,13 +192,13 @@ describe('PageOverlay — text on the page', () => {
   it('converts the point size against the page width, at any zoom', () => {
     fixture.componentRef.setInput('items', [textItem()]);
     fixture.detectChanges();
-    const at595 = (html().querySelector('[data-test=overlay-text]') as HTMLElement).style.fontSize;
+    const at595 = html().querySelector<HTMLElement>('[data-test=overlay-text]')!.style.fontSize;
     // 24pt on a 595pt page rendered 595px wide is 24px.
     expect(at595).toBe('24px');
 
     fixture.componentRef.setInput('renderWidth', 1190);
     fixture.detectChanges();
-    const at1190 = (html().querySelector('[data-test=overlay-text]') as HTMLElement).style.fontSize;
+    const at1190 = html().querySelector<HTMLElement>('[data-test=overlay-text]')!.style.fontSize;
     expect(at1190).toBe('48px');
   });
 
@@ -207,7 +207,7 @@ describe('PageOverlay — text on the page', () => {
     // A page twice as wide in points draws the same point size half as large.
     fixture.componentRef.setInput('pageWidthPt', 1190);
     fixture.detectChanges();
-    expect((html().querySelector('[data-test=overlay-text]') as HTMLElement).style.fontSize)
+    expect(html().querySelector<HTMLElement>('[data-test=overlay-text]')!.style.fontSize)
       .toBe('12px');
   });
 
@@ -428,7 +428,7 @@ describe('PageOverlay — menu, guard and nudge', () => {
     it('marks unavailable entries with aria-disabled, not the native attribute', () => {
       // A natively disabled button drops out of the accessibility tree, so
       // "Paste (unavailable)" would vanish instead of reading as unavailable.
-      const paste = host().querySelector('[data-test=overlay-menu-paste]') as HTMLButtonElement;
+      const paste = host().querySelector<HTMLButtonElement>('[data-test=overlay-menu-paste]')!;
       expect(paste.getAttribute('aria-disabled')).toBe('true');
       expect(paste.disabled).toBe(false);
     });

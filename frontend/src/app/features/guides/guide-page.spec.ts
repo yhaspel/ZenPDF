@@ -137,7 +137,7 @@ describe('guides index', () => {
     return fixture.nativeElement as HTMLElement;
   }
 
-  it('lists every guide, once, linking each one', async () => {
+  it('lists every guide, once, linking each one', () => {
     const el = render();
     const links = [...el.querySelectorAll<HTMLAnchorElement>('[data-test^="guide-link-"]')];
     expect(links.length).toBe(GUIDE_PAGES.length);
@@ -146,7 +146,7 @@ describe('guides index', () => {
     );
   });
 
-  it('gives each entry its title, its one-line description and its date', async () => {
+  it('gives each entry its title, its one-line description and its date', () => {
     const el = render();
     const first = el.querySelector(`[data-test="guide-link-${GUIDE_PAGES[0].slug}"]`)!;
     expect(first.querySelector('.guide-row-title')!.textContent!.trim()).toBe(GUIDE_PAGES[0].h1);
@@ -156,7 +156,7 @@ describe('guides index', () => {
     expect(first.querySelector('time')!.textContent!.trim()).toBe('24 August 2026');
   });
 
-  it('sits on the reading column and carries no ads or filter', async () => {
+  it('sits on the reading column and carries no ads or filter', () => {
     const el = render();
     expect(el.querySelector('main.wrap-reading')).not.toBeNull();
     expect(el.querySelector('app-ad-slot')).toBeNull();

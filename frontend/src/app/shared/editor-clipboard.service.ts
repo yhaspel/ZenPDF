@@ -42,7 +42,7 @@ export class EditorClipboard {
   /** The payload, but only if it is the kind the caller can use. */
   read<T>(kind: ClipboardKind): T | undefined {
     const clip = this._clip();
-    if (!clip || clip.kind !== kind) return undefined;
+    if (clip?.kind !== kind) return undefined;
     return clip.payload as T;
   }
 

@@ -19,6 +19,7 @@ import { AnnotationsFacade } from '../../abstraction/annotations.facade';
 import { GuestFacade } from '../../abstraction/guest.facade';
 import { JobsFacade } from '../../abstraction/jobs.facade';
 import { WorkspaceShellFacade } from '../../abstraction/workspace-shell.facade';
+import { apiError } from '../../core/api-error';
 import { Annotation, AnnotationType, Job } from '../../core/models/models';
 import { DocumentsService } from '../../core/services/documents.service';
 import { ConfirmService } from '../../shared/confirm.service';
@@ -602,7 +603,7 @@ export class Annotate {
     if (handled) event.preventDefault();
   }
 
-  private runAction(action: ShortcutId | string): boolean {
+  private runAction(action: ShortcutId): boolean {
     switch (action) {
       case 'undo':
         this.undo();
@@ -653,7 +654,7 @@ export class Annotate {
         if (id) this.startEditing(id);
         break;
       case 'delete':
-        if (id) void this.onDeleteRequested(id);
+        if (id) this.onDeleteRequested(id);
         break;
     }
   }
@@ -739,7 +740,7 @@ export class Annotate {
     this.annotations.redo();
   }
 
-  protected async onDeleteRequested(id: string): Promise<void> {
+  protected onDeleteRequested(id: string): void {
     this.annotations.remove(id);
   }
 
@@ -839,7 +840,7 @@ export class Annotate {
         this.tool.set('image_stamp');
         this.toast.success('Stamp ready — drag a box to place it');
       },
-      error: (err) => this.toast.error(err?.error?.error?.message ?? 'Could not upload that image'),
+      error: (err) => this.toast.error(apiError(err).message ?? 'Could not upload that image'),
     });
     input.value = '';
   }

@@ -271,7 +271,10 @@ export class Sign {
   }
 
   protected sendForSignature(): void {
-    this.router.navigate(['/app/sign/new', this.docId()]);
+    // A plain hand-off to the builder; this component keeps no state waiting
+    // on it. `accountGuard` may refuse the destination, and that refusal is
+    // its own screen with its own copy, not something to handle here.
+    void this.router.navigate(['/app/sign/new', this.docId()]);
   }
 
   private fail(job: Job): void {
