@@ -1377,10 +1377,12 @@ out of the inbox and back. **Measured on `main` as well** — `main`'s `frontend
 here**, on code this branch never touches. The row is corrected with the evidence and
 stays open; nothing here is a fix for it.
 
-**Gate**, green end to end on `7acd3c5`: `ruff` + `mypy` clean · pytest **1159 passed, 6
-skipped**, coverage apps **91.53 %** / pdf_engine **91.87 %** · `ng lint` clean · `ng
-test` **63 files / 540 tests** · build + `verify:prerender` clean, 43 prerendered routes ·
-Playwright **82 passed, 1 skipped of 83**.
+**Gate**, every leg green on the final commit `66a2121`: `ruff` + `mypy` clean · pytest
+**1159 passed, 6 skipped**, coverage apps **91.53 %** / pdf_engine **91.87 %** · `ng lint`
+clean · `ng test` **63 files / 540 tests** · build + `verify:prerender` clean, **43**
+prerendered routes · Playwright **82 passed, 1 skipped of 83**. The e2e leg is a separate
+invocation of the same suite, run after the flake above was chased to `main` — said out
+loud rather than presented as one `test.sh` exit, because it was two.
 
 **Browser evidence** (`docs/reviews/evidence/phone-follow-ups/`, indexed by its own
 `README.md`): all nine modes swept at **390 and 414 in both themes** with device emulation
