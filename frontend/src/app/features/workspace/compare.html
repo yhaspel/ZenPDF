@@ -1,74 +1,78 @@
 <div class="ws-panes" data-test="compare-mode">
-  <aside class="ws-rail ws-rail-start w-72 gap-3 overflow-y-auto p-3 text-sm">
-    <h3 class="kicker">
-      Compare with
-    </h3>
-    <select class="input"
-            [ngModel]="compare.otherId()" (ngModelChange)="compare.setOther($event)"
-            data-test="compare-other">
-      <option [ngValue]="null">Choose a document…</option>
-      @for (doc of candidates(); track doc.id) {
-        <option [ngValue]="doc.id">{{ doc.title }}</option>
+  <!-- Below `md` this rail is the "Compare with" drawer (§3 Phone workspace). -->
+  <aside zenWsDrawer="start" zenWsDrawerLabel="Compare with" class="ws-rail ws-rail-start w-72 overflow-y-auto text-sm">
+    <app-ws-drawer-head />
+    <div class="flex flex-col gap-3 p-3">
+      <h3 class="kicker">
+        Compare with
+      </h3>
+      <select class="input"
+              [ngModel]="compare.otherId()" (ngModelChange)="compare.setOther($event)"
+              data-test="compare-other">
+        <option [ngValue]="null">Choose a document…</option>
+        @for (doc of candidates(); track doc.id) {
+          <option [ngValue]="doc.id">{{ doc.title }}</option>
+        }
+      </select>
+
+      <label class="!flex items-center gap-2">
+        Page offset
+        <input type="number" min="-500" max="500" class="input !min-h-9 !w-20"
+               [ngModel]="compare.offset()" (ngModelChange)="compare.setOffset(+$event)"
+               data-test="compare-offset" />
+      </label>
+      <p class="muted text-xs">
+        Pages are matched by position. If one side gained a cover page, set the offset
+        to 1 so page 1 is compared with page 2.
+      </p>
+
+      <button class="btn btn-primary"
+              [disabled]="compare.running()" (click)="run()" data-test="compare-run">
+        {{ compare.running() ? 'Comparing…' : 'Compare' }}
+      </button>
+
+      @if (compare.summary(); as summary) {
+        <div class="border-border bg-bg muted rounded-2 border p-2.5 text-xs"
+             data-test="compare-summary">
+          @if (summary.identical) {
+            These two documents are identical.
+          } @else {
+            {{ compare.summaryLine() }}
+          }
+        </div>
+
+        <div class="seg">
+          <button class="flex-1 justify-center"
+                  [class.seg-active]="view() === 'all'" [attr.aria-pressed]="view() === 'all'"
+                  (click)="view.set('all')" data-test="compare-view-all">All</button>
+          <button class="flex-1 justify-center"
+                  [class.seg-active]="view() === 'text'" [attr.aria-pressed]="view() === 'text'"
+                  (click)="view.set('text')" data-test="compare-view-text">Text</button>
+          <button class="flex-1 justify-center"
+                  [class.seg-active]="view() === 'visual'" [attr.aria-pressed]="view() === 'visual'"
+                  (click)="view.set('visual')" data-test="compare-view-visual">Visual</button>
+        </div>
+
+        <div class="flex flex-col gap-1">
+          @for (row of rows(); track row.id) {
+            <button class="rounded-2 border p-2 text-start text-xs"
+                    [class.border-accent]="compare.selectedId() === row.id"
+                    [class.bg-accent-surface]="compare.selectedId() === row.id"
+                    [class.border-border]="compare.selectedId() !== row.id"
+                    (click)="goTo(row)" data-test="compare-change">
+              <span class="kicker block">
+                Page {{ (row.aPage ?? row.bPage ?? 0) + 1 }} · {{ row.kind }}
+              </span>
+              <span class="text-ink">{{ row.summary }}</span>
+            </button>
+          } @empty {
+            <p class="muted text-xs" data-test="compare-no-changes">
+              Nothing to show in this view.
+            </p>
+          }
+        </div>
       }
-    </select>
-
-    <label class="!flex items-center gap-2">
-      Page offset
-      <input type="number" min="-500" max="500" class="input !min-h-9 !w-20"
-             [ngModel]="compare.offset()" (ngModelChange)="compare.setOffset(+$event)"
-             data-test="compare-offset" />
-    </label>
-    <p class="muted text-xs">
-      Pages are matched by position. If one side gained a cover page, set the offset
-      to 1 so page 1 is compared with page 2.
-    </p>
-
-    <button class="btn btn-primary"
-            [disabled]="compare.running()" (click)="run()" data-test="compare-run">
-      {{ compare.running() ? 'Comparing…' : 'Compare' }}
-    </button>
-
-    @if (compare.summary(); as summary) {
-      <div class="border-border bg-bg muted rounded-2 border p-2.5 text-xs"
-           data-test="compare-summary">
-        @if (summary.identical) {
-          These two documents are identical.
-        } @else {
-          {{ compare.summaryLine() }}
-        }
-      </div>
-
-      <div class="seg">
-        <button class="flex-1 justify-center"
-                [class.seg-active]="view() === 'all'" [attr.aria-pressed]="view() === 'all'"
-                (click)="view.set('all')" data-test="compare-view-all">All</button>
-        <button class="flex-1 justify-center"
-                [class.seg-active]="view() === 'text'" [attr.aria-pressed]="view() === 'text'"
-                (click)="view.set('text')" data-test="compare-view-text">Text</button>
-        <button class="flex-1 justify-center"
-                [class.seg-active]="view() === 'visual'" [attr.aria-pressed]="view() === 'visual'"
-                (click)="view.set('visual')" data-test="compare-view-visual">Visual</button>
-      </div>
-
-      <div class="flex flex-col gap-1">
-        @for (row of rows(); track row.id) {
-          <button class="rounded-2 border p-2 text-start text-xs"
-                  [class.border-accent]="compare.selectedId() === row.id"
-                  [class.bg-accent-surface]="compare.selectedId() === row.id"
-                  [class.border-border]="compare.selectedId() !== row.id"
-                  (click)="goTo(row)" data-test="compare-change">
-            <span class="kicker block">
-              Page {{ (row.aPage ?? row.bPage ?? 0) + 1 }} · {{ row.kind }}
-            </span>
-            <span class="text-ink">{{ row.summary }}</span>
-          </button>
-        } @empty {
-          <p class="muted text-xs" data-test="compare-no-changes">
-            Nothing to show in this view.
-          </p>
-        }
-      </div>
-    }
+    </div>
   </aside>
 
   <main class="canvas-backdrop ws-pane-main">

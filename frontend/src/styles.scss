@@ -847,31 +847,229 @@ input[type="color"] {
 @media (max-width: 767px) {
   .ws-bar { gap: 8px; padding-inline: 10px; }
 }
-/* The workspace's pane layout (§4 workspace — phone rule).
+/* The workspace's pane layout (§3 workspace panes).
 
-   Three panes on a desk: a rail, the page, sometimes a second rail. A 390 px
-   phone cannot hold 208 px + a page + 256 px, and nothing said so — so the
-   row simply overflowed and the *page* scrolled sideways, which put the mode
-   nav (View / Organize / Edit / Annotate …) off the right edge with no way to
-   reach it. Below `md` the panes stack instead: rails become full-width
-   sections above and below the page, each scrolling within a share of the
-   height, and every control stays reachable. */
+   Three panes on a desk: a rail, the page, sometimes a second rail. This is the
+   desktop figure and it is an invariant (§10) — the phone treatment below costs
+   it nothing. */
 .ws-panes { display: flex; min-height: 0; flex: 1 1 0%; }
 .ws-pane-main { display: flex; min-width: 0; min-height: 0; flex: 1 1 0%; flex-direction: column; }
 .ws-rail { display: flex; flex-direction: column; flex-shrink: 0; background: var(--color-surface); }
 .ws-rail-start { border-inline-end: var(--border-hairline) solid var(--color-border); }
 .ws-rail-end { border-inline-start: var(--border-hairline) solid var(--color-border); }
+
+/* ---------- 17c. Phone workspace (§3 Phone workspace, 2026-08-24) ----------
+
+   What was here until today: below `md` the panes *stacked* — rails became
+   full-width sections above and below the page, each capped at 34vh. It made
+   everything reachable, which is why it shipped, and it left a 390 px phone
+   with the tool palette owning the top third, the page bar wrapped to two rows
+   and the document starting 600 px down an 844 px screen. The queue row that
+   asked for it called it a rescue rather than a design, and it was right.
+
+   In its place: the page first, the rails as bottom sheets over it, and the
+   nine modes in a bar that is always there. */
+.ws-bottom-bar { display: none; }
+
 @media (max-width: 767px) {
-  .ws-panes { flex-direction: column; }
-  .ws-rail { width: 100%; max-height: 34vh; overflow-y: auto; }
-  .ws-rail-start {
-    border-inline-end: 0;
+  /* The two rows' heights, declared rather than measured: a sheet that has to
+     wait for a resize observer to learn where the bar is arrives in the wrong
+     place first, and the wrong place is over the thing it sits on. */
+  :root {
+    --ws-bottom-actions-h: 52px;
+    --ws-bottom-modes-h: 56px;
+    --ws-bottom-h: calc(
+      var(--ws-bottom-actions-h) + var(--ws-bottom-modes-h) + env(safe-area-inset-bottom, 0px)
+    );
+  }
+
+  /* The mode's component host, which is a plain block everywhere else. Without
+     this the column sizes to the mode's content and the bottom bar floats
+     wherever that ends — measured at 791 px down an 844 px screen, with 53 px
+     of paper under it. */
+  .ws-pane-host {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 0%;
+    min-block-size: 0;
+  }
+
+  /* A rail leaves the row entirely, so `.ws-pane-main` (flex: 1 1 0) owns the
+     whole width and the page is the first thing on screen. */
+  .ws-drawer {
+    position: fixed;
+    inset-inline: 0;
+    inset-block-end: var(--ws-bottom-h);
+    z-index: 40; /* §2: modals + scrim. The scrim is painted before it. */
+    display: flex;
+    flex-direction: column;
+    inline-size: 100%;
+    max-block-size: 62dvh;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    background: var(--color-surface);
+    border: var(--border-hairline) solid var(--color-border);
+    border-block-end: 0;
+    border-start-start-radius: var(--radius-3);
+    border-start-end-radius: var(--radius-3);
+    box-shadow: var(--shadow-3);
+    /* `visibility` rather than `display`, so the sheet keeps its layout and its
+       transition — and so its contents are out of the tab order while closed,
+       which `opacity: 0` alone would not do.
+
+       It is switched with a *delay*, never a duration. Transitioning visibility
+       over `--dur-2` left the sheet hidden for the whole slide-in, and CDK's
+       `focusInitialElementWhenReady` runs at the start of it: measured with the
+       focus trap armed, `document.activeElement` was still `<body>`, so the
+       first Tab went to the page behind the scrim. Delayed on the way out, so
+       the slide-out is still visible; instant on the way in. */
+    visibility: hidden;
+    transform: translateY(101%);
+    transition:
+      transform var(--dur-2) var(--ease),
+      visibility 0s linear var(--dur-2);
+  }
+  .ws-drawer-open {
+    visibility: visible;
+    transform: none;
+    transition:
+      transform var(--dur-2) var(--ease),
+      visibility 0s linear 0s;
+  }
+  .ws-drawer-head {
+    position: sticky;
+    inset-block-start: 0;
+    z-index: 1;
+    flex: none;
+    padding: 6px 12px 8px;
+    background: var(--color-surface);
     border-block-end: var(--border-hairline) solid var(--color-border);
   }
-  .ws-rail-end {
-    border-inline-start: 0;
-    border-block-start: var(--border-hairline) solid var(--color-border);
+  .ws-drawer-grip {
+    display: block;
+    inline-size: 36px;
+    block-size: 4px;
+    margin: 2px auto 8px;
+    border-radius: var(--radius-1);
+    background: var(--color-border-strong);
   }
+  .ws-drawer-titlerow { display: flex; align-items: center; gap: var(--space-2); }
+  .ws-drawer-title {
+    flex: 1 1 auto;
+    min-inline-size: 0;
+    font: 600 17px/1.3 var(--font-display);
+    color: var(--color-ink-strong);
+  }
+  .ws-drawer-close {
+    flex: none;
+    inline-size: 44px;
+    block-size: 44px;
+    margin-inline-end: -10px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: none;
+    background: none;
+    border-radius: var(--radius-2);
+    color: var(--color-ink-muted);
+    cursor: pointer;
+  }
+  .ws-drawer-close:hover { color: var(--color-ink-strong); background: var(--color-bg); }
+
+  /* The workspace bar's own overflow, as a sheet: six full-width rows in the
+     thumb's reach rather than a popover nobody can hit (§3 headers). */
+  .ws-more-sheet { padding: var(--space-2) var(--space-3) var(--space-4); gap: var(--space-1); }
+  .ws-more-sheet .btn {
+    inline-size: 100%;
+    min-block-size: 44px;
+    justify-content: flex-start;
+  }
+
+  .ws-bar .ws-more { inline-size: 44px; padding-inline: 0; justify-content: center; }
+
+  .ws-drawer-scrim {
+    position: fixed;
+    inset: 0;
+    z-index: 40;
+    background: var(--color-scrim);
+  }
+  /* A sheet you can scroll the page behind is a sheet that moves under you. */
+  body.ws-drawer-locked { overflow: hidden; }
+
+  .ws-bottom-bar {
+    display: flex;
+    flex-direction: column;
+    flex: none;
+    position: relative;
+    z-index: 10; /* §2: sticky bars */
+    background: var(--color-surface);
+    border-block-start: var(--border-hairline) solid var(--color-border);
+    box-shadow: var(--shadow-up-3);
+    padding-block-end: env(safe-area-inset-bottom, 0px);
+  }
+  .ws-bottom-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    min-block-size: var(--ws-bottom-actions-h);
+    padding-inline: var(--space-3);
+    border-block-end: var(--border-hairline) solid var(--color-border);
+  }
+  /* The openers scroll; the dock never does — a Save that can slide off the
+     edge is the thing `flex-wrap` was added to the pane toolbars to prevent. */
+  .ws-bottom-openers {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+    flex: 1 1 auto;
+    min-inline-size: 0;
+    overflow-x: auto;
+    overscroll-behavior-inline: contain;
+    scrollbar-width: none;
+  }
+  .ws-bottom-openers::-webkit-scrollbar { display: none; }
+  .ws-bottom-dock { display: flex; align-items: center; gap: var(--space-1); flex: none; }
+  .ws-bottom-actions > * > .btn { padding-inline: 12px; }
+  .ws-bottom-actions .ws-bottom-icon { inline-size: 44px; padding-inline: 0; justify-content: center; }
+
+  .ws-bottom-modes {
+    display: flex;
+    align-items: stretch;
+    gap: 2px;
+    min-block-size: var(--ws-bottom-modes-h);
+    padding: var(--space-1) var(--space-2);
+    overflow-x: auto;
+    overscroll-behavior-inline: contain;
+    scrollbar-width: none;
+  }
+  .ws-bottom-modes::-webkit-scrollbar { display: none; }
+  .ws-bottom-mode {
+    flex: 0 0 auto;
+    display: inline-flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    min-inline-size: 56px;
+    min-block-size: 48px;
+    padding: 2px 8px;
+    border: none;
+    background: none;
+    border-radius: var(--radius-2);
+    font: 500 11px/1.2 var(--font-ui);
+    color: var(--color-ink-muted);
+    cursor: pointer;
+  }
+  /* `.seg`'s selected treatment, because this row inherits `.seg`'s semantics
+     (§3): the ink stamp, never the accent. */
+  .ws-bottom-mode.seg-active {
+    background: var(--color-ink-strong);
+    color: var(--color-bg);
+  }
+
+  /* Hoisted into the bottom bar's dock, so the page bar does not draw them a
+     second time. Not hidden — moved (§3 workspace panes). */
+  .ws-hoisted { display: none; }
 }
 
 .ws-back {

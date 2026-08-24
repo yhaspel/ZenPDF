@@ -1,7 +1,33 @@
+<!-- The workspace bar's action cluster, declared once and rendered in exactly
+     one of two places: on the bar at ≥ md, inside the More sheet below it
+     (§3 headers). One set of elements, so one set of `data-test`s — two copies
+     would mean a suite that has to say *which* Download it means. -->
+<ng-template #barActions>
+  <button (click)="undoLastChange()" [disabled]="!canUndoVersion() || busy()"
+          class="btn btn-ghost btn-sm" data-test="undo-version"
+          [title]="canUndoVersion()
+            ? 'Undo the last change — back to v' + undoTarget()
+            : 'Nothing to undo yet'">Undo</button>
+  <button (click)="redoLastChange()" [disabled]="!canRedoVersion() || busy()"
+          class="btn btn-ghost btn-sm" data-test="redo-version"
+          [title]="canRedoVersion()
+            ? 'Redo — forward to v' + redoTarget()
+            : 'Nothing to redo'">Redo</button>
+  <button (click)="dialog.set('split')" class="btn btn-ghost btn-sm" data-test="tool-split">Split</button>
+  <button (click)="dialog.set('compress')" class="btn btn-ghost btn-sm" data-test="tool-compress">Compress</button>
+  <button (click)="download()" class="btn btn-secondary btn-sm" data-test="download">Download</button>
+  <button (click)="openShortcuts()" class="btn btn-ghost btn-sm"
+          [title]="'Keyboard shortcuts (' + key('help') + ')'"
+          aria-keyshortcuts="Control+Slash Meta+Slash"
+          data-test="shortcuts-open">Shortcuts</button>
+</ng-template>
+
 @if (viewer.doc(); as doc) {
   <div class="flex h-full min-h-0 flex-1 flex-col">
     <!-- The workspace bar (design contract §3): the single owner of every
-         editing affordance (D3). It replaces the app header on /app/doc/:id. -->
+         editing affordance (D3). It replaces the app header on /app/doc/:id.
+         Below `md` it shrinks to back · title · meta · ⋯ · toggle, and the mode
+         nav moves to the bottom bar (§3 Phone workspace). -->
     <div class="ws-bar" data-test="workspace-bar">
       <a routerLink="/app/dashboard" class="ws-back" data-test="back" aria-label="Back">←</a>
       <app-brand [size]="20" [wordmark]="false" />
@@ -16,55 +42,69 @@
       <span class="faint whitespace-nowrap text-xs">v{{ viewer.currentSeq() }} · {{ doc.page_count }} pages</span>
       @if (busy()) { <span class="text-accent text-xs" data-test="busy">working…</span> }
 
-      <nav class="seg ms-auto overflow-x-auto" aria-label="Workspace mode">
-        <button (click)="mode.set('view')" [class.seg-active]="mode() === 'view'"
-                [attr.aria-pressed]="mode() === 'view'" data-test="view-toggle">View</button>
-        <button (click)="mode.set(mode() === 'organize' ? 'view' : 'organize')"
-                [class.seg-active]="mode() === 'organize'" [attr.aria-pressed]="mode() === 'organize'"
-                data-test="organize-toggle">Organize</button>
-        <button (click)="mode.set(mode() === 'edit' ? 'view' : 'edit')"
-                [class.seg-active]="mode() === 'edit'" [attr.aria-pressed]="mode() === 'edit'"
-                data-test="edit-toggle">Edit</button>
-        <button (click)="mode.set(mode() === 'annotate' ? 'view' : 'annotate')"
-                [class.seg-active]="mode() === 'annotate'" [attr.aria-pressed]="mode() === 'annotate'"
-                data-test="annotate-toggle">Annotate</button>
-        <button (click)="mode.set(mode() === 'forms' ? 'view' : 'forms')"
-                [class.seg-active]="mode() === 'forms'" [attr.aria-pressed]="mode() === 'forms'"
-                data-test="forms-toggle">Forms</button>
-        <button (click)="mode.set(mode() === 'convert' ? 'view' : 'convert')"
-                [class.seg-active]="mode() === 'convert'" [attr.aria-pressed]="mode() === 'convert'"
-                data-test="convert-toggle">Convert</button>
-        <button (click)="mode.set(mode() === 'compare' ? 'view' : 'compare')"
-                [class.seg-active]="mode() === 'compare'" [attr.aria-pressed]="mode() === 'compare'"
-                data-test="compare-toggle">Compare</button>
-        <button (click)="mode.set(mode() === 'sign' ? 'view' : 'sign')"
-                [class.seg-active]="mode() === 'sign'" [attr.aria-pressed]="mode() === 'sign'"
-                data-test="sign-toggle">Sign</button>
-        <button (click)="mode.set(mode() === 'protect' ? 'view' : 'protect')"
-                [class.seg-active]="mode() === 'protect'" [attr.aria-pressed]="mode() === 'protect'"
-                data-test="protect-toggle">Protect</button>
-      </nav>
-      <span class="border-border h-5 shrink-0 border-s" aria-hidden="true"></span>
-      <button (click)="undoLastChange()" [disabled]="!canUndoVersion() || busy()"
-              class="btn btn-ghost btn-sm" data-test="undo-version"
-              [title]="canUndoVersion()
-                ? 'Undo the last change — back to v' + undoTarget()
-                : 'Nothing to undo yet'">Undo</button>
-      <button (click)="redoLastChange()" [disabled]="!canRedoVersion() || busy()"
-              class="btn btn-ghost btn-sm" data-test="redo-version"
-              [title]="canRedoVersion()
-                ? 'Redo — forward to v' + redoTarget()
-                : 'Nothing to redo'">Redo</button>
-      <button (click)="dialog.set('split')" class="btn btn-ghost btn-sm" data-test="tool-split">Split</button>
-      <button (click)="dialog.set('compress')" class="btn btn-ghost btn-sm" data-test="tool-compress">Compress</button>
-      <button (click)="download()" class="btn btn-secondary btn-sm" data-test="download">Download</button>
-      <button (click)="openShortcuts()" class="btn btn-ghost btn-sm"
-              [title]="'Keyboard shortcuts (' + key('help') + ')'"
-              aria-keyshortcuts="Control+Slash Meta+Slash"
-              data-test="shortcuts-open">Shortcuts</button>
+      @if (shell.phone()) {
+        <span class="ms-auto"></span>
+        <button type="button" class="btn btn-ghost btn-sm ws-more"
+                [attr.aria-expanded]="shell.openDrawer() === 'more'"
+                aria-controls="ws-drawer-more"
+                id="ws-drawer-open-more"
+                (click)="shell.toggleDrawer('more')"
+                aria-label="More actions" data-test="ws-more">
+          <svg class="ti ti-sm" viewBox="0 0 24 24" aria-hidden="true">
+            <circle cx="5.5" cy="12" r="1.4" fill="currentColor" stroke="none" />
+            <circle cx="12" cy="12" r="1.4" fill="currentColor" stroke="none" />
+            <circle cx="18.5" cy="12" r="1.4" fill="currentColor" stroke="none" />
+          </svg>
+        </button>
+      } @else {
+        <nav class="seg ms-auto overflow-x-auto" aria-label="Workspace mode">
+          <button (click)="mode.set('view')" [class.seg-active]="mode() === 'view'"
+                  [attr.aria-pressed]="mode() === 'view'" data-test="view-toggle">View</button>
+          <button (click)="mode.set(mode() === 'organize' ? 'view' : 'organize')"
+                  [class.seg-active]="mode() === 'organize'" [attr.aria-pressed]="mode() === 'organize'"
+                  data-test="organize-toggle">Organize</button>
+          <button (click)="mode.set(mode() === 'edit' ? 'view' : 'edit')"
+                  [class.seg-active]="mode() === 'edit'" [attr.aria-pressed]="mode() === 'edit'"
+                  data-test="edit-toggle">Edit</button>
+          <button (click)="mode.set(mode() === 'annotate' ? 'view' : 'annotate')"
+                  [class.seg-active]="mode() === 'annotate'" [attr.aria-pressed]="mode() === 'annotate'"
+                  data-test="annotate-toggle">Annotate</button>
+          <button (click)="mode.set(mode() === 'forms' ? 'view' : 'forms')"
+                  [class.seg-active]="mode() === 'forms'" [attr.aria-pressed]="mode() === 'forms'"
+                  data-test="forms-toggle">Forms</button>
+          <button (click)="mode.set(mode() === 'convert' ? 'view' : 'convert')"
+                  [class.seg-active]="mode() === 'convert'" [attr.aria-pressed]="mode() === 'convert'"
+                  data-test="convert-toggle">Convert</button>
+          <button (click)="mode.set(mode() === 'compare' ? 'view' : 'compare')"
+                  [class.seg-active]="mode() === 'compare'" [attr.aria-pressed]="mode() === 'compare'"
+                  data-test="compare-toggle">Compare</button>
+          <button (click)="mode.set(mode() === 'sign' ? 'view' : 'sign')"
+                  [class.seg-active]="mode() === 'sign'" [attr.aria-pressed]="mode() === 'sign'"
+                  data-test="sign-toggle">Sign</button>
+          <button (click)="mode.set(mode() === 'protect' ? 'view' : 'protect')"
+                  [class.seg-active]="mode() === 'protect'" [attr.aria-pressed]="mode() === 'protect'"
+                  data-test="protect-toggle">Protect</button>
+        </nav>
+        <span class="border-border h-5 shrink-0 border-s" aria-hidden="true"></span>
+        <ng-container [ngTemplateOutlet]="barActions" />
+      }
       <app-theme-toggle />
     </div>
     <app-guest-banner />
+
+    <!-- Painted before the sheets so that, at the same layer, they sit on it
+         (§2: modals + scrim share layer 40). -->
+    @if (shell.phone() && shell.anyDrawerOpen()) {
+      <div class="ws-drawer-scrim" (click)="shell.closeDrawer()"
+           data-test="ws-drawer-scrim" aria-hidden="true"></div>
+    }
+
+    @if (shell.phone()) {
+      <aside zenWsDrawer="more" zenWsDrawerLabel="More" [zenWsDrawerBarOpener]="false"
+             class="ws-drawer ws-more-sheet flex flex-col">
+        <ng-container [ngTemplateOutlet]="barActions" />
+      </aside>
+    }
 
     @if (doc.is_encrypted) {
       <div class="banner banner-warning" data-test="encrypted-banner">
@@ -173,8 +213,10 @@
       />
     } @else {
     <div class="ws-panes">
-      <!-- Left rail: Pages / Outline / History (§4 view mode) -->
-      <aside class="ws-rail ws-rail-start w-56">
+      <!-- Left rail: Pages / Outline / History (§4 view mode). Below `md` it is
+           the "Pages" drawer (§3 Phone workspace). -->
+      <aside zenWsDrawer="start" zenWsDrawerLabel="Pages" class="ws-rail ws-rail-start w-56">
+        <app-ws-drawer-head />
         <div class="seg border-border gap-0 border-b px-1 py-1">
           <button class="flex-1 justify-center" [class.seg-active]="leftTab() === 'thumbs'"
                   [attr.aria-pressed]="leftTab() === 'thumbs'"
@@ -334,6 +376,13 @@
         }
       </main>
     </div>
+    }
+
+    <!-- The bottom bar (§3 Phone workspace): the last row of the column, so it
+         is persistent by construction and nothing has to reserve space under
+         it. Hidden by CSS at ≥ md as well, for the prerender's sake. -->
+    @if (shell.phone()) {
+      <app-ws-bottom-bar [mode]="mode()" (modeChange)="mode.set($event)" />
     }
   </div>
 

@@ -18,6 +18,7 @@ import { FormsModule } from '@angular/forms';
 import { AnnotationsFacade } from '../../abstraction/annotations.facade';
 import { GuestFacade } from '../../abstraction/guest.facade';
 import { JobsFacade } from '../../abstraction/jobs.facade';
+import { WorkspaceShellFacade } from '../../abstraction/workspace-shell.facade';
 import { Annotation, AnnotationType, Job } from '../../core/models/models';
 import { DocumentsService } from '../../core/services/documents.service';
 import { ConfirmService } from '../../shared/confirm.service';
@@ -38,6 +39,8 @@ import {
 import { PageOverlay } from '../../shared/page-overlay/page-overlay';
 import { ShortcutId, resolveShortcut, shortcutTitle } from '../../shared/shortcuts';
 import { ToastService } from '../../shared/toast.service';
+import { WsDrawerHead } from '../../shared/ws-drawer-head';
+import { WsDrawer } from '../../shared/ws-drawer';
 
 /** Every palette entry, including the two that are not annotations. */
 export type AnnotateTool = AnnotationType | 'select' | 'crop';
@@ -135,8 +138,15 @@ function uuid(): string {
 @Component({
   selector: 'app-annotate',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [FormsModule, PageOverlay],
+  imports: [FormsModule, PageOverlay, WsDrawer, WsDrawerHead],
   templateUrl: './annotate.html',
+  // A mode's host is a plain block, so the column above it sizes to its
+  // content. That is invisible on a desk, where the content is always taller
+  // than the screen, and it is not on a phone: the bottom bar has to be the
+  // last row of a full-height column or it floats above the fold with paper
+  // under it. `.ws-pane-host` gives the host the growth the column expects,
+  // below `md` only — the desktop figure is an invariant (§10).
+  host: { class: 'ws-pane-host' },
 })
 export class Annotate {
   readonly docId = input.required<string>();
@@ -159,6 +169,7 @@ export class Annotate {
   private guests = inject(GuestFacade);
   private clipboard = inject(EditorClipboard);
   private isBrowser = isPlatformBrowser(inject(PLATFORM_ID));
+  private shell = inject(WorkspaceShellFacade);
   private destroyRef = inject(DestroyRef);
 
   protected page = signal(0);
@@ -273,6 +284,16 @@ export class Annotate {
   });
 
   constructor() {
+    // What the phone's bottom bar draws on this mode's behalf (design contract
+    // §3 Phone workspace). Published rather than duplicated: below `md` the
+    // page bar's own pair is `.ws-hoisted`, so exactly one of each is on screen.
+    effect(() => this.shell.setPaneActions({
+      undo: { label: 'Undo', disabled: !this.annotations.canUndo(), run: () => this.undo() },
+      redo: { label: 'Redo', disabled: !this.annotations.canRedo(), run: () => this.redo() },
+      primary: { label: 'Save', disabled: this.busy() || !this.dirty(), run: () => this.save() },
+    }));
+    this.destroyRef.onDestroy(() => this.shell.reset());
+
     effect(() => this.tool.set(this.initialTool()));
 
     // The text layer is only fetched for the page being marked up, and only

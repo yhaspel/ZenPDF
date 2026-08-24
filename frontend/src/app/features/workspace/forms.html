@@ -1,6 +1,7 @@
 <div class="ws-panes" data-test="forms-mode">
   <!-- Left: panel -->
-  <aside class="ws-rail ws-rail-start w-72 overflow-y-auto text-sm">
+  <aside zenWsDrawer="start" zenWsDrawerLabel="Fields" class="ws-rail ws-rail-start w-72 overflow-y-auto text-sm">
+    <app-ws-drawer-head />
     <div class="seg border-border gap-0 border-b px-1 py-1">
       <button class="flex-1 justify-center" [class.seg-active]="tab() === 'fill'" [attr.aria-pressed]="tab() === 'fill'"
               (click)="tab.set('fill')" data-test="tab-fill">Fill in</button>
@@ -256,13 +257,18 @@
         <span class="muted">{{ forms.fields().length }} field(s)</span>
       }
       @if (tab() === 'build') {
-        <span class="bg-border mx-2 h-4 w-px"></span>
-        <button (click)="forms.undo()" [disabled]="!forms.canUndo()"
-                class="btn btn-ghost btn-sm" [title]="'Undo the last field change (' + key('undo') + ')'"
-                aria-keyshortcuts="Control+Z Meta+Z" data-test="forms-undo">Undo</button>
-        <button (click)="forms.redo()" [disabled]="!forms.canRedo()"
-                class="btn btn-ghost btn-sm" [title]="'Redo (' + key('redo') + ')'"
-                aria-keyshortcuts="Control+Shift+Z Meta+Shift+Z" data-test="forms-redo">Redo</button>
+        <!-- `ws-hoisted`: the bottom bar draws this pair below `md`, so the page
+             bar does not draw it twice (§3 Phone workspace). `contents` keeps the
+             desktop row byte-identical — the span generates no box. -->
+        <span class="contents ws-hoisted">
+          <span class="bg-border mx-2 h-4 w-px"></span>
+          <button (click)="forms.undo()" [disabled]="!forms.canUndo()"
+                  class="btn btn-ghost btn-sm" [title]="'Undo the last field change (' + key('undo') + ')'"
+                  aria-keyshortcuts="Control+Z Meta+Z" data-test="forms-undo">Undo</button>
+          <button (click)="forms.redo()" [disabled]="!forms.canRedo()"
+                  class="btn btn-ghost btn-sm" [title]="'Redo (' + key('redo') + ')'"
+                  aria-keyshortcuts="Control+Shift+Z Meta+Shift+Z" data-test="forms-redo">Redo</button>
+        </span>
         @if (canPaste()) {
           <button (click)="pasteField()" class="btn btn-ghost btn-sm"
                   [title]="'Paste a field onto this page (' + key('paste') + ')'"

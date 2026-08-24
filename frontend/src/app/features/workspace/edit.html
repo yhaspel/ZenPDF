@@ -1,6 +1,7 @@
 <div class="ws-panes" data-test="edit-mode">
   <!-- Left: tool panel -->
-  <aside class="ws-rail ws-rail-start w-64 overflow-y-auto text-sm">
+  <aside zenWsDrawer="start" zenWsDrawerLabel="Edit tools" class="ws-rail ws-rail-start w-64 overflow-y-auto text-sm">
+    <app-ws-drawer-head />
     <div class="seg border-border gap-0 border-b px-1 py-1">
       <button class="flex-1 justify-center" [class.seg-active]="tab() === 'edit'" [attr.aria-pressed]="tab() === 'edit'"
               (click)="tab.set('edit')" data-test="tab-edit">Edit</button>
@@ -334,17 +335,22 @@
       <button (click)="nextPage()" [disabled]="page() >= pageCount() - 1"
               class="btn btn-ghost btn-sm" data-test="edit-next">›</button>
 
-      <span class="bg-border mx-2 h-4 w-px"></span>
-      <!-- Local to this session only: everything else in Edit is applied to the
-           file the moment it runs, and taking *that* back is the workspace
-           bar's Undo. The titles say which is which. -->
-      <button (click)="edits.undo()" [disabled]="!edits.canUndo()"
-              class="btn btn-ghost btn-sm"
-              [title]="'Undo the last text change, not yet saved (' + key('undo') + ')'"
-              aria-keyshortcuts="Control+Z Meta+Z" data-test="edit-undo">Undo</button>
-      <button (click)="edits.redo()" [disabled]="!edits.canRedo()"
-              class="btn btn-ghost btn-sm" [title]="'Redo (' + key('redo') + ')'"
-              aria-keyshortcuts="Control+Shift+Z Meta+Shift+Z" data-test="edit-redo">Redo</button>
+      <!-- `ws-hoisted`: the bottom bar draws this pair below `md`, so the page
+           bar does not draw it twice (§3 Phone workspace). `contents` keeps the
+           desktop row byte-identical — the span generates no box. -->
+      <span class="contents ws-hoisted">
+        <span class="bg-border mx-2 h-4 w-px"></span>
+        <!-- Local to this session only: everything else in Edit is applied to the
+             file the moment it runs, and taking *that* back is the workspace
+             bar's Undo. The titles say which is which. -->
+        <button (click)="edits.undo()" [disabled]="!edits.canUndo()"
+                class="btn btn-ghost btn-sm"
+                [title]="'Undo the last text change, not yet saved (' + key('undo') + ')'"
+                aria-keyshortcuts="Control+Z Meta+Z" data-test="edit-undo">Undo</button>
+        <button (click)="edits.redo()" [disabled]="!edits.canRedo()"
+                class="btn btn-ghost btn-sm" [title]="'Redo (' + key('redo') + ')'"
+                aria-keyshortcuts="Control+Shift+Z Meta+Shift+Z" data-test="edit-redo">Redo</button>
+      </span>
       @if (busy()) { <span class="text-accent text-xs" data-test="edit-busy">working…</span> }
     </div>
 
