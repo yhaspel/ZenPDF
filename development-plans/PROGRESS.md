@@ -1278,6 +1278,11 @@ Four cases, no browser, no platform dependency. The e2e keeps the declaration as
 it is what fails if somebody deletes the CSS — and its comment now carries the ten
 configurations, so nobody re-litigates this by trying a flag that has already been tried.
 
+**Gate**, green end to end: `ruff` + `mypy` clean · pytest **1159 passed, 6 skipped**,
+coverage apps **91.53 %** / pdf_engine **91.87 %** · `ng lint` clean · `ng test` **63 files
+/ 551 tests** (from 547) · build + `verify:prerender` clean, **43** prerendered routes ·
+Playwright **86 passed, 1 skipped of 87**.
+
 **What is still true and worth saying plainly:** a *new* scrollbar-width defect somewhere
 else in the product would still be invisible to the suite. What has changed is that the
 class now has a portable guard where it can have one, and the limit is written at the point
