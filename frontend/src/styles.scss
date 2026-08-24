@@ -985,7 +985,12 @@ input[type="color"] {
     justify-content: flex-start;
   }
 
-  .ws-bar .ws-more { inline-size: 44px; padding-inline: 0; justify-content: center; }
+  .ws-bar .ws-more {
+    inline-size: 44px;
+    min-block-size: 44px;
+    padding-inline: 0;
+    justify-content: center;
+  }
 
   .ws-drawer-scrim {
     position: fixed;
@@ -1029,7 +1034,9 @@ input[type="color"] {
   }
   .ws-bottom-openers::-webkit-scrollbar { display: none; }
   .ws-bottom-dock { display: flex; align-items: center; gap: var(--space-1); flex: none; }
-  .ws-bottom-actions > * > .btn { padding-inline: 12px; }
+  /* `.btn-sm` is 36 px, and §6's compact exemption is for dense *desktop*
+     toolbars. This is a phone, where these are the only controls there are. */
+  .ws-bottom-actions .btn { min-block-size: 44px; padding-inline: 12px; }
   .ws-bottom-actions .ws-bottom-icon { inline-size: 44px; padding-inline: 0; justify-content: center; }
 
   .ws-bottom-modes {
