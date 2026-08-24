@@ -78,12 +78,9 @@ const POSITIONS: StampPosition[] = [
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [FormsModule, PageOverlay, ZenModal, WsDrawer, WsDrawerHead],
   templateUrl: './edit.html',
-  // A mode's host is a plain block, so the column above it sizes to its
-  // content. That is invisible on a desk, where the content is always taller
-  // than the screen, and it is not on a phone: the bottom bar has to be the
-  // last row of a full-height column or it floats above the fold with paper
-  // under it. `.ws-pane-host` gives the host the growth the column expects,
-  // below `md` only — the desktop figure is an invariant (§10).
+  // Below `md` a mode's host has to be a growing flex item, or the column sizes
+  // to its content and the bottom bar floats above the fold — `styles.scss`
+  // §17c says it once, with the measurement. Inert at ≥ `md` (§10).
   host: { class: 'ws-pane-host' },
 })
 export class Edit {
