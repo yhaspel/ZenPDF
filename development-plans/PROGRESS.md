@@ -1333,6 +1333,15 @@ in front of it, on the compose network, 50 users / 2 minutes, seeded four-docume
 All six PASS the 150 ms budget in all three. The tail tightens in the direction the worker
 model predicts. Throttles off for each run and **restored after all three**, verified.
 
+**Verified in production 2026-08-25 — and the check needed correcting first.** The deploy
+watcher polled `main-*.js` for a hash change, as every frontend verification in this session
+had, and it never moved. It should not have: this branch's only frontend change is **SCSS**,
+which lands in `styles-*.css` and leaves the JS entry alone. Watching `main-*.js` for a
+CSS-only change is a detector that reports "not deployed" for ever. The stylesheet is the
+artefact, and it needs no login to read: production serves
+`.card-control{min-inline-size:44px;min-block-size:44px;…}` with **no `max-width:767px`
+wrapper around it** — the 44 px floor is live at every width on the deployed build.
+
 **It is still not the deployed host, and that is deliberate** — running a load generator at
 the live service needs a real account and `THROTTLES_DISABLED=true` on production, which
 turns off every rate limit including the abuse controls. What this does close is the *shape*
