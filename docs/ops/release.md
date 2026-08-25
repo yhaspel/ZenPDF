@@ -43,7 +43,7 @@ saying why. A quarantine older than one phase is a bug nobody owns.
 
 ## Before tagging a release
 
-- [ ] The whole e2e suite green three consecutive runs on the prod-shaped stack. *(**Run manually 2026-08-25** — three consecutive `./infra/test.sh --pg --e2e`, each from a fresh `reset.sh --yes && up.sh`, all exit 0 at 8m23s / 8m37s / 8m27s with identical numbers and no flake. Evidence: `docs/reviews/evidence/launch-gate-2026-08-25.md`. The box stays unticked because it is the owner's, and because "three consecutive runs" back to back on one machine may or may not be what "nightly" was meant to mean — see the note in `docs/10-launch-checklist.md`.)*
+- [ ] The whole e2e suite green three consecutive runs on the prod-shaped stack. *(**Run manually 2026-08-25** — three consecutive `./infra/test.sh --pg --e2e`, each from a fresh `reset.sh --yes && up.sh`, all exit 0 at 8m23s / 8m37s / 8m27s with identical numbers and no flake. Evidence: `docs/reviews/evidence/launch-gate-2026-08-25.md`. The box stays unticked, and not only because it is the owner's: back-to-back runs on one machine are not "nightly", and the compose stack is not "prod-shaped" — both gaps are named in `docs/10-launch-checklist.md`.)*
 - [ ] `@smoke` green against the deployed host.
 - [ ] `pip-audit` and `npm audit` reviewed — the monthly pass is
       `docs/ops/dependencies.md`.
