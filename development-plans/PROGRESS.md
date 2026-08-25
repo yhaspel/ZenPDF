@@ -1404,6 +1404,17 @@ is unchanged and pass both ways by design — said out loud in the file so neith
 evidence the mixin is there. The frontend needed nothing: `apiError()` already handled both
 shapes and has unit cases for each.
 
+**Verified in production 2026-08-25, after the deploy.** `/api/config/` refused at request
+**31** — the anon budget is 30/min, so the refusal is where it should be — and the refusal
+carries the whole §6 envelope with the wait in it: `Retry-After: 50`,
+`details.retry_after_seconds: 50`, and a message reading *"Request was throttled. Expected
+available in 50 seconds."* **What this proves is the non-regression half**, and that is worth
+being exact about: the branch the mixin adds is only reachable when `len(history) >
+num_requests`, which needs the configured rate to be *lowered* against a warm cache — not
+something to induce on a live service. So the new path is covered by the five tests and the
+staged local reproduction, and production confirms the ordinary path still answers, which is
+the half a live check can honestly speak to.
+
 **The gate found something else on the way through, filed rather than fixed here.** The run
 got past `ruff`, `mypy`, 1164 pytest and 576 unit tests and then died on the build with
 `ENOTEMPTY: directory not empty, rmdir '…/browser/assets/wasm 2'`. `frontend/dist` held
