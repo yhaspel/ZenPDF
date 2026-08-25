@@ -124,11 +124,30 @@ export class ViewerFacade {
     // One page. The panel is a scrolling list of the most recent work, and a
     // document with a long history used to send all of it — 1.4 MB at 5 000
     // versions — on every open and after every operation.
+    const current = () => generation === undefined || generation === this.generation;
     this.docsSvc.versions(id).subscribe({
       next: (page) => {
-        if (generation !== undefined && generation !== this.generation) return;
+        if (!current()) return;
         this._versions.set(page.results);
         this._versionCount.set(page.count);
+      },
+      // `loadOutline` below has always had this and this method never did — the
+      // omission cost two things. A rejected observable with no `error` reaches
+      // the global handler, so opening a document that 404s printed an
+      // `HttpErrorResponse` to the console for a failure the screen was already
+      // explaining properly. And on the failure that is *not* the document's —
+      // this request alone failing while the document loads — the panel kept
+      // the **previous** document's versions, offering "Revert to this" against
+      // version ids belonging to a file the person is no longer looking at.
+      //
+      // Both signals are cleared, not just the list: the panel says "Showing
+      // the N most recent of M" whenever `versionCount` exceeds what it holds,
+      // so clearing one of the two would replace a stale list with the sentence
+      // "Showing the 0 most recent of 5".
+      error: () => {
+        if (!current()) return;
+        this._versions.set([]);
+        this._versionCount.set(0);
       },
     });
   }
@@ -150,6 +169,13 @@ export class ViewerFacade {
         this._versions.update((v) => [...v, ...page.results]);
         this._versionCount.set(page.count);
       },
+      // Handled, and deliberately a no-op: the window already on screen is
+      // still correct, so keeping it is right and clearing it would throw away
+      // history the person can still use. What this must not do is *nothing* —
+      // an unhandled rejection here would reach the global error handler, and
+      // "Show older versions" failing is not a crash. The button stays, so the
+      // next press retries.
+      error: () => undefined,
     });
   }
 
