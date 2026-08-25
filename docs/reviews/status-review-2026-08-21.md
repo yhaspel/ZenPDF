@@ -1,5 +1,15 @@
 # Status review — ZenPDF vs `development-plans/PROGRESS.md` — 2026-08-21 · revision 2 (18:55 Asia/Jerusalem), re-validated after Phase 12
 
+> **Revision 3 note (2026-08-25).** The nine-prompt handoff programme this review produced
+> was executed in full between 2026-08-22 and 2026-08-25 (PRs #21–#42; board:
+> `handoffs/TRACKING.md`). A post-programme adversarial review — three independent
+> code-level passes, the suites re-run, production re-hashed and driven live — confirmed
+> every row's deliverables and filed **five LOW findings**, fixed by TRACKING row 10
+> (`.zen-post-programme-review.patch`). The full verdict and evidence live in the PROGRESS
+> session-log entry "2026-08-25 — Post-programme adversarial review". §§3, 5 and 6 below
+> describe the 2026-08-21 state and are retained as the record the programme executed
+> against — read them as history, not as open findings.
+
 An adversarial validation of the project's recorded status against the code that exists, the tests that run, and the site that is live. Nothing below was taken from PROGRESS.md on trust: every status claim was re-derived from the repository, from a suite run in this session, or from the production host, and each one is labelled **Verified** (measured here), **Inferred** (read from code/config, not confirmed live) or **Unverified** (could not check, reason given). The checklist was written before any evidence was gathered (Appendix A) so that "pass" was not defined after seeing the numbers.
 
 **Revision 2 (15:40–16:05 UTC).** Revision 1 reviewed `main` @ `df6afb9` (11:45–12:30 UTC). Since then **Phase 12 — usability add-ons** (right-click menus, keyboard shortcuts, visible Undo/Redo on six editing surfaces, six defect fixes D-A…D-F) was planned, implemented, merged as **PR #20** (`ec8a33e`) and recorded as ✅ in `f34800f`; revision 1's own files were committed in `f8743ac`. Everything in this revision was re-derived against **`main` @ `f34800f`**: the suites were re-run, the production bundle re-hashed, and Phase 12's behaviours driven on the live site. The revision-1 text is kept where it still holds and amended in place where it does not; every amendment is marked *(rev 2)*. §0 summarises what changed.
