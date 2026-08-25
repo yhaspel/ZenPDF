@@ -11,7 +11,49 @@ from .authentication import ip_hash_of, raw_guest_token
 from .models import hash_guest_token
 
 
-class BurstAnonThrottle(AnonRateThrottle):
+class AlwaysSaysWhenMixin:
+    """A refusal that always says when to try again.
+
+    DRF's `SimpleRateThrottle.wait()` returns **None** when
+    `num_requests - len(history) + 1 <= 0`, and a `None` travels a long way: it
+    strips the `Retry-After` header, drops the "Expected available in N
+    seconds" clause from `Throttled`'s own message, and leaves
+    `exceptions.py` with no `wait` to put in `details.retry_after_seconds`.
+    The client is then told to slow down and not told for how long — and the
+    workspace's throttled screen, whose whole point is a disabled "Try again"
+    with a countdown on it, degrades to a button that can only earn a second
+    refusal.
+
+    **When this is reachable, measured rather than assumed.** Not by hammering:
+    `throttle_success` only appends while `len(history) < num_requests`, so
+    under a stable rate the history never outgrows the allowance and `wait()`
+    always answers. It needs `len(history) > num_requests`, which means the
+    rate was **lowered** while entries recorded under the higher one were still
+    in the cache — an operator turning `THROTTLE_GUEST` down under load, or a
+    deploy that tightens §16. Reproduced deterministically on 2026-08-25 by
+    filling a bucket at `3/min`, restarting the api at `1/min` and asking
+    again: `{"code":"throttled","message":"Request was throttled.","details":{}}`
+    with no `Retry-After`, on every request until the window rolled over.
+
+    The answer is the moment the history drops back below the allowance. The
+    entries are newest-first, so `num_requests - 1` is the newest one that
+    still has to expire before there is room; DRF's own formula is this same
+    quantity in the case where exactly one entry has to go.
+    """
+
+    def wait(self):
+        wait = super().wait()
+        if wait is not None:
+            return wait
+        index = self.num_requests - 1
+        if index < 0 or index >= len(self.history):
+            # A rate of `0/…` allows nothing, and there is no honest moment to
+            # name; the window length is the least misleading answer.
+            return self.duration
+        return max(0.0, self.history[index] + self.duration - self.now)
+
+
+class BurstAnonThrottle(AlwaysSaysWhenMixin, AnonRateThrottle):
     """Callers with no principal at all (a page view before the first write)."""
 
     scope = "anon"
@@ -24,11 +66,11 @@ class BurstAnonThrottle(AnonRateThrottle):
         return super().allow_request(request, view)
 
 
-class SustainedUserThrottle(UserRateThrottle):
+class SustainedUserThrottle(AlwaysSaysWhenMixin, UserRateThrottle):
     scope = "user"
 
 
-class _GuestScopedThrottle(SimpleRateThrottle):
+class _GuestScopedThrottle(AlwaysSaysWhenMixin, SimpleRateThrottle):
     scope = "guest"
 
     def allow_request(self, request, view):
@@ -63,7 +105,7 @@ class GuestIPThrottle(_GuestScopedThrottle):
         return self.cache_format % {"scope": "guest_ip", "ident": ident}
 
 
-class AuthThrottle(SimpleRateThrottle):
+class AuthThrottle(AlwaysSaysWhenMixin, SimpleRateThrottle):
     """Per-IP throttle for auth endpoints (login/register/refresh) — 10/min.
 
     `get_ident` is only trustworthy because REST_FRAMEWORK["NUM_PROXIES"] is set;
@@ -76,7 +118,7 @@ class AuthThrottle(SimpleRateThrottle):
         return self.cache_format % {"scope": self.scope, "ident": self.get_ident(request)}
 
 
-class PublicSignThrottle(SimpleRateThrottle):
+class PublicSignThrottle(AlwaysSaysWhenMixin, SimpleRateThrottle):
     """Per-IP throttle for public signing endpoints (phase 8) — 20/min."""
 
     scope = "public_sign"
@@ -85,7 +127,7 @@ class PublicSignThrottle(SimpleRateThrottle):
         return self.cache_format % {"scope": self.scope, "ident": self.get_ident(request)}
 
 
-class PublicSignTokenThrottle(SimpleRateThrottle):
+class PublicSignTokenThrottle(AlwaysSaysWhenMixin, SimpleRateThrottle):
     """Per-*token* daily cap for the ceremony — §9B: 200/day.
 
     The IP throttle above stops a flood from one machine; this one stops a
@@ -104,7 +146,7 @@ class PublicSignTokenThrottle(SimpleRateThrottle):
         return self.cache_format % {"scope": self.scope, "ident": digest}
 
 
-class UploadThrottle(SimpleRateThrottle):
+class UploadThrottle(AlwaysSaysWhenMixin, SimpleRateThrottle):
     """Per-*account* upload rate (§9B: 20/hour).
 
     Keyed on the user, not the IP: an office behind one address is many people,
@@ -130,7 +172,7 @@ class UploadThrottle(SimpleRateThrottle):
         return self.cache_format % {"scope": self.scope, "ident": str(user.pk)}
 
 
-class VerifyThrottle(SimpleRateThrottle):
+class VerifyThrottle(AlwaysSaysWhenMixin, SimpleRateThrottle):
     """Per-IP burst rate for `/api/verify/` (§9B: 10/min).
 
     It has no principal by design — the person checking a document they were
