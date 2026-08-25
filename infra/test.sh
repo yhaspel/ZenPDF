@@ -73,7 +73,24 @@ echo "======================================================"
 # about is worse than one that stops and shows its working. `up.sh` takes the
 # same line with stale workers, for the same reason.
 STRAY_PRUNE=( -name node_modules -o -name .angular -o -name dist -o -name test-results -o -name .venv -o -name __pycache__ )
-strays="$(find ../frontend ../e2e ../backend \( "${STRAY_PRUNE[@]}" \) -prune -o -name '* [0-9].*' -print 2>/dev/null || true)"
+# Two shapes, because virtiofs makes both, and they need different scopes.
+#
+#   * `foo 2.ts` — has an extension. Scanned across all three trees, as before.
+#   * `wasm 2`, `zenpdf-web 3` — *directories*, no extension. Scanned only
+#     under the three source roots a compiler actually reads, because a
+#     tree-wide extensionless match is unusable: `backend/` alone holds
+#     sixteen `celerybeat-schedule-wal 2`-shaped runtime artefacts, and a
+#     guard that cries every run is a guard somebody deletes.
+#
+# The extensionless shape is the one that breaks a *build* rather than a
+# compile, which is why it went unnoticed until 2026-08-25 — see the `dist`
+# clean below, which handles the one place neither scan can look.
+strays="$(
+  find ../frontend ../e2e ../backend \( "${STRAY_PRUNE[@]}" \) -prune -o \
+    -name '* [0-9].*' -print 2>/dev/null || true
+  find ../frontend/src ../e2e/tests ../backend/apps \( "${STRAY_PRUNE[@]}" \) -prune -o \
+    -name '* [0-9]' -print 2>/dev/null || true
+)"
 if [ -n "$strays" ]; then
   echo "ERROR: virtiofs left duplicate files in the tree. They are gitignored, so"
   echo "       'git status' is clean and the only other signal is a compiler error"
@@ -321,6 +338,15 @@ echo "======================================================"
 #
 # Runs while `web` is still stopped, deliberately: this is a full production
 # build and it loses the same race the vitest step does.
+# `dist` is deliberately pruned by the stray guard above — build output is
+# regenerable, so failing the gate on a stray inside it would be noise. But
+# `ng build` *cleans* that directory before writing, and `rmdir` fails on a
+# stray directory inside it: measured 2026-08-25, a gate that had already
+# passed ruff, mypy, 1164 pytest and 576 unit tests died six minutes in on
+# `ENOTEMPTY: directory not empty, rmdir '/app/dist/…/assets/wasm 2'`, with
+# eleven strays under `frontend/dist`. Clearing it here is free — the build
+# rewrites it entirely — and it closes the one place the guard cannot look.
+rm -rf ../frontend/dist
 docker compose run --rm -T --no-deps web npm run build
 docker compose run --rm -T --no-deps web npm run verify:prerender
 

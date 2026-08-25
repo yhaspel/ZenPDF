@@ -135,7 +135,30 @@ test('phase 10: the signed-in app has no serious accessibility failures',
 });
 
 test('phase 10: a signer can complete the ceremony with the keyboard alone',
-  async ({ page, browser }) => {
+  async ({ page, browser }, testInfo) => {
+  // **WebKit cannot run this, and the reason is WebKit's, not ours.** Safari
+  // leaves links, checkboxes and buttons out of the Tab order unless *Full
+  // Keyboard Access* is on, and Playwright's webkit inherits that default. So
+  // `[data-test=agree]` — a plain `<input type="checkbox">`, the most
+  // keyboard-reachable control HTML has — is unreachable by Tab there, and no
+  // markup change can alter it.
+  //
+  // Measured 2026-08-25 rather than assumed, on a page containing none of our
+  // code: a bare document with a link, a text input, a checkbox, a button and
+  // a second text input, tabbed five times.
+  //
+  //   chromium  ->  link , text , cb , btn , text2
+  //   firefox   ->  link , text , cb , btn , text2
+  //   webkit    ->  text , text2 , BODY , text , text2
+  //
+  // Skipped rather than quarantined: `@quarantine` is for a flake that should
+  // pass, and this is a spec that *cannot* pass on this engine — the same
+  // category as `phase-8:135` needing a Mailpit production has no equivalent
+  // of. chromium and firefox still run it, so the ceremony's keyboard path
+  // stays covered.
+  test.skip(testInfo.project.name === 'webkit',
+    'WebKit keeps non-text controls out of the Tab order unless Full Keyboard '
+    + 'Access is on; a native checkbox is unreachable there by design.');
   test.setTimeout(300_000);
   const { registerVerifiedAndLogin, uniqueEmail, mailFor } = await import('./helpers');
   const signer = uniqueEmail('p10keyboard');
