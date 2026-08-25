@@ -1246,6 +1246,52 @@ Handoff programme (the nine CLI prompts from the 2026-08-21 status review) is tr
 
 ## Session log
 
+**2026-08-25 — The two things PR #38 flagged and did not fix**
+
+Branch `fix/api-error-followups`. Not one of the nine prompts — it is the follow-up to
+prompt 7, which shipped with two loose ends written into its own PR body and evidence.
+Closing them, rather than leaving a flag to be re-read by whoever comes next.
+
+**`isApiError()` is gone, because nothing ever called it.** The prompt named it as a
+deliverable and it shipped exported, tested and unused — flagged in PR #38 rather than
+quietly left, but flagging dead code is not the same as not shipping it. The reason it
+never found a caller is worth keeping, so it stays as a comment where the function was: the
+design underneath answers the question inline. `message` comes back verbatim and optional,
+so every site spells the test `apiError(err).message ?? 'our sentence'`, and that `??` **is**
+"did the server explain itself" — asked at the one place that also knows what to say when
+the answer is no. A predicate could only have said less: it counted a `code` with no message
+as an explanation, which is true of the envelope and useless to a screen.
+
+**`ViewerFacade.loadVersions` had no `error` callback, and `loadOutline` three lines below
+it always did.** The browser pass for PR #38 saw the symptom — an `HttpErrorResponse` in the
+console of a 404 workspace that was otherwise explaining itself perfectly — and recorded it
+as pre-existing without filing it. It is more than console noise:
+
+- an unhandled observable error reaches the global handler, so a failure the screen is
+  already handling properly also arrives as a crash report;
+- and on the failure that is *not* the document's — this one request failing while the
+  document loads — the panel kept the **previous** document's versions, each with a
+  "Revert to this" pointing at a version id belonging to a file the person had navigated
+  away from.
+
+Both signals are cleared, not just the list: the panel renders "Showing the N most recent of
+M" whenever `versionCount` exceeds what it holds, so clearing one of the two would have
+swapped a stale list for the sentence *"Showing the 0 most recent of 5"*. The generation
+guard `loadOutline` already applied is applied here too. `loadMoreVersions` gets an error
+handler that deliberately does **nothing** — the window already on screen is still true and
+revert reads off it, so throwing it away because a *second* page failed would take away
+history that still works; what it must not do is stay unhandled.
+
+**One of the three new cases discriminates, and that was checked rather than assumed.** Run
+against the unfixed facade, "empties the panel rather than leaving another document's
+versions in it" goes red and the other two stay green — they guard deliberate choices and
+would both pass on code with no error handler at all, which is what this looked like
+yesterday. The spec says so at the top, so neither is ever read as evidence the handler
+exists.
+
+Gate: `ng lint` clean · `ng test` **66 files / 576 tests** (from 65/575 — three added, the
+two `isApiError` cases removed).
+
 **2026-08-24 (last, part four) — Type-aware ESLint: the number was wrong, and so was its root cause**
 
 Branch `chore/type-aware-eslint`. Prompt 7 of the handoff programme. The queue row has

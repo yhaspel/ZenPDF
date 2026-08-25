@@ -1,6 +1,6 @@
 import { HttpErrorResponse, HttpHeaders } from '@angular/common/http';
 
-import { ApiError, apiError, isApiError } from './api-error';
+import { ApiError, apiError } from './api-error';
 
 /**
  * The typed read of the §6 error envelope.
@@ -79,7 +79,6 @@ describe('apiError', () => {
     const result = apiError(httpError({ status: 502, body: '<html>502</html>' }));
 
     expect(result).toEqual<ApiError>({ status: 502 });
-    expect(isApiError(result)).toBe(false);
   });
 
   it('ignores a blob body, which is what a failed download returns', () => {
@@ -102,7 +101,6 @@ describe('apiError', () => {
     );
 
     expect(result).toEqual<ApiError>({ status: 0 });
-    expect(isApiError(result)).toBe(false);
   });
 
   it('is total: anything unenvelope-shaped is a bare status 0', () => {
@@ -208,22 +206,5 @@ describe('apiError', () => {
       expect(apiError(envelope({ code: 'throttled', details: {} }, 429)).retryAfter)
         .toBeUndefined();
     });
-  });
-});
-
-describe('isApiError', () => {
-  it('is true when the server explained itself', () => {
-    expect(isApiError(envelope({ code: 'quota_exceeded', message: 'Full.' }, 429))).toBe(true);
-    // A code with no message still counts: the caller can branch on it.
-    expect(isApiError(envelope({ code: 'not_found' }, 404))).toBe(true);
-    // And so does a message with no code.
-    expect(isApiError(envelope({ message: 'Something.' }))).toBe(true);
-  });
-
-  it('is false when nothing did', () => {
-    expect(isApiError(httpError({ status: 502, body: '<html>502</html>' }))).toBe(false);
-    expect(isApiError(new HttpErrorResponse({ status: 0 }))).toBe(false);
-    expect(isApiError(new Error('boom'))).toBe(false);
-    expect(isApiError(undefined)).toBe(false);
   });
 });

@@ -69,6 +69,13 @@ Console carries the three expected 404s and one `[object HttpErrorResponse]`. Th
 **pre-existing and not from this branch**: `ViewerFacade.loadVersions` subscribes with a
 `next` and no `error`, so its 404 reaches the global handler. That code is untouched here.
 
+*(Fixed 2026-08-25, `fix/api-error-followups`. Recording it here and doing nothing was the
+wrong disposition — and the console noise turned out to be the smaller half. A failure of
+this one request while the document itself loads left the **previous** document's versions
+in the panel, offering "Revert to this" against version ids from a file the person had
+navigated away from. `loadOutline`, three lines below, had handled its own error since the
+day it was written.)*
+
 ## 3 — A non-PDF to `/merge-pdf` (415)
 
 `06-merge-415-light-1280.png` · `07-merge-415-dark-1280.png` · `08-merge-415-dark-390.png` ·
@@ -124,3 +131,8 @@ carries `Retry-After`; later ones do not, so `workspace-throttled` renders its "
 lost" copy beside a `Try again` button that is immediately pressable — which is precisely the
 "press it and get the same message" loop the countdown was added to prevent. The frontend is
 already correct for both shapes; the fix, if wanted, is server-side.
+
+**Two other things this pass flagged were closed on 2026-08-25** (`fix/api-error-followups`),
+because a flag is not a disposition: the `loadVersions` observation above, and `isApiError()`,
+which PR #38 shipped exported, tested and with no caller anywhere in the app. See the PROGRESS
+session log "2026-08-25 — The two things PR #38 flagged and did not fix".

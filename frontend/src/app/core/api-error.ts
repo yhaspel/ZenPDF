@@ -125,15 +125,16 @@ export function apiError(err: unknown): ApiError {
   };
 }
 
-/**
- * Did the server explain itself?
- *
- * The distinction every error screen draws is "show the server's sentence"
- * against "show ours" — and a 502 from nginx, an offline browser and a failed
- * blob download all arrive with no envelope at all, so there is nothing of
- * theirs to show.
- */
-export function isApiError(err: unknown): boolean {
-  const { code, message } = apiError(err);
-  return code !== undefined || message !== undefined;
-}
+// There was an `isApiError(err)` here — "did the server explain itself?" — and
+// it is gone because nothing ever called it. The prompt that commissioned
+// `apiError` named it as a deliverable, and it shipped in PR #38 exported,
+// tested and unused; this removes it rather than leave a reviewer wondering.
+//
+// The reason it found no caller is that the design underneath it answers the
+// question inline. `message` is returned verbatim and optional, so every site
+// spells the test as `apiError(err).message ?? 'our sentence'` — that `??` *is*
+// "did the server explain itself", at the one place that also knows what to say
+// when the answer is no. A predicate could only have said less, in more words:
+// it counts a `code` with no message as an explanation, which is true of the
+// envelope and useless to a screen. `ViewerFacade.describe()`, the one caller it
+// was written for, needs `if (message)` and always did.
