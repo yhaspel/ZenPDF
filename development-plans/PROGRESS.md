@@ -1289,8 +1289,16 @@ would both pass on code with no error handler at all, which is what this looked 
 yesterday. The spec says so at the top, so neither is ever read as evidence the handler
 exists.
 
-Gate: `ng lint` clean · `ng test` **66 files / 576 tests** (from 65/575 — three added, the
-two `isApiError` cases removed).
+Gate: `ruff`+`mypy` clean · pytest **1159 passed, 6 skipped**, coverage apps **91.53 %** /
+pdf_engine **91.87 %** · `ng lint` clean · `ng test` **66 files / 576 tests** (from 65/575 —
+three added, the two `isApiError` cases removed) · build + `verify:prerender` green at 43
+routes · Playwright **86 passed, 1 skipped of 87**. Initial bundle unchanged at 576.43 kB.
+
+**Production verified after the deploy** (`main-XNN7UJ7I.js` → `main-ZKRKLCOM.js`), and what
+it verifies is an *absence*: `/app/doc/00000000-…` used to log three 404s **and** an
+`[object HttpErrorResponse]`, and now logs the three 404s and nothing else. The screen is
+unchanged beside it — same server sentence, same `role="alert"`, same two ways out. Both
+halves matter: the noise is gone and the thing that was working still works.
 
 **2026-08-24 (last, part four) — Type-aware ESLint: the number was wrong, and so was its root cause**
 

@@ -132,7 +132,14 @@ lost" copy beside a `Try again` button that is immediately pressable — which i
 "press it and get the same message" loop the countdown was added to prevent. The frontend is
 already correct for both shapes; the fix, if wanted, is server-side.
 
-**Two other things this pass flagged were closed on 2026-08-25** (`fix/api-error-followups`),
-because a flag is not a disposition: the `loadVersions` observation above, and `isApiError()`,
-which PR #38 shipped exported, tested and with no caller anywhere in the app. See the PROGRESS
-session log "2026-08-25 — The two things PR #38 flagged and did not fix".
+**Two other things this pass flagged were closed on 2026-08-25** (`fix/api-error-followups`,
+PR #39 `9fbff95`), because a flag is not a disposition: the `loadVersions` observation above,
+and `isApiError()`, which PR #38 shipped exported, tested and with no caller anywhere in the
+app. See the PROGRESS session log "2026-08-25 — The two things PR #38 flagged and did not fix".
+
+`20-PROD-doc-404-after-followup-1280.png` is the same production screen as
+`18-PROD-doc-404-1280.png` after that deploy (`main-XNN7UJ7I.js` → `main-ZKRKLCOM.js`), and
+the point of it is what is **no longer in the console**. Before: three 404s *and* an
+`[object HttpErrorResponse]` from the unhandled `loadVersions` error. After: the three 404s
+and nothing else. The screen itself is unchanged — same server sentence, same `role="alert"`,
+same two ways out — which is the other half of what needed showing.
