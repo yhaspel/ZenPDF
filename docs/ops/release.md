@@ -15,6 +15,8 @@
 
 *(The row above was labelled `Full e2e ("@full")`. **There is no `@full` tag** — `@smoke` is the only tag that selects anything. "The full suite" means the suite with no grep, which is what `test.sh` runs.)*
 
+*(**Measured 2026-08-25**, the first time the cadence was actually run: the whole `--pg --e2e` gate is **~8m30s end to end** on the project's own Mac — 8m23s / 8m37s / 8m27s across three consecutive runs, of which Playwright is ~4.5–5.0 min and pytest ~1.5–1.8 min. The table's "~4 min" was the Playwright leg alone. Cross-browser `BROWSERS=all` is a separate run and needs `npx playwright install firefox webkit` first — without them every non-chromium spec fails with `Executable doesn't exist`, which looks like 179 product failures and is not one.)*
+
 **Two things the gate did not tell you, both closed 2026-08-22** *(`fix/e2e-gate-hardening`; the paragraph here previously listed them as open)*:
 
 - **It exited 0 with dependency-gated tests skipped.** `infra/test.sh` now health-checks Gotenberg from inside the network *before* pytest and fails with "restart gotenberg" rather than turning ten conversion tests into skips nobody reads; and it runs pytest with `-rs` and asserts the skip **set** — four query-plan tests in `apps/core/tests/test_performance.py`, which are vacuous on SQLite and are what `--pg` exists to run — failing with "the gate did not exercise N tests — fix the environment, do not ship" on anything else. Asserting the set and not just the count matters: four Gotenberg skips would have passed a count check.
@@ -41,7 +43,7 @@ saying why. A quarantine older than one phase is a bug nobody owns.
 
 ## Before tagging a release
 
-- [ ] The whole e2e suite green three consecutive runs on the prod-shaped stack. *(Still owed — this is Phase 10's `@full` acceptance criterion, and "three consecutive runs" is a claim only time can make.)*
+- [ ] The whole e2e suite green three consecutive runs on the prod-shaped stack. *(**Run manually 2026-08-25** — three consecutive `./infra/test.sh --pg --e2e`, each from a fresh `reset.sh --yes && up.sh`, all exit 0 at 8m23s / 8m37s / 8m27s with identical numbers and no flake. Evidence: `docs/reviews/evidence/launch-gate-2026-08-25.md`. The box stays unticked because it is the owner's, and because "three consecutive runs" back to back on one machine may or may not be what "nightly" was meant to mean — see the note in `docs/10-launch-checklist.md`.)*
 - [ ] `@smoke` green against the deployed host.
 - [ ] `pip-audit` and `npm audit` reviewed — the monthly pass is
       `docs/ops/dependencies.md`.
