@@ -146,10 +146,11 @@ export class Compare {
         if (job.status === 'succeeded') {
           this.page.set(0);
           const summary = this.compare.summary();
+          const changed = summary?.changed_pages ?? 0;
           this.toast.success(
             summary?.identical
               ? 'No differences found'
-              : `${summary?.changed_pages} page(s) differ`,
+              : `${changed} ${changed === 1 ? 'page differs' : 'pages differ'}`,
           );
         } else if (job.status === 'failed') {
           this.toast.error(job.error_message || 'Compare failed');

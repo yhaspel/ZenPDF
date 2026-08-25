@@ -173,6 +173,18 @@ describe('ViewerFacade.adopt', () => {
     expect(facade.doc()?.id).toBe('d1');
   });
 
+  it("ignores a seq from another document's job and reloads instead", () => {
+    const facade = loadedFacade();
+    expect(facade.currentSeq()).toBe(1);
+
+    // A save for the document the user just left completes late. Its result
+    // names d2 — nothing of it may land on d1.
+    facade.adopt(succeeded({ document_id: 'd2', version_id: 'v9', seq: 9 }));
+
+    expect(facade.currentSeq()).toBe(1);
+    expect(facade.doc()?.id).toBe('d1');
+  });
+
   it('takes a page count too when the job reports one', () => {
     const facade = loadedFacade();
     facade.adopt(succeeded({ seq: 2, page_count: 5 }));

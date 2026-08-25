@@ -207,18 +207,21 @@ echo "======================================================"
 ALLOWED_SKIP_FILES="apps/core/tests/test_performance.py|apps/core/tests/test_concurrency_pg.py"
 ALLOWED_SKIPS=6
 
-count_skips() { grep -c '^SKIPPED' "$1" 2>/dev/null || true; }
+# pytest -rs groups identical skips as `SKIPPED [N] file:line: reason`, so the
+# count must SUM the bracketed totals — counting lines undercounts whenever one
+# location skips more than once (the gotenberg parametrization is 8 on one line).
+count_skips() { awk '/^SKIPPED/ { n = ($2 ~ /^\[[0-9]+\]$/) ? substr($2, 2, length($2) - 2) + 0 : 1; s += n } END { print s + 0 }' "$1" 2>/dev/null || echo 0; }
 foreign_skips() { grep '^SKIPPED' "$1" 2>/dev/null | grep -Ev "$ALLOWED_SKIP_FILES" || true; }
 
 # Regression test for the guard itself (see the header): the counter is run over
 # canned transcripts before it is trusted with a real one.
 selftest="$(mktemp -d)"
-printf 'SKIPPED [1] apps/core/tests/test_performance.py:49: vacuous on sqlite\nSKIPPED [1] apps/documents/tests/test_convert.py:9: needs gotenberg\n7 passed, 2 skipped\n' > "$selftest/mixed"
+printf 'SKIPPED [1] apps/core/tests/test_performance.py:49: vacuous on sqlite\nSKIPPED [8] apps/pdf_engine/tests/test_convert.py:293: needs gotenberg\nSKIPPED [1] apps/documents/tests/test_convert.py:9: needs gotenberg\n7 passed, 10 skipped\n' > "$selftest/mixed"
 printf '1061 passed, 0 skipped\n' > "$selftest/clean"
 # Both allowed files, so widening the set to two paths is itself checked here
 # rather than only by the run that follows.
 printf 'SKIPPED [1] apps/core/tests/test_performance.py:49: vacuous on sqlite\nSKIPPED [1] apps/core/tests/test_concurrency_pg.py:120: no row locks on sqlite\n2 skipped\n' > "$selftest/allowed"
-[ "$(count_skips "$selftest/mixed")" = "2" ] || { echo "skip-guard self-test failed: expected 2 skips"; exit 1; }
+[ "$(count_skips "$selftest/mixed")" = "10" ] || { echo "skip-guard self-test failed: expected 10 skips (grouped lines must be summed)"; exit 1; }
 [ "$(count_skips "$selftest/clean")" = "0" ] || { echo "skip-guard self-test failed: expected 0 skips"; exit 1; }
 [ -n "$(foreign_skips "$selftest/mixed")" ] || { echo "skip-guard self-test failed: a gotenberg skip must be foreign"; exit 1; }
 [ -z "$(foreign_skips "$selftest/clean")" ] || { echo "skip-guard self-test failed: a clean run has no foreign skips"; exit 1; }
@@ -252,7 +255,7 @@ unexpected="$(foreign_skips "$pytest_log")"
 if [ -n "$unexpected" ] || [ "$skipped" -gt "$ALLOWED_SKIPS" ]; then
   echo
   echo "ERROR: the gate did not exercise ${skipped} tests — fix the environment, do not ship."
-  echo "       Expected at most ${ALLOWED_SKIPS} skips, all in ${ALLOWED_SKIP_FILE}."
+  echo "       Expected at most ${ALLOWED_SKIPS} skips, all in ${ALLOWED_SKIP_FILES}."
   echo "       Skipped:"
   grep '^SKIPPED' "$pytest_log" | sed 's/^/         /'
   exit 1

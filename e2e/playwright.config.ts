@@ -7,7 +7,7 @@ import { defineConfig, devices } from '@playwright/test';
  * them by editing its title:
  *
  *   npx playwright test --grep @smoke   # ~40 s: the paths that must never break
- *   npx playwright test                 # everything ("@full"), which is what CI runs
+ *   npx playwright test                 # everything ("@full") — what `infra/test.sh --e2e` runs (there is no CI; docs/ops/release.md)
  *
  * `@smoke` is the deploy gate: register, upload, run an operation, self-sign
  * as a guest, complete a two-signer ceremony, and the public pages'

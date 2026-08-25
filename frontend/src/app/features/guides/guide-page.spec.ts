@@ -1,4 +1,4 @@
-import { TestBed } from '@angular/core/testing';
+import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { Title } from '@angular/platform-browser';
 import { provideRouter } from '@angular/router';
 
@@ -14,10 +14,13 @@ import { GuidesIndex } from './guides-index';
  * than in each test: without it a late write from one spec lands during the
  * next one, and the failure reads as the wrong guide being rendered.
  */
+let lastFixture: ComponentFixture<GuidePage> | undefined;
+
 async function renderGuide(slug: string): Promise<HTMLElement> {
   TestBed.resetTestingModule();
   TestBed.configureTestingModule({ imports: [GuidePage], providers: [provideRouter([])] });
   const fixture = TestBed.createComponent(GuidePage);
+  lastFixture = fixture;
   fixture.componentRef.setInput('guide', guideBySlug(slug));
   fixture.detectChanges();
   await Promise.resolve();
@@ -107,6 +110,13 @@ describe('guide page', () => {
     expect(ld['dateModified']).toBe('2026-08-24');
     expect((ld['author'] as Record<string, string>)['name']).toBe('the ZenPDF team');
     expect(ld['url']).toBe(`${SITE_URL}/guides/flatten-pdf-what-it-means`);
+  });
+
+  it('takes its JSON-LD with it when the component is destroyed', async () => {
+    await renderGuide('flatten-pdf-what-it-means');
+    expect(document.getElementById('zen-guide-jsonld')).not.toBeNull();
+    lastFixture!.destroy();
+    expect(document.getElementById('zen-guide-jsonld')).toBeNull();
   });
 
   it('sets the title and canonical from the table, never from document.location', async () => {
