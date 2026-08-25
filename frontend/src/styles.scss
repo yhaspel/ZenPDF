@@ -177,26 +177,40 @@ small, .muted { color: var(--color-ink-muted); }
   }
 }
 
-/* §6's 44 px floor on the file card's own controls, below `md`.
+/* §6's 44 px floor on the file card's own controls, at **every** width.
    Measured at 390 px before the rule: the ⋯ menu 28 × 28, the star 15 × 15 and
    the select checkbox 17 × 17 — three overlapping targets on a card that is
-   itself only 164 px wide. They keep their desk size, where a pointer and
-   `:hover` do the work the finger cannot.
+   itself only 164 px wide.
 
    The floor is a *target*, not a paint. Sizing the select checkbox itself to
    44 px was tried and reverted the same session: a native checkbox scaled to
    44 px draws a 44 px empty square, which on a 164 px card over the thumbnail
    reads as a rendering fault. So the checkbox is wrapped in a `<label>` that
    carries this class instead — the same answer §3 already gives for the OCR
-   rows, where the box stays 17 px and the row around it is 44. */
-@media (max-width: 767px) {
-  .card-control {
-    min-inline-size: 44px;
-    min-block-size: 44px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-  }
+   rows, where the box stays 17 px and the row around it is 44.
+
+   ⚠ **The `@media (max-width: 767px)` that used to wrap this is gone**
+   *(2026-08-25)*. It carried the reasoning "they keep their desk size, where a
+   pointer and `:hover` do the work the finger cannot", and that is a claim
+   about *ease*, not about the floor: §6 sets 44 px with no viewport attached,
+   and a pointer does not make a 17 px box compliant — it makes it easier to
+   hit. Lighthouse found it from the outside: `/app/dashboard` on a production
+   build scores **96** for accessibility and the single failing audit is
+   `target-size`, on all six cards, at **1280 px** where this rule did not
+   apply. Measured there before the change: the select checkbox **17 × 17**
+   (its label 17 × 21.5) and the ⋯ menu **28 × 28** — the first under even
+   WCAG 2.2 AA's 24 px, let alone this contract's 44.
+
+   The label wrapper is what makes this safe to widen: it was already the
+   answer to "44 px without drawing a 44 px box", and nothing about it was
+   phone-specific. The ⋯ keeps its `h-7 w-7` paint and grows to a 44 px target
+   because `min-block-size` beats `height`. */
+.card-control {
+  min-inline-size: 44px;
+  min-block-size: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 /* The landing masthead (§3, §4 compact landing 2026-08-10): on `/` only, the

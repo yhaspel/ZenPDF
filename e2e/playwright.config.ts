@@ -60,12 +60,28 @@ export default defineConfig({
         { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
         { name: 'firefox', use: { ...devices['Desktop Firefox'] } },
         { name: 'webkit', use: { ...devices['Desktop Safari'] } },
-        // The two surfaces people actually reach on a phone: the ceremony
-        // (sent to them by somebody else) and the dashboard.
-        { name: 'mobile-chrome', use: { ...devices['Pixel 7'] },
-          grep: /@mobile|@smoke/ },
-        { name: 'mobile-safari', use: { ...devices['iPhone 14'] },
-          grep: /@mobile|@smoke/ },
+        // The surface people actually reach on a phone from somebody else: the
+        // signing ceremony. `@mobile` only — **not `@mobile|@smoke`**, which is
+        // what this said until 2026-08-25 and which never matched the sentence
+        // above it.
+        //
+        // `@smoke` swept in specs written for the desktop layout, and they did
+        // not fail for an engine reason: `phase-1` asserts
+        // `[data-test=rail-thumb]` is visible, and on a phone the thumbnail
+        // rail is a **closed bottom sheet** by design (the phone workspace,
+        // PR #31) — measured `hidden`, in isolation, on both mobile projects.
+        // `phase-2b` drives the same desktop-shaped flow. So five of the eight
+        // `BROWSERS=all` failures on 2026-08-25 were this grep asking two
+        // phone projects to prove a desktop layout, which is coverage that
+        // could only ever be red.
+        //
+        // The phone's real coverage is deliberately *not* here:
+        // `phase-10-mobile.spec.ts` pins an exact 390 × 844 viewport and stays
+        // out of these projects on purpose, because `devices[…]` sets
+        // `isMobile: true` and that emulation is the instrument that hid the
+        // 2026-08-21 overflow. Read that file's header before widening this.
+        { name: 'mobile-chrome', use: { ...devices['Pixel 7'] }, grep: /@mobile/ },
+        { name: 'mobile-safari', use: { ...devices['iPhone 14'] }, grep: /@mobile/ },
       ]
     : [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
 });
