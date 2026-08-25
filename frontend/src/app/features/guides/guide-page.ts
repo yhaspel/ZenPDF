@@ -1,5 +1,5 @@
 import { DOCUMENT, DatePipe } from '@angular/common';
-import { ChangeDetectionStrategy, Component, computed, inject, input } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, input, OnDestroy } from '@angular/core';
 import { Meta, Title } from '@angular/platform-browser';
 import { RouterLink } from '@angular/router';
 
@@ -107,7 +107,7 @@ const AUTHOR = 'the ZenPDF team';
     </div>
   `,
 })
-export class GuidePage {
+export class GuidePage implements OnDestroy {
   readonly guide = input.required<GuidePageDef>();
 
   private title = inject(Title);
@@ -167,5 +167,15 @@ export class GuidePage {
     script.type = 'application/ld+json';
     script.textContent = JSON.stringify(payload);
     this.doc.head.appendChild(script);
+  }
+
+  /**
+   * The structured-data script is written into `document.head`, which outlives
+   * this component — remove it on the way out so a client-side navigation away
+   * does not leave another page carrying this one's JSON-LD. Prerendered HTML
+   * (what a crawler reads) is untouched by this: each route renders fresh.
+   */
+  ngOnDestroy(): void {
+    this.doc.getElementById('zen-guide-jsonld')?.remove();
   }
 }

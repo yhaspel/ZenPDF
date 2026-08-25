@@ -217,6 +217,10 @@ export class ViewerFacade {
    * happens — the version list, the outline and the page count come from it —
    * but nothing has to *wait* for it to know which version it is on.
    *
+   * A result naming a *different document* likewise falls back to a plain
+   * reload — a save that completes after the workspace switched documents in
+   * the same component instance must not stamp its seq onto the newcomer.
+   *
    * A result without a `seq` falls back to a plain reload rather than guessing:
    * an operation that produced no version (or a shape this does not recognise)
    * must not be allowed to invent one, because a `currentSeq` that is wrong in
@@ -226,6 +230,17 @@ export class ViewerFacade {
     const d = this._doc();
     const seq = Number(job?.result?.['seq']);
     if (!d?.current_version || !Number.isFinite(seq)) {
+      this.reload();
+      return;
+    }
+    // A job that finished after the workspace moved to another document must
+    // not write its seq into the newcomer. Version-producing results carry
+    // `document_id` (§10); when it names a different document, fall back to a
+    // plain reload — the generation guard makes that a no-op if a newer load
+    // owns the facade. Without this, the stale write self-healed one round
+    // trip later, but "briefly wrong, then fixed" is still wrong.
+    const docId = job?.result?.['document_id'];
+    if (typeof docId === 'string' && docId !== d.id) {
       this.reload();
       return;
     }

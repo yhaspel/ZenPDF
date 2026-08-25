@@ -86,7 +86,11 @@ export class ThumbnailScheduler {
     return wait + Math.floor(Math.random() * JITTER_MS);
   }
 
-  /** For tests and for a fresh document; the rail carries no other state. */
+  /**
+   * For tests. Production deliberately never calls this: the pause mirrors a
+   * per-principal throttle, not a per-document one, so it correctly carries
+   * across a document switch — and it caps at 30 s either way.
+   */
   reset(): void {
     this.pausedUntil = 0;
   }

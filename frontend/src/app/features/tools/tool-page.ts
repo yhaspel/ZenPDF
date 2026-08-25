@@ -1,5 +1,5 @@
 import { DOCUMENT } from '@angular/common';
-import { ChangeDetectionStrategy, Component, DestroyRef, computed, inject, input, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, DestroyRef, computed, inject, input, signal, OnDestroy } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { Meta, Title } from '@angular/platform-browser';
 import { Router, RouterLink } from '@angular/router';
@@ -47,7 +47,7 @@ const PAGE_SELECT_KINDS = new Set(['extract-pages', 'delete-pages']);
   imports: [AdSlot, UploadDropzone, RouterLink, SiteFooter, Brand, ThemeToggle],
   templateUrl: './tool-page.html',
 })
-export class ToolPage {
+export class ToolPage implements OnDestroy {
   readonly tool = input.required<ToolPageDef>();
 
   private docsSvc = inject(DocumentsService);
@@ -647,5 +647,15 @@ export class ToolPage {
     if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
     const mb = bytes / 1048576;
     return `${mb < 10 ? mb.toFixed(1) : Math.round(mb)} MB`;
+  }
+
+  /**
+   * The structured-data script is written into `document.head`, which outlives
+   * this component — remove it on the way out so a client-side navigation away
+   * does not leave another page carrying this one's JSON-LD. Prerendered HTML
+   * (what a crawler reads) is untouched by this: each route renders fresh.
+   */
+  ngOnDestroy(): void {
+    this.doc.getElementById('zen-tool-jsonld')?.remove();
   }
 }
