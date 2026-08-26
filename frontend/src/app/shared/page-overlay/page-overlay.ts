@@ -142,6 +142,23 @@ export class PageOverlay {
   /** Which item is being typed into, if any. */
   readonly editingId = input<string | null>(null);
   /**
+   * Whether the page raster includes the file's own annotations.
+   *
+   * Annotate says **no**: it renders every annotation itself as an editable
+   * item, so a raster that already contained them showed each mark twice —
+   * the baked copy under the editable one, at a slightly different size and
+   * place, and staying put when the editable one was dragged. That is what
+   * "the text doubles itself, like it copy-pasted" looked like from outside.
+   * The backend has drawn the clean page on request (`?annots=false`) since
+   * Phase 3, with a test naming this overlay as its reason; this input is the
+   * side that never asked.
+   *
+   * Every other mode keeps the default. Edit, Forms, Protect and Sign draw
+   * text blocks, widgets, redaction areas and placements — not annotations —
+   * so the raster is the only place a highlight or a comment shows there.
+   */
+  readonly rasterAnnotations = input(true);
+  /**
    * Draw the selection outline without resize grips.
    *
    * Edit mode's items are read-models of the file — text blocks, images, links
@@ -183,7 +200,19 @@ export class PageOverlay {
   /** A double-click on something that carries text: put a caret in it. */
   readonly editRequested = output<string>();
   readonly textChanged = output<{ id: string; text: string }>();
-  readonly editingEnded = output<void>();
+  /**
+   * The editor for *this* item closed — its text, if it changed, went out on
+   * `textChanged` just before.
+   *
+   * It carries the id because the parent may already be editing something
+   * else by the time it hears this. Drawing the next text box hands
+   * `editingId` to the new box and only then tears the old editor down, and
+   * Chromium fires `blur` on a focused element that is removed from the DOM —
+   * so an end-of-editing without a name was read as the *new* box's, which
+   * was empty, and was deleted for it. Every second text box drawn straight
+   * after typing in the last one vanished that way.
+   */
+  readonly editingEnded = output<string>();
   /**
    * What the menu is about to be opened for, emitted *before* it opens.
    *
@@ -310,10 +339,11 @@ export class PageOverlay {
       const page = this.page();
       const version = this.version();
       const width = this.renderWidth();
+      const annots = this.rasterAnnotations();
       // 2x for a crisp raster on HiDPI, clamped to the server's cap so the
       // render stays inside the <1 s single-page budget (§3, §13).
       const sub = this.docsSvc
-        .thumbnailBlob(id, page, Math.min(2000, Math.round(width * 2)), version)
+        .thumbnailBlob(id, page, Math.min(2000, Math.round(width * 2)), version, { annots })
         .pipe(takeUntilDestroyed(this.destroyRef))
         .subscribe({
           next: (blob) => {
@@ -413,6 +443,9 @@ export class PageOverlay {
     // button 2 — and in Protect, where selecting an area removed it, it
     // deleted the thing the user was trying to open a menu on.
     if (event.button !== 0) return;
+    // A gesture on the page ends the text box being typed into — see
+    // `finishEditing` for why this cannot be left to `blur`.
+    this.finishEditing();
     // A click anywhere on the page dismisses an open menu.
     if (this.menu()) this.closeMenu();
     const point = this.toNorm(event);
@@ -543,6 +576,7 @@ export class PageOverlay {
   protected onItemPointerDown(event: PointerEvent, item: OverlayItem): void {
     if (this.readonlyMode() || this.tool() !== 'select' || item.locked) return;
     if (event.button !== 0) return; // see `onPointerDown`
+    this.finishEditing();
     if (this.menu()) this.closeMenu();
     event.stopPropagation();
     this.selectionChanged.emit(item.id);
@@ -557,6 +591,7 @@ export class PageOverlay {
   protected onHandlePointerDown(event: PointerEvent, item: OverlayItem, handle: Handle): void {
     if (this.readonlyMode() || this.readonlyHandles() || !item.rect) return;
     if (event.button !== 0) return;
+    this.finishEditing();
     event.stopPropagation();
     (event.target as HTMLElement).setPointerCapture?.(event.pointerId);
     const start = this.toNorm(event);
@@ -633,6 +668,7 @@ export class PageOverlay {
   protected onTextPointerDown(event: PointerEvent, word: OverlayWord): void {
     if (this.readonlyMode() || this.tool() !== 'text') return;
     if (event.button !== 0) return;
+    this.finishEditing();
     event.preventDefault();
     // Deliberately NO `setPointerCapture` here, unlike every other gesture.
     // Capturing suppresses boundary events on every other element, so
@@ -933,9 +969,58 @@ export class PageOverlay {
    * a sentence rather than a letter.
    */
   protected onTextBlur(item: OverlayItem, event: Event): void {
-    const value = (event.target as HTMLTextAreaElement).value;
+    const editor = event.target as HTMLTextAreaElement;
+    // The blur `finishEditing` causes on purpose has already been reported.
+    if (this.finishing === editor) return;
+    this.commitEditor(item, editor);
+  }
+
+  /** The editor `finishEditing` is in the middle of closing, if any. */
+  private finishing: HTMLTextAreaElement | null = null;
+
+  /**
+   * End the text box being typed into, committing what it holds. Idempotent,
+   * and safe to call when nothing is being edited.
+   *
+   * Blur cannot be relied on for this, and the reason is the drawing gesture
+   * itself. Every draw handler cancels `pointerdown` (it must, or the drag
+   * selects text and scrolls), and a cancelled `pointerdown` moves no focus in
+   * Chromium — no `mousedown`, no `blur`. So typing in one box and drawing the
+   * next never blurred the first; the editor was simply torn down when
+   * `editingId` moved on. What happened then depended on the browser: Chromium
+   * fires `blur` on a focused element that is removed, so the text *was*
+   * committed — but the end-of-editing it reported was read against the new
+   * box, which was empty, and deleted (every second box vanished as it was
+   * drawn). WebKit and Firefox fire nothing, and the text was lost outright
+   * (the *previous* box vanished — it was still there, empty and invisible).
+   *
+   * Public because the parent has the same problem from its side: it
+   * re-targets `editingId` on undo, redo and "Edit text…", and wants the open
+   * box committed first rather than torn down.
+   */
+  finishEditing(): void {
+    const editor = this.textEditor()?.nativeElement;
+    if (!editor) return;
+    const item = this.items().find((candidate) => candidate.id === editor.dataset['itemId']);
+    if (!item) return;
+    // Reported here, once, whatever the browser does next; the blur below
+    // exists so that a caret is not left in a box that is about to close, and
+    // `onTextBlur` knows to let it pass.
+    this.commitEditor(item, editor);
+    if (document.activeElement === editor) {
+      this.finishing = editor;
+      try {
+        editor.blur();
+      } finally {
+        this.finishing = null;
+      }
+    }
+  }
+
+  private commitEditor(item: OverlayItem, editor: HTMLTextAreaElement): void {
+    const value = editor.value;
     if (value !== item.text) this.textChanged.emit({ id: item.id, text: value });
-    this.editingEnded.emit();
+    this.editingEnded.emit(item.id);
   }
 
   /** Escape and ⌘/Ctrl+Enter both mean "done"; plain Enter is a new line,

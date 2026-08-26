@@ -5,7 +5,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { AnnotationsFacade } from '../../abstraction/annotations.facade';
 import { Annotation } from '../../core/models/models';
 import { EditorClipboard } from '../../shared/editor-clipboard.service';
-import { OverlayMenuAction } from '../../shared/page-overlay/overlay-model';
+import { NormRect, OverlayMenuAction } from '../../shared/page-overlay/overlay-model';
 import { Annotate } from './annotate';
 
 /**
@@ -340,5 +340,137 @@ describe('Annotate — clipboard, menu and keyboard', () => {
       });
       expect(annotations.all()[0].quads![0].x).toBeCloseTo(0.15);
     });
+  });
+});
+
+/**
+ * Filling a form with text boxes: type in one, draw the next.
+ *
+ * The flow the 2026-08-26 report described — "every time one field is filled
+ * and I go to the next, the previous field disappears or doubles itself". The
+ * next box's drawing gesture cancels `pointerdown`, so the box being typed
+ * into never blurred; it was torn down uncommitted when `pageEditingId` moved
+ * on, and the end-of-editing Chromium then reported for the removed element
+ * was read against the *new* box, which was empty, and deleted it. Half the
+ * boxes vanished as they were drawn; in a browser that fires nothing for a
+ * removed element the typed text was lost instead.
+ */
+describe('Annotate — filling in fields with text boxes', () => {
+  let fixture: ComponentFixture<Annotate>;
+  let annotations: AnnotationsFacade;
+
+  const api = () => fixture.componentInstance as unknown as {
+    setTool(tool: string): void;
+    onCreated(draft: { shape: 'rect'; page: number; rect: NormRect }): void;
+    onPageEditingEnded(id: string): void;
+    pageEditingId(): string | null;
+    undo(): void;
+  };
+
+  const html = () => fixture.nativeElement as HTMLElement;
+  const editor = () => html().querySelector<HTMLTextAreaElement>('[data-test=overlay-text-editor]');
+  const surface = () => html().querySelector<HTMLElement>('[data-test=page-overlay]')!;
+
+  /** Draw a box: the gesture's pointerdown on the page, then the created draft. */
+  function drawBox(index: number): void {
+    surface().dispatchEvent(new PointerEvent('pointerdown', {
+      bubbles: true, clientX: 10, clientY: 10, button: 0,
+    }));
+    api().onCreated({ shape: 'rect', page: 0, rect: { x: 0.1, y: 0.2 + index * 0.05, w: 0.5, h: 0.03 } });
+    fixture.detectChanges();
+  }
+
+  function type(text: string): void {
+    const box = editor()!;
+    box.value = text;
+    box.dispatchEvent(new Event('input'));
+  }
+
+  beforeEach(() => {
+    TestBed.configureTestingModule({
+      imports: [Annotate],
+      providers: [provideHttpClient(), provideHttpClientTesting()],
+    });
+    annotations = TestBed.inject(AnnotationsFacade);
+    annotations.clear();
+    fixture = TestBed.createComponent(Annotate);
+    fixture.componentRef.setInput('docId', 'doc-1');
+    fixture.componentRef.setInput('pageCount', 2);
+    fixture.detectChanges();
+    api().setTool('free_text');
+    fixture.detectChanges();
+  });
+
+  afterEach(() => TestBed.resetTestingModule());
+
+  it('keeps every box and every word when the next box is drawn straight after typing', () => {
+    drawBox(0);
+    expect(editor()).toBeTruthy();
+    type('Yuval Haspel');
+
+    drawBox(1);
+    type('Tel Aviv');
+
+    drawBox(2);
+    type('Bank Hapoalim');
+    editor()!.dispatchEvent(new Event('blur'));
+    fixture.detectChanges();
+
+    const texts = annotations.all().map((a) => a.contents);
+    expect(texts).toEqual(['Yuval Haspel', 'Tel Aviv', 'Bank Hapoalim']);
+    expect(html().querySelectorAll('[data-test=overlay-text]').length).toBe(3);
+    expect(editor()).toBeNull();
+    expect(api().pageEditingId()).toBeNull();
+  });
+
+  it('opens the caret in the new box, and only the new box', () => {
+    drawBox(0);
+    type('First');
+    drawBox(1);
+    const boxes = annotations.all();
+    expect(boxes.length).toBe(2);
+    expect(editor()?.dataset['itemId']).toBe(boxes[1].id);
+    expect(api().pageEditingId()).toBe(boxes[1].id);
+    expect(html().querySelectorAll('[data-test=overlay-text-editor]').length).toBe(1);
+  });
+
+  it('still drops a box that was left empty, and only that one', () => {
+    drawBox(0);            // never typed into
+    drawBox(1);
+    expect(annotations.all().length).toBe(1);
+    expect(api().pageEditingId()).toBe(annotations.all()[0].id);
+  });
+
+  it('judges an end-of-editing by the id it names, not by what is being edited now', () => {
+    drawBox(0);
+    type('Kept');
+    drawBox(1);
+    const [first, second] = annotations.all();
+    // A late report for the first box (a browser firing blur for a removed
+    // element) must neither close nor delete the second.
+    api().onPageEditingEnded(first.id);
+    fixture.detectChanges();
+    expect(api().pageEditingId()).toBe(second.id);
+    expect(annotations.all().map((a) => a.id)).toEqual([first.id, second.id]);
+  });
+
+  it('commits one history entry per sentence, and undo still takes back a sentence', () => {
+    drawBox(0);
+    type('One');
+    drawBox(1);
+    type('Two');
+    editor()!.dispatchEvent(new Event('blur'));
+    fixture.detectChanges();
+    // add, commit, add, commit — four steps back to an empty page.
+    expect(annotations.all().map((a) => a.contents)).toEqual(['One', 'Two']);
+    api().undo();
+    expect(annotations.all().map((a) => a.contents)).toEqual(['One', '']);
+    api().undo();
+    expect(annotations.all().map((a) => a.contents)).toEqual(['One']);
+    api().undo();
+    expect(annotations.all().map((a) => a.contents)).toEqual(['']);
+    api().undo();
+    expect(annotations.all()).toEqual([]);
+    expect(annotations.canUndo()).toBe(false);
   });
 });

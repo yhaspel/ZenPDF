@@ -29,6 +29,17 @@ interface Snapshot {
   selectedId: string | null;
 }
 
+/**
+ * Structural equality for one annotation field.
+ *
+ * Fields are strings, numbers, rects, and arrays of points or quads — plain
+ * JSON with no cycles and no functions, so a serialised comparison is exact,
+ * and cheap at the size of one annotation.
+ */
+function same(a: unknown, b: unknown): boolean {
+  return a === b || JSON.stringify(a) === JSON.stringify(b);
+}
+
 @Injectable({ providedIn: 'root' })
 export class AnnotationsFacade {
   private docsSvc = inject(DocumentsService);
@@ -233,6 +244,15 @@ export class AnnotationsFacade {
   update(id: string, patch: Partial<Annotation>): void {
     const current = this.all().find((a) => a.id === id);
     if (!current) return;
+    // A patch that changes nothing is not a history entry — the same rule the
+    // overlay applies to a zero-distance drag. The on-page editor commits on
+    // blur *and* before the next gesture, and a browser that fires `blur` for
+    // an element being removed can report the same text twice; without this
+    // the second report cost the person one ⌘Z that undid nothing they could
+    // see.
+    if (Object.entries(patch).every(([key, value]) => same(current[key as keyof Annotation], value))) {
+      return;
+    }
     this.remember();
     this._drafts.update((map) => new Map(map).set(id, { ...current, ...patch, id }));
   }

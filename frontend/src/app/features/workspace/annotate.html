@@ -212,6 +212,7 @@
           [words]="words()"
           [selectedId]="annotations.selectedId()"
           [editingId]="pageEditingId()"
+          [rasterAnnotations]="false"
           [drawStroke]="color()"
           [drawWidth]="strokeWidth()"
           [menuActionsFor]="menuActionsFor"
@@ -221,7 +222,7 @@
           (deleteRequested)="onDeleteRequested($event)"
           (editRequested)="onEditRequested($event)"
           (textChanged)="onPageTextChanged($event)"
-          (editingEnded)="onPageEditingEnded()"
+          (editingEnded)="onPageEditingEnded($event)"
           (contextTarget)="onContextTarget($event)"
           (menuAction)="onMenuAction($event)"
         />

@@ -41,6 +41,13 @@
           </p>
         }
 
+        @if (mode() === 'add-text') {
+          <p class="muted text-[11px]" data-test="add-text-hint">
+            Drag a box where the text should go, type, then press OK — each box is
+            written into the file as its own version.
+          </p>
+        }
+
         @if (mode() === 'text') {
           <p class="muted rounded-2 border-border bg-bg border p-2 text-[11px]"
              data-test="edit-constraints">
@@ -360,8 +367,12 @@
            class="sr-only" tabindex="-1" aria-hidden="true"
            (change)="onImageFile($event, true)" />
 
-    <!-- Scanned-page gate (phase-04): the editor refuses, and says what to do. -->
-    @if (scanned()) {
+    <!-- Scanned-page gate (phase-04): the editor refuses, and says what to do.
+         Only where it is true: "no text to edit" is about *editing text*.
+         Add text, whiteout, images and links write onto a scan exactly as they
+         write onto anything else, and a notice saying the page cannot be
+         edited above a tool that is editing it read as the tool being broken. -->
+    @if (scanned() && mode() === 'text') {
       <div class="rounded-2 bg-warning-surface m-4 p-4" data-test="scanned-gate">
         <p class="text-ink-strong font-medium">This page is a scan</p>
         <p class="text-ink mt-1 text-sm">
@@ -405,6 +416,7 @@
                [style.width.px]="box.width"
                data-test="block-editor">
             <textarea
+              #blockEditorInput
               class="w-full resize-y p-1 text-sm outline-none"
               [style.min-height.px]="box.height"
               [ngModel]="draftText()"

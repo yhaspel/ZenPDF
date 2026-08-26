@@ -1145,6 +1145,9 @@ Handoff programme (the nine CLI prompts from the 2026-08-21 status review) is tr
 
 | Added | Item | Phase | GATE? | Resolved |
 |---|---|---|---|---|
+| 2026-08-26 | **Annotate's page pane never clamps to the viewport, so the *window* scrolls instead of the pane — and the start rail is not the reason.** Reproduced on the local stack, in the shape the owner reported (`1472` vs `873` with `.ws-panes` 1379 on their Chrome): at **1919 px wide**, `documentElement.scrollHeight` **1428** against `innerHeight` **728**, `.ws-panes` **1375**. The queue row's guess was the annotate start rail's content height — **it is not**: that rail's content measures **707 px**, well inside the viewport. The driver is the **page raster**, which fit-width sizes to the pane's *width*: at 1919 the page image is **1274 px tall** in a scroller that grew to **1322** rather than shrinking. It is **not width-specific** either — at 1280 the same document gives 1220 vs 728 with the image at 1066. And it is **Annotate-specific**: the same document in **View** mode measures `scrollHeight` **728** = `innerHeight`, `.ws-panes` **675**, because pdf.js scrolls inside its own canvas. The height chain has no definite ceiling to distribute: `.page-shell` is `min-height: 728px` (min-h-screen) with computed `height: 1428px`, and the shell's `main` is `flex flex-1 flex-col` with **`min-height: auto`**, so the pane's natural content pushes the document instead of the pane scrolling. Consequence the owner hit: a stray space keystroke scrolls the whole workspace out of view. Fix shape: give the workspace column a definite viewport height (or `min-h-0` on the shell's `main`) so `.ws-pane-main`'s `overflow-auto` scroller is the thing that scrolls — §4's "fills the viewport height" rule already says this is the intent. Measured and filed, not fixed: outside this branch's scope. | 3/10 | No | — |
+| 2026-08-26 | **A text box being typed into goes out empty in the 30-second autosave, and is corrected by the next save.** The on-page editor commits on blur and before the next gesture — never per keystroke, by design (one ⌘Z, one sentence) — so an autosave that fires mid-sentence sends the box's `add` with `contents: ''` and the words follow as an `update` on the next Save or autosave. Nothing is lost, but a tab closed inside that window loses the open sentence (the `beforeunload` guard still warns, because the draft is dirty). Fix shape, if wanted: the overlay mirrors the editor's live value into a signal the facade's `ops()` reads at save time, without a history entry. LOW. | 3 | no | — |
+| 2026-08-26 | **Edit's *Add text* writes one version per box.** Correct by design — it edits content, not annotations — but a person filling a twenty-field scanned form in Edit waits a round trip per field and leaves twenty versions behind, which is what "the edit feature is virtually unusable" meant on 2026-08-26. The annotate text box is the batch tool for that job and nothing on the Edit screen says so. Product call: a one-line pointer from *Add text* to Annotate's text box, or a local batch for *Add text* like Annotate's. LOW. | 4 | no | — |
 | 2026-08-24 | **A session that really has ended still ends *silently* — the person finds out at the next guarded route, as a stranger.** Left standing deliberately by `fix/session-survives-a-blip`, which fixed the wrong reason for clearing and not the missing signal. Two paths reach it: `AuthFacade.loadUser()` clearing on a genuine 401, and `auth.interceptor.ts:159` — a 401 where an access token is present but `tokens.refresh` is falsy skips the refresh block entirely and falls through to the bare `throwError` at :177 with no clear and no redirect. In both cases `clearSession()` runs with **no `router.navigate`**, so the page keeps rendering whatever it was showing; the loss is invisible until something guarded is clicked, and then `accountGuard` sends them to `/auth/register` with the reason chrome of a brand-new visitor — not `/auth/login`, and with no explanation that they *had* a session. Contrast the interceptor's own refresh-failure path (:169-173), which clears **and** navigates to `/auth/login`; that is the behaviour a real sign-out should have. Not fixed here because the obvious fix — navigate on a 401 from `loadUser` — would yank somebody off a **public** route mid-task: `App` (`app.ts:22`) calls `loadUser()` on every page load including `/verify-email/:token`, so a stale token would interrupt an email confirmation. Wants a deliberate answer (a toast plus a soft redirect only from `/app/**`, most likely), not a one-liner. | 9/10 | No | ✔ **Resolved 2026-08-24** (`fix/session-ends-out-loud`) — and the deliberate answer is the one this row guessed at, with the scope tightened by reading the routes rather than assuming. `AuthFacade.endSession()` is the involuntary twin of `logout()`: it clears **everything** (which the interceptor's own path did not — it cleared tokens but left `_user` and this tab's document passwords, and L7 is the whole reason the latter must go), says so in an **info toast with the error dwell**, and redirects **only** from the routes `accountGuard` actually gates — to **login** with `next`, because somebody whose session just died has an account. `/app/doc/:id` is deliberately not in that set: it renders for either principal, so a dead token is no reason to interrupt a document being read, and every public route stays put because moving them would be the login wall §10 forbids. The prefix list lives next to the guard and `account.guard.spec.ts` parses `app.routes.ts` to stop the two disagreeing. Idempotent by arithmetic rather than by a flag — the first 401 ends the session and the rest find the tokens already gone. Evidence in `docs/reviews/evidence/session-ended/`. |
 | 2026-08-24 | **The macOS virtiofs `* 2.*` duplicates break the gate with an error that names the wrong problem, and nothing guards against it.** Measured here: `frontend/src/app/shared/fit-width 2.ts` appeared during a run and the prerender leg failed with **`Prerendered 0 static routes.`** followed by `TS6053: File '/app/src/app/shared/fit-width 2.ngtypecheck.ts' not found` — an error about a file nobody wrote, in a build that had just succeeded. `.gitignore` has ignored the shape since `1e1919a`, which keeps them **out of git and therefore out of `git status`**, so the only signal is the compiler falling over. It has now been recorded three times (2026-08-02 tracked orphan; the 2026-08-23 `tsconfig.app 2.json` swept into a PR; this). Cheap guard, in the spirit of the stale-worker and health preflights `test.sh` already has: fail fast at the top of the script when `find frontend/src e2e backend -name '* [0-9].*'` returns anything, printing the list and the `-delete` command — one clear line instead of a TS6053 about a phantom. Not done here because no row asked for it and this branch is a one-declaration fix; it is a five-line change whenever somebody wants it. | 0/10 | No | ✔ **Resolved 2026-08-24** (`fix/stray-file-guard`) — `infra/test.sh` checks first, before any leg, and **fails** rather than deleting: the pattern is a heuristic (`report 2.md` is an ordinary name) and a gate that quietly removes files it guessed about is worse than one that stops and shows its working — the line `up.sh` already takes with stale workers. Prunes `node_modules`, `.angular`, `dist`, `test-results`, `.venv` and `__pycache__`, so it is fast and cannot fire on a dependency. **Proven on a real artefact rather than a fabricated one**: the first run found `frontend/vitest.config 2.bak`, already sitting in the tree, and stopped in under a second with the path named and the removal command printed; removing it turned the check to `None.` and the gate carried on. Gate green end to end on the change itself: pytest **1159 passed, 6 skipped**, `ng test` **63 files / 547 tests**, build + `verify:prerender` clean at **43** routes — the leg a stray used to take to `Prerendered 0` — and Playwright **86 passed, 1 skipped of 87**. The script's header contract gains it as the second thing the gate must be honest about — and the sentence that said "Two things" is now a list rather than a count, for the reason `AGENTS.md` gives about the design contract's amendment log. |
 | 2026-08-24 | **The e2e suite cannot see a classic scrollbar, so a whole class of fit defect is invisible to it.** Playwright's chromium gives the workspace page pane an **overlay** vertical scrollbar — measured on this stack: `clientWidth` 390 while `scrollHeight` 532 exceeds `clientHeight` 525 — so the pane's content box never narrows when it scrolls. Real desktop Chrome at a window under 768 px draws a **classic** one, which is exactly the condition that made the page fit settle 15 px too wide on production (see the session log for 2026-08-24, last entry). The guest sweep written for that defect **passed on the unfixed build**, and the fix is held by an assertion on the CSS declaration instead of on the geometry. Anything else that depends on scrollbar width is equally unobservable here. Options, none free: a Playwright project launched with `--force-renderer-accessibility`-style flags does not change it; `Page.addStyleTag` forcing `::-webkit-scrollbar { width: 15px }` on the scroller would restore the geometry at the cost of testing a stylesheet the product does not ship; or accept it and keep asserting declarations, saying so each time. Worth deciding once rather than per-defect. | 10 | No | ✔ **Decided and closed 2026-08-24** (`fix/scrollbar-blind-spot`) — **it is not configurable, and that was measured rather than assumed.** A nested scroller was probed across ten configurations: bundled Chromium *and* the installed Chrome, headless *and* headed, `--disable-features=OverlayScrollbar`, `--disable-features=OverlayScrollbar,FluentOverlayScrollbar`, `--hide-scrollbars=false`, `-webkit-appearance: none` on `::-webkit-scrollbar`, and `overflow-y: scroll`. Every one gave up **0 px**. The decisive reading is that **`scrollbar-gutter: stable` is a no-op there too** — an overlay scrollbar has no width to reserve — so the suite can see neither the defect nor the fix, and the first option in this row (a launch flag) is dead. The second (injecting `::-webkit-scrollbar` width) does not work *and* would have been the wrong shape anyway. So the answer is the third, made honest instead of resigned: the geometry is asserted where it can be (the CSS declaration, below `md` and `auto` at 1280 — it fails on the unfixed build), and **the property the defect actually violated is locked where no browser is needed**. The bistability was a fixed-point problem, and fixed points are arithmetic: `page-fit.spec.ts` now runs the real loop — width sets height, height decides the scrollbar, scrollbar changes the width — and asserts it **cycles between 327 and 342 without the gutter and settles on 327 with it**, the exact pair measured on production, plus that a desk converges either way, which is why §10 scopes the rule below `md`. Four cases, no browser, portable to any machine. |
@@ -1252,6 +1255,157 @@ Handoff programme (the nine CLI prompts from the 2026-08-21 status review) is tr
 | 2026-08-20 | **The workspace on a phone is stacked, not designed.** Below `md` the rails now become full-width sections above and below the page (§3 workspace panes) — which makes every control reachable and stops the page scrolling sideways, but it is a rescue, not a phone layout. A designed treatment would probably make the rails drawers with a persistent bottom bar. Worth a designer's eye before any mobile push. | 10 | No | *(2026-08-21: the row above the page now wraps rather than overflowing, so the page no longer scrolls sideways and the app is no longer drawn at ~64 % — but that is a repair, not a design. Row stayed open.)* ✔ **Resolved 2026-08-24** (`feat/mobile-workspace`, prompt 6) — designed, not rescued: the rails are **bottom sheets** over the page (one at a time, grip + title + 44 px close, Escape / scrim, CDK focus trap, body scroll locked, `translateY` only so reduced motion loses nothing), the nine modes are a **persistent bottom bar** carrying an opener for every rail the mode has and, docked at its end, the mode's own Undo/Redo and its primary, and the **page is first** — fit-to-width at 390 with the pane owning the full width. The workspace bar shrinks to back · title · meta · ⋯ · toggle, its six-button cluster moving into a **More** sheet as *one* set of elements through one `<ng-template>`, so there is still exactly one `[data-test=download]` in the DOM at any width. Design contract amended **first** at §2, §3 (a new **Phone workspace** component), §3 headers, §4, §10 and the §11 log, whose "pending, not yet sanctioned" list this emptied. **Desktop is unchanged and it was measured**: the same geometry script over all nine modes, run with `main`'s `frontend/src` checked out and then with the branch's — **0 differences at 768 px, 0 at 1280 px**. Four things the browser found that no test had: the column outgrowing the screen to **1348 px against 844** in the three 900 px-render modes (the sideways assertion stayed green because a scrollbar narrows both of its sides); the **More sheet shipping with no head**; touch targets sized for a desk, the worst of them the comment row's D8 actions at **16 px**; and a focus ring clipped by the sheet's own scroller. See the session log **"2026-08-24 (later) — A designed phone workspace: drawers and a bottom bar"** and `docs/reviews/evidence/mobile-workspace/`. |
 
 ## Session log
+
+**2026-08-26 — Filling in a form with text boxes: the field that vanished, the text that doubled (owner-reported; RCA + fix, Cowork session)**
+
+Branch `fix/annotate-text-fields`. The owner opened a two-page scanned bank form in Annotate,
+drew a text box, typed, drew the next box — and "the previous field disappears or doubles
+itself like it just copy-pasted itself". Reproduced on production through the proxy harness
+before touching anything: four boxes drawn straight after typing → **two of them gone the
+moment they were drawn, their words gone with them**; then Save → every surviving box drawn
+**twice**, and dragging one left its twin behind. Two root causes, both in the Phase 3 overlay:
+
+1. **The next box's gesture never blurred the box being typed into.** Every draw handler
+   cancels `pointerdown` (it must, to drag), and a cancelled pointerdown moves no focus in
+   Chromium — measured: `pointerdown, pointerup`, no `mousedown`, no `blur`. So the editor was
+   torn down uncommitted when `pageEditingId` moved to the new box, and the browser decided
+   what that meant. **Chromium fires `blur` for a focused element that is removed** (measured),
+   so the text *was* committed — but the `editingEnded` it emitted carried no id and
+   `onPageEditingEnded()` read `pageEditingId()`, which was already the *new* box: empty, so
+   deleted "as litter". Every second box vanished as it was drawn. **WebKit and Firefox fire
+   nothing** for a removed element (the HTML focus-fixup rule; jsdom behaves the same, which is
+   how the new unit test fails on the old code — `['', '', 'Bank Hapoalim']`), so there the
+   *previous* box lost its words and stayed on the page invisible. Both readings of the owner's
+   sentence were true, in different browsers.
+2. **The Annotate raster was rendered *with* the annotations.** `render.py`'s `annots=False`
+   and the thumbnail view's `?annots=false` have existed since Phase 3 — with a backend test
+   whose docstring names the overlay as the reason — and the frontend never sent the flag.
+   After every Save and every 30 s autosave the page image carried each mark at PyMuPDF's
+   metrics and the overlay drew it again at its own; the baked copy stayed put under a drag.
+
+**Fix.** `PageOverlay.finishEditing()` — public, idempotent — commits the open editor and ends
+it, and is called at the start of every pointer gesture on the page (surface, item, handle,
+text layer) before the gesture does anything; `editingEnded` now **names its item**, and
+`Annotate.onPageEditingEnded(id)` judges only that item (resets `pageEditingId` only if it
+still points there, removes only *that* box if empty). Undo, redo, "Edit text…" and a new box
+all go through `editOnPage()`, which finishes the open editor first. `AnnotationsFacade.update`
+ignores a patch that changes nothing, so a browser that reports the same sentence twice does
+not cost a ⌘Z. `PageOverlay` gains `rasterAnnotations` (default true); Annotate passes `false`
+and `DocumentsService.thumbnailBlob` sends `annots=false`. Backend: `render_page(annots=False)`
+now **strips the page's markup and keeps its form widgets** (MuPDF's own `annots=False` hid
+widgets too, which would have shown a filled form as blank under Annotate) — one-at-a-time
+`delete_annot(first_annot)` on the in-memory copy. Edit screen, found on the way: the
+**scanned-page gate is drawn only in *Edit text*** (it sat above *Add text* on a scan, which
+works, saying the page could not be edited); *Add text* gets a one-line hint and its editor
+takes the caret on opening. Design contract amended in place (§3 Text on the page — two new
+paragraphs; §4 workspace Edit; §11 row); no grounding-list entry, nothing new is offered.
+
+**Verification.** Frontend **587 unit / 66 files** (+11: 5 fill-in-fields flow in
+`annotate.spec.ts`, 3 overlay, 1 facade, and the two amended; all 5 flow tests fail on the
+old code), `ng lint` clean, production build + **43 prerendered routes** + `verify:prerender`.
+Backend `apps/pdf_engine` + `apps/documents` annotation suites **153 passed** (+1 widget
+test); full suite **1148 passed / 16 skipped** with the dev cert generated, the 7 remaining
+failures the sandbox's usual admin/redis ×2, Ghostscript ×2, tesseract/unpaper ×3; ruff +
+mypy clean. e2e `phase-3` free-text spec extended with the type-then-draw path and a
+`annots=false` assertion on the overlay's raster requests — **type-checked and `--list`ed, not
+run** (needs the local stack). Production re-driven through the harness **after** the change
+is in the Chrome MCP walkthrough recorded below the deploy.
+
+**Landed.** `./infra/test.sh --pg --e2e` on the restarted stack at `d10fb5e` + this patch, green
+end to end (exit 0). Stray-duplicate guard **None**; SSRF deny-list identical across 3 infra
+copies; `ruff` + `mypy` **all checks passed**. Backend **1165 passed, 6 skipped in 129.26 s** —
+one more than the last green run's 1164, and it is the one this patch adds
+(`test_render_without_annotations_keeps_the_form_fields`); the six skips are the allowed
+query-plan ones, re-run against Postgres as **6 passed, 1165 deselected in 27.54 s**. Coverage
+holds on both floors: apps **91.55 %** (gate 85), pdf_engine **91.88 %** (gate 90). `ng lint`
+clean. Unit **587 passed / 66 files in 29.97 s** — the 587 the sandbox measured, on the real
+stack. Build 18.2 s, initial total **576.40 kB** (153.98 kB compressed), **Prerendered 43 static
+routes**, `verify:prerender` green. Playwright **86 passed, 1 skipped, 6.1 m** — the one skip is
+`phase-11:164`'s `isDevServer` guard, as in the last three runs, and the amended free-text spec
+(`phase-3:252`, the one spec this patch changes) **passed in 4.5 s**: it now draws the second box
+straight after typing, asserts both texts and the undo order, and asserts every overlay raster
+request carries `annots=false`. No flake fired; nothing was re-run.
+
+**Browser, local (Chrome MCP against `localhost:4200`, both themes, 1280 and 390).** The fill-in
+flow was driven with **real mouse and keyboard input**, not synthetic events — a transparent
+`pointer-events: none` probe is positioned at each corner and CDP drags between the two, so the
+overlay receives a genuine cancelled `pointerdown`, which is the whole mechanism.
+
+- **The reported defect is gone.** `scanned.pdf` as a guest → Annotate → Text box: four boxes drawn
+  straight after typing (no Escape, no click elsewhere) kept **all four words** — `Yuval Haspel`,
+  `Tel Aviv`, `Bank Hapoalim`, `123456` — the caret landed in each new box as it was drawn, and the
+  comments rail listed every one. Before the fix, boxes 2 and 4 vanished as they were drawn.
+- **The Hebrew box** keeps its text in logical order (`ש ל ו ם` / `ע ו ל ם`, verified by codepoint)
+  and the bidi algorithm draws it right-to-left inside an LTR box at the start edge — existing
+  behaviour, as the handoff said, not a finding.
+- **Nothing is drawn twice.** After Save (`Annotations saved`, `All changes saved`) each of the five
+  boxes appears **once**; after a reload and re-entering Annotate, all five are present and still
+  drawn once. Dragging a saved box moved it and **left no twin behind**; one Undo put it back.
+- **Only the overlay asks for the clean page.** Grouped by shape over a whole session:
+  `w=1800 annots=false`, `w=1536 annots=false` (Annotate) against `w=1360 annots=(absent)` ×2 and
+  `w=1500 annots=(absent)` (Protect, Sign, Edit). No thumbnail-rail request ever carried the flag.
+- **Double-click, edit, draw the next**: the edit committed (`Yuval Haspel (edited)` on the page) and
+  the new box opened focused; `Escape` in the empty new box removed it and left the edited one.
+- **Edit's gates are where they belong.** On a fresh `scanned.pdf`: the gate shows in *Edit text*
+  only — `mode-whiteout`, `mode-image`, `mode-link` and `mode-add-text` all report no gate, and
+  `mode-add-text` alone carries `data-test=add-text-hint` with the contract's sentence verbatim.
+  Drawing an *Add text* box put the caret in the editor **as it opened**; `Herzl 12` → OK →
+  `Text added`, v2, and the words are in the page image. Both themes.
+- **A mode that never edits is untouched**: Protect's redact tab still draws an area (1 area, Apply
+  enabled) with the new `finishEditing()` call at the head of the same `pointerdown`.
+- **Phone (390 × 844, emulated, drawer closed)**: type → draw the next box kept both fields, and the
+  raster requests were `annots=false` there too.
+- Console **clean** across the whole session — the only messages at all are pdf.js's pre-existing
+  `[fluent] Missing translations` warnings for the sidebar buttons the workspace deliberately hides.
+
+Two things the walkthrough corrected rather than confirmed:
+
+- **`backend/tests/fixtures/pdfs/form.pdf` cannot show the widget point.** Its two widgets have no
+  appearance at all — measured **0 non-white pixels** inside both widget rects in the default render
+  *and* in the clean one — so "the two form fields still visible on the page image" is unobservable
+  with that file, and the raster is byte-identical either way. The point was proven instead on a
+  **filled** form, which is the case that mattered: filling `full_name` through Forms mode and
+  re-entering Annotate shows **`Yuval Haspel` on the clean raster**. At the engine level, on the same
+  filled bytes: default → field **899 px** / highlight **5195 px**; `render_page(annots=False)` →
+  field **899 px** (kept) / highlight **956 px** (the black text under it); MuPDF's own
+  `get_pixmap(annots=False)` → field **0 px** — *blank*. That is the refinement, measured.
+- **The 30-second autosave row fires in a slow walkthrough, and behaved exactly as filed**: an
+  autosave landing mid-sentence sent the open box's `add` with empty contents (its comment row read
+  `free text`), and the words followed on the next commit. Nothing was lost. It also clears the local
+  Undo stack, which is why the drag-then-undo check had to be re-run inside one autosave window.
+
+**Self-review, three lenses. Nothing needed fixing; one prediction needed correcting.**
+
+*Regression.* The overlay is shared by six templates and **only `annotate.html` binds `editingId` or
+`editingEnded`** — `sign`, `compare`, `edit`, `protect`, `forms` and the sign request builder leave it
+at its `null` default, so the textarea's `@if (editingId() === item.id …)` never renders, the
+`#textEditor` viewChild is undefined, and `finishEditing()` returns on its first line: the four new
+gesture calls are no-ops there. Confirmed in the browser as well as in the code — Protect's redact tab
+still draws an area, and the raster requests split exactly as intended. The two scanned-gate e2e
+assertions still hold and were watched by name in the run: `phase-4:107` "the scanned-page gate blocks
+the editor and offers OCR" ✓ 4.1 s and `phase-6:27` "OCR a scan, then read, edit and export it" ✓
+11.1 s — both run in the default *Edit text* mode, which is where the gate stayed. The e2e
+`annots=false` assertion filters `Number(w) > 500`, so the rail's 240 px thumbnails are not caught.
+
+*The backend refinement.* `_strip_annotations` walks `first_annot`, which excludes widgets — checked
+on `form.pdf`: **2 widgets before, 2 after**. And a **Popup-bearing `Text` annotation does not raise**,
+which was the shape worth probing, since deleting the parent disposes the popup mid-walk: a scratch
+page with a sticky note, a highlight, a squiggly and a filled widget went **3 annots + 1 widget → 0
+annots + 1 widget**, and `render_page(annots=False)` on the same bytes returned a PNG rather than an
+exception.
+
+*Test quality — and here the handoff's prediction was wrong in an interesting way.* Reverting
+`finishEditing()`'s call in `onPointerDown` does **not** fail `annotate.spec.ts`'s "keeps every box and
+every word…" — that test still passes, because `Annotate.onCreated` reaches `editOnPage()`, which
+finishes the open editor from the parent's side, so the *drawn-box* path is covered twice on purpose.
+What the revert does fail is **`page-overlay.spec.ts`'s "commits the open editor before a gesture on
+the page, and names it"** (`expected [] to deeply equal ['text:a1=…', 'ended:a1']`) — the test that
+guards that exact line — and, in the annotate spec, **"commits one history entry per sentence"**
+(`expected ['', ''] to deeply equal ['One']`), because the two calls commit at different points
+relative to `annotations.add()` and so produce different history order. So the line *is* discriminated,
+by the spec that owns it; the redundancy is deliberate and documented in both files, and it is what
+covers the gestures that are **not** a new text box — a drag, a resize, a click on the text layer.
+The source file was restored byte for byte (`git diff` empty) and the gate re-run on the final commit.
 
 **2026-08-25 (last) — The four things prompt 8 filed, and a p95 with the right server under it**
 
