@@ -1,3 +1,5 @@
+**Executed 2026-08-26 — see PROGRESS.md session log 2026-08-26 (later). Historical.**
+
 # Handoff — Land the one-line text box (2026-08-26, later)
 
 **For:** Claude CLI on the Mac in `~/Documents/Claude/Projects/ZenPDF`.
