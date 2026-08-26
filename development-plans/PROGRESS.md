@@ -1407,6 +1407,41 @@ by the spec that owns it; the redundancy is deliberate and documented in both fi
 covers the gestures that are **not** a new text box — a drag, a resize, a click on the text layer.
 The source file was restored byte for byte (`git diff` empty) and the gate re-run on the final commit.
 
+**Gate, re-run on the final commit** (after the temporary revert was undone), green end to end, exit 0
+and identical: ruff + mypy clean · pytest **1165 passed / 6 skipped** in 89.49 s · PG-only **6 passed,
+1165 deselected** in 10.62 s · coverage apps **91.55 %**, pdf_engine **91.88 %** · `ng lint` clean ·
+unit **587 / 66 files** · **43 prerendered routes** · Playwright **86 passed, 1 skipped**, 4.6 m.
+
+**Live.** Merged as PR #44 `960baba`; Railway replaced `main-NVCT7IQQ.js` with **`main-MIGLS2IE.js`**
+and `/api/health/` reports `ok` on db, redis, storage, gotenberg and workers. Driven on
+`https://zenpdf.up.railway.app` as a **guest**, in both themes, with the same real-input technique.
+
+- **The owner's flow, on production**: `scanned.pdf` → Annotate → Text box → four fields typed with
+  the next box drawn straight after each, then a Hebrew box. **All five kept their words** —
+  `Yuval Haspel`, `Tel Aviv`, `Bank Hapoalim`, `123456`, `שלום עולם` (codepoints `5e9 5dc 5d5 5dd 20
+  5e2 5d5 5dc 5dd`, logical order) — the empty sixth box was removed by `Esc`, and the comments rail
+  listed exactly five. This is the reported defect, gone where it was reported.
+- **Nothing doubled.** At v4 (autosaved) each of the five was drawn **once**; an explicit Save gave
+  `Annotations saved` / `All changes saved` at v5 and each was still drawn once; a drag moved a saved
+  box with **one occurrence** and left blank paper behind, and one Undo returned it to the pixel
+  (322, 512) → (452, 467) → (322, 512).
+- **After a reload**, from the file rather than from memory, all five are present and drawn once, in
+  **dark** theme. Every overlay raster carried `annots=false` (`w=1800`, `w=1506` ×5); nothing else did.
+- **Edit on a fresh production `scanned.pdf`**: the gate shows in *Edit text* only — `mode-add-text`,
+  `mode-whiteout`, `mode-image` and `mode-link` all report no gate — the hint is verbatim under
+  *Add text*, the editor took the caret as it opened, and `Herzl 12` → OK → `Text added`, v2, the
+  words in the page image. Dark theme.
+- **Phone, 390 × 844, drawer closed**: type → draw the next box kept both fields, `w=684 annots=false`.
+- Console **clean** on production throughout — not one message.
+
+One thing the handoff asked for that could not be done, said plainly: **no *pre-existing* production
+document was at hand.** This is a guest session created after the deploy, and guest documents live 24
+hours in the session that made them, so there was nothing saved before the deploy to open. What covers
+the same ground is the reload above: `217b3655` at **v5 is a file that already contains five saved
+annotations**, and a cold load of it drew them **once** — the identical code path a document saved
+before the deploy takes, and the clean raster's cache key carries its own `-clean` suffix, so no stale
+entry from before could be served for it anyway.
+
 **2026-08-25 (last) — The four things prompt 8 filed, and a p95 with the right server under it**
 
 Branch `fix/launch-gate-followups`. Prompt 8 changes no product code by its own terms, so it
