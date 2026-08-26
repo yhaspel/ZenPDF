@@ -454,6 +454,33 @@ describe('Annotate — filling in fields with text boxes', () => {
     expect(annotations.all().map((a) => a.id)).toEqual([first.id, second.id]);
   });
 
+  describe('a box is never shorter than one line of its type', () => {
+    // A4 fallback: 842 pt tall. 12 pt × 1.4 = 16.8 pt → 0.01995 of the page.
+    const oneLine = (12 * 1.4) / 842;
+
+    it('grows a drag thinner than a line upwards — the words sit on the traced line', () => {
+      api().onCreated({ shape: 'rect', page: 0, rect: { x: 0.1, y: 0.2, w: 0.5, h: 0.005 } });
+      const [box] = annotations.all();
+      expect(box.rect!.h).toBeCloseTo(oneLine, 6);
+      // The bottom edge stays where the drag ended; the top moves up.
+      expect(box.rect!.y + box.rect!.h).toBeCloseTo(0.205, 6);
+      expect(box.rect!.x).toBeCloseTo(0.1, 6);
+      expect(box.rect!.w).toBeCloseTo(0.5, 6);
+    });
+
+    it('leaves a drag that was already tall enough exactly as drawn', () => {
+      api().onCreated({ shape: 'rect', page: 0, rect: { x: 0.1, y: 0.2, w: 0.5, h: 0.08 } });
+      expect(annotations.all()[0].rect).toEqual({ x: 0.1, y: 0.2, w: 0.5, h: 0.08 });
+    });
+
+    it('stays on the page when the drag hugs the top edge', () => {
+      api().onCreated({ shape: 'rect', page: 0, rect: { x: 0.1, y: 0.001, w: 0.5, h: 0.004 } });
+      const rect = annotations.all()[0].rect!;
+      expect(rect.h).toBeCloseTo(oneLine, 6);
+      expect(rect.y).toBeGreaterThanOrEqual(0);
+    });
+  });
+
   it('commits one history entry per sentence, and undo still takes back a sentence', () => {
     drawBox(0);
     type('One');
