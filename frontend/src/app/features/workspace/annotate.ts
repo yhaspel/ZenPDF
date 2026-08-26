@@ -80,6 +80,16 @@ const STANDARD_STAMPS = [
 const AUTOSAVE_MS = 30_000;
 
 /**
+ * One line of type, as a multiple of its point size.
+ *
+ * `.page-text` sets `line-height: 1.25` and a 1 px inset above and below; at
+ * any zoom a text box that is 1.4 × its font size tall in points holds one
+ * line without clipping, and the FreeText appearance the file gets needs
+ * about the same.
+ */
+const TEXT_LINE = 1.4;
+
+/**
  * How far a pasted or duplicated mark lands from its original.
  *
  * Enough to see that there are two of them. Pasting exactly on top produces
@@ -504,6 +514,7 @@ export class Annotate {
       annotation.contents = '';
       annotation.font_size = this.fontSize();
       annotation.width = 0;
+      annotation.rect = this.atLeastOneLine(annotation.rect!, draft.page);
     }
     if (tool === 'stamp') {
       annotation.stamp_name = this.stampName();
@@ -523,6 +534,25 @@ export class Annotate {
     } else if (tool === 'note') {
       this.startEditing(annotation.id);
     }
+  }
+
+  /**
+   * A text box is never shorter than one line of its type.
+   *
+   * Filling in a form means tracing its printed lines, and a line on a scan is
+   * a few points tall — thinner than the type about to go into it. The box
+   * clips to its rectangle (§3 "Text on the page"), on screen and in the file
+   * alike, so a thin drag showed the top half of every word and read as the
+   * text being cropped. Grown **upwards** to one line at the chosen size —
+   * the traced line is where a person writes, and words sit on a line, not
+   * under it — and clamped to the page; a drag that was already tall enough
+   * is left exactly as drawn.
+   */
+  private atLeastOneLine(rect: NormRect, page: number): NormRect {
+    const line = (this.fontSize() * TEXT_LINE) / this.annotations.pageHeightFor(page);
+    if (rect.h >= line) return rect;
+    const h = Math.min(line, 1);
+    return { ...rect, y: Math.max(0, rect.y + rect.h - h), h };
   }
 
   /**

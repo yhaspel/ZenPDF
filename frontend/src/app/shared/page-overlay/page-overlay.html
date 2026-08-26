@@ -210,7 +210,11 @@
         [style.height.px]="pyv(item.rect.h)"
         data-test="overlay-selection"
       ></div>
-      @if (!readonlyMode() && !readonlyHandles() && !item.locked) {
+      <!-- Handles are Select's affordance. Under a draw tool they used to stay
+           live while the items under them went `pointer-events: none`, so a box
+           drawn just below the selected one grabbed its bottom handle and
+           resized it instead — and the words typed next went to the page body. -->
+      @if (!readonlyMode() && !readonlyHandles() && !item.locked && tool() === 'select') {
         @for (handle of ['nw', 'ne', 'sw', 'se']; track handle) {
           <button
             type="button"

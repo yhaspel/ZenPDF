@@ -49,8 +49,11 @@ export class AnnotationsFacade {
   private _drafts = signal<Map<string, Annotation>>(new Map());
   private _removed = signal<Set<string>>(new Set());
   private _words = signal<Map<number, WordBox[]>>(new Map());
-  /** Page width in PDF points, per page — the scale a point size is drawn at. */
-  private _pageWidths = signal<Map<number, number>>(new Map());
+  /**
+   * Page size in PDF points, per page — the scale a point size is drawn at
+   * (width) and the scale one line of it takes on the page (height).
+   */
+  private _pageSizes = signal<Map<number, { width: number; height: number }>>(new Map());
   private _selectedId = signal<string | null>(null);
   private _loading = signal(false);
 
@@ -163,7 +166,12 @@ export class AnnotationsFacade {
 
   /** The page's own width in points, once known. A4 until then. */
   pageWidthFor(page: number): number {
-    return this._pageWidths().get(page) ?? 595;
+    return this._pageSizes().get(page)?.width ?? 595;
+  }
+
+  /** The page's own height in points, once known. A4 until then. */
+  pageHeightFor(page: number): number {
+    return this._pageSizes().get(page)?.height ?? 842;
   }
 
   // ------------------------------------------------------------------ //
@@ -216,8 +224,10 @@ export class AnnotationsFacade {
     this.docsSvc.textWords(docId, page, version).subscribe({
       next: (res) => {
         this._words.update((map) => new Map(map).set(page, res.words));
-        if (res.width) {
-          this._pageWidths.update((map) => new Map(map).set(page, res.width));
+        if (res.width && res.height) {
+          this._pageSizes.update((map) =>
+            new Map(map).set(page, { width: res.width, height: res.height }),
+          );
         }
       },
       error: () => {
@@ -229,7 +239,7 @@ export class AnnotationsFacade {
   /** A new version invalidates every cached word list and every saved annot. */
   resetForVersion(): void {
     this._words.set(new Map());
-    this._pageWidths.set(new Map());
+    this._pageSizes.set(new Map());
   }
 
   // ------------------------------------------------------------------ //
@@ -382,7 +392,7 @@ export class AnnotationsFacade {
     this._drafts.set(new Map());
     this._removed.set(new Set());
     this._words.set(new Map());
-    this._pageWidths.set(new Map());
+    this._pageSizes.set(new Map());
     this._selectedId.set(null);
     this.saving = new Set();
   }

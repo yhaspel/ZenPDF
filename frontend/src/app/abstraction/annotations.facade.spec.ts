@@ -295,6 +295,9 @@ describe('AnnotationsFacade', () => {
     });
     // Letter, not A4 — a 12pt text box must not be drawn at A4's scale.
     expect(facade.pageWidthFor(0)).toBe(612);
+    // …and one line of it is measured against the page's real height.
+    expect(facade.pageHeightFor(0)).toBe(792);
+    expect(facade.pageHeightFor(1)).toBe(842);
   });
 
   describe('the custom stamp', () => {

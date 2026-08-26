@@ -297,6 +297,24 @@ describe('PageOverlay — text on the page', () => {
     expect(ended).toEqual(['a1']);
   });
 
+  it('offers resize handles with the select tool only', () => {
+    // Under a draw tool the items go `pointer-events: none` so the next box
+    // can be drawn over them; handles that stayed live under the same tool
+    // turned a box drawn just below the selected one into a resize of it.
+    fixture.componentRef.setInput('items', [textItem()]);
+    fixture.componentRef.setInput('selectedId', 'a1');
+    fixture.componentRef.setInput('tool', 'select');
+    fixture.detectChanges();
+    expect(html().querySelectorAll('[data-test=overlay-handle]').length).toBe(4);
+    expect(html().querySelector('[data-test=overlay-selection]')).toBeTruthy();
+
+    fixture.componentRef.setInput('tool', 'rect');
+    fixture.detectChanges();
+    expect(html().querySelectorAll('[data-test=overlay-handle]').length).toBe(0);
+    // The selection itself is still shown — only the grips go.
+    expect(html().querySelector('[data-test=overlay-selection]')).toBeTruthy();
+  });
+
   it('asks for the page without its annotations only when told to', () => {
     const http = TestBed.inject(HttpTestingController);
     const rasters = () => http.match((req) => req.url.includes('/thumbnail/'));
