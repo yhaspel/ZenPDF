@@ -217,9 +217,28 @@ export class DocumentsService {
     return this.http.get(`${this.base}/documents/${id}/download/`, { responseType: 'blob' });
   }
 
-  thumbnailBlob(id: string, page: number, w = 240, version?: number): Observable<Blob> {
+  /**
+   * A rendered page.
+   *
+   * `annots: false` asks for the page **without the file's own annotations**
+   * (`?annots=false`) — the raster the annotate overlay draws on, since it
+   * renders every annotation itself as an editable item. The backend has
+   * offered the flag, with a test naming the overlay as its reason, since
+   * Phase 3; nothing on this side ever sent it, so after every save the page
+   * showed each mark twice — once baked into the raster and once as the
+   * editable copy on top, and the baked one stayed put when the other was
+   * dragged.
+   */
+  thumbnailBlob(
+    id: string,
+    page: number,
+    w = 240,
+    version?: number,
+    options: { annots?: boolean } = {},
+  ): Observable<Blob> {
     let hp = new HttpParams().set('w', String(w));
     if (version) hp = hp.set('version', String(version));
+    if (options.annots === false) hp = hp.set('annots', 'false');
     return this.http.get(`${this.base}/documents/${id}/pages/${page}/thumbnail/`, {
       params: hp,
       responseType: 'blob',

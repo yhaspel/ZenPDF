@@ -519,10 +519,26 @@ export class Annotate {
 
     this.annotations.add(annotation);
     if (tool === 'free_text') {
-      this.pageEditingId.set(annotation.id);
+      this.editOnPage(annotation.id);
     } else if (tool === 'note') {
       this.startEditing(annotation.id);
     }
+  }
+
+  /**
+   * Put the caret in a text box on the page — after closing the one it may
+   * already be in.
+   *
+   * The overlay ends the open editor itself when a gesture on the page starts,
+   * so by the time a drawn box arrives here there is nothing left to close.
+   * Undo, redo and the menu's "Edit text…" reach this without a gesture, and
+   * for them the order matters: re-targeting first would tear the open editor
+   * down uncommitted, and what happened next depended on which browser fired
+   * `blur` for a removed element (`PageOverlay.finishEditing`).
+   */
+  private editOnPage(id: string | null): void {
+    this.overlay()?.finishEditing();
+    this.pageEditingId.set(id);
   }
 
   /**
@@ -567,19 +583,26 @@ export class Annotate {
   /** A double-click on a text box on the page puts the caret in it. */
   protected onEditRequested(id: string): void {
     this.annotations.select(id);
-    this.pageEditingId.set(id);
+    this.editOnPage(id);
   }
 
   protected onPageTextChanged(change: { id: string; text: string }): void {
     this.annotations.update(change.id, { contents: change.text });
   }
 
-  protected onPageEditingEnded(): void {
+  /**
+   * The editor for `id` closed.
+   *
+   * Judged by the id the overlay names, never by `pageEditingId()`: the two
+   * disagree exactly when it matters. Drawing the next box re-targets
+   * `pageEditingId` before the previous editor is torn down, and reading the
+   * signal here made the previous box's closing delete the *new* box for
+   * being empty — every second text box vanished as it was drawn.
+   */
+  protected onPageEditingEnded(id: string): void {
+    if (this.pageEditingId() === id) this.pageEditingId.set(null);
     // An empty box left behind is litter — nothing to see, nothing to save,
     // and impossible to select again once it has no border.
-    const id = this.pageEditingId();
-    this.pageEditingId.set(null);
-    if (!id) return;
     const item = this.annotations.all().find((a) => a.id === id);
     if (item?.type === 'free_text' && !(item.contents ?? '').trim()) {
       this.annotations.remove(id);
@@ -731,12 +754,12 @@ export class Annotate {
   }
 
   protected undo(): void {
-    this.pageEditingId.set(null);
+    this.editOnPage(null);
     this.annotations.undo();
   }
 
   protected redo(): void {
-    this.pageEditingId.set(null);
+    this.editOnPage(null);
     this.annotations.redo();
   }
 

@@ -292,7 +292,19 @@ export class Edit {
       window.addEventListener('keydown', handler);
       onCleanup(() => window.removeEventListener('keydown', handler));
     });
+
+    // The caret lands in the editor as it opens — the rule the annotate
+    // overlay's text box follows, for the same reason: a box that has to be
+    // clicked into after being drawn reads as a box that did not work.
+    effect(() => {
+      const editor = this.blockEditorInput()?.nativeElement;
+      if (!editor || document.activeElement === editor) return;
+      editor.focus({ preventScroll: true });
+    });
   }
+
+  /** The inline editor's textarea, while one is open. */
+  private blockEditorInput = viewChild<ElementRef<HTMLTextAreaElement>>('blockEditorInput');
 
   // ------------------------------------------------------------------ //
   // Text blocks

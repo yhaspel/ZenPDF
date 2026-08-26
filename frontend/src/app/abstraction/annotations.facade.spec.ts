@@ -231,6 +231,24 @@ describe('AnnotationsFacade', () => {
       expect(facade.all()[0].contents).toBe('');
     });
 
+    it('does not record an update that changes nothing', () => {
+      // The on-page editor commits on blur *and* before the next gesture, and
+      // a browser that fires blur for a removed element can report the same
+      // sentence twice. The second report must not cost a ⌘Z that undoes
+      // nothing visible.
+      facade.add(box('t1', ''));
+      facade.update('t1', { contents: 'once' });
+      facade.update('t1', { contents: 'once' });
+      facade.update('t1', { rect: { x: 0.1, y: 0.1, w: 0.4, h: 0.05 } });
+      expect(facade.all()[0].contents).toBe('once');
+
+      facade.undo();
+      expect(facade.all()[0].contents).toBe('');
+      facade.undo();
+      expect(facade.count()).toBe(0);
+      expect(facade.canUndo()).toBe(false);
+    });
+
     it('brings back something deleted, including one the file already had', () => {
       loadWith([HIGHLIGHT]);
       facade.remove('a1');

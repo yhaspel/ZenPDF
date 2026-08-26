@@ -272,17 +272,28 @@ test('phase 3: a text box shows its words on the page, and undo takes them back'
   await expect(onPageEditor).toBeFocused();
   const sentence = 'A sentence comfortably longer than twenty-four characters.';
   await page.keyboard.type(sentence);
+
+  // The next box is drawn straight after typing — no Escape, no click anywhere
+  // else. That is how a form gets filled in, and until 2026-08-26 it was the
+  // path that lost boxes: the drawing gesture cancels `pointerdown`, so nothing
+  // ever blurred the box being typed into, and the end-of-editing the browser
+  // reported for the torn-down editor was read against the *new* box — which
+  // was empty, and was deleted for it.
+  await dragOnPage(page, [0.15, 0.68], [0.7, 0.75]);
+  await expect(onPageEditor).toBeFocused();
+  await page.keyboard.type('Second field');
   await page.keyboard.press('Escape');
 
-  // Drawn on the page, whole, and not as a badge.
-  await expect(page.locator('[data-test=overlay-text]')).toHaveText(sentence);
+  // Both drawn on the page, whole, and not as badges.
+  const drawn = page.locator('[data-test=overlay-text]');
+  await expect(drawn).toHaveText([sentence, 'Second field']);
   await expect(page.locator('[data-test=overlay-label]')).toHaveCount(0);
 
-  // One undo takes back the sentence, not one letter of it.
+  // One undo takes back a sentence, not one letter of it.
   await page.click('[data-test=annot-undo]');
-  await expect(page.locator('[data-test=overlay-text]')).toHaveText('');
+  await expect(drawn).toHaveText([sentence, '']);
   await page.click('[data-test=annot-redo]');
-  await expect(page.locator('[data-test=overlay-text]')).toHaveText(sentence);
+  await expect(drawn).toHaveText([sentence, 'Second field']);
 
   // Double-click puts the caret back in the same box.
   await page.click('[data-test=tool-select]');
@@ -295,7 +306,22 @@ test('phase 3: a text box shows its words on the page, and undo takes them back'
   await expect(successToast(page, 'Annotations saved')).toBeVisible({ timeout: 60_000 });
   await page.reload();
   await page.click('[data-test=annotate-toggle]');
-  await expect(page.locator('[data-test=overlay-text]')).toHaveText(sentence);
+  await expect(page.locator('[data-test=overlay-text]')).toHaveText([sentence, 'Second field']);
+  // …and the page underneath is drawn *without* them: a raster that already
+  // carried the saved text showed every box twice, and the baked copy stayed
+  // behind when the editable one was dragged.
+  await expect(page.locator('[data-test=overlay-drew]')).toBeVisible({ timeout: 60_000 });
+  // The overlay asks at 2× its render width; the thumbnail rail asks at 240
+  // and keeps the annotations, because there the raster is all there is.
+  const rasterRequests = await page.evaluate(() =>
+    performance.getEntriesByType('resource')
+      .map((entry) => new URL(entry.name))
+      .filter((url) => url.pathname.includes('/thumbnail/')
+        && Number(url.searchParams.get('w')) > 500)
+      .map((url) => url.searchParams.get('annots')),
+  );
+  expect(rasterRequests.length).toBeGreaterThan(0);
+  expect(rasterRequests.every((annots) => annots === 'false')).toBe(true);
 });
 
 /**

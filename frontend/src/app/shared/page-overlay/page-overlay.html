@@ -254,6 +254,7 @@
           (pointerdown)="$event.stopPropagation()"
           (dblclick)="$event.stopPropagation()"
           [attr.aria-label]="'Text box on page ' + (page() + 1)"
+          [attr.data-item-id]="item.id"
           data-test="overlay-text-editor"
         ></textarea>
       } @else {

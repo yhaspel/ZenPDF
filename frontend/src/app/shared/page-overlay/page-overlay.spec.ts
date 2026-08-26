@@ -1,5 +1,5 @@
 import { provideHttpClient } from '@angular/common/http';
-import { provideHttpClientTesting } from '@angular/common/http/testing';
+import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 
 import { OverlayDraft, OverlayItem } from './overlay-model';
@@ -228,9 +228,9 @@ describe('PageOverlay — text on the page', () => {
     fixture.detectChanges();
 
     const changes: { id: string; text: string }[] = [];
-    let ended = 0;
+    const ended: string[] = [];
     fixture.componentInstance.textChanged.subscribe((c) => changes.push(c));
-    fixture.componentInstance.editingEnded.subscribe(() => (ended += 1));
+    fixture.componentInstance.editingEnded.subscribe((id) => ended.push(id));
 
     const editor = html().querySelector<HTMLTextAreaElement>('[data-test=overlay-text-editor]')!;
     editor.value = 'Typed';
@@ -239,7 +239,79 @@ describe('PageOverlay — text on the page', () => {
 
     editor.dispatchEvent(new Event('blur'));
     expect(changes).toEqual([{ id: 'a1', text: 'Typed' }]);
-    expect(ended).toBe(1);
+    // Named, because the parent may be editing something else by now.
+    expect(ended).toEqual(['a1']);
+  });
+
+  /**
+   * The gesture that draws the next box ends the one being typed into.
+   *
+   * Blur never came for this case: every draw handler cancels `pointerdown`,
+   * and a cancelled pointerdown moves no focus in Chromium. The editor was torn
+   * down uncommitted when the new box took `editingId`, and what happened next
+   * depended on whether the browser fires `blur` for a removed element — text
+   * lost (WebKit, Firefox), or the *new* box deleted as empty (Chromium).
+   */
+  it('commits the open editor before a gesture on the page, and names it', () => {
+    fixture.componentRef.setInput('items', [textItem()]);
+    fixture.componentRef.setInput('editingId', 'a1');
+    fixture.componentRef.setInput('tool', 'rect');
+    fixture.detectChanges();
+
+    const order: string[] = [];
+    fixture.componentInstance.textChanged.subscribe((c) => order.push(`text:${c.id}=${c.text}`));
+    fixture.componentInstance.editingEnded.subscribe((id) => order.push(`ended:${id}`));
+    fixture.componentInstance.created.subscribe((d) => order.push(`created:${d.shape}`));
+
+    const editor = html().querySelector<HTMLTextAreaElement>('[data-test=overlay-text-editor]')!;
+    editor.focus();
+    editor.value = 'Typed, then drew the next box';
+    editor.dispatchEvent(new Event('input'));
+
+    const surface = html().querySelector<HTMLElement>('[data-test=page-overlay]')!;
+    surface.dispatchEvent(new PointerEvent('pointerdown', {
+      bubbles: true, clientX: 10, clientY: 10, button: 0,
+    }));
+    // Committed and ended — once, although the blur it caused fired too.
+    expect(order).toEqual(['text:a1=Typed, then drew the next box', 'ended:a1']);
+    expect(document.activeElement).not.toBe(editor);
+  });
+
+  it('finishEditing() is safe with nothing open — before, and after a blur closed it', () => {
+    fixture.componentRef.setInput('items', [textItem()]);
+    fixture.detectChanges();
+    const ended: string[] = [];
+    fixture.componentInstance.editingEnded.subscribe((id) => ended.push(id));
+    fixture.componentInstance.finishEditing();
+    expect(ended).toEqual([]);
+
+    fixture.componentRef.setInput('editingId', 'a1');
+    fixture.detectChanges();
+    html().querySelector<HTMLTextAreaElement>('[data-test=overlay-text-editor]')!
+      .dispatchEvent(new Event('blur'));
+    expect(ended).toEqual(['a1']);
+    // The parent closed the editor on that report; asking again finds nothing.
+    fixture.componentRef.setInput('editingId', null);
+    fixture.detectChanges();
+    fixture.componentInstance.finishEditing();
+    expect(ended).toEqual(['a1']);
+  });
+
+  it('asks for the page without its annotations only when told to', () => {
+    const http = TestBed.inject(HttpTestingController);
+    const rasters = () => http.match((req) => req.url.includes('/thumbnail/'));
+    // The default raster is the whole page: Edit, Forms, Protect and Sign draw
+    // no annotations of their own, so the raster is where a highlight shows.
+    const plain = rasters();
+    expect(plain.length).toBe(1);
+    expect(plain[0].request.params.get('annots')).toBeNull();
+
+    // Annotate draws every annotation itself, and asks for the clean page.
+    fixture.componentRef.setInput('rasterAnnotations', false);
+    fixture.detectChanges();
+    const clean = rasters().filter((r) => !plain.includes(r));
+    expect(clean.length).toBe(1);
+    expect(clean[0].request.params.get('annots')).toBe('false');
   });
 
   it('does not offer an editor in read-only mode', () => {

@@ -20,6 +20,12 @@ def render_page(data: bytes, page: int, width: int = 1024, *, annots: bool = Tru
     overlay (phase 3) needs that: it draws every annotation itself as editable
     SVG, so a raster that already contains them would show each one twice — and
     the baked-in copy would not move when the user drags the editable one.
+
+    Without its annotations — **with** its form fields. A widget is an
+    annotation to the PDF, and MuPDF's own `annots=False` drops those too; but
+    the overlay does not draw widgets, so a filled form would come back blank
+    under the very tool used to comment on it. The page's markup is removed
+    from the in-memory copy instead, and the render keeps everything else.
     """
     doc = _open(data)
     try:
@@ -33,13 +39,27 @@ def render_page(data: bytes, page: int, width: int = 1024, *, annots: bool = Tru
         if page < 0 or page >= doc.page_count:
             raise PageOutOfRange(f"page {page} out of range (0..{doc.page_count - 1})")
         p = doc[page]
+        if not annots:
+            _strip_annotations(p)
         base_w = p.rect.width or 1.0
         zoom = max(width, 1) / base_w
         matrix = fitz.Matrix(zoom, zoom)
-        pix = p.get_pixmap(matrix=matrix, alpha=False, annots=annots)
+        pix = p.get_pixmap(matrix=matrix, alpha=False)
         return pix.tobytes("png")
     finally:
         doc.close()
+
+
+def _strip_annotations(page: fitz.Page) -> None:
+    """Delete the page's annotations — not its widgets — from the open copy.
+
+    `first_annot` walks MuPDF's annotation list, which keeps widgets on a list
+    of their own (`widgets()`); so this removes exactly the set `annotations.py`
+    extracts and the overlay draws, and nothing else. The one-at-a-time loop is
+    the documented idiom: deleting invalidates the objects of a pre-built list.
+    """
+    while page.first_annot is not None:
+        page.delete_annot(page.first_annot)
 
 
 def render_thumbnail(data: bytes, page: int, width: int = 240, *,

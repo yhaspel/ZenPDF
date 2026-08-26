@@ -59,6 +59,55 @@ def test_render_page_out_of_range(fixture_bytes):
         render_page(fixture_bytes("text.pdf"), 99)
 
 
+def _count(png: bytes, hue) -> int:
+    pix = fitz.Pixmap(png)
+    return sum(
+        1
+        for y in range(0, pix.height, 2)
+        for x in range(0, pix.width, 2)
+        if hue(pix.pixel(x, y))
+    )
+
+
+def test_render_without_annotations_keeps_the_form_fields():
+    """The overlay's clean raster drops the page's markup and nothing else.
+
+    A widget is an annotation to the PDF, and MuPDF's own `annots=False`
+    hides it with the rest; but the annotate overlay draws highlights, boxes
+    and comments itself — never widgets — so a raster that lost the fields
+    would show a filled form as blank under the tool used to comment on it.
+    """
+    doc = fitz.open()
+    page = doc.new_page(width=300, height=200)
+    page.insert_text((20, 40), "Some text to highlight", fontsize=14)
+    highlight = page.add_highlight_annot(fitz.Rect(15, 25, 200, 45))
+    highlight.set_colors(stroke=(1, 0, 0))
+    highlight.update()
+    widget = fitz.Widget()
+    widget.field_name = "name"
+    widget.field_type = fitz.PDF_WIDGET_TYPE_TEXT
+    widget.rect = fitz.Rect(20, 100, 250, 130)
+    widget.fill_color = (0, 0, 1)
+    widget.field_value = "Filled value"
+    page.add_widget(widget)
+    data = doc.tobytes()
+    doc.close()
+
+    def red(rgb):
+        return rgb[0] > 200 and rgb[1] < 120
+
+    def blue(rgb):
+        return rgb[2] > 200 and rgb[0] < 120
+
+    with_annots = render_page(data, 0, width=300)
+    assert _count(with_annots, red) > 0, "the default raster draws the highlight"
+    assert _count(with_annots, blue) > 0, "the default raster draws the field"
+
+    clean = render_page(data, 0, width=300, annots=False)
+    assert _count(clean, red) == 0, "the clean raster still shows the highlight"
+    assert _count(clean, blue) > 0, "the clean raster lost the form field"
+
+
 def test_search_text_hits_normalized(fixture_bytes):
     hits = search_text(fixture_bytes("text.pdf"), "ZenPDF")
     assert len(hits) == 3
