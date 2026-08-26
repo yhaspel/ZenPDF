@@ -1374,6 +1374,39 @@ Two things the walkthrough corrected rather than confirmed:
   `free text`), and the words followed on the next commit. Nothing was lost. It also clears the local
   Undo stack, which is why the drag-then-undo check had to be re-run inside one autosave window.
 
+**Self-review, three lenses. Nothing needed fixing; one prediction needed correcting.**
+
+*Regression.* The overlay is shared by six templates and **only `annotate.html` binds `editingId` or
+`editingEnded`** — `sign`, `compare`, `edit`, `protect`, `forms` and the sign request builder leave it
+at its `null` default, so the textarea's `@if (editingId() === item.id …)` never renders, the
+`#textEditor` viewChild is undefined, and `finishEditing()` returns on its first line: the four new
+gesture calls are no-ops there. Confirmed in the browser as well as in the code — Protect's redact tab
+still draws an area, and the raster requests split exactly as intended. The two scanned-gate e2e
+assertions still hold and were watched by name in the run: `phase-4:107` "the scanned-page gate blocks
+the editor and offers OCR" ✓ 4.1 s and `phase-6:27` "OCR a scan, then read, edit and export it" ✓
+11.1 s — both run in the default *Edit text* mode, which is where the gate stayed. The e2e
+`annots=false` assertion filters `Number(w) > 500`, so the rail's 240 px thumbnails are not caught.
+
+*The backend refinement.* `_strip_annotations` walks `first_annot`, which excludes widgets — checked
+on `form.pdf`: **2 widgets before, 2 after**. And a **Popup-bearing `Text` annotation does not raise**,
+which was the shape worth probing, since deleting the parent disposes the popup mid-walk: a scratch
+page with a sticky note, a highlight, a squiggly and a filled widget went **3 annots + 1 widget → 0
+annots + 1 widget**, and `render_page(annots=False)` on the same bytes returned a PNG rather than an
+exception.
+
+*Test quality — and here the handoff's prediction was wrong in an interesting way.* Reverting
+`finishEditing()`'s call in `onPointerDown` does **not** fail `annotate.spec.ts`'s "keeps every box and
+every word…" — that test still passes, because `Annotate.onCreated` reaches `editOnPage()`, which
+finishes the open editor from the parent's side, so the *drawn-box* path is covered twice on purpose.
+What the revert does fail is **`page-overlay.spec.ts`'s "commits the open editor before a gesture on
+the page, and names it"** (`expected [] to deeply equal ['text:a1=…', 'ended:a1']`) — the test that
+guards that exact line — and, in the annotate spec, **"commits one history entry per sentence"**
+(`expected ['', ''] to deeply equal ['One']`), because the two calls commit at different points
+relative to `annotations.add()` and so produce different history order. So the line *is* discriminated,
+by the spec that owns it; the redundancy is deliberate and documented in both files, and it is what
+covers the gestures that are **not** a new text box — a drag, a resize, a click on the text layer.
+The source file was restored byte for byte (`git diff` empty) and the gate re-run on the final commit.
+
 **2026-08-25 (last) — The four things prompt 8 filed, and a p95 with the right server under it**
 
 Branch `fix/launch-gate-followups`. Prompt 8 changes no product code by its own terms, so it
