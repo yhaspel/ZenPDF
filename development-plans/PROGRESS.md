@@ -1145,6 +1145,7 @@ Handoff programme (the nine CLI prompts from the 2026-08-21 status review) is tr
 
 | Added | Item | Phase | GATE? | Resolved |
 |---|---|---|---|---|
+| 2026-08-26 | **Annotate's page pane never clamps to the viewport, so the *window* scrolls instead of the pane — and the start rail is not the reason.** Reproduced on the local stack, in the shape the owner reported (`1472` vs `873` with `.ws-panes` 1379 on their Chrome): at **1919 px wide**, `documentElement.scrollHeight` **1428** against `innerHeight` **728**, `.ws-panes` **1375**. The queue row's guess was the annotate start rail's content height — **it is not**: that rail's content measures **707 px**, well inside the viewport. The driver is the **page raster**, which fit-width sizes to the pane's *width*: at 1919 the page image is **1274 px tall** in a scroller that grew to **1322** rather than shrinking. It is **not width-specific** either — at 1280 the same document gives 1220 vs 728 with the image at 1066. And it is **Annotate-specific**: the same document in **View** mode measures `scrollHeight` **728** = `innerHeight`, `.ws-panes` **675**, because pdf.js scrolls inside its own canvas. The height chain has no definite ceiling to distribute: `.page-shell` is `min-height: 728px` (min-h-screen) with computed `height: 1428px`, and the shell's `main` is `flex flex-1 flex-col` with **`min-height: auto`**, so the pane's natural content pushes the document instead of the pane scrolling. Consequence the owner hit: a stray space keystroke scrolls the whole workspace out of view. Fix shape: give the workspace column a definite viewport height (or `min-h-0` on the shell's `main`) so `.ws-pane-main`'s `overflow-auto` scroller is the thing that scrolls — §4's "fills the viewport height" rule already says this is the intent. Measured and filed, not fixed: outside this branch's scope. | 3/10 | No | — |
 | 2026-08-26 | **A text box being typed into goes out empty in the 30-second autosave, and is corrected by the next save.** The on-page editor commits on blur and before the next gesture — never per keystroke, by design (one ⌘Z, one sentence) — so an autosave that fires mid-sentence sends the box's `add` with `contents: ''` and the words follow as an `update` on the next Save or autosave. Nothing is lost, but a tab closed inside that window loses the open sentence (the `beforeunload` guard still warns, because the draft is dirty). Fix shape, if wanted: the overlay mirrors the editor's live value into a signal the facade's `ops()` reads at save time, without a history entry. LOW. | 3 | no | — |
 | 2026-08-26 | **Edit's *Add text* writes one version per box.** Correct by design — it edits content, not annotations — but a person filling a twenty-field scanned form in Edit waits a round trip per field and leaves twenty versions behind, which is what "the edit feature is virtually unusable" meant on 2026-08-26. The annotate text box is the batch tool for that job and nothing on the Edit screen says so. Product call: a one-line pointer from *Add text* to Annotate's text box, or a local batch for *Add text* like Annotate's. LOW. | 4 | no | — |
 | 2026-08-24 | **A session that really has ended still ends *silently* — the person finds out at the next guarded route, as a stranger.** Left standing deliberately by `fix/session-survives-a-blip`, which fixed the wrong reason for clearing and not the missing signal. Two paths reach it: `AuthFacade.loadUser()` clearing on a genuine 401, and `auth.interceptor.ts:159` — a 401 where an access token is present but `tokens.refresh` is falsy skips the refresh block entirely and falls through to the bare `throwError` at :177 with no clear and no redirect. In both cases `clearSession()` runs with **no `router.navigate`**, so the page keeps rendering whatever it was showing; the loss is invisible until something guarded is clicked, and then `accountGuard` sends them to `/auth/register` with the reason chrome of a brand-new visitor — not `/auth/login`, and with no explanation that they *had* a session. Contrast the interceptor's own refresh-failure path (:169-173), which clears **and** navigates to `/auth/login`; that is the behaviour a real sign-out should have. Not fixed here because the obvious fix — navigate on a 401 from `loadUser` — would yank somebody off a **public** route mid-task: `App` (`app.ts:22`) calls `loadUser()` on every page load including `/verify-email/:token`, so a stale token would interrupt an email confirmation. Wants a deliberate answer (a toast plus a soft redirect only from `/app/**`, most likely), not a one-liner. | 9/10 | No | ✔ **Resolved 2026-08-24** (`fix/session-ends-out-loud`) — and the deliberate answer is the one this row guessed at, with the scope tightened by reading the routes rather than assuming. `AuthFacade.endSession()` is the involuntary twin of `logout()`: it clears **everything** (which the interceptor's own path did not — it cleared tokens but left `_user` and this tab's document passwords, and L7 is the whole reason the latter must go), says so in an **info toast with the error dwell**, and redirects **only** from the routes `accountGuard` actually gates — to **login** with `next`, because somebody whose session just died has an account. `/app/doc/:id` is deliberately not in that set: it renders for either principal, so a dead token is no reason to interrupt a document being read, and every public route stays put because moving them would be the login wall §10 forbids. The prefix list lives next to the guard and `account.guard.spec.ts` parses `app.routes.ts` to stop the two disagreeing. Idempotent by arithmetic rather than by a flag — the first 401 ends the session and the rest find the tokens already gone. Evidence in `docs/reviews/evidence/session-ended/`. |
@@ -1324,6 +1325,54 @@ routes**, `verify:prerender` green. Playwright **86 passed, 1 skipped, 6.1 m** �
 (`phase-3:252`, the one spec this patch changes) **passed in 4.5 s**: it now draws the second box
 straight after typing, asserts both texts and the undo order, and asserts every overlay raster
 request carries `annots=false`. No flake fired; nothing was re-run.
+
+**Browser, local (Chrome MCP against `localhost:4200`, both themes, 1280 and 390).** The fill-in
+flow was driven with **real mouse and keyboard input**, not synthetic events — a transparent
+`pointer-events: none` probe is positioned at each corner and CDP drags between the two, so the
+overlay receives a genuine cancelled `pointerdown`, which is the whole mechanism.
+
+- **The reported defect is gone.** `scanned.pdf` as a guest → Annotate → Text box: four boxes drawn
+  straight after typing (no Escape, no click elsewhere) kept **all four words** — `Yuval Haspel`,
+  `Tel Aviv`, `Bank Hapoalim`, `123456` — the caret landed in each new box as it was drawn, and the
+  comments rail listed every one. Before the fix, boxes 2 and 4 vanished as they were drawn.
+- **The Hebrew box** keeps its text in logical order (`ש ל ו ם` / `ע ו ל ם`, verified by codepoint)
+  and the bidi algorithm draws it right-to-left inside an LTR box at the start edge — existing
+  behaviour, as the handoff said, not a finding.
+- **Nothing is drawn twice.** After Save (`Annotations saved`, `All changes saved`) each of the five
+  boxes appears **once**; after a reload and re-entering Annotate, all five are present and still
+  drawn once. Dragging a saved box moved it and **left no twin behind**; one Undo put it back.
+- **Only the overlay asks for the clean page.** Grouped by shape over a whole session:
+  `w=1800 annots=false`, `w=1536 annots=false` (Annotate) against `w=1360 annots=(absent)` ×2 and
+  `w=1500 annots=(absent)` (Protect, Sign, Edit). No thumbnail-rail request ever carried the flag.
+- **Double-click, edit, draw the next**: the edit committed (`Yuval Haspel (edited)` on the page) and
+  the new box opened focused; `Escape` in the empty new box removed it and left the edited one.
+- **Edit's gates are where they belong.** On a fresh `scanned.pdf`: the gate shows in *Edit text*
+  only — `mode-whiteout`, `mode-image`, `mode-link` and `mode-add-text` all report no gate, and
+  `mode-add-text` alone carries `data-test=add-text-hint` with the contract's sentence verbatim.
+  Drawing an *Add text* box put the caret in the editor **as it opened**; `Herzl 12` → OK →
+  `Text added`, v2, and the words are in the page image. Both themes.
+- **A mode that never edits is untouched**: Protect's redact tab still draws an area (1 area, Apply
+  enabled) with the new `finishEditing()` call at the head of the same `pointerdown`.
+- **Phone (390 × 844, emulated, drawer closed)**: type → draw the next box kept both fields, and the
+  raster requests were `annots=false` there too.
+- Console **clean** across the whole session — the only messages at all are pdf.js's pre-existing
+  `[fluent] Missing translations` warnings for the sidebar buttons the workspace deliberately hides.
+
+Two things the walkthrough corrected rather than confirmed:
+
+- **`backend/tests/fixtures/pdfs/form.pdf` cannot show the widget point.** Its two widgets have no
+  appearance at all — measured **0 non-white pixels** inside both widget rects in the default render
+  *and* in the clean one — so "the two form fields still visible on the page image" is unobservable
+  with that file, and the raster is byte-identical either way. The point was proven instead on a
+  **filled** form, which is the case that mattered: filling `full_name` through Forms mode and
+  re-entering Annotate shows **`Yuval Haspel` on the clean raster**. At the engine level, on the same
+  filled bytes: default → field **899 px** / highlight **5195 px**; `render_page(annots=False)` →
+  field **899 px** (kept) / highlight **956 px** (the black text under it); MuPDF's own
+  `get_pixmap(annots=False)` → field **0 px** — *blank*. That is the refinement, measured.
+- **The 30-second autosave row fires in a slow walkthrough, and behaved exactly as filed**: an
+  autosave landing mid-sentence sent the open box's `add` with empty contents (its comment row read
+  `free text`), and the words followed on the next commit. Nothing was lost. It also clears the local
+  Undo stack, which is why the drag-then-undo check had to be re-run inside one autosave window.
 
 **2026-08-25 (last) — The four things prompt 8 filed, and a p95 with the right server under it**
 
