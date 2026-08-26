@@ -1,3 +1,5 @@
+**Executed 2026-08-26 — see PROGRESS.md session log 2026-08-26. Historical.**
+
 # Handoff — Land the annotate text-box fix (2026-08-26)
 
 **For:** Claude CLI on the Mac in `~/Documents/Claude/Projects/ZenPDF`.
