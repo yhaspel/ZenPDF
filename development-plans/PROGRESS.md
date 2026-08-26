@@ -1310,6 +1310,21 @@ mypy clean. e2e `phase-3` free-text spec extended with the type-then-draw path a
 run** (needs the local stack). Production re-driven through the harness **after** the change
 is in the Chrome MCP walkthrough recorded below the deploy.
 
+**Landed.** `./infra/test.sh --pg --e2e` on the restarted stack at `d10fb5e` + this patch, green
+end to end (exit 0). Stray-duplicate guard **None**; SSRF deny-list identical across 3 infra
+copies; `ruff` + `mypy` **all checks passed**. Backend **1165 passed, 6 skipped in 129.26 s** —
+one more than the last green run's 1164, and it is the one this patch adds
+(`test_render_without_annotations_keeps_the_form_fields`); the six skips are the allowed
+query-plan ones, re-run against Postgres as **6 passed, 1165 deselected in 27.54 s**. Coverage
+holds on both floors: apps **91.55 %** (gate 85), pdf_engine **91.88 %** (gate 90). `ng lint`
+clean. Unit **587 passed / 66 files in 29.97 s** — the 587 the sandbox measured, on the real
+stack. Build 18.2 s, initial total **576.40 kB** (153.98 kB compressed), **Prerendered 43 static
+routes**, `verify:prerender` green. Playwright **86 passed, 1 skipped, 6.1 m** — the one skip is
+`phase-11:164`'s `isDevServer` guard, as in the last three runs, and the amended free-text spec
+(`phase-3:252`, the one spec this patch changes) **passed in 4.5 s**: it now draws the second box
+straight after typing, asserts both texts and the undo order, and asserts every overlay raster
+request carries `annots=false`. No flake fired; nothing was re-run.
+
 **2026-08-25 (last) — The four things prompt 8 filed, and a p95 with the right server under it**
 
 Branch `fix/launch-gate-followups`. Prompt 8 changes no product code by its own terms, so it
