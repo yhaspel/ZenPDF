@@ -36,8 +36,19 @@ class NormRect:
 
     @classmethod
     def from_dict(cls, d: dict) -> NormRect:
+        """Read a rect off the wire, at the precision the wire carries.
+
+        Six decimals is what every reader in this package writes back (a
+        millionth of a page, under a thousandth of a point), so a round trip
+        is exact — and it keeps a client's floating-point residue out of the
+        engine. A resize handle dragged onto the page's left edge arrived as
+        ``x = 9.1e-09``, and a FreeText rect whose origin is non-zero but below
+        MuPDF's own epsilon sent its appearance builder into a loop that never
+        returned, pinning a worker until the hard limit killed it (2026-08-26
+        queue row). Rounded, that origin is 0, which renders in milliseconds.
+        """
         try:
-            return cls(float(d["x"]), float(d["y"]), float(d["w"]), float(d["h"]))
+            return cls(*(round(float(d[k]), 6) for k in ("x", "y", "w", "h")))
         except (KeyError, TypeError) as exc:
             raise ValueError(f"invalid rect {d!r}") from exc
 

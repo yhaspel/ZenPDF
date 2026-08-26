@@ -20,6 +20,22 @@ def test_norm_rect_rejects_out_of_range(bad):
         NormRect(**bad)
 
 
+def test_norm_rect_from_dict_rounds_to_the_wire_precision():
+    """A handle dragged onto the page edge arrives as x = 9.1e-09, and a
+    FreeText rect with a non-zero origin below MuPDF's epsilon never finishes
+    rendering. Six decimals is what the readers write; reading the same keeps
+    the residue out of the engine."""
+    r = NormRect.from_dict({"x": 9.11823084637593e-09, "y": 0.0, "w": 0.7127777777777775, "h": 0.456830759058099})
+    assert r.x == 0.0
+    assert r.w == 0.712778
+    assert r.h == 0.456831
+    # …and a value that is merely small is kept, not snapped.
+    assert NormRect.from_dict({"x": 1e-6, "y": 0.5, "w": 0.1, "h": 0.1}).x == 1e-6
+    # A width that rounds away is refused, never silently drawn as nothing.
+    with pytest.raises(ValueError):
+        NormRect.from_dict({"x": 0.5, "y": 0.5, "w": 4e-7, "h": 0.1})
+
+
 def test_norm_rect_from_dict():
     r = NormRect.from_dict({"x": 0.0, "y": 0.0, "w": 1.0, "h": 1.0})
     assert r.w == 1.0

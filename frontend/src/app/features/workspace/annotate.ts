@@ -80,14 +80,15 @@ const STANDARD_STAMPS = [
 const AUTOSAVE_MS = 30_000;
 
 /**
- * One line of type, as a multiple of its point size.
+ * `.page-text`'s line-height, and the 1 px insets it draws above and below.
  *
- * `.page-text` sets `line-height: 1.25` and a 1 px inset above and below; at
- * any zoom a text box that is 1.4 × its font size tall in points holds one
- * line without clipping, and the FreeText appearance the file gets needs
- * about the same.
+ * The insets are device pixels: they do not scale with the page, which is why
+ * one line is measured in the overlay's own pixels at the current zoom and
+ * not as a multiple of the point size — a multiple that held at 900 px was a
+ * pixel short below about 660, where the phone draws.
  */
-const TEXT_LINE = 1.4;
+const TEXT_LINE_HEIGHT = 1.25;
+const TEXT_INSETS_PX = 2;
 
 /**
  * How far a pasted or duplicated mark lands from its original.
@@ -547,9 +548,19 @@ export class Annotate {
    * the traced line is where a person writes, and words sit on a line, not
    * under it — and clamped to the page; a drag that was already tall enough
    * is left exactly as drawn.
+   *
+   * One line is worked out in the overlay's pixels at this zoom, the way the
+   * overlay itself sizes the type (`fontPx`), then taken back to the page:
+   * whole pixels for the line plus the two insets, so the box holds its line
+   * at any render width, the phone's included.
    */
   private atLeastOneLine(rect: NormRect, page: number): NormRect {
-    const line = (this.fontSize() * TEXT_LINE) / this.annotations.pageHeightFor(page);
+    const widthPt = this.pageWidthPt();
+    const heightPt = this.annotations.pageHeightFor(page);
+    const fontPx = Math.max(4, (this.fontSize() / widthPt) * this.zoom());
+    const linePx = Math.ceil(fontPx * TEXT_LINE_HEIGHT) + TEXT_INSETS_PX;
+    const boxHeightPx = (this.zoom() * heightPt) / widthPt;
+    const line = linePx / boxHeightPx;
     if (rect.h >= line) return rect;
     const h = Math.min(line, 1);
     return { ...rect, y: Math.max(0, rect.y + rect.h - h), h };

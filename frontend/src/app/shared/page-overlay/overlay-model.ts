@@ -142,7 +142,19 @@ export function transformRect(r: NormRect, from: NormRect, to: NormRect): NormRe
   return { x, y, w: Math.max(0, x2 - x), h: Math.max(0, y2 - y) };
 }
 
-export const clamp01 = (v: number): number => Math.min(1, Math.max(0, v));
+/**
+ * Keep a page fraction on the page, at the precision the file keeps.
+ *
+ * Six decimals is what the server writes back for every rect and word (a
+ * millionth of a page — well under a thousandth of a point), so a round trip
+ * is exact. It is also what keeps floating-point residue out of the file:
+ * a handle dragged onto the page's left edge produced `x = 9.1e-09`, and a
+ * FreeText rect whose origin is non-zero but below MuPDF's own epsilon sent
+ * its appearance builder into a loop that never returned (2026-08-26 queue
+ * row). Rounded, that x is 0.
+ */
+export const clamp01 = (v: number): number =>
+  Math.round(Math.min(1, Math.max(0, v)) * 1e6) / 1e6;
 
 export function normalizeRect(a: NormPoint, b: NormPoint): NormRect {
   const x = clamp01(Math.min(a[0], b[0]));
