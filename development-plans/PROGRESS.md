@@ -1336,6 +1336,21 @@ Chrome, `localhost:4200`, both themes, desktop 1440 × 900 — evidence in
 - **(f) The 16-minute ceiling** cannot be driven by hand; its evidence is the fake-timer test
   in `jobs.facade.spec.ts`, green in the 593.
 
+**Live.** Merged as PR #46 `be9072f`; Railway rebuilt `web` and the Django services (the change
+touches `frontend/**` and `geometry.py`). `main-*.js` is **not** the deploy signal for this one —
+it stayed `main-75F72VXI.js`, because everything here lives in lazy workspace chunks; the signal
+used was `chunk-FLS5XL7E.js`, the content-hashed chunk that carries `handlesWhileDrawing` in the
+gate's own build, appearing on the origin. Both items re-run on
+`https://zenpdf.up.railway.app` **as a guest**, no account anywhere:
+
+- **(a)** `/sign-pdf` → upload → signature typed → placed under the armed `rect` tool →
+  right-clicked: **four** handles, and `se` dragged 90 × 70 resized it 238 × 116 → 328 × 186 px —
+  the same numbers as the local run.
+- **(d)** Annotate → a text box drawn and typed into → Select → `nw` dragged to 70 px left of
+  the page. `GET /documents/<id>/annotations/` (with the guest's `X-Guest-Token`) returns
+  `version: 3` and the rect **`{"x": 0.0, …}`** — the save completed and the origin is a clean
+  zero, on the deployed build. Checked in both themes.
+
 **2026-08-26 (later) — Validated live, and the box that was one line too short**
 
 The annotate text-box fix (PR #44, `960baba`) was re-validated after the deploy from the
