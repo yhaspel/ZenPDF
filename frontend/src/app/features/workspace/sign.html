@@ -125,6 +125,7 @@
           [renderWidth]="zoom()"
           [items]="overlayItems()"
           [tool]="esign.hasSignature() ? 'rect' : 'select'"
+          [handlesWhileDrawing]="true"
           [selectedId]="selectedPlacementId()"
           [drawStroke]="'#B23A26'"
           [menuActionsFor]="menuActionsFor"

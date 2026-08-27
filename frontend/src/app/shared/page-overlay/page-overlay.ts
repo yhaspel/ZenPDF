@@ -168,6 +168,19 @@ export class PageOverlay {
    */
   readonly readonlyHandles = input(false);
   /**
+   * Keep the selection's resize handles while a draw tool is armed.
+   *
+   * Handles are Select's affordance: under a draw tool the items beneath
+   * them are `pointer-events: none` so the next shape can be drawn over
+   * them, and handles that stayed live turned a text box drawn just below
+   * the selected one into a resize of it. Sign and the signature-request
+   * builder are the exception — their `rect` is a placement tool the mode
+   * never leaves (a signature, once made, stays; the builder arms its first
+   * signer on entry), so their selection has no Select tool to fall back to
+   * and is sized by its handles under the draw tool itself.
+   */
+  readonly handlesWhileDrawing = input(false);
+  /**
    * What the right-click menu should offer for whatever is under the pointer.
    *
    * A **function**, not an array, and that is load-bearing. The overlay has to

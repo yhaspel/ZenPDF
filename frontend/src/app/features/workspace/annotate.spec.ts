@@ -455,8 +455,11 @@ describe('Annotate — filling in fields with text boxes', () => {
   });
 
   describe('a box is never shorter than one line of its type', () => {
-    // A4 fallback: 842 pt tall. 12 pt × 1.4 = 16.8 pt → 0.01995 of the page.
-    const oneLine = (12 * 1.4) / 842;
+    // A4 fallback (595 × 842 pt) at the 900 px desk width: 12 pt is 18.15 px,
+    // one 1.25 line is 23 whole px, plus the two 1 px insets → 25 px of a
+    // 1273.6 px page.
+    const fontPx = (12 / 595) * 900;
+    const oneLine = (Math.ceil(fontPx * 1.25) + 2) / ((900 * 842) / 595);
 
     it('grows a drag thinner than a line upwards — the words sit on the traced line', () => {
       api().onCreated({ shape: 'rect', page: 0, rect: { x: 0.1, y: 0.2, w: 0.5, h: 0.005 } });
@@ -471,6 +474,16 @@ describe('Annotate — filling in fields with text boxes', () => {
     it('leaves a drag that was already tall enough exactly as drawn', () => {
       api().onCreated({ shape: 'rect', page: 0, rect: { x: 0.1, y: 0.2, w: 0.5, h: 0.08 } });
       expect(annotations.all()[0].rect).toEqual({ x: 0.1, y: 0.2, w: 0.5, h: 0.08 });
+    });
+
+    it('measures the line at the current zoom, so a phone-width page is not a pixel short', () => {
+      // At 437 px the same 12 pt is 8.8 px; 1.25 of it is 11.02 → 12 whole px
+      // + 2 insets = 14 px of a 618.4 px page — a larger fraction than at 900.
+      (fixture.componentInstance as unknown as { onFit(available: number): void }).onFit(437);
+      api().onCreated({ shape: 'rect', page: 0, rect: { x: 0.1, y: 0.2, w: 0.5, h: 0.005 } });
+      const expected = (Math.ceil((12 / 595) * 437 * 1.25) + 2) / ((437 * 842) / 595);
+      expect(annotations.all()[0].rect!.h).toBeCloseTo(expected, 6);
+      expect(expected).toBeGreaterThan(oneLine);
     });
 
     it('stays on the page when the drag hugs the top edge', () => {
