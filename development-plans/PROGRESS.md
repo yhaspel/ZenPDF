@@ -1263,6 +1263,52 @@ Handoff programme (the nine CLI prompts from the 2026-08-21 status review) is tr
 
 ## Session log
 
+**2026-08-28 — The Tick box tool**
+
+Branch `feat/annotate-tick-box`, on `39189d2`. The owner's change request of 2026-08-28:
+ticking a printed form's checkboxes without drawing each mark by hand. The feature was
+implemented in a Cowork session that could not push (git proxy 403) and arrived here as an
+uncommitted working tree of eight files; this session is the first `git` it met, and its
+job was to verify, gate, ship and prove it live —
+`docs/reviews/handoffs/handoff-to-cli-tick-box.md`, row 11 of the handoff board.
+
+- **What it is.** An eighteenth palette entry. Arming it puts a mark selector in the
+  annotate page bar — **✓ Check** (the default), **− Dash**, **✗ Cross** — and one click
+  places the chosen mark. The tool **stays armed**, because ticking a form is *click,
+  click, click*, and the chosen mark is remembered for the session the way the tool
+  families keep their colours.
+- **A mark is plain `ink`.** A 14 pt square **in page points** — square on paper, not on
+  screen, so x scales by the page's width and y by its height — centred on the click and
+  clamped so a click at the edge keeps the whole mark on the page. Deliberately not a
+  `free_text` glyph: strokes depend on no font's coverage, they render identically on the
+  overlay and in the file, and the placed mark selects, drags, resizes, copies and deletes
+  like any other drawing. **Zero backend changes** — the schema (`ink` strokes,
+  `minItems: 1`), `add_ink_annot` and extraction already handled it.
+- **Gate** (`./infra/test.sh --e2e`, the whole thing, once, green): backend **1166 passed
+  / 6 skipped**, coverage apps **91.55 %** / pdf_engine **91.88 %**; ruff + mypy clean;
+  `ng lint` clean; unit **602 passed / 67 files** (593 / 66 before — the nine new tests and
+  nothing else moved); production build + **43 prerendered routes** + `verify:prerender`;
+  Playwright **87 passed / 1 skipped** (86 before), the new
+  `phase 3: tick box places the chosen mark with one click` **passing on its first run
+  anywhere** — it had never been executed before this session.
+- **Browser** — `docs/reviews/evidence/tick-box/` with a README index. Guest, both themes,
+  **1280 px and 390 px**, console **clean** (34 lines, 0 errors; the pdf.js `[fluent]`
+  warnings are the pre-existing ones). Four marks placed, **saved, reloaded out of the
+  file**, and drawn by **pdf.js — an independent renderer — from the real PDF**; then
+  **Flatten**, after which the rail is empty, the count is `(0)`, and the marks are still
+  on the page as artwork. At 390 the selector is in the wrapped page bar, Undo/Redo are in
+  the bottom bar, the palette drawer carries Tick box and its hint, and
+  `scrollWidth === visualViewport.width === 390`.
+- **What the browser corrected, before merge.** §3 "Tick box" said the bar wraps "below
+  `md`" — written from the phone rule, not measured. It wraps on the desk too, and it is a
+  question about the *pane*, not the breakpoint: 816 px of pane at a 1280 px window takes
+  the bar from **53 px to 97 px** while the tool is armed; 976 and 1136 stay one row. The
+  contract now carries the measurement, and says why the selector may not answer it by
+  scrolling or hiding — a control that says *which mark am I about to place* has to be
+  readable at the moment of placing it.
+- **Beyond the eight files the prompt listed:** the contract correction above, this entry,
+  and the evidence folder. Nothing else — no product code was changed by this session.
+
 **2026-08-26 (later still) — What the one-line box's self-review found, closed**
 
 Branch `fix/one-line-follow-ups`, on `b384bf3`. PR #45's self-review filed four rows; this
