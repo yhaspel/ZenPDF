@@ -352,12 +352,16 @@ test('phase 3: the palette shows the uploaded stamp, and arms it again', async (
   await expect(page.locator('[data-test=annotate-mode]')).toBeVisible();
   await fitPage(page);
 
-  // Nothing uploaded: the entry is there, and says why it cannot be used.
+  // Nothing uploaded: the entry is live, and pressing it opens the picker
+  // whose file arms it (design contract §3, amended 2026-08-28 — the disabled
+  // state it replaced was reported as "the button is not clickable").
   const entry = page.locator('[data-test=tool-image-stamp]');
-  await expect(entry).toBeDisabled();
+  await expect(entry).toBeEnabled();
   await expect(entry).toHaveAttribute('aria-pressed', 'false');
 
-  await page.locator('[data-test=stamp-upload]').setInputFiles(path.join(IMAGES, 'sample.png'));
+  const chooser = page.waitForEvent('filechooser');
+  await entry.click();
+  await (await chooser).setFiles(path.join(IMAGES, 'sample.png'));
   await expect(successToast(page, 'Stamp ready')).toBeVisible({ timeout: 30_000 });
 
   // Armed by the upload, and the palette now says so, wearing the image.
@@ -431,4 +435,91 @@ test('phase 3: tick box places the chosen mark with one click', async ({ page })
   // Leaving the tool takes the selector with it.
   await page.click('[data-test=tool-select]');
   await expect(page.locator('[data-test=tick-marks]')).toHaveCount(0);
+});
+
+/**
+ * Marks look like what the file will save (2026-08-28 defect run).
+ *
+ * The mode's raster is the page without its annotations, so the overlay is the
+ * only rendering anyone sees before View mode — and it painted squiggly as a
+ * highlight wash and a stamp as an empty outline with its name in a badge
+ * floating above. Behind those sat two engine defects: `add_stamp_annot`
+ * aspect-fits `/Rect` (a 3:2 drag saved as ~4:1), and `annot.update()` writes
+ * the stamp's own name over the user's typed comment.
+ */
+test('phase 3: squiggly waves, stamps stamp, and the drawn rect survives the save', async ({ page }) => {
+  await registerAndLogin(page, 'p3truth');
+  await uploadFiles(page, ['text.pdf']);
+  await page.locator('[data-test=doc-card] [data-test=open-doc]').first().click();
+  await expect(page).toHaveURL(/\/app\/doc\//);
+
+  await page.click('[data-test=annotate-toggle]');
+  await expect(page.locator('[data-test=annotate-mode]')).toBeVisible();
+  await fitPage(page);
+
+  // --- 1. Squiggly draws a wave along the words, not a filled box. ---
+  await page.click('[data-test=tool-squiggly]');
+  const words = page.locator('[data-test=overlay-word]');
+  await expect(words.first()).toBeVisible({ timeout: 30_000 });
+  const first = (await words.nth(0).boundingBox())!;
+  const third = (await words.nth(2).boundingBox())!;
+  await page.mouse.move(first.x + 2, first.y + first.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(third.x + third.width - 2, third.y + third.height / 2, { steps: 6 });
+  await page.mouse.up();
+  await expect(page.locator('[data-test=comment-row]')).toHaveCount(1);
+  const squiggle = page.locator('[data-test=overlay-item][data-shape=quads] path');
+  await expect(squiggle).toHaveCount(1);
+  await expect(squiggle).toHaveAttribute('fill', 'none');
+  expect((await squiggle.getAttribute('d'))!.split('L').length).toBeGreaterThan(3);
+  // No filled rect: that is the highlighter's rendering, not squiggly's.
+  await expect(page.locator('[data-test=overlay-item][data-shape=quads] rect')).toHaveCount(0);
+
+  // --- 2. A stamp draws as words in a border, with no floating badge — and a
+  //        deliberately squarish drag (3:2, nothing like the appearance's 4:1)
+  //        keeps its drawn shape through save and reload. ---
+  await page.click('[data-test=tool-stamp]');
+  await expect(page.locator('[data-test=overlay-text-layer]')).toHaveCount(0);
+  await dragOnPage(page, [0.2, 0.4], [0.5, 0.6]);
+  await expect(page.locator('[data-test=comment-row]')).toHaveCount(2);
+  const stampText = page.locator('[data-test=overlay-stamp-text]');
+  await expect(stampText).toHaveText('APPROVED');
+  await expect(page.locator('[data-test=overlay-stamp-border]')).toHaveCount(1);
+  await expect(page.locator('[data-test=overlay-label]')).toHaveCount(0);
+
+  const drawnBox = (await page
+    .locator('[data-test=overlay-stamp-border]')
+    .evaluate((el) => {
+      const r = el as SVGRectElement;
+      return { w: r.width.baseVal.value, h: r.height.baseVal.value };
+    }))!;
+
+  // A comment typed on the stamp must survive the save (the appearance builder
+  // used to overwrite it with the stamp's own name).
+  await page.locator('[data-test=comment-row]').last().locator('[data-test=comment-edit]').click();
+  const editor = page.locator('[data-test=comment-editor]');
+  await editor.fill('second pass, please');
+  await editor.blur();
+
+  await page.click('[data-test=annot-save]');
+  await expect(successToast(page, 'Annotations saved')).toBeVisible({ timeout: 60_000 });
+  await page.reload();
+  await page.click('[data-test=annotate-toggle]');
+  await expect(page.locator('[data-test=comment-row]')).toHaveCount(2);
+  await fitPage(page);
+
+  // Reloaded from the file: still a stamp, still the drawn 3:2 box (±2%), and
+  // still the user's words — not "Approved".
+  await expect(page.locator('[data-test=overlay-stamp-text]')).toHaveText('APPROVED');
+  const savedBox = (await page
+    .locator('[data-test=overlay-stamp-border]')
+    .evaluate((el) => {
+      const r = el as SVGRectElement;
+      return { w: r.width.baseVal.value, h: r.height.baseVal.value };
+    }))!;
+  expect(savedBox.w / savedBox.h).toBeGreaterThan(drawnBox.w / drawnBox.h - 0.1);
+  expect(savedBox.w / savedBox.h).toBeLessThan(drawnBox.w / drawnBox.h + 0.1);
+  await expect(
+    page.locator('[data-test=comment-row]').filter({ hasText: 'second pass, please' }),
+  ).toHaveCount(1);
 });
