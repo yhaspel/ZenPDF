@@ -66,6 +66,28 @@ designed around because the alternative (a narrower, glyph-only selector) would 
 *which mark am I about to place* harder to read at the moment of placing it. The contract
 carries the numbers now, in §3 Tick box and in the §11 row.
 
+## What the self-review measured next, and filed
+
+Asking §6's 44 px floor of the selector meant asking it of what the selector sits beside.
+At **390 px**:
+
+| Control | Size | |
+|---|---|---|
+| `tick-mark-check` | 78 × **36** | the selector |
+| `annot-prev` | 35 × **36** | existing page-bar control |
+| `annot-zoom-out` | 42 × **36** | existing page-bar control |
+| `annot-flatten` | 73 × **36** | existing page-bar control |
+| `tool-tick` | 180 × **44** | the palette entry — correct |
+| `ws-bottom-undo` | 44 × **44** | the bottom bar — correct |
+
+So the page bar is uniformly 36 px at phone width, and has been since the phone workspace
+landed on 2026-08-24. The contract says the dense-toolbar exemption **stops applying below
+`md`** — in §3 `.input-compact` and again in §3 tool palette, which refuses to be a `.seg`
+for that exact reason. This change adds three controls in the shape the bar already has,
+and it is filed as a **queue row about the bar** rather than fixed here: a 44 px selector
+standing beside 36 px zoom buttons reads as a rendering fault, and the height of that row
+is one decision taken once. §3 Tick box records it in the open.
+
 ## Console
 
 `console.txt` — every console message and page error from all four passes, 34 lines,
