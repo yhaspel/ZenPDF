@@ -1145,6 +1145,7 @@ Handoff programme (the nine CLI prompts from the 2026-08-21 status review) is tr
 
 | Added | Item | Phase | GATE? | Resolved |
 |---|---|---|---|---|
+| 2026-08-28 | **The annotate page bar keeps its 36 px controls at 390 px, where the contract says §6's dense-toolbar exemption stops applying.** Found by the Tick box self-review, which measured its own selector and then measured what it sits next to. At a 390 px viewport, `tick-mark-check` is **36 px** tall — and so are `annot-prev` (35 × 36), `annot-zoom-out` (42 × 36) and `annot-flatten` (73 × 36). The palette entries are correct (`tool-tick` 180 × 44) and so is the bottom bar (`ws-bottom-undo` 44 × 44); it is the page bar alone. The contract says this twice, in the two places it had reason to: §3 `.input-compact` — "**below `md` it is 44 again**, because below `md` a rail is a bottom sheet and the exemption stops applying" — and §3 tool palette, which refuses to be a `.seg` for exactly this reason and sets a 44 px floor. §3 **In-pane toolbars wrap** describes what stays in Annotate's phone bar (page nav, zoom, the unsaved badge, Flatten) and gives it a wrap, but never a height, so nothing has ever said the bar may keep 36 there. Pre-existing since the phone workspace landed (2026-08-24); the Tick box adds three more controls in the shape the bar already has, which is why they were **not** raised on their own — a 44 px selector beside 36 px zoom buttons reads as a rendering fault, and the answer is one decision about the bar. Fix shape: give the page bar a `min-h-11` below `md` (the `.btn-sm` controls and the `.seg` both), or write the exemption's phone extent into §6 and §3 tabs and say why the bar is the one row that keeps it. LOW / a11y. | 3/10 | no | — |
 | 2026-08-26 | **The one-line minimum is ~1 px short below roughly a 660 px render width, so a box clips its own line on the phone.** `TEXT_LINE = 1.4` is documented as "`.page-text`'s 1.25 line plus its 1 px insets", but 1.25 scales with the font and the **1 px insets do not** — they are device pixels at every zoom, and the 0.15 that is meant to cover them is a fraction of the *rendered* font size. Measured at a 437 px render width (the phone workspace's fit-width on this scan): the box is 12.34 px against `1.25 × 8.813 + 2 = 13.02` of content, so `scrollHeight` 13 > `clientHeight` 12. The rule needs `0.15 × fontSizePx ≥ 2`, i.e. 12 pt drawn at ≥ 13.3 px, i.e. a page rendered taller than ~935 px (~660 px wide for A4); at the 900 px default it is comfortable (24.7 into 25.4). Screen-only — the FreeText appearance in the file has no CSS inset — and a hairline rather than the halved words the fix is about, but §3's "at any zoom" is not literally true. Fix shape: add the insets in *rendered* pixels rather than as a fraction of the point size (the overlay knows its scale), or drop the insets to 0 and fold them into the 1.25. Amend §3's sentence either way. LOW. | 3 | no | ✔ 2026-08-26 (later): the line is now measured in overlay pixels at the current zoom — `⌈1.25 × fontPx⌉ + 2` — and taken back to the page (`Annotate.atLeastOneLine`), with a 437 px test; contract §3 corrected |
 | 2026-08-26 | **A `free_text` whose rect has a sub-micron *non-zero* `x` never finishes rendering: the save task spins at 100 % CPU for ever.** Found while validating the one-line text box: an annotate save stayed `running` past three minutes, `worker-default` logged `Soft time limit (60.0s) exceeded for apps.documents.tasks.run_operation`, and `docker stats` showed 100 % CPU. Reduced to a minimal case with **no ZenPDF state at all** — a fresh `fitz.open()` + `new_page(595, 842)`, one `add` op through `apply_annotation_ops` (`apps/pdf_engine/engine/annotations.py`, `page.add_freetext_annot`), run in an otherwise idle `api` container: with `rect = {x: 0.0, y: 0.0, w: 0.7127777777777775, h: 0.456830759058099}` it returns in **0.003 s**; with the **same** rect and `x = 9.11823084637593e-09` it is still running when killed at 45 s. Band measured: `x = 0` fine, `1e-12` and `9.1e-09` hang, `1e-6`, `1e-3` and `0.1` fine — i.e. `0 < x ≲ 1e-7` (under ~6e-5 pt on a 595 pt page). Height matters too and is not monotone: at that `x` with `y = 0`, `h` of 0.05 / 0.10 / 0.20 / 0.4568 all hang while 0.30 returns in 0.004 s. **One-line boxes are not reachable** — `h ≈ 0.02` at the same `x` returns in 0.003 s — so the one-line minimum does not open this; what reaches it is a *resize* dragged onto the page's left edge, which is how it was hit (the client wrote `x = 9.1e-09` for a handle dragged to the margin). Looks like a MuPDF FreeText layout loop that never advances when the rect origin is non-zero but below the renderer's epsilon. Fix shape: snap a normalised coordinate to 0 below a sane epsilon before it reaches the engine (and/or clamp in `_to_annot_rect`), and cap the op with a hard time limit so one bad rect cannot burn a worker slot for ever. MEDIUM. | 3 | no | ✔ 2026-08-26 (later), guarded at both ends: `clamp01` (every producer of normalised geometry in the overlay) and `NormRect.from_dict` (every rect off the wire) round to six decimals — the precision the readers already write — so `9.1e-09` is `0` before MuPDF sees it; tests on both sides. Not reproducible on the sandbox's x86-64 PyMuPDF 1.28.0 (every listed case returns in ≤ 4 ms), so the loop itself is left to the arm64 image it was seen on. **2026-08-27, on that arm64 image** (aarch64, the same PyMuPDF 1.28.0 / MuPDF 1.29.0 `engine.txt` pins): it does not reproduce there either — the row's own minimal case returns in ≤ 65 ms for every rect listed, `9.11823084637593e-09` included. The loop is un-reproduced on both architectures and the "confirmed on arm64" premise no longer has evidence behind it; the guard is what stands, and it was proved through the API (that rect POSTed as an `annotate_batch` succeeds and stores `x: 0`) |
 | 2026-08-26 | **A `run_operation` task that blows its soft time limit leaves the job `running` for ever, and the workspace can never be saved again without a reload.** Same session as the row above, and the half that is independent of MuPDF: the soft time limit *fired* (`Soft time limit (60.0s) exceeded`) but nothing marked the job failed — no traceback, no `finished_at`, `status` still `running` on `GET /api/jobs/<id>/` minutes later. The client polled that job once a second indefinitely (120+ requests observed), and because Annotate's toolbar is `[disabled]="busy() \|\| !dirty()"` with Flatten on `busy()` alone, **Save and Flatten stayed disabled while the bar read "1 unsaved"** — a dead end with unsaved work in it, escapable only by reloading. Fix shape: handle `SoftTimeLimitExceeded` in `apps.documents.tasks.run_operation` and write the job row `failed` with an error the client can show; give the client a ceiling on how long it will poll one job before surfacing the failure and releasing `busy()`. MEDIUM. | 3 | no | ✔ (client half) 2026-08-26 (later): `JobsFacade.track` stops after `TRACK_CEILING_MS` (16 min — the worker's 900 s hard limit plus a minute) and reports the job as the reaper will (`failed` / `timeout` / the reaper's own sentence), so every panel's failed-job branch toasts it and releases `busy()`; test with fake timers. The server half is corrected rather than fixed: the soft limit *did* fire — Celery logs it when it sends the signal — but a Python exception cannot interrupt MuPDF's C loop, so `except SoftTimeLimitExceeded` never ran; the hard limit (900 s) kills the process and `reap_stalled_jobs` fails the row within `JOB_STALL_TIMEOUT` + 5 min. "For ever" was ~35 minutes. What ends the spin is the geometry guard in the row above |
@@ -1262,6 +1263,69 @@ Handoff programme (the nine CLI prompts from the 2026-08-21 status review) is tr
 | 2026-08-20 | **The workspace on a phone is stacked, not designed.** Below `md` the rails now become full-width sections above and below the page (§3 workspace panes) — which makes every control reachable and stops the page scrolling sideways, but it is a rescue, not a phone layout. A designed treatment would probably make the rails drawers with a persistent bottom bar. Worth a designer's eye before any mobile push. | 10 | No | *(2026-08-21: the row above the page now wraps rather than overflowing, so the page no longer scrolls sideways and the app is no longer drawn at ~64 % — but that is a repair, not a design. Row stayed open.)* ✔ **Resolved 2026-08-24** (`feat/mobile-workspace`, prompt 6) — designed, not rescued: the rails are **bottom sheets** over the page (one at a time, grip + title + 44 px close, Escape / scrim, CDK focus trap, body scroll locked, `translateY` only so reduced motion loses nothing), the nine modes are a **persistent bottom bar** carrying an opener for every rail the mode has and, docked at its end, the mode's own Undo/Redo and its primary, and the **page is first** — fit-to-width at 390 with the pane owning the full width. The workspace bar shrinks to back · title · meta · ⋯ · toggle, its six-button cluster moving into a **More** sheet as *one* set of elements through one `<ng-template>`, so there is still exactly one `[data-test=download]` in the DOM at any width. Design contract amended **first** at §2, §3 (a new **Phone workspace** component), §3 headers, §4, §10 and the §11 log, whose "pending, not yet sanctioned" list this emptied. **Desktop is unchanged and it was measured**: the same geometry script over all nine modes, run with `main`'s `frontend/src` checked out and then with the branch's — **0 differences at 768 px, 0 at 1280 px**. Four things the browser found that no test had: the column outgrowing the screen to **1348 px against 844** in the three 900 px-render modes (the sideways assertion stayed green because a scrollbar narrows both of its sides); the **More sheet shipping with no head**; touch targets sized for a desk, the worst of them the comment row's D8 actions at **16 px**; and a focus ring clipped by the sheet's own scroller. See the session log **"2026-08-24 (later) — A designed phone workspace: drawers and a bottom bar"** and `docs/reviews/evidence/mobile-workspace/`. |
 
 ## Session log
+
+**2026-08-28 — The Tick box tool**
+
+Branch `feat/annotate-tick-box`, on `39189d2`. The owner's change request of 2026-08-28:
+ticking a printed form's checkboxes without drawing each mark by hand. The feature was
+implemented in a Cowork session that could not push (git proxy 403) and arrived here as an
+uncommitted working tree of eight files; this session is the first `git` it met, and its
+job was to verify, gate, ship and prove it live —
+`docs/reviews/handoffs/handoff-to-cli-tick-box.md`, row 11 of the handoff board.
+
+- **What it is.** An eighteenth palette entry. Arming it puts a mark selector in the
+  annotate page bar — **✓ Check** (the default), **− Dash**, **✗ Cross** — and one click
+  places the chosen mark. The tool **stays armed**, because ticking a form is *click,
+  click, click*, and the chosen mark is remembered for the session the way the tool
+  families keep their colours.
+- **A mark is plain `ink`.** A 14 pt square **in page points** — square on paper, not on
+  screen, so x scales by the page's width and y by its height — centred on the click and
+  clamped so a click at the edge keeps the whole mark on the page. Deliberately not a
+  `free_text` glyph: strokes depend on no font's coverage, they render identically on the
+  overlay and in the file, and the placed mark selects, drags, resizes, copies and deletes
+  like any other drawing. **Zero backend changes** — the schema (`ink` strokes,
+  `minItems: 1`), `add_ink_annot` and extraction already handled it.
+- **Gate** (`./infra/test.sh --e2e`, the whole thing, once, green): backend **1166 passed
+  / 6 skipped**, coverage apps **91.55 %** / pdf_engine **91.88 %**; ruff + mypy clean;
+  `ng lint` clean; unit **602 passed / 67 files** (593 / 66 before — the nine new tests and
+  nothing else moved); production build + **43 prerendered routes** + `verify:prerender`;
+  Playwright **87 passed / 1 skipped** (86 before), the new
+  `phase 3: tick box places the chosen mark with one click` **passing on its first run
+  anywhere** — it had never been executed before this session.
+- **Browser** — `docs/reviews/evidence/tick-box/` with a README index. Guest, both themes,
+  **1280 px and 390 px**, console **clean** (34 lines, 0 errors; the pdf.js `[fluent]`
+  warnings are the pre-existing ones). Four marks placed, **saved, reloaded out of the
+  file**, and drawn by **pdf.js — an independent renderer — from the real PDF**; then
+  **Flatten**, after which the rail is empty, the count is `(0)`, and the marks are still
+  on the page as artwork. At 390 the selector is in the wrapped page bar, Undo/Redo are in
+  the bottom bar, the palette drawer carries Tick box and its hint, and
+  `scrollWidth === visualViewport.width === 390`.
+- **What the browser corrected, before merge.** §3 "Tick box" said the bar wraps "below
+  `md`" — written from the phone rule, not measured. It wraps on the desk too, and it is a
+  question about the *pane*, not the breakpoint: 816 px of pane at a 1280 px window takes
+  the bar from **53 px to 97 px** while the tool is armed; 976 and 1136 stay one row. The
+  contract now carries the measurement, and says why the selector may not answer it by
+  scrolling or hiding — a control that says *which mark am I about to place* has to be
+  readable at the moment of placing it.
+- **What the self-review found.** Four lenses, run to refute rather than to confirm.
+  *Geometry* holds, including the case it was most likely to miss: `page_words` returns
+  `page.rect`, which is **rotation-applied**, so a 14 pt square is square in the space the
+  click happens in on a `/Rotate 90` page too; the clamp is correct for every `w, h ≤ 1`
+  and `pageWidthFor` never returns zero (A4 until the payload lands). The *`loadWords`
+  extra trigger* is guarded correctly and its only exposure — a click landing before the
+  first payload, sized against the A4 default — is the exposure `free_text` has had since
+  it shipped, bounded and self-healing. *Template a11y* is `role="group"` + `aria-label`,
+  `aria-pressed` (never `aria-selected`), each glyph `aria-hidden` beside its word,
+  `type="button"`, and the `.seg` ink stamp verified in both modes from the bar crops.
+  *Contract conformance*: `data-test` additions only, semantic tokens only, logical
+  properties. **One real finding, filed rather than fixed** — the page bar keeps 36 px
+  controls at 390 px where the contract says the dense-toolbar exemption stops applying.
+  It is pre-existing and belongs to the whole bar (`annot-prev` 35 × 36, `annot-zoom-out`
+  42 × 36, `annot-flatten` 73 × 36 measured beside the selector's 36); raising three new
+  buttons alone would read as a fault. New queue row, and §3 Tick box says so out loud.
+- **Beyond the eight files the prompt listed:** the contract correction above, the queue
+  row, this entry, and the evidence folder. Nothing else — no product code was changed by
+  this session.
 
 **2026-08-26 (later still) — What the one-line box's self-review found, closed**
 

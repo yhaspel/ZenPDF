@@ -319,7 +319,7 @@ describe('Annotate — clipboard, menu and keyboard', () => {
       const buttons: HTMLButtonElement[] = Array.from(
         fixture.nativeElement.querySelectorAll('[data-test^=tool-]'),
       );
-      expect(buttons.length).toBe(17);
+      expect(buttons.length).toBe(18); // 18 since the Tick box (2026-08-28)
       for (const el of buttons) {
         expect(el.getAttribute('aria-pressed')).not.toBeNull();
         expect(el.className).toContain('min-h-11');

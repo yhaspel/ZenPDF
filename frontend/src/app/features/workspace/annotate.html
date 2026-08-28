@@ -30,6 +30,9 @@
                   [class.bg-ink-strong]="tool() === 'free_text'" [class.text-bg]="tool() === 'free_text'" [attr.aria-pressed]="tool() === 'free_text'"
                   (click)="setTool('free_text')" data-test="tool-free-text">Text box</button>
           <button class="rounded-1 border-border flex min-h-11 items-center border px-2 py-1 text-start"
+                  [class.bg-ink-strong]="tool() === 'tick'" [class.text-bg]="tool() === 'tick'" [attr.aria-pressed]="tool() === 'tick'"
+                  (click)="setTool('tick')" data-test="tool-tick">Tick box</button>
+          <button class="rounded-1 border-border flex min-h-11 items-center border px-2 py-1 text-start"
                   [class.bg-ink-strong]="tool() === 'square'" [class.text-bg]="tool() === 'square'" [attr.aria-pressed]="tool() === 'square'"
                   (click)="setTool('square')" data-test="tool-square">Rect</button>
           <button class="rounded-1 border-border flex min-h-11 items-center border px-2 py-1 text-start"
@@ -76,6 +79,11 @@
         </div>
         @if (tool() === 'polygon' || tool() === 'polyline') {
           <p class="muted mt-1 text-[11px]">Click to add points, Enter or double-click to finish, Esc to cancel.</p>
+        }
+        @if (tool() === 'tick') {
+          <p class="muted mt-1 text-[11px]" data-test="tick-hint">
+            Click a checkbox on the page to mark it. Pick the mark — ✓, − or ✗ — in the bar above the page.
+          </p>
         }
       </div>
 
@@ -173,6 +181,23 @@
                 class="btn btn-ghost btn-sm" [title]="'Redo (' + key('redo') + ')'"
                 aria-keyshortcuts="Control+Shift+Z Meta+Shift+Z" data-test="annot-redo">Redo</button>
       </span>
+      @if (tool() === 'tick') {
+        <span class="bg-border mx-2 h-4 w-px"></span>
+        <div class="seg" role="group" aria-label="Tick mark" data-test="tick-marks">
+          <button type="button" [class.seg-active]="tickMark() === 'check'"
+                  [attr.aria-pressed]="tickMark() === 'check'"
+                  (click)="tickMark.set('check')" data-test="tick-mark-check">
+            <span aria-hidden="true" class="me-1">✓</span>Check</button>
+          <button type="button" [class.seg-active]="tickMark() === 'dash'"
+                  [attr.aria-pressed]="tickMark() === 'dash'"
+                  (click)="tickMark.set('dash')" data-test="tick-mark-dash">
+            <span aria-hidden="true" class="me-1">−</span>Dash</button>
+          <button type="button" [class.seg-active]="tickMark() === 'cross'"
+                  [attr.aria-pressed]="tickMark() === 'cross'"
+                  (click)="tickMark.set('cross')" data-test="tick-mark-cross">
+            <span aria-hidden="true" class="me-1">✗</span>Cross</button>
+        </div>
+      }
       @if (canPaste()) {
         <button (click)="pasteHere()" class="btn btn-ghost btn-sm"
                 [title]="'Paste onto this page (' + key('paste') + ')'"

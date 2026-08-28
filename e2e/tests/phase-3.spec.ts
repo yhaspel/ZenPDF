@@ -41,6 +41,16 @@ async function dragOnPage(
   await page.mouse.up();
 }
 
+/** Click inside the overlay surface, in fractions of its box. */
+async function clickOnPage(
+  page: import('@playwright/test').Page,
+  at: [number, number],
+) {
+  const surface = page.locator('[data-test=page-overlay]');
+  const box = (await surface.boundingBox())!;
+  await page.mouse.click(box.x + box.width * at[0], box.y + box.height * at[1]);
+}
+
 test('phase 3: annotate, save, reload, flatten', async ({ page }) => {
   await registerAndLogin(page, 'p3');
   await uploadFiles(page, ['text.pdf']);
@@ -372,4 +382,53 @@ test('phase 3: the palette shows the uploaded stamp, and arms it again', async (
   await page.reload();
   await page.click('[data-test=annotate-toggle]');
   await expect(page.locator('[data-test=comment-row]')).toHaveCount(2);
+});
+
+/**
+ * The Tick box tool (2026-08-28, design contract §3 "Tick box").
+ *
+ * One click places the chosen mark — checkmark by default — as plain ink, the
+ * selector lives in the page bar exactly while the tool is armed, and the tool
+ * stays armed between clicks, because ticking a form is click, click, click.
+ */
+test('phase 3: tick box places the chosen mark with one click', async ({ page }) => {
+  await registerAndLogin(page, 'p3tick');
+  await uploadFiles(page, ['text.pdf']);
+  await page.locator('[data-test=doc-card] [data-test=open-doc]').first().click();
+  await expect(page).toHaveURL(/\/app\/doc\//);
+
+  await page.click('[data-test=annotate-toggle]');
+  await expect(page.locator('[data-test=annotate-mode]')).toBeVisible();
+  await fitPage(page);
+
+  // The selector exists exactly while the tool is armed, checkmark preselected.
+  await expect(page.locator('[data-test=tick-marks]')).toHaveCount(0);
+  await page.click('[data-test=tool-tick]');
+  await expect(page.locator('[data-test=tool-tick]')).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('[data-test=tick-mark-check]')).toHaveAttribute('aria-pressed', 'true');
+
+  // Click, click: two marks, and the tool is still armed.
+  await clickOnPage(page, [0.3, 0.3]);
+  await clickOnPage(page, [0.5, 0.3]);
+  await expect(page.locator('[data-test=comment-row]')).toHaveCount(2);
+  await expect(page.locator('[data-test=tool-tick]')).toHaveAttribute('aria-pressed', 'true');
+
+  // Switch the mark in the bar; the third click places a cross.
+  await page.click('[data-test=tick-mark-cross]');
+  await expect(page.locator('[data-test=tick-mark-cross]')).toHaveAttribute('aria-pressed', 'true');
+  await clickOnPage(page, [0.7, 0.3]);
+  await expect(page.locator('[data-test=comment-row]')).toHaveCount(3);
+  await expect(page.locator('[data-test=annot-dirty]')).toContainText('3 unsaved');
+
+  // Plain ink in the file: they save and survive a reload.
+  await page.click('[data-test=annot-save]');
+  await expect(successToast(page, 'Annotations saved')).toBeVisible({ timeout: 60_000 });
+  await expect(page.locator('[data-test=annot-clean]')).toBeVisible();
+  await page.reload();
+  await page.click('[data-test=annotate-toggle]');
+  await expect(page.locator('[data-test=annot-count]')).toHaveText('(3)');
+
+  // Leaving the tool takes the selector with it.
+  await page.click('[data-test=tool-select]');
+  await expect(page.locator('[data-test=tick-marks]')).toHaveCount(0);
 });
