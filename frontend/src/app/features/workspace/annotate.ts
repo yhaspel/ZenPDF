@@ -25,6 +25,7 @@ import { DocumentsService } from '../../core/services/documents.service';
 import { ConfirmService } from '../../shared/confirm.service';
 import { EditorClipboard } from '../../shared/editor-clipboard.service';
 import {
+  NormPoint,
   NormRect,
   OverlayDraft,
   OverlayGeometryChange,
@@ -33,6 +34,7 @@ import {
   OverlayTool,
   boundsOf,
   boundsOfPoints,
+  clamp01,
   nudgeRect,
   transformPoint,
   transformRect,
@@ -46,7 +48,7 @@ import { FitWidth } from '../../shared/fit-width';
 import { clampPageWidth } from '../../shared/page-fit';
 
 /** Every palette entry, including the two that are not annotations. */
-export type AnnotateTool = AnnotationType | 'select' | 'crop';
+export type AnnotateTool = AnnotationType | 'select' | 'crop' | 'tick';
 
 const MARKUP: AnnotationType[] = ['highlight', 'underline', 'strikeout', 'squiggly'];
 
@@ -58,6 +60,7 @@ const GESTURE: Record<AnnotateTool, OverlayTool> = {
   strikeout: 'text',
   squiggly: 'text',
   note: 'point',
+  tick: 'point',
   free_text: 'rect',
   square: 'rect',
   circle: 'ellipse',
@@ -78,6 +81,35 @@ const STANDARD_STAMPS = [
 ];
 
 const AUTOSAVE_MS = 30_000;
+
+/** The three marks the Tick box tool places. Checkmark is the default. */
+export type TickMark = 'check' | 'dash' | 'cross';
+
+/**
+ * Each mark's strokes in a unit box (x right, y down), scaled onto the square
+ * a click places. Ink, deliberately: strokes render identically on the overlay
+ * and in the saved file with no font's glyph coverage to depend on, and the
+ * placed mark selects, drags, resizes, copies and deletes like any other
+ * drawing — nothing new exists server-side.
+ */
+const TICK_STROKES: Record<TickMark, NormPoint[][]> = {
+  check: [[[0.1, 0.55], [0.4, 0.9], [0.9, 0.1]]],
+  dash: [[[0.1, 0.5], [0.9, 0.5]]],
+  cross: [
+    [[0.1, 0.1], [0.9, 0.9]],
+    [[0.9, 0.1], [0.1, 0.9]],
+  ],
+};
+
+/**
+ * The square a click places, in PDF points — square on paper, not on screen,
+ * so x scales by the page's width and y by its height.
+ *
+ * Sized for a printed form's checkbox (typically 10–16 pt): big enough to read
+ * at page scale, small enough to sit inside the box it is ticking. Resizable
+ * afterwards with Select, like any other mark.
+ */
+const TICK_SIZE_PT = 14;
 
 /**
  * `.page-text`'s line-height, and the 1 px insets it draws above and below.
@@ -220,6 +252,11 @@ export class Annotate {
   /** Opacity, remembered per family for the same reason colour is. */
   private familyOpacity = signal<Record<ToolFamily, number>>({ markup: 0.7, ink: 1 });
   protected stampName = signal(STANDARD_STAMPS[0]);
+  /**
+   * Which mark the Tick box tool places. Checkmark by default; remembered for
+   * the session once changed, the same way the families keep their colours.
+   */
+  protected tickMark = signal<TickMark>('check');
   protected busy = signal(false);
   protected cropRect = signal<{ x: number; y: number; w: number; h: number } | null>(null);
   protected lastSavedAt = signal<Date | null>(null);
@@ -319,10 +356,13 @@ export class Annotate {
     // when a markup tool is active — a 300-page document must not pull 300
     // word lists to draw one rectangle.
     effect(() => {
-      // Markup tools need the words themselves; the text-box tool needs only
-      // the page's own width in points, which arrives on the same payload and
-      // is what turns a point size into the right number of pixels.
-      if (this.gesture() !== 'text' && this.tool() !== 'free_text') return;
+      // Markup tools need the words themselves; the text-box and tick tools
+      // need only the page's own size in points, which arrives on the same
+      // payload and is what turns a point size into the right number of
+      // pixels (or, for a tick, into a square that is square on paper).
+      if (this.gesture() !== 'text' && this.tool() !== 'free_text' && this.tool() !== 'tick') {
+        return;
+      }
       this.annotations.loadWords(this.docId(), this.page(), this.currentSeq());
     });
 
@@ -466,6 +506,12 @@ export class Annotate {
     }
     if (tool === 'select') return;
 
+    if (tool === 'tick') {
+      if (!draft.rect) return;
+      this.annotations.add(this.tickAnnotation(draft.page, [draft.rect.x, draft.rect.y]));
+      return;
+    }
+
     const annotation: Annotation = {
       id: uuid(),
       page: draft.page,
@@ -535,6 +581,33 @@ export class Annotate {
     } else if (tool === 'note') {
       this.startEditing(annotation.id);
     }
+  }
+
+  /**
+   * A tick mark, placed as ink.
+   *
+   * The click is the mark's centre; the mark is a TICK_SIZE_PT square in page
+   * points, clamped so a click at the very edge keeps the whole mark on the
+   * page. The tool stays armed afterwards — ticking a form is *click, click,
+   * click*, and re-arming per mark would make the second click a selection.
+   */
+  private tickAnnotation(page: number, at: NormPoint): Annotation {
+    const w = Math.min(1, TICK_SIZE_PT / this.annotations.pageWidthFor(page));
+    const h = Math.min(1, TICK_SIZE_PT / this.annotations.pageHeightFor(page));
+    const x = Math.min(Math.max(0, at[0] - w / 2), 1 - w);
+    const y = Math.min(Math.max(0, at[1] - h / 2), 1 - h);
+    return {
+      id: uuid(),
+      page,
+      type: 'ink',
+      ink: TICK_STROKES[this.tickMark()].map((stroke) =>
+        stroke.map(([sx, sy]): NormPoint => [clamp01(x + sx * w), clamp01(y + sy * h)]),
+      ),
+      color: this.color(),
+      opacity: this.opacity(),
+      width: this.strokeWidth(),
+      contents: '',
+    };
   }
 
   /**
