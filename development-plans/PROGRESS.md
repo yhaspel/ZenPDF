@@ -1323,6 +1323,12 @@ job was to verify, gate, ship and prove it live —
   It is pre-existing and belongs to the whole bar (`annot-prev` 35 × 36, `annot-zoom-out`
   42 × 36, `annot-flatten` 73 × 36 measured beside the selector's 36); raising three new
   buttons alone would read as a fault. New queue row, and §3 Tick box says so out loud.
+- **Live on production**, after PR #47 merged (`139046b`) and Railway redeployed: the
+  served bundle went `main-75F72VXI.js` → `main-YDCXFDKV.js`, and as a guest on
+  `https://zenpdf.up.railway.app` the selector was absent until the tool was armed, ✓ was
+  preselected, **✓ − ✗** went down in three clicks with the tool still armed, Save then a
+  reload read `(3)` back **out of the file**, and View mode drew all three. Console: 10
+  lines, **0 errors**. Frames in `docs/reviews/evidence/tick-box/live-*.png`.
 - **Beyond the eight files the prompt listed:** the contract correction above, the queue
   row, this entry, and the evidence folder. Nothing else — no product code was changed by
   this session.

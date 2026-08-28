@@ -66,6 +66,20 @@ designed around because the alternative (a narrower, glyph-only selector) would 
 *which mark am I about to place* harder to read at the moment of placing it. The contract
 carries the numbers now, in §3 Tick box and in the §11 row.
 
+## Production — `https://zenpdf.up.railway.app`, after the merge deployed
+
+The served bundle went `main-75F72VXI.js` → **`main-YDCXFDKV.js`**, and then the same guest
+flow ran against the live site at 1440 px: selector absent before arming, ✓ preselected on
+arming, **✓ − ✗** placed with three clicks with the tool still armed, Save, reload → `(3)`
+read back out of the file, and View mode drawing all three. Console: 10 lines, **0 errors**
+(`console-production.txt`).
+
+| File | What it shows |
+|---|---|
+| `live-01-marks-light-1440.png` | ✓ − ✗ on the live site, tool still armed, three "ink" rows |
+| `live-02-reloaded-light-1440.png` | after Save and a reload: `(3)`, out of the file |
+| `live-03-view-mode-light-1440.png` | production's **pdf.js** drawing the three marks at `v2` |
+
 ## What the self-review measured next, and filed
 
 Asking §6's 44 px floor of the selector meant asking it of what the selector sits beside.
