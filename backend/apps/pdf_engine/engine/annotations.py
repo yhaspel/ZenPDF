@@ -381,6 +381,39 @@ def _write_image_ap(doc: fitz.Document, annot: fitz.Annot, rect: fitz.Rect,
     doc.xref_set_key(annot.xref, _IMAGE_STAMP_KEY, fitz.get_pdf_str(ref))
 
 
+def _restore_stamp_rect_and_contents(page: fitz.Page, annot: fitz.Annot,
+                                     rect: fitz.Rect, spec: dict) -> None:
+    """Undo the two things MuPDF's stamp machinery decides over the caller.
+
+    **The rect.** `add_stamp_annot` aspect-fits `/Rect` to the built-in
+    appearance (a 190×80 box becomes 190×50 for "Approved"), so the mark
+    landed squashed relative to what the user drew — for an image stamp the
+    pixels were then stretched into the *reshaped* box. The rect is written
+    back **as a raw `/Rect` key**, not with `set_rect`: `set_rect` marks the
+    annotation dirty, and MuPDF re-synthesises dirty stamps when a *later* op
+    loads another page — re-fitting the rect all over again (and, for an image
+    stamp, entitled to rebuild the appearance we just replaced). A raw key
+    write leaves the annotation clean, so nothing revisits it; the viewer then
+    scales the appearance's BBox onto `/Rect` and the stamp fills the box the
+    user drew. The PDF-space value is `rect × ~transformation_matrix` — probed
+    equal to what `set_rect` writes, on /Rotate 0/90/180 and offset-CropBox
+    pages alike.
+
+    **The contents.** `annot.update()` writes the stamp's own name into
+    `/Contents`, silently replacing whatever comment the user typed ("Approved"
+    turned up as every stamp's comment — and as every *image* stamp's, which is
+    stranger). Re-asserted as a raw key too — `set_info` sets MuPDF's dirty
+    flag exactly like `set_rect`, and `set_info(content="")` is a no-op besides
+    — with `get_pdf_str` doing the PDF string escaping.
+    """
+    doc = page.parent
+    pdf_rect = (rect * ~page.transformation_matrix).normalize()
+    doc.xref_set_key(annot.xref, "Rect",
+                     f"[{pdf_rect.x0} {pdf_rect.y0} {pdf_rect.x1} {pdf_rect.y1}]")
+    doc.xref_set_key(annot.xref, "Contents",
+                     fitz.get_pdf_str(str(spec.get("contents") or "")))
+
+
 def _add_annotation(page: fitz.Page, spec: dict, author: str,
                     image_xrefs: dict[str, int], *,
                     title: str | None = None) -> fitz.Annot:
@@ -462,7 +495,12 @@ def _add_annotation(page: fitz.Page, spec: dict, author: str,
         name = str(spec.get("stamp_name") or STANDARD_STAMPS[0])
         if name not in STANDARD_STAMPS:
             raise InvalidParams(f"unknown stamp '{name}'")
-        annot = page.add_stamp_annot(_rect_of(spec, page), stamp=STANDARD_STAMPS.index(name))
+        rect = _rect_of(spec, page)
+        annot = page.add_stamp_annot(rect, stamp=STANDARD_STAMPS.index(name))
+        _apply_common(annot, spec, author, title=title)
+        annot.update()
+        _restore_stamp_rect_and_contents(page, annot, rect, spec)
+        return annot
     else:  # image_stamp
         ref = str(spec.get("image_ref") or "")
         img_xref = image_xrefs.get(ref)
@@ -473,6 +511,7 @@ def _add_annotation(page: fitz.Page, spec: dict, author: str,
         _apply_common(annot, spec, author, title=title)
         _write_image_ap(page.parent, annot, rect, img_xref, ref,
                         rotate=content_rotation(page.rotation))
+        _restore_stamp_rect_and_contents(page, annot, rect, spec)
         return annot
 
     _apply_common(annot, spec, author, set_colors=kind != "free_text", title=title)

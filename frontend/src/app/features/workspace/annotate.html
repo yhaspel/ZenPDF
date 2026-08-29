@@ -56,18 +56,17 @@
           <button class="rounded-1 border-border flex min-h-11 items-center border px-2 py-1 text-start"
                   [class.bg-ink-strong]="tool() === 'stamp'" [class.text-bg]="tool() === 'stamp'" [attr.aria-pressed]="tool() === 'stamp'"
                   (click)="setTool('stamp')" data-test="tool-stamp">Stamp</button>
-          <!-- The uploaded stamp, as a tool. Disabled until there is one to arm:
-               uploading used to switch the tool with nothing in the palette
-               saying so, and switching away lost it (design contract §3). -->
-          <button class="rounded-1 border-border flex min-h-11 items-center gap-1.5 border px-2 py-1 text-start
-                         disabled:border-border-strong disabled:text-ink-muted disabled:cursor-not-allowed disabled:border-dashed"
+          <!-- The uploaded stamp, as a tool. Always pressable: with a stamp in
+               the session it re-arms the tool; with none it opens the picker
+               whose file would arm it (design contract §3) — a button that sat
+               disabled with its answer in a tooltip read as broken. -->
+          <button class="rounded-1 border-border flex min-h-11 items-center gap-1.5 border px-2 py-1 text-start"
                   [class.bg-ink-strong]="tool() === 'image_stamp'" [class.text-bg]="tool() === 'image_stamp'"
                   [attr.aria-pressed]="tool() === 'image_stamp'"
-                  [disabled]="!annotations.stamp()"
                   [title]="annotations.stamp()
                     ? 'Drag a box to place the image you uploaded'
-                    : 'Upload a custom stamp below to use this'"
-                  (click)="setTool('image_stamp')" data-test="tool-image-stamp">
+                    : 'Choose an image to stamp with'"
+                  (click)="armImageStamp(stampUpload)" data-test="tool-image-stamp">
             @if (annotations.stamp(); as stamp) {
               <img [src]="stamp.preview" alt="" class="border-border rounded-1 h-6 w-6 shrink-0 border object-contain" />
             }
@@ -134,7 +133,7 @@
 
       <div>
         <label for="annot-stamp-upload" class="kicker">Custom stamp</label>
-        <input id="annot-stamp-upload" type="file" accept="image/png,image/jpeg" (change)="onStampFile($event)"
+        <input #stampUpload id="annot-stamp-upload" type="file" accept="image/png,image/jpeg" (change)="onStampFile($event)"
                class="mt-1 w-full text-[11px]" data-test="stamp-upload" />
         @if (annotations.stamp()) {
           <p class="text-success text-[11px]">Image ready — drag a box to place it.</p>

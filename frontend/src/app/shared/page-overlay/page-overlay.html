@@ -83,15 +83,50 @@
         >
           @switch (item.shape) {
             @case ('quads') {
+              <!-- Four kinds of text markup, drawn the way the file will draw
+                   them: a wash for highlight, a line under, a line through, a
+                   wave under. The raster is clean here, so this rendering is
+                   the only truth the user gets before View mode. -->
               @for (quad of item.quads ?? []; track $index) {
-                <rect
-                  [attr.x]="px(quad.x)" [attr.y]="pyv(quad.y)"
-                  [attr.width]="px(quad.w)" [attr.height]="pyv(quad.h)"
-                  [attr.fill]="item.fill ?? item.stroke ?? '#facc15'"
-                  [attr.fill-opacity]="0.45"
-                  [attr.stroke]="item.stroke ?? 'none'"
-                  [attr.stroke-width]="0"
-                />
+                @switch (item.quadStyle ?? 'fill') {
+                  @case ('underline') {
+                    <line
+                      [attr.x1]="px(quad.x)" [attr.x2]="px(quad.x + quad.w)"
+                      [attr.y1]="pyv(quad.y + quad.h) - markupLinePx(quad) / 2"
+                      [attr.y2]="pyv(quad.y + quad.h) - markupLinePx(quad) / 2"
+                      [attr.stroke]="markupColor(item)"
+                      [attr.stroke-width]="markupLinePx(quad)"
+                    />
+                  }
+                  @case ('strikeout') {
+                    <line
+                      [attr.x1]="px(quad.x)" [attr.x2]="px(quad.x + quad.w)"
+                      [attr.y1]="pyv(quad.y + quad.h * 0.5)"
+                      [attr.y2]="pyv(quad.y + quad.h * 0.5)"
+                      [attr.stroke]="markupColor(item)"
+                      [attr.stroke-width]="markupLinePx(quad)"
+                    />
+                  }
+                  @case ('squiggly') {
+                    <path
+                      [attr.d]="squigglePath(quad)"
+                      fill="none"
+                      [attr.stroke]="markupColor(item)"
+                      [attr.stroke-width]="markupLinePx(quad)"
+                      stroke-linejoin="round"
+                    />
+                  }
+                  @default {
+                    <rect
+                      [attr.x]="px(quad.x)" [attr.y]="pyv(quad.y)"
+                      [attr.width]="px(quad.w)" [attr.height]="pyv(quad.h)"
+                      [attr.fill]="markupColor(item)"
+                      [attr.fill-opacity]="0.45"
+                      [attr.stroke]="item.stroke ?? 'none'"
+                      [attr.stroke-width]="0"
+                    />
+                  }
+                }
               }
             }
             @case ('ellipse') {
@@ -152,14 +187,58 @@
               />
             }
             @default {
-              <rect
-                [attr.x]="px(item.rect?.x ?? 0)" [attr.y]="pyv(item.rect?.y ?? 0)"
-                [attr.width]="px(item.rect?.w ?? 0)" [attr.height]="pyv(item.rect?.h ?? 0)"
-                [attr.fill]="item.fill ?? 'none'"
-                [attr.stroke]="item.stroke ?? '#332D24'"
-                [attr.stroke-width]="strokePx(item)"
-                rx="2"
-              />
+              @if (item.imageUrl; as src) {
+                <!-- The pixels themselves, filling the rect the way the saved
+                     appearance stream does — no chrome of the overlay's own. -->
+                <image
+                  [attr.href]="src"
+                  [attr.x]="px(item.rect?.x ?? 0)" [attr.y]="pyv(item.rect?.y ?? 0)"
+                  [attr.width]="px(item.rect?.w ?? 0)" [attr.height]="pyv(item.rect?.h ?? 0)"
+                  preserveAspectRatio="none"
+                  data-test="overlay-image"
+                />
+              } @else if (item.stampText; as words) {
+                <!-- A rubber stamp, as the viewer will draw it: double border,
+                     squeezed serif capitals, all in one colour. -->
+                <rect
+                  [attr.x]="px(item.rect?.x ?? 0)" [attr.y]="pyv(item.rect?.y ?? 0)"
+                  [attr.width]="px(item.rect?.w ?? 0)" [attr.height]="pyv(item.rect?.h ?? 0)"
+                  fill="none"
+                  [attr.stroke]="item.stroke ?? '#332D24'"
+                  [attr.stroke-width]="stampBorderPx(item)"
+                  data-test="overlay-stamp-border"
+                />
+                @let inner = stampInnerPx(item);
+                <rect
+                  [attr.x]="inner.x" [attr.y]="inner.y"
+                  [attr.width]="inner.w" [attr.height]="inner.h"
+                  fill="none"
+                  [attr.stroke]="item.stroke ?? '#332D24'"
+                  [attr.stroke-width]="stampBorderPx(item) * 0.45"
+                />
+                <text
+                  [attr.x]="px((item.rect?.x ?? 0) + (item.rect?.w ?? 0) / 2)"
+                  [attr.y]="pyv((item.rect?.y ?? 0) + (item.rect?.h ?? 0) / 2)"
+                  text-anchor="middle"
+                  dominant-baseline="central"
+                  [attr.font-size]="stampFontPx(item, words)"
+                  font-family="'Times New Roman', Georgia, serif"
+                  font-weight="700"
+                  [attr.fill]="item.stroke ?? '#332D24'"
+                  [attr.textLength]="stampTextLengthPx(item)"
+                  lengthAdjust="spacingAndGlyphs"
+                  data-test="overlay-stamp-text"
+                >{{ words }}</text>
+              } @else {
+                <rect
+                  [attr.x]="px(item.rect?.x ?? 0)" [attr.y]="pyv(item.rect?.y ?? 0)"
+                  [attr.width]="px(item.rect?.w ?? 0)" [attr.height]="pyv(item.rect?.h ?? 0)"
+                  [attr.fill]="item.fill ?? 'none'"
+                  [attr.stroke]="item.stroke ?? '#332D24'"
+                  [attr.stroke-width]="strokePx(item)"
+                  rx="2"
+                />
+              }
             }
           }
         </g>

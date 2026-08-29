@@ -261,14 +261,30 @@ describe('Annotate — clipboard, menu and keyboard', () => {
       URL.createObjectURL = realCreate;
     });
 
-    it('is there but unusable until a stamp has been uploaded', () => {
+    it('opens the stamp picker when pressed with nothing uploaded', () => {
+      // Not disabled-with-a-tooltip: a button whose only explanation is a
+      // title nobody hovers read, from outside, as "the button is broken".
+      // With no stamp in the session, pressing it does the next necessary
+      // thing — it opens the picker whose file would arm it.
       const el = button();
       expect(el).not.toBeNull();
-      expect(el.disabled).toBe(true);
+      expect(el.disabled).toBe(false);
       expect(el.getAttribute('aria-pressed')).toBe('false');
-      expect(el.title).toBe('Upload a custom stamp below to use this');
-      // Nothing to show yet, so no empty image box in a dashed button.
+      expect(el.title).toBe('Choose an image to stamp with');
+      // Nothing to show yet, so no empty image box in the button.
       expect(el.querySelector('img')).toBeNull();
+
+      const picker = fixture.nativeElement.querySelector(
+        '[data-test=stamp-upload]',
+      ) as HTMLInputElement;
+      let opened = 0;
+      picker.click = () => { opened += 1; };
+      el.click();
+      fixture.detectChanges();
+
+      expect(opened).toBe(1);
+      // The tool is not armed by the press alone — there is still no stamp.
+      expect(el.getAttribute('aria-pressed')).toBe('false');
     });
 
     it('wears the uploaded image and reads as pressed once the tool is armed', () => {
@@ -512,5 +528,139 @@ describe('Annotate — filling in fields with text boxes', () => {
     api().undo();
     expect(annotations.all()).toEqual([]);
     expect(annotations.canUndo()).toBe(false);
+  });
+});
+
+/**
+ * Marks are drawn the way the file will draw them (2026-08-28).
+ *
+ * The mode's raster is the page *without* its annotations, so the overlay is
+ * the only rendering of a mark anyone sees before View mode — and it painted
+ * every text markup as a highlight, a stamp as an empty outline with its name
+ * in a badge floating above ("a rectangle with the word approved above it"),
+ * and an image stamp as the same empty outline. The saved file was right all
+ * along; the editor lied about it.
+ */
+describe('Annotate — marks look like what the file will save', () => {
+  let fixture: ComponentFixture<Annotate>;
+  let annotations: AnnotationsFacade;
+  const realCreate = URL.createObjectURL;
+
+  const html = () => fixture.nativeElement as HTMLElement;
+  const item = () => html().querySelector<SVGGElement>('[data-test=overlay-item]')!;
+
+  const markup = (type: Annotation['type']): Annotation => ({
+    id: 'm1',
+    page: 0,
+    type,
+    color: '#facc15',
+    quads: [
+      { x: 0.1, y: 0.2, w: 0.3, h: 0.05 },
+      { x: 0.1, y: 0.26, w: 0.2, h: 0.05 },
+    ],
+  });
+
+  beforeEach(() => {
+    URL.createObjectURL = () => 'blob:stamp';
+    TestBed.configureTestingModule({
+      imports: [Annotate],
+      providers: [provideHttpClient(), provideHttpClientTesting()],
+    });
+    annotations = TestBed.inject(AnnotationsFacade);
+    annotations.clear();
+    fixture = TestBed.createComponent(Annotate);
+    fixture.componentRef.setInput('docId', 'doc-1');
+    fixture.componentRef.setInput('pageCount', 1);
+    fixture.detectChanges();
+  });
+
+  afterEach(() => {
+    URL.createObjectURL = realCreate;
+    TestBed.resetTestingModule();
+  });
+
+  it('paints a highlight as a translucent wash', () => {
+    annotations.add(markup('highlight'));
+    fixture.detectChanges();
+    const rects = item().querySelectorAll('rect');
+    expect(rects.length).toBe(2);
+    expect(rects[0].getAttribute('fill')).toBe('#facc15');
+    expect(item().querySelector('line')).toBeNull();
+  });
+
+  it('paints underline and strike-out as lines, in the markup colour', () => {
+    // The page box is 900px wide with the A4 fallback aspect, so a fraction of
+    // its height is a known pixel — no layout involved.
+    const boxHeight = Math.round(900 * (842 / 595));
+    const py = (v: number) => v * boxHeight;
+
+    annotations.add(markup('underline'));
+    fixture.detectChanges();
+    let lines = item().querySelectorAll('line');
+    expect(lines.length).toBe(2);
+    expect(item().querySelector('rect')).toBeNull();
+    expect(lines[0].getAttribute('stroke')).toBe('#facc15');
+    // *Under* the words: at the quad's bottom edge, below its midline.
+    const underY = Number(lines[0].getAttribute('y1'));
+    expect(underY).toBeGreaterThan(py(0.2 + 0.05 / 2));
+    expect(underY).toBeLessThanOrEqual(py(0.25));
+
+    annotations.clear();
+    annotations.add(markup('strikeout'));
+    fixture.detectChanges();
+    lines = item().querySelectorAll('line');
+    expect(lines.length).toBe(2);
+    expect(item().querySelector('rect')).toBeNull();
+    // *Through* the words: on the quad's midline.
+    expect(Number(lines[0].getAttribute('y1'))).toBeCloseTo(py(0.2 + 0.05 / 2), 5);
+  });
+
+  it('paints squiggly as a wave, which is not a highlight', () => {
+    annotations.add(markup('squiggly'));
+    fixture.detectChanges();
+    const path = item().querySelector('path')!;
+    expect(path).not.toBeNull();
+    expect(path.getAttribute('fill')).toBe('none');
+    expect(path.getAttribute('stroke')).toBe('#facc15');
+    // A zigzag has more than a move and one line in it.
+    expect((path.getAttribute('d') ?? '').split('L').length).toBeGreaterThan(3);
+    expect(item().querySelector('rect')).toBeNull();
+  });
+
+  it('draws a stamp as the stamp it will be — words in a double border, no floating badge', () => {
+    annotations.add({
+      id: 's1', page: 0, type: 'stamp', stamp_name: 'NotForPublicRelease',
+      color: '#332D24', rect: { x: 0.2, y: 0.2, w: 0.4, h: 0.1 },
+    });
+    fixture.detectChanges();
+    const text = html().querySelector('[data-test=overlay-stamp-text]')!;
+    expect(text.textContent).toBe('NOT FOR PUBLIC RELEASE');
+    expect(text.getAttribute('fill')).toBe('#332D24');
+    expect(html().querySelector('[data-test=overlay-stamp-border]')).not.toBeNull();
+    expect(html().querySelector('[data-test=overlay-label]')).toBeNull();
+  });
+
+  it('draws the image stamp the session is holding as its actual pixels', () => {
+    annotations.useStamp('ref-1', new Blob(['png'], { type: 'image/png' }));
+    annotations.add({
+      id: 'i1', page: 0, type: 'image_stamp', image_ref: 'ref-1',
+      rect: { x: 0.2, y: 0.2, w: 0.3, h: 0.2 },
+    });
+    fixture.detectChanges();
+    const image = html().querySelector('[data-test=overlay-image]')!;
+    expect(image.getAttribute('href')).toBe('blob:stamp');
+    // Stretched exactly as the saved appearance stream stretches them.
+    expect(image.getAttribute('preserveAspectRatio')).toBe('none');
+    expect(html().querySelector('[data-test=overlay-label]')).toBeNull();
+  });
+
+  it('marks an image stamp whose pixels live only in the file as a stamp-style placeholder', () => {
+    annotations.add({
+      id: 'i2', page: 0, type: 'image_stamp', image_ref: 'someone-elses-ref',
+      rect: { x: 0.2, y: 0.2, w: 0.3, h: 0.2 },
+    });
+    fixture.detectChanges();
+    expect(html().querySelector('[data-test=overlay-image]')).toBeNull();
+    expect(html().querySelector('[data-test=overlay-stamp-text]')!.textContent).toBe('IMAGE');
   });
 });

@@ -166,6 +166,15 @@ function uuid(): string {
 }
 
 /**
+ * A stamp name the way the saved appearance spells it: camel case split into
+ * words, set in capitals — `NotForPublicRelease` stamps "NOT FOR PUBLIC
+ * RELEASE" onto the page, and the overlay must say the same thing.
+ */
+export function stampDisplay(name: string): string {
+  return name.replace(/([a-z])([A-Z])/g, '$1 $2').toUpperCase();
+}
+
+/**
  * Annotate mode (phase-03).
  *
  * Owns the palette, the page under the overlay, the comments sidebar and the
@@ -448,6 +457,14 @@ export class Annotate {
         quads: a.quads ?? [],
         rect: boundsOf(a.quads ?? []),
         fill: a.color ?? '#facc15',
+        // The overlay is the only view of a mark this mode ever shows (its
+        // raster is clean), so each markup kind has to draw as the file will:
+        // a wash for highlight, a line under, a line through, a wave under.
+        // Painting all four as fills was "squiggly just highlights the text".
+        quadStyle:
+          a.type === 'underline' || a.type === 'strikeout' || a.type === 'squiggly'
+            ? a.type
+            : 'fill',
       };
     }
     switch (a.type) {
@@ -487,9 +504,20 @@ export class Annotate {
           textColor: a.color ?? '#332D24',
         };
       case 'stamp':
-        return { ...base, label: a.stamp_name ?? 'Stamp' };
-      case 'image_stamp':
-        return { ...base, label: 'Image' };
+        // Drawn as the stamp it will be — bordered uppercase words filling
+        // the rect — not as an empty outline with its name in a badge above.
+        return { ...base, stampText: stampDisplay(a.stamp_name ?? 'Stamp') };
+      case 'image_stamp': {
+        // The uploaded pixels are in hand for the stamp this session is
+        // holding; a mark reloaded from the file (whose image lives only
+        // server-side) gets a labelled stamp-style placeholder instead of a
+        // bare rectangle.
+        const held = this.annotations.stamp();
+        if (held && held.ref === a.image_ref) {
+          return { ...base, stroke: 'none', imageUrl: held.preview };
+        }
+        return { ...base, stampText: 'IMAGE' };
+      }
       default:
         return base;
     }
@@ -967,6 +995,23 @@ export class Annotate {
   // ------------------------------------------------------------------ //
   // Stamps
   // ------------------------------------------------------------------ //
+  /**
+   * The palette's image-stamp entry, pressed.
+   *
+   * With a stamp in the session it re-arms the tool, as every palette entry
+   * arms its own. With none it opens the picker whose file would enable it —
+   * the button *is* the way to an image stamp, so it does the next necessary
+   * step rather than sitting disabled with the answer in a tooltip nobody
+   * hovers (that state read, from outside, as "the button is broken").
+   */
+  protected armImageStamp(picker: HTMLInputElement): void {
+    if (this.annotations.stamp()) {
+      this.tool.set('image_stamp');
+      return;
+    }
+    picker.click();
+  }
+
   protected onStampFile(event: Event): void {
     const input = event.target as HTMLInputElement;
     const file = input.files?.[0];

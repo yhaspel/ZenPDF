@@ -423,10 +423,83 @@ export class PageOverlay {
     return value * this.boxHeight();
   }
 
-  /** Stroke widths are authored in PDF points; scale them the way the page scaled. */
+  /** Stroke widths are authored in PDF points; scale them the way the page
+   *  scaled — against the page's *own* width, not A4's, or every stroke on a
+   *  Letter page renders 3% thin. */
   protected strokePx(item: OverlayItem): number {
     const pts = item.width ?? 1;
-    return Math.max(1, (pts * this.renderWidth()) / 595);
+    return Math.max(1, (pts * this.renderWidth()) / this.pageWidthPt());
+  }
+
+  // ------------------------------------------------------------------ //
+  // Text markup and stamps, drawn the way the file will draw them
+  // ------------------------------------------------------------------ //
+  /** The one colour a text markup uses, wash and line alike. */
+  protected markupColor(item: OverlayItem): string {
+    return item.fill ?? item.stroke ?? '#facc15';
+  }
+
+  /**
+   * How thick an underline / strike-out / squiggle is for this quad, in px.
+   *
+   * Proportional to the marked line's own height — the way the file draws it —
+   * with a 1.5px floor so the mark cannot vanish at a phone's page width.
+   */
+  protected markupLinePx(quad: NormRect): number {
+    return Math.max(1.5, this.pyv(quad.h) * 0.08);
+  }
+
+  /** A zigzag along the quad's bottom edge — the squiggle itself. */
+  protected squigglePath(quad: NormRect): string {
+    const amp = Math.max(1.5, this.pyv(quad.h) * 0.09);
+    const x0 = this.px(quad.x);
+    const x1 = this.px(quad.x + quad.w);
+    const base = this.pyv(quad.y + quad.h) - amp / 2;
+    const step = amp * 2;
+    let d = `M${x0} ${base}`;
+    let up = true;
+    for (let x = x0 + step; x < x1; x += step) {
+      d += ` L${x} ${up ? base - amp : base}`;
+      up = !up;
+    }
+    d += ` L${x1} ${up ? base - amp : base}`;
+    return d;
+  }
+
+  /** The stamp's outer border, scaled with the stamp like everything in it. */
+  protected stampBorderPx(item: OverlayItem): number {
+    return Math.max(1.5, this.pyv(item.rect?.h ?? 0) * 0.045);
+  }
+
+  /** The thin inner frame a rubber stamp carries inside its border. */
+  protected stampInnerPx(item: OverlayItem): { x: number; y: number; w: number; h: number } {
+    const inset = this.stampBorderPx(item) * 1.8;
+    return {
+      x: this.px(item.rect?.x ?? 0) + inset,
+      y: this.pyv(item.rect?.y ?? 0) + inset,
+      w: Math.max(0, this.px(item.rect?.w ?? 0) - inset * 2),
+      h: Math.max(0, this.pyv(item.rect?.h ?? 0) - inset * 2),
+    };
+  }
+
+  /**
+   * A type size that fits the stamp's words in its box.
+   *
+   * Height-led (the viewer's stamp glyphs stand about half the box tall), then
+   * capped by width so ten letters do not overflow a narrow stamp —
+   * `textLength` squeezes the last few percent, but it cannot halve a word.
+   */
+  protected stampFontPx(item: OverlayItem, words: string): number {
+    const h = this.pyv(item.rect?.h ?? 0);
+    const w = this.px(item.rect?.w ?? 0);
+    const byHeight = h * 0.52;
+    const byWidth = (w * 0.88) / Math.max(1, words.length) / 0.62;
+    return Math.max(6, Math.min(byHeight, byWidth));
+  }
+
+  /** The width the stamp's words are squeezed or spaced onto. */
+  protected stampTextLengthPx(item: OverlayItem): number {
+    return this.px(item.rect?.w ?? 0) * 0.84;
   }
 
   protected pointsAttr(points: NormPoint[] | undefined): string {

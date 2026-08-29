@@ -414,6 +414,77 @@ def test_image_stamp_without_its_image_is_a_validation_error(fixture_bytes):
         A.apply_annotation_ops(fixture_bytes("text.pdf"), ops=_add(spec), images={})
 
 
+def test_stamps_keep_the_rect_the_user_drew(fixture_bytes):
+    """`add_stamp_annot` aspect-fits `/Rect` to the built-in appearance — a
+    190×80 box came back 190×50 for "Approved" — so the mark the user placed
+    was silently reshaped, and an image stamp's pixels were stretched into the
+    *reshaped* box (measured live: a 3:2 drag saved as roughly 4:1). The rect
+    is now set back after the appearance work, which a viewer honours by
+    scaling the appearance onto it: the stamp fills the box that was drawn."""
+    drawn = {"x": 0.2, "y": 0.3, "w": 0.3, "h": 0.2}  # nothing like 4:1
+    stamp = {"id": "st-rect", "page": 0, "type": "stamp", "rect": dict(drawn),
+             "stamp_name": "Approved", "color": "#332d24"}
+    image = {"id": "img-rect", "page": 1, "type": "image_stamp",
+             "rect": dict(drawn), "image_ref": "abcdef123456"}
+    # A later op on a *different* page is the regression trigger: loading the
+    # next page makes MuPDF re-synthesise any stamp left dirty, which re-fits
+    # the rect all over again — `set_rect` restored it and this op undid it.
+    note = {"id": "after", "page": 2, "type": "note",
+            "rect": {"x": 0.1, "y": 0.1, "w": 0.02, "h": 0.02}, "contents": "x"}
+    out, report = A.apply_annotation_ops(
+        fixture_bytes("text.pdf"),
+        ops=[{"action": "add", "annotation": stamp},
+             {"action": "add", "annotation": image},
+             {"action": "add", "annotation": note}],
+        images={"abcdef123456": _red_png()},
+    )
+    assert report["added"] == 3
+
+    for got in A.extract_annotations(out):
+        if got["id"] == "after":
+            continue
+        for key, want in drawn.items():
+            assert got["rect"][key] == pytest.approx(want, abs=1e-3), (
+                got["type"], key)
+
+    # And the pixels really moved with the rect: red in the drawn box's middle
+    # on the image's page, not only in a squashed band.
+    doc = fitz.open(stream=out, filetype="pdf")
+    page_rect = doc[1].rect
+    doc.close()
+    clip = fitz.Rect(0.25 * page_rect.width, 0.32 * page_rect.height,
+                     0.45 * page_rect.width, 0.48 * page_rect.height)
+    colors = _region_colors(out, 1, clip)
+    assert any(c[0] > 200 and c[1] < 60 and c[2] < 60 for c in colors), colors
+
+
+def test_a_stamps_comment_survives_the_appearance_builder(fixture_bytes):
+    """`annot.update()` writes the stamp's own name into `/Contents`, so a
+    comment typed on a stamp came back as "Approved" after every save — and so
+    did every *image* stamp's comment, which is stranger. The user's contents
+    are re-asserted after the appearance work; an empty comment stays empty."""
+    with_comment = {"id": "st-c", "page": 0, "type": "stamp",
+                    "rect": {"x": 0.1, "y": 0.1, "w": 0.3, "h": 0.08},
+                    "stamp_name": "Draft", "contents": "second pass, please"}
+    empty = {"id": "st-e", "page": 0, "type": "stamp",
+             "rect": {"x": 0.1, "y": 0.3, "w": 0.3, "h": 0.08},
+             "stamp_name": "Approved"}
+    image = {"id": "img-c", "page": 0, "type": "image_stamp",
+             "rect": {"x": 0.1, "y": 0.5, "w": 0.3, "h": 0.1},
+             "image_ref": "abcdef123456", "contents": "the good logo"}
+    out, _ = A.apply_annotation_ops(
+        fixture_bytes("text.pdf"),
+        ops=[{"action": "add", "annotation": with_comment},
+             {"action": "add", "annotation": empty},
+             {"action": "add", "annotation": image}],
+        images={"abcdef123456": _red_png()},
+    )
+    got = {a["id"]: a for a in A.extract_annotations(out)}
+    assert got["st-c"]["contents"] == "second pass, please"
+    assert got["st-e"]["contents"] == ""
+    assert got["img-c"]["contents"] == "the good logo"
+
+
 # --------------------------------------------------------------------------- #
 # Flatten (bake)
 # --------------------------------------------------------------------------- #

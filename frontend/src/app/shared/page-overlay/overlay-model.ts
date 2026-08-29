@@ -48,6 +48,30 @@ export interface OverlayItem {
   /** Short badge drawn at the top-left corner (field name, "REDACT", …). */
   label?: string;
   /**
+   * How a `quads` item paints each quad. `fill` is the translucent wash a
+   * highlighter leaves; the other three draw a line along or through the quad
+   * — which is what the file itself will show for underline, strike-out and
+   * squiggly text markup. Rendering all four as fills is how "squiggly just
+   * highlights the text" shipped: the overlay is the only thing an editing
+   * mode's user ever sees (its raster is clean), so it has to draw the mark
+   * the way the saved page will. Default `fill`.
+   */
+  quadStyle?: 'fill' | 'underline' | 'strikeout' | 'squiggly';
+  /**
+   * Rubber-stamp text drawn centred inside `rect`: double border and squeezed
+   * uppercase serif capitals in `stroke`, the way a PDF viewer draws a
+   * standard stamp's appearance. Without it a stamp was an empty outline with
+   * its name in a 10px badge floating above — "a rectangle with the word
+   * approved above it", as the defect report put it.
+   */
+  stampText?: string;
+  /**
+   * Image drawn inside `rect` (an object/blob URL). The file scales the
+   * pixels to fill the annotation's rect, so the overlay does the same —
+   * `preserveAspectRatio` none, exactly as stretched as the saved page.
+   */
+  imageUrl?: string;
+  /**
    * Text drawn *inside* the rectangle, the way the file will show it.
    *
    * A text box whose words only appeared in a 10px badge above the box — and
