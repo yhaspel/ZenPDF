@@ -1264,6 +1264,83 @@ Handoff programme (the nine CLI prompts from the 2026-08-21 status review) is tr
 
 ## Session log
 
+**2026-08-28 — Annotate tells the truth: stamp, image stamp, squiggly**
+
+Branch `fix/annotate-truth`, on `6916604`; PR #48, squash-merged as `cdaa5b3` on 2026-08-29.
+The owner's 2026-08-28 defect report on Annotate, root-caused and fixed in a Cowork session
+that could not push and delivered `.zen-annotate-defects.patch` in the repo root; this session
+verified the sha256, applied it, gated it, reviewed it, shipped it and proved it live —
+`docs/reviews/handoffs/handoff-to-cli-annotate-defects.md`, row 12 of the handoff board.
+
+- **All three reported defects were one defect wearing three hats: the editor lied about a
+  file that was already right.** Annotate's raster is requested *clean* (`?annots=false`) so a
+  saved mark never draws twice — which means the SVG overlay is the only rendering of a mark
+  anyone sees before View mode. It painted all four text markups as identical highlight washes
+  ("squiggly seems to just highlight text"), every stamp as a bare outline with its name in the
+  10 px selection badge floating above it ("just draws a rectangle with the word approved above
+  it"), and it sat the `image_stamp` palette entry natively `disabled` with its only explanation
+  in a hover `title` ("not clickable" — and on touch that tooltip does not exist at all). The
+  overlay now draws each mark the file's own way: wash / line under / line through / wave under
+  for the four markups; a stamp's name camel-case-split and set in squeezed serif capitals
+  inside a double border, which is the appearance MuPDF synthesises; an image stamp's **actual
+  pixels**, `preserveAspectRatio: none`, stretched exactly as the saved appearance stream
+  stretches them, with a stamp-style `IMAGE` placeholder once only the file holds them. The
+  palette entry is always pressable — with no stamp it opens the picker whose file arms it.
+- **Two engine defects sat behind the report, and the review found them.**
+  `add_stamp_annot` **aspect-fits `/Rect` to the built-in appearance** — a 190×80 pt box comes
+  back 190×50 for "Approved" — so both stamp kinds saved reshaped, and an image stamp's pixels
+  were then stretched into the *reshaped* box (measured live: a 3:2 drag saved as ~4:1). And
+  `annot.update()` **writes the stamp's own name into `/Contents`**, so a comment typed on any
+  stamp came back "Approved" — image stamps' included, which is stranger.
+- **Why the fix writes raw xref keys, which is the interesting part.** Both stamp branches now
+  call `_restore_stamp_rect_and_contents`, which sets `/Rect` and `/Contents` as **raw keys**
+  rather than through `set_rect`/`set_info`. Those setters mark the annotation **dirty**, and
+  MuPDF re-synthesises a dirty stamp when a *later* op loads another page — which re-fitted the
+  rect all over again mid-batch, and would have entitled MuPDF to rebuild the custom appearance
+  an image stamp had just been given. A raw write leaves the annotation clean, so nothing
+  revisits it. The PDF-space value is `rect × ~page.transformation_matrix`, probed equal to
+  `set_rect`'s output on /Rotate 0/90/180 and offset-CropBox pages. The regression trigger is in
+  the test: a third op on a *different* page, after both stamps.
+- **Also fixed on the way past:** `strokePx` scaled against a hardcoded 595, so every stroke on
+  a Letter page rendered ~3 % thin. It now scales against the page's own width.
+- **Gate** (`./infra/test.sh --e2e`, the whole thing, green in one clean run): backend **1168
+  passed / 6 skipped** (1166 before), coverage apps **91.56 %** / pdf_engine **91.91 %**; ruff +
+  mypy clean across 180 source files; `ng lint` clean; unit **608 passed / 67 files** (602
+  before); build **43 prerendered routes** + `verify:prerender`; Playwright **88 passed / 1
+  skipped** (87 + 1 before). **Both** phase-3 cases the prompt flagged as never having run
+  anywhere passed on their first execution — the amended `the palette shows the uploaded stamp,
+  and arms it again` (now a Playwright filechooser flow) and the new `squiggly waves, stamps
+  stamp, and the drawn rect survives the save`. The known `phase-1 @smoke` flake behaved. *(An
+  earlier run of the same gate failed one pre-existing pdf.js unit test on a 15 s timeout,
+  because a probe container was running beside it; re-run alone, green. Recorded because a gate
+  that is only green when nothing else is running is worth knowing about.)*
+- **What the sandbox could not prove, and this session could.** The handoff was explicit that
+  production still ran the old backend, so the rect and contents fixes were unverified anywhere
+  — its own harness run showed reloaded stamps still coming back aspect-fitted at 3.80 with
+  contents "Approved". Driven in Chrome against the **local** stack (new frontend *and* new
+  backend), measured in the live DOM: a stamp drawn 300 × 196 px (ratio **1.531**) and an image
+  stamp drawn 238.5 × 196 (ratio **1.217**) both came back out of the file after Save and a full
+  reload at **exactly those ratios** — nothing like 4:1 — and the stamp's comment came back
+  **"second pass, please"**. View mode agrees: the file itself draws a real yellow wave for
+  squiggly, lines for underline and strike-out, a wash for highlight, `APPROVED` inside its
+  border at the shape drawn, and the image stamp's real pixels at the shape drawn. Both themes,
+  1440 px and a true 390 px viewport (no horizontal overflow; every tool button, the image stamp
+  included, exactly 44 px), console clean apart from pdf.js's own fluent i18n warnings.
+- **Self-review: no queue rows, two verifications.** (1) The new backend tests **discriminate** —
+  with `_restore_stamp_rect_and_contents` monkeypatched to a no-op both fail (`assert 'Approved'
+  == ''`, and the rect check), so they are not green on machinery that was already correct.
+  (2) The raw `/Rect` write **cannot emit scientific notation**, which PDF numbers do not permit
+  and which Python's default float formatting produces below `1e-4`: probed over /Rotate
+  0/90/180/270 × four extreme rects including sub-micron origins, zero exponent forms — the
+  six-decimal clamp upstream keeps every non-zero coordinate at or above ~4e-4.
+- **Records.** Design contract §3 Tool palette button amended (the superseded 2026-08-23
+  "disabled until a stamp exists" spec kept inline **with the reason it failed**), the §3 raster
+  paragraph gains "the overlay owes every mark the file's own appearance", §11 log row attached
+  to its table. No grounding-list entry: nothing new is offered — the existing affordances now
+  tell the truth. **One correction to the prompt's own record:** its step 5 said to compare
+  production against `main-YDCXFDKV.js`, "which is live now"; production was already on
+  `main-PMI4V7BP.js` by the time the CLI ran, and that was the baseline used.
+
 **2026-08-28 — The Tick box tool**
 
 Branch `feat/annotate-tick-box`, on `39189d2`. The owner's change request of 2026-08-28:
