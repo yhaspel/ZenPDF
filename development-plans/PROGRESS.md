@@ -1326,6 +1326,15 @@ verified the sha256, applied it, gated it, reviewed it, shipped it and proved it
   border at the shape drawn, and the image stamp's real pixels at the shape drawn. Both themes,
   1440 px and a true 390 px viewport (no horizontal overflow; every tool button, the image stamp
   included, exactly 44 px), console clean apart from pdf.js's own fluent i18n warnings.
+- **And then again on production, as a guest, which is the check the prompt actually asked for.**
+  Live bundle `main-YDCXFDKV.js` → **`main-PMI4V7BP.js`**. A stamp and an image stamp each drawn
+  at exactly **1.5** came back out of the file at **1.5 and 1.5** after Save and a full reload —
+  against the **3.80** the handoff's own harness had measured on the old backend the day before —
+  and the stamp's comment came back **"second pass, please"**. All four markups distinct, zero
+  floating badges, View mode agreeing with the overlay on every one of them. Both themes at
+  1440 px; a true 390 px viewport with the Tools sheet open, no horizontal overflow, every tool
+  button at 44 px and the image-stamp entry live rather than dashed. Console: zero errors.
+  Evidence `docs/reviews/evidence/annotate-defects/04`–`08`.
 - **Self-review: no queue rows, two verifications.** (1) The new backend tests **discriminate** —
   with `_restore_stamp_rect_and_contents` monkeypatched to a no-op both fail (`assert 'Approved'
   == ''`, and the rect check), so they are not green on machinery that was already correct.
@@ -1337,9 +1346,12 @@ verified the sha256, applied it, gated it, reviewed it, shipped it and proved it
   "disabled until a stamp exists" spec kept inline **with the reason it failed**), the §3 raster
   paragraph gains "the overlay owes every mark the file's own appearance", §11 log row attached
   to its table. No grounding-list entry: nothing new is offered — the existing affordances now
-  tell the truth. **One correction to the prompt's own record:** its step 5 said to compare
-  production against `main-YDCXFDKV.js`, "which is live now"; production was already on
-  `main-PMI4V7BP.js` by the time the CLI ran, and that was the baseline used.
+  tell the truth. **One correction this session owes itself, not the prompt:** step 5's baseline
+  `main-YDCXFDKV.js` was right. The Railway build for this change succeeded **22 seconds** after
+  the merge, so the first "pre-deploy" fetch already returned `main-PMI4V7BP.js` — the *new*
+  bundle, briefly read as a stale baseline. The deployment record settles it: `cdaa5b3` SUCCESS,
+  and the `docs(tracking)` commit after it correctly SKIPPED, which is `docs/**` never deploying
+  behaving exactly as the prompt said it would.
 
 **2026-08-28 — The Tick box tool**
 
