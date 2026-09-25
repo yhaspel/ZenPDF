@@ -14,6 +14,7 @@ import {
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 
 import { DocumentsService } from '../../core/services/documents.service';
+import { expandTabs } from '../../core/text-layout';
 import {
   NUDGE_SHIFT_MULTIPLIER,
   NUDGE_STEP,
@@ -1166,12 +1167,13 @@ export class PageOverlay {
 
 /**
  * Where a caret belongs after `before` became `after` by a reflow that only
- * turned whitespace into line breaks, dropped whitespace at a break, or put a
- * break inside a long word: after the same number of non-whitespace
- * characters, and after any whitespace the caret was already past.
+ * turned whitespace into line breaks, dropped whitespace at a break, put a
+ * break inside a long word, or spelled a tab out as spaces (`expandTabs`):
+ * after the same number of non-whitespace characters, and after any
+ * whitespace the caret was already past — a tab counting as its spaces.
  */
 export function caretAfterReflow(before: string, caret: number, after: string): number {
-  const head = before.slice(0, caret);
+  const head = expandTabs(before.slice(0, caret));
   const solid = head.replace(/\s/g, '').length;
   const trailingSpace = head.length - head.trimEnd().length;
   let seen = 0;

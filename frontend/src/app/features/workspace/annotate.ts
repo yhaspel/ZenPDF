@@ -10,6 +10,7 @@ import {
   input,
   output,
   signal,
+  untracked,
   viewChild,
 } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
@@ -301,6 +302,8 @@ export class Annotate {
    * sitting ends, so one ⌘Z undoes a sentence rather than a letter.
    */
   private liveText = signal<{ id: string; text: string } | null>(null);
+  /** Text boxes laid out before their page's size arrived (`relayWhenSized`). */
+  private laidOnGuess = signal<ReadonlySet<string>>(new Set());
 
   protected readonly stamps = STANDARD_STAMPS;
   protected readonly key = shortcutTitle;
@@ -420,6 +423,22 @@ export class Annotate {
         return;
       }
       this.annotations.loadWords(this.docId(), this.page(), this.currentSeq());
+    });
+
+    // A page's size arriving re-lays every box that was laid out without it,
+    // as part of the change that laid it out (no Undo step of its own).
+    effect(() => {
+      const waiting = this.laidOnGuess();
+      if (!waiting.size) return;
+      const ready = [...waiting].filter((id) => {
+        const item = untracked(() => this.annotations.all().find((a) => a.id === id));
+        return !item || this.annotations.hasPageSize(item.page);
+      });
+      if (!ready.length) return;
+      untracked(() => {
+        this.laidOnGuess.update((ids) => new Set([...ids].filter((id) => !ready.includes(id))));
+        for (const id of ready) this.relayoutText(id, {}, true);
+      });
     });
 
     // The Font size control under Select describes the selected text box —
@@ -616,6 +635,10 @@ export class Annotate {
         (a) =>
           a.type === 'free_text' &&
           a.page === draft.page &&
+          // Only a box that shows words: another app's FreeText can keep its
+          // text where this editor cannot see it (`contents` empty), and
+          // opening that one would put an empty editor over nothing visible.
+          !!(a.contents ?? '').trim() &&
           !!a.rect &&
           x >= a.rect.x &&
           x <= a.rect.x + a.rect.w &&
@@ -708,6 +731,7 @@ export class Annotate {
 
     this.annotations.add(annotation);
     if (tool === 'free_text') {
+      this.relayWhenSized(annotation.id, annotation.page);
       this.editOnPage(annotation.id);
     } else if (tool === 'note') {
       this.startEditing(annotation.id);
@@ -801,7 +825,7 @@ export class Annotate {
    * Re-lay a text box out from `text` where it now stands, and write the
    * result — lines, and the rect they size — into the model in one update.
    */
-  private relayoutText(id: string, patch: Partial<Annotation> = {}): void {
+  private relayoutText(id: string, patch: Partial<Annotation> = {}, amend = false): void {
     const item = this.annotations.all().find((a) => a.id === id);
     if (item?.type !== 'free_text') return;
     const next = { ...item, ...patch };
@@ -809,7 +833,24 @@ export class Annotate {
     const size = next.font_size ?? 12;
     const text = next.contents ?? '';
     const box = this.textBox(next.page, rect.x, rect.y, this.layout(next.page, rect.x, text, size));
-    this.annotations.update(id, { ...patch, contents: text, rect: box.rect, lines: box.lines });
+    const change = { ...patch, contents: text, rect: box.rect, lines: box.lines };
+    if (amend) this.annotations.amend(id, change);
+    else this.annotations.update(id, change);
+    this.relayWhenSized(id, next.page);
+  }
+
+  /**
+   * A box laid out before its page's size arrived was laid out against an A4
+   * guess — on a Letter or landscape page, too short for its lines, and the
+   * file would cut the last ones off. Ask for the size, and re-lay the box
+   * when it comes (`laidOnGuess`, the effect in the constructor). Every path
+   * that lays a box out comes through here: placing, typing, moving, the Font
+   * size control, the comments margin, paste and duplicate — on any page.
+   */
+  private relayWhenSized(id: string, page: number): void {
+    if (this.annotations.hasPageSize(page)) return;
+    this.laidOnGuess.update((ids) => new Set(ids).add(id));
+    this.annotations.loadWords(this.docId(), page, this.currentSeq());
   }
 
   /**
@@ -1079,6 +1120,7 @@ export class Annotate {
       const box = this.textBox(page, to.x, to.y, laid);
       copy.rect = box.rect;
       copy.lines = box.lines;
+      this.relayWhenSized(copy.id, page);
     }
     return copy;
   }
@@ -1128,7 +1170,10 @@ export class Annotate {
   protected commitEditing(): void {
     const id = this.editingId();
     const item = id ? this.annotations.all().find((a) => a.id === id) : null;
-    if (id && item?.type === 'free_text') {
+    if (id && item?.type === 'free_text' && this.editingText() === (item.contents ?? '')) {
+      // Opened and closed without a change: nothing to lay out — and a box
+      // someone else made keeps its own layout until it is actually edited.
+    } else if (id && item?.type === 'free_text') {
       // A text box's comment *is* its words: edited in the margin, it is
       // laid out again, or the page would go on showing the old lines — and
       // a box saved before the one-layout change gets its lines now, as it

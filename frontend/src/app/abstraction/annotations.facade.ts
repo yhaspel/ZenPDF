@@ -174,6 +174,11 @@ export class AnnotationsFacade {
     return this._pageSizes().get(page)?.height ?? 842;
   }
 
+  /** Whether `pageWidthFor`/`pageHeightFor` are the page's own, not the A4 guess. */
+  hasPageSize(page: number): boolean {
+    return this._pageSizes().has(page);
+  }
+
   // ------------------------------------------------------------------ //
   // Loading
   // ------------------------------------------------------------------ //
@@ -264,6 +269,21 @@ export class AnnotationsFacade {
       return;
     }
     this.remember();
+    this._drafts.update((map) => new Map(map).set(id, { ...current, ...patch, id }));
+  }
+
+  /**
+   * Correct a mark without a history entry of its own — for a fix-up that
+   * belongs to the change it corrects (a text box laid out before its page's
+   * size had arrived, re-laid when it does). Undo takes back the change and
+   * the correction together, and Redo restores the corrected state.
+   */
+  amend(id: string, patch: Partial<Annotation>): void {
+    const current = this.all().find((a) => a.id === id);
+    if (!current) return;
+    if (Object.entries(patch).every(([key, value]) => same(current[key as keyof Annotation], value))) {
+      return;
+    }
     this._drafts.update((map) => new Map(map).set(id, { ...current, ...patch, id }));
   }
 

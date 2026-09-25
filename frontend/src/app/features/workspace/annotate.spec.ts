@@ -727,6 +727,60 @@ describe('Annotate — filling in fields with text boxes', () => {
       expect(c.fontSize()).toBe(20);
     });
 
+    it('leaves a box someone else made alone when the margin editor closes unchanged', () => {
+      annotations.add({
+        id: 'theirs', page: 0, type: 'free_text', font_size: 10,
+        rect: { x: 0.1, y: 0.5, w: 0.3, h: 0.06 }, contents: 'A callout from another app',
+      });
+      const before = annotations.all().find((a) => a.id === 'theirs')!;
+      const c = fixture.componentInstance as unknown as {
+        startEditing(id: string): void;
+        commitEditing(): void;
+      };
+      c.startEditing('theirs');
+      c.commitEditing();
+      expect(annotations.all().find((a) => a.id === 'theirs')).toEqual(before);
+    });
+
+    it('does not open a box that shows no words when the Text box tool clicks on it', () => {
+      annotations.add({
+        id: 'invisible', page: 0, type: 'free_text', font_size: 12,
+        rect: { x: 0.05, y: 0.15, w: 0.4, h: 0.1 }, contents: '',
+      });
+      drawBox(0);
+      expect(api().pageEditingId()).not.toBe('invisible');
+      expect(annotations.all().filter((a) => a.type === 'free_text').length).toBe(2);
+    });
+
+    it('re-lays a box laid out on another page once that page\'s size arrives', () => {
+      const http = TestBed.inject(HttpTestingController);
+      annotations.add({
+        id: 'far', page: 1, type: 'free_text', font_size: 12,
+        rect: { x: 0.1, y: 0.2, w: 0.2, h: 0.02 }, contents: 'Old', lines: ['Old'],
+      });
+      const c = fixture.componentInstance as unknown as {
+        startEditing(id: string): void;
+        editingText: { set(v: string): void };
+        commitEditing(): void;
+      };
+      // Edited from the comments margin while page 1 is showing: page 2's
+      // size is not known, so the box is laid out against the A4 guess…
+      c.startEditing('far');
+      c.editingText.set('One\nTwo\nThree');
+      c.commitEditing();
+      expect(annotations.all().find((a) => a.id === 'far')!.rect!.h).toBeCloseTo((3 * 1.2 * 12) / 842, 6);
+      // …and its page's size is asked for, and the box re-laid when it comes.
+      const req = http.expectOne((r) => r.url.endsWith('/text-words/') && r.params.get('page') === '1');
+      req.flush({ page: 1, width: 842, height: 595, rotation: 0, has_text: false, words: [] });
+      fixture.detectChanges();
+      const far = annotations.all().find((a) => a.id === 'far')!;
+      expect(far.rect!.h).toBeCloseTo((3 * 1.2 * 12) / 595, 6);
+      expect(far.lines).toEqual(['One', 'Two', 'Three']);
+      // One ⌘Z takes back the edit and the correction together.
+      (fixture.componentInstance as unknown as { undo(): void }).undo();
+      expect(annotations.all().find((a) => a.id === 'far')!.contents).toBe('Old');
+    });
+
     it('spells a pasted tab out as spaces, in the editor and in the lines', () => {
       drawBox(0);
       type('Name\tValue');

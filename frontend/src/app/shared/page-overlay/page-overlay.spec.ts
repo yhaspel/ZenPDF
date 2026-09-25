@@ -873,4 +873,10 @@ describe('caretAfterReflow', () => {
     const after = 'one\ntwo ';
     expect(caretAfterReflow(before, before.length, after)).toBe(after.length);
   });
+
+  it('puts the caret after all the spaces a tab became, not inside them', () => {
+    expect(caretAfterReflow('Name\t', 5, 'Name    ')).toBe(8);
+    expect(caretAfterReflow('Name\tValue', 5, 'Name    Value')).toBe(8);
+    expect(caretAfterReflow('Name\tValue', 10, 'Name    Value')).toBe(13);
+  });
 });

@@ -95,6 +95,10 @@ describe('paragraphDir', () => {
     ['ָשלום', 'rtl'], // a point is a mark; the letter decides
     ['𞤀𞤁 12 abc', 'rtl'], // Adlam, a supplementary RTL script
     ['Ωmega', 'ltr'],
+    // Where a Bidi_Class rule would differ: a modifier *letter* (bidi ON)
+    // decides, a Cyrillic thousands sign (bidi L, a symbol) does not.
+    ['\u02b9א', 'ltr'],
+    ['\u0482א', 'rtl'],
   ] as const)('agrees with the engine on %j', (text, dir) => {
     expect(paragraphDir(text)).toBe(dir);
   });
