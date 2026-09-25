@@ -3,6 +3,7 @@ import {
   TEXT_ASCENT,
   TEXT_DESCENT,
   arimoMeasure,
+  expandTabs,
   layoutText,
   paragraphDir,
   textBaseline,
@@ -81,6 +82,30 @@ describe('paragraphDir', () => {
     expect(paragraphDir('  "مرحبا"')).toBe('rtl');
     expect(paragraphDir('12 ,')).toBe('ltr');
     expect(paragraphDir('')).toBe('ltr');
+  });
+
+  // The same table is in the engine's test_annotations.py
+  // (`test_paragraph_direction_matches_the_clients_rule`): one rule, both sides.
+  it.each([
+    ['‏12 Main St', 'rtl'], // RLM decides
+    ['‎שלום', 'ltr'], // LRM decides
+    ['١٢ items', 'ltr'], // Arabic-Indic digits are weak
+    ['۱۲ items', 'ltr'], // so are the extended ones
+    ['﻿Hello', 'ltr'], // a BOM is a format character
+    ['ָשלום', 'rtl'], // a point is a mark; the letter decides
+    ['𞤀𞤁 12 abc', 'rtl'], // Adlam, a supplementary RTL script
+    ['Ωmega', 'ltr'],
+  ] as const)('agrees with the engine on %j', (text, dir) => {
+    expect(paragraphDir(text)).toBe(dir);
+  });
+});
+
+describe('tabs', () => {
+  it('are laid out as four spaces, so the screen and the file advance alike', () => {
+    expect(expandTabs('Name\tValue')).toBe('Name    Value');
+    const laid = layoutText('Name\tValue', 1, 100, fixed);
+    expect(laid.lines).toEqual(['Name    Value']);
+    expect(laid.widthPt).toBe(13);
   });
 });
 

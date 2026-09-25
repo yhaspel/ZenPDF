@@ -49,6 +49,7 @@ import { clampPageWidth } from '../../shared/page-fit';
 import {
   TEXT_CLICK_OFFSET,
   TextLayout,
+  expandTabs,
   layoutText,
   loadPageTextFont,
   pageTextMeasure,
@@ -127,6 +128,15 @@ const TICK_SIZE_PT = 14;
  * wants a positive width, and the editor needs somewhere to put the caret.
  */
 const MIN_TEXT_WIDTH_PT = 1;
+
+/**
+ * How far a text box's rect can be off its lines, as a fraction of the page:
+ * `x` and `w` each travel rounded to six decimals. A box moved flush against
+ * the right edge sits at `x = 1 − w`, which can leave a millionth of the page
+ * less room than its widest line needs — and the line re-wrapped ("Date" →
+ * "Dat" / "e") on nothing more than a nudge. The layout gets that much slack.
+ */
+const RECT_ROUNDING = 2e-6;
 
 /**
  * How far a pasted or duplicated mark lands from its original.
@@ -301,6 +311,10 @@ export class Annotate {
   protected readonly gesture = computed<OverlayTool>(() => GESTURE[this.tool()]);
   protected readonly dirty = this.annotations.dirty;
   protected readonly words = computed(() => this.annotations.wordsFor(this.page()));
+  /** Whether the current page carries a text box — it will be laid out against the page. */
+  private readonly pageHasText = computed(() =>
+    this.annotations.all().some((a) => a.page === this.page() && a.type === 'free_text'),
+  );
   /** Whether the selected mark is a text box — the Font size control applies to it. */
   protected readonly selectedIsText = computed(() => {
     if (this.tool() !== 'select') return false;
@@ -391,10 +405,34 @@ export class Annotate {
       // need only the page's own size in points, which arrives on the same
       // payload and is what turns a point size into the right number of
       // pixels (or, for a tick, into a square that is square on paper).
-      if (this.gesture() !== 'text' && this.tool() !== 'free_text' && this.tool() !== 'tick') {
+      //
+      // So does a page that already has a text box, under any tool: Select
+      // moves one, re-sizes its type, edits it — and each of those lays it
+      // out against the page, which before its size arrives is an A4 guess.
+      // On a Letter or landscape page that guess saved a box too short for
+      // its lines, and the file cut the last ones off.
+      if (
+        this.gesture() !== 'text' &&
+        this.tool() !== 'free_text' &&
+        this.tool() !== 'tick' &&
+        !this.pageHasText()
+      ) {
         return;
       }
       this.annotations.loadWords(this.docId(), this.page(), this.currentSeq());
+    });
+
+    // The Font size control under Select describes the selected text box —
+    // however it came to be selected (a click, the Comments rail, a right
+    // click, Undo) — or its next touch would re-size the box from a size it
+    // never had.
+    effect(() => {
+      if (this.tool() !== 'select') return;
+      const id = this.annotations.selectedId();
+      const size = id
+        ? this.annotations.all().find((a) => a.id === id && a.type === 'free_text')?.font_size
+        : undefined;
+      if (size) this.fontSize.set(size);
     });
 
     effect((onCleanup) => {
@@ -569,6 +607,27 @@ export class Annotate {
     }
     if (tool === 'select') return;
 
+    if (tool === 'free_text' && draft.rect) {
+      // A click on a text box already there edits it, rather than stacking an
+      // empty box on top of it — the items under a draw tool take no pointer
+      // events, so the click reaches here as a placement.
+      const { x, y } = draft.rect;
+      const hit = [...this.annotations.all()].reverse().find(
+        (a) =>
+          a.type === 'free_text' &&
+          a.page === draft.page &&
+          !!a.rect &&
+          x >= a.rect.x &&
+          x <= a.rect.x + a.rect.w &&
+          y >= a.rect.y &&
+          y <= a.rect.y + a.rect.h,
+      );
+      if (hit) {
+        this.onEditRequested(hit.id);
+        return;
+      }
+    }
+
     if (tool === 'tick') {
       if (!draft.rect) return;
       this.annotations.add(this.tickAnnotation(draft.page, [draft.rect.x, draft.rect.y]));
@@ -696,7 +755,8 @@ export class Annotate {
    */
   private layout(page: number, x: number, text: string, sizePt: number): TextLayout {
     const widthPt = this.annotations.pageWidthFor(page);
-    return layoutText(text, sizePt, Math.max(0, (1 - x) * widthPt), this.measure);
+    const room = Math.max(0, (1 - x) * widthPt) + RECT_ROUNDING * widthPt;
+    return layoutText(text, sizePt, room, this.measure);
   }
 
   /**
@@ -760,9 +820,12 @@ export class Annotate {
   protected flowText = (id: string, text: string): string => {
     const item = this.annotations.all().find((a) => a.id === id);
     if (!item?.rect || item.type !== 'free_text') return text;
-    const laid = this.layout(item.page, item.rect.x, text, item.font_size ?? 12);
-    const hard = text.replace(/\r\n?/g, '\n').split('\n').length;
-    return laid.lines.length > hard ? laid.lines.join('\n') : text;
+    // A pasted tab is spelled out here too, so the editor shows the spaces
+    // the page and the file will have rather than jumping to a tab stop.
+    const typed = expandTabs(text);
+    const laid = this.layout(item.page, item.rect.x, typed, item.font_size ?? 12);
+    const hard = typed.replace(/\r\n?/g, '\n').split('\n').length;
+    return laid.lines.length > hard ? laid.lines.join('\n') : typed;
   };
 
   protected onPageTextInput(change: { id: string; text: string }): void {
@@ -843,9 +906,6 @@ export class Annotate {
 
   protected onSelectionChanged(id: string | null): void {
     this.annotations.select(id);
-    // The Font size control shows the selected text box's own size.
-    const item = id ? this.annotations.all().find((a) => a.id === id) : null;
-    if (item?.type === 'free_text' && item.font_size) this.fontSize.set(item.font_size);
   }
 
   /** A double-click on a text box on the page puts the caret in it. */
@@ -1068,9 +1128,11 @@ export class Annotate {
   protected commitEditing(): void {
     const id = this.editingId();
     const item = id ? this.annotations.all().find((a) => a.id === id) : null;
-    if (id && item?.type === 'free_text' && item.lines?.length) {
+    if (id && item?.type === 'free_text') {
       // A text box's comment *is* its words: edited in the margin, it is
-      // laid out again, or the page would go on showing the old lines.
+      // laid out again, or the page would go on showing the old lines — and
+      // a box saved before the one-layout change gets its lines now, as it
+      // does when edited on the page, instead of MuPDF's clipped layout.
       this.relayoutText(id, { contents: this.editingText() });
     } else if (id) {
       this.annotations.update(id, { contents: this.editingText() });

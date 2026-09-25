@@ -341,6 +341,7 @@
           [style.color]="item.textColor ?? null"
           [value]="item.text"
           (input)="onTextInput(item, $event)"
+          (compositionend)="onTextInput(item, $event)"
           (keydown)="onTextKeyDown($event)"
           (blur)="onTextBlur(item, $event)"
           (pointerdown)="$event.stopPropagation()"

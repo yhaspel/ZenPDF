@@ -1134,7 +1134,11 @@ export class PageOverlay {
     const editor = event.target as HTMLTextAreaElement;
     let value = editor.value;
     const flow = this.textFlow();
-    if (flow) {
+    // Not while a composition is open (a dead-key accent, an IME, Android's
+    // keyboard, which composes every word): rewriting the value mid-way
+    // cancels or doubles what is being composed. `compositionend` comes back
+    // through here, and the reflow happens then.
+    if (flow && !(event as InputEvent).isComposing) {
       const next = flow(item.id, value);
       if (next !== value) {
         const caret = caretAfterReflow(value, editor.selectionStart ?? value.length, next);

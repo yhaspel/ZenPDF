@@ -42,8 +42,9 @@ export function textBaseline(index: number, sizePt: number): number {
 /**
  * Lay text out into lines.
  *
- * Hard breaks are the user's own newlines. A soft break is inserted only when
- * a line would cross `maxWidthPt` (the page's right edge): greedily by word,
+ * Hard breaks are the user's own newlines; a tab becomes four spaces
+ * (`expandTabs`). A soft break is inserted only when a line would cross
+ * `maxWidthPt` (the page's right edge): greedily by word,
  * the whitespace at the break dropped, and a single word wider than the
  * space broken by character — at least one character per line, so a box
  * placed hard against the edge still makes progress.
@@ -59,7 +60,7 @@ export function layoutText(
   const lines: string[] = [];
   const fits = (s: string) => measure(s, sizePt) <= maxWidthPt + 1e-6;
 
-  for (const paragraph of text.replace(/\r\n?/g, '\n').split('\n')) {
+  for (const paragraph of expandTabs(text.replace(/\r\n?/g, '\n')).split('\n')) {
     if (fits(paragraph.trimEnd())) {
       lines.push(paragraph);
       continue;
@@ -105,21 +106,44 @@ export function layoutText(
 }
 
 /**
- * Paragraph direction by its first strong character (UAX #9 rules P2/P3):
- * Hebrew or Arabic → `rtl`, a Latin (or other LTR) letter → `ltr`. Digits
- * and punctuation are weak and do not decide. The engine applies the same
- * rule (`annotations.paragraph_is_rtl`).
+ * Paragraph direction by its first strong character: a letter decides — one
+ * from a right-to-left script block (Hebrew, Arabic and their relatives) →
+ * `rtl`, any other → `ltr` — and RLM/ALM (`rtl`) and LRM (`ltr`) decide too.
+ * Digits, marks, punctuation and format characters are weak and do not.
+ *
+ * The engine applies **this very rule** (`annotations.paragraph_is_rtl`),
+ * character for character: the screen's `dir` and the file's alignment are
+ * one decision, and there is no Bidi_Class in JavaScript to share instead.
  */
 export function paragraphDir(text: string): 'ltr' | 'rtl' {
   for (const ch of text) {
-    if (STRONG_RTL.test(ch)) return 'rtl';
-    if (STRONG_LTR.test(ch)) return 'ltr';
+    const cp = ch.codePointAt(0)!;
+    if (cp === 0x200f || cp === 0x061c) return 'rtl';
+    if (cp === 0x200e) return 'ltr';
+    if (!LETTER.test(ch)) continue;
+    return RTL_BLOCKS.some(([lo, hi]) => cp >= lo && cp <= hi) ? 'rtl' : 'ltr';
   }
   return 'ltr';
 }
 
-const STRONG_RTL = /[\u0590-\u08FF\uFB1D-\uFDFF\uFE70-\uFEFF]|\uD802[\uDC00-\uDFFF]|\uD803[\uDC00-\uDFFF]/u;
-const STRONG_LTR = /\p{L}/u;
+const LETTER = /\p{L}/u;
+/** Hebrew through Arabic Extended-A, their presentation forms, and the two supplementary RTL ranges. */
+const RTL_BLOCKS: [number, number][] = [
+  [0x0590, 0x08ff],
+  [0xfb1d, 0xfdff],
+  [0xfe70, 0xfeff],
+  [0x10800, 0x10fff],
+  [0x1e800, 0x1efff],
+];
+
+/**
+ * A tab, as the text box sets it: four spaces. A tab only arrives by paste
+ * (Tab moves focus), and the page has no tab stops to honour — the browser
+ * would jump to one, the file would draw a quarter em — so it is spelled out.
+ */
+export function expandTabs(text: string): string {
+  return text.replace(/\t/g, '    ');
+}
 
 // --------------------------------------------------------------------------- //
 // Measurement

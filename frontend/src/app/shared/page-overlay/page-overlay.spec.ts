@@ -357,6 +357,26 @@ describe('PageOverlay — text on the page', () => {
     group.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
     expect(asked).toEqual(['a1']);
   });
+
+  it('does not reflow the text while a composition is open, and does when it ends', () => {
+    fixture.componentRef.setInput('items', [textItem()]);
+    fixture.componentRef.setInput('editingId', 'a1');
+    fixture.componentRef.setInput('textFlow', (_id: string, text: string) => text.replace(' ', '\n'));
+    fixture.detectChanges();
+    const heard: string[] = [];
+    fixture.componentInstance.textInput.subscribe((c) => heard.push(c.text));
+
+    const editor = html().querySelector<HTMLTextAreaElement>('[data-test=overlay-text-editor]')!;
+    editor.value = 'one two';
+    // Mid-composition (a dead key, an IME, Android's keyboard): rewriting the
+    // value would cancel or double what is being composed.
+    editor.dispatchEvent(new InputEvent('input', { isComposing: true }));
+    expect(editor.value).toBe('one two');
+    editor.dispatchEvent(new CompositionEvent('compositionend'));
+    expect(editor.value).toBe('one\ntwo');
+    // The box still heard every keystroke, so it grew while composing.
+    expect(heard).toEqual(['one two', 'one\ntwo']);
+  });
 });
 
 /**
