@@ -1269,6 +1269,95 @@ Handoff programme (the nine CLI prompts from the 2026-08-21 status review) is tr
 
 ## Session log
 
+**2026-09-25 — Text boxes: one layout, drawn twice**
+
+Branch `fix/annotate-text-wysiwyg`, on `bcba629`; PR #49, squash-merged as `156d569` on 2026-09-26.
+The owner's 2026-09-25 report — *"Annotate feature is very fragile. Text cut off constantly and
+shifts when PDF is downloaded so text is not exactly aligned. Match the behaviour of
+simplepdf.com/editor."* — root-caused and fixed in a Cowork session that could not push and
+delivered `.zen-annotate-text.patch`; this session verified its sha256, applied it, gated it,
+reviewed it three times, shipped it and verified it live —
+`docs/archived/2026-09-25-handoff-to-cli-annotate-text-wysiwyg.md`, row 13 of the handoff board.
+The owner's spec is `docs/archived/2026-09-25-annotate-text-PROMPT.md`.
+
+- **Root cause (the spec's §1, proven before any code).** A text box was laid out by two unrelated
+  text engines — the browser (Zen Kaku Gothic New, line-height 1.25, screen-pixel insets, its own
+  wrap) and MuPDF (Helvetica at 1.2, its own breaker, an HTML path for Hebrew) — and **both
+  clipped to a user-drawn rectangle**. Every metric that differed was a shift; every overflow a
+  cut-off, at different points on screen and in the file.
+- **The fix (`cd65b4c`, applied unchanged): one layout, drawn twice.** Arimo on both sides (the
+  same bytes, metrics pinned in CSS), 1.2 line height, zero inset, kerning off; the client decides
+  the lines (`core/text-layout.ts`, Arimo's own advance table) and sizes the box from them; the
+  engine draws exactly those lines into the FreeText's `/AP /N` (`_prepare_text_aps` on scratch
+  pages before any handle exists, raw xref writes after `update()`, `/ZenLines`); click to place;
+  RTL by first strong character via `python-bidi`; a screen-vs-file pixel spec as the gate.
+- **The gate caught the delivery before anything else did.** The first `infra/test.sh --e2e` stopped
+  at the skip guard — 7 skips against 6 allowed — on `test_the_frontend_serves_the_same_font_bytes`,
+  which can only skip in an api container that mounts `backend/` alone. It is now a
+  `Cross-tree consistency` section of `infra/test.sh`, beside the deny-list check, for the same
+  reason. The new `annotate-text-wysiwyg` spec then passed **8 / 8 on its first compose-stack run**
+  (Chromium 1228; the sandbox's was 1194), tolerances untouched: over 40 boxes the ink-bbox delta
+  was 0 device px on 28 and 1 on 12, the worst shape shift 0.993 px (vertical, the Hebrew box at
+  1.5×), horizontal ≤ 0.099 px — identical in all four gate runs.
+- **Self-review: three passes, every finding put to an adversarial verifier before it was fixed,
+  and every fix pinned by a test that fails on the commit it corrects** (checked by swapping the
+  older source in). *Pass 1* (five lenses over the patch, 10 agents): a **high** — under Select a
+  box was re-laid against a 595 × 842 guess, because page sizes arrive only with the words
+  payload, fetched only for markup/Text/Tick and cleared by every save (57 % of a landscape box's
+  ink survived); an inheritable `/Pages` CropBox leaked into the scratch page and saved boxes
+  **blank**; TextWriter drew Arabic as disconnected letters (~40 % wider, clipped), lost Indic
+  conjuncts and misplaced Hebrew points; fallback glyphs (emoji, CJK, ✔) wider than the browser's
+  were clipped; client and engine decided direction by different rules; tabs, IME, a stale Font
+  size control, margin edits of old boxes, bordered rects, stale `/ZenLines`, a 200-line cap that
+  failed every mark in a save, per-box scratch deletion, engine tests that only checked the engine
+  against itself. Refuted: the OFL year (upstream's), document-wide subsetting (the spec's and
+  Edit's pattern). *Pass 2* (three lenses over those fixes) caught five regressions in them — a
+  `/Rect` conversion through `transformation_matrix`, which PyMuPDF 1.28 builds without the
+  CropBox origin on rotated pages; growth off the page (the annotation list then 500'd) and along
+  the wrong axis; an RTL box creeping left on each edit; a margin blur rewriting an untouched box
+  — plus four smaller. *Pass 3* (two lenses) caught three more: growth taken off the wrong axis
+  after a later page turn, a size correction landing on a state Undo had put back or on a box
+  being typed into, duplicate size requests.
+- **Decisions.** (1) *Text that needs shaping keeps MuPDF's appearance* — a joining-script letter
+  or a combining mark left after NFC composition sends the box to the stock FreeText (shaped,
+  right-aligned when the text is RTL, no stored lines): unshaped Arabic was a regression against
+  the old path, and a second face with shaping is an owner decision (queue). (2) *A fallback glyph
+  grows the drawing, not the client's box* — toward the line's end, along the displayed line,
+  never past the page; `/ZenGrow` (edge offsets in unrotated page space) lets the reader hand the
+  client its own box. (3) *One direction rule, the client's*, implemented character for character
+  in `paragraphDir` and `paragraph_is_rtl` with one shared test table. (4) *`/Rect` is MuPDF's own,
+  corrected relatively in PDF space* — never converted whole. (5) *A layout made against a guessed
+  page size is re-laid when the size arrives*, folded into the change that made it (`amend`, no
+  Undo step of its own), only while that change is still the box, and not while it is open on
+  the page. (6) *A tab is four spaces.* (7) *Soft breaks stay hard as the contract says* — left
+  for the owner, because the spec and the contract disagree and fixing it is an editor redesign.
+- **Gate (final tree `43d8a71`, `infra/test.sh --e2e --pg`, compose stack):** cross-tree font
+  check; ruff + mypy clean; check/migrations/OpenAPI clean; backend **1258 passed / 6 skipped**
+  (the allowed Postgres-only set), coverage apps **91.66 %**, pdf_engine **92.11 %**;
+  `ng lint` clean; unit **658 passed / 68 files**; build **43 prerendered routes** +
+  `verify:prerender`; `--pg` 6 passed; Playwright **96 passed / 1 skipped** (the existing
+  `phase-11` unknown-guide-slug skip), every phase-3/phase-12 annotate row from #44–#48 green.
+- **Production.** All six app services deployed `156d569` (Railway SUCCESS); bundle
+  `main-PMI4V7BP.js` → **`main-YRIDWD57.js`**; health ok. As a guest from `/annotate-pdf` with
+  `text.pdf`: the spec's five boxes placed with the Text box tool (the new hint "Click a box to
+  edit it again" live), saved as version 2 — and read back **with `lines` on every box**, which
+  only the new engine returns, at rects identical to the millionth to the local run. The
+  downloaded file: five FreeTexts drawn in Arimo at the formula's baselines (a box at 247.2 pt
+  puts its 9 pt line on 255.72 = 247.2 + 8.52), 26.9 KB; rendered by macOS PDFKit (Preview's
+  engine), nothing cut off, the Hebrew right-aligned with "12," where the browser put it. Both
+  themes at 1280 px and a 390 px phone: no horizontal overflow, every box inside the page, the
+  page-text face loaded, **no console errors or warnings**. Evidence
+  `docs/reviews/evidence/annotate-text/prod-*`.
+- **Records.** Design contract: grounding list (+ the Font size control under Select), §2 (the
+  page-text face), §3 *Text on the page* rewritten and amended in place for every review fix,
+  §11 row attached. `01-architecture.md` §2 (python-bidi, Arimo). Human review queue **+5**
+  (2026-09-25): soft breaks become hard; a second face for shaping scripts; PyMuPDF's recursive
+  outline walk on scratch-page deletion; and, pre-existing, an off-page annotation 500s the
+  annotation list, and stamps on a cropped-then-rotated page save displaced. The handoff's own
+  errata are in its Executed banner (test counts 31 / 15 / 11 as delivered, not 32 / 14 / 10; the
+  same-bytes check is a gate check; `lines` is bounded at 5001 × 5000). The delivery pair was
+  removed after confirming the committed prompt is the pre-apply copy minus its header.
+
 **2026-08-28 — Annotate tells the truth: stamp, image stamp, squiggly**
 
 Branch `fix/annotate-truth`, on `6916604`; PR #48, squash-merged as `cdaa5b3` on 2026-08-29.

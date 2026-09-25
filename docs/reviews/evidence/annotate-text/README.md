@@ -2,7 +2,7 @@
 
 Owner report: *"Annotate feature is very fragile. Text cut off constantly and shifts when
 PDF is downloaded so text is not exactly aligned."* Spec: `docs/archived/2026-09-25-annotate-text-PROMPT.md`
-(RCA, decisions, acceptance gate). Handoff: `docs/reviews/handoffs/handoff-to-cli-annotate-text-wysiwyg.md`.
+(RCA, decisions, acceptance gate). Handoff: `docs/archived/2026-09-25-handoff-to-cli-annotate-text-wysiwyg.md`.
 
 Produced by the Cowork sandbox against a **local stack running this branch on both sides**
 (Django `runserver` with eager Celery and filesystem storage; the built frontend served
@@ -14,6 +14,8 @@ with `/api` proxied to it; Playwright on Chromium 1194). Not production.
 | `measurements.json` | Every box in every run (2 themes × dpr 0.75 / 1 / 1.5 + 390 px phone = 8 runs × 5 boxes): screen and file ink bboxes (and ink centres, recorded not asserted) in device px, their deltas, and the shape shift (cross-correlation peak, `dx`/`dy`, with its score). |
 | `desktop-1x-light-overlay.png` / `desktop-1x-light-file.png` | The raw pair behind one run: the editor's page as shown, and the saved file as the engine renders it at the same device width. |
 | `annotate-text-evidence.png` | The spec's own picture (§1, §3), delivered with it. **Left:** before this change — the editor's boxes (red outlines) above the same boxes as the downloaded file draws them, in a different face and with every line at a different height. **Right:** the prototype — browser ink (red) over file ink (blue), dark where they coincide. |
+| `prod-editor-{light,dark}-{1280,390}.png` | **Production** after PR #49 (`156d569`, bundle `main-YRIDWD57.js`), as a guest: the spec's five boxes placed on `text.pdf` with the Text box tool, saved — the editor in both themes at 1280 px and on a 390 px phone. |
+| `prod-file-pdfkit.png` | The same saved version **downloaded from production** and rendered by macOS PDFKit (Preview's engine): five FreeTexts with `/ZenLines`, drawn in Arimo at the formula's baselines; nothing cut off; the Hebrew line right-aligned with "12," where the browser put it. 26.9 KB. |
 | `freetext_ap_prototype.py` | The spec's prototype (§3): a custom FreeText `/AP /N` drawn line by line with `fitz.TextWriter`, which first measured the ≤ 0.5 pt residual. Kept as delivered; not run by any gate. |
 
 **Result (final full-suite run):** worst ink-bbox delta **1 device px** on any edge of any
@@ -24,6 +26,8 @@ each text run's baseline to a whole pixel while MuPDF places it exactly — the 
 prototype measured the same ≤ 0.5 pt (§3).
 
 **On the compose stack (CLI, 2026-09-25).** The spec's first run against `infra/` — Postgres, SeaweedFS, real Celery workers, the Angular dev server — on Playwright 1.61.1's **Chromium 1228** (the sandbox's was 1194): **8 / 8** green first time, tolerances untouched. Over the 40 boxes the ink-bbox delta was 0 device px on 28 and 1 px on 12; the worst shape shift **0.993 px**, vertical, on the Hebrew box at 1.5× (horizontal ≤ 0.099 px everywhere; at 1× every box ≤ 0.053 px); both themes measured identically, as they should — the page is white in both.
+
+**On production (CLI, 2026-09-26).** All six app services deployed `156d569` (Railway: SUCCESS); the bundle went `main-PMI4V7BP.js` → `main-YRIDWD57.js`. The saved version read back with `lines` on every box — the old engine ignores them, so that is the new engine answering — and with rects identical, to the millionth, to the same boxes placed on the local stack. The downloaded file is `prod-file-pdfkit.png`; the editor is the four `prod-editor-*` images. No console errors or warnings.
 
 **The gate discriminates.** With the engine's baseline deliberately moved by 1.5 pt, all
 four light-theme runs failed; the shape shift read 1.0–3.0 px.
