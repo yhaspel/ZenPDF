@@ -199,6 +199,19 @@ describe('AnnotationsFacade', () => {
     });
     expect(facade.wordsFor(0)).toEqual([]);
   });
+
+  it('asks for a page once while the answer is on its way', () => {
+    // Every text-box layout on a page whose size has not come yet asks for it.
+    facade.loadWords('doc-1', 0, 2);
+    facade.loadWords('doc-1', 0, 2);
+    facade.loadWords('doc-1', 0, 2);
+    const reqs = http.match((r) => r.url.endsWith('/documents/doc-1/text-words/'));
+    expect(reqs.length).toBe(1);
+    reqs[0].flush({ page: 0, width: 612, height: 792, rotation: 0, has_text: false, words: [] });
+    expect(facade.hasPageSize(0)).toBe(true);
+    expect(facade.pageWidthFor(0)).toBe(612);
+  });
+
   describe('undo and redo', () => {
     const box = (id: string, contents: string): Annotation => ({
       id, page: 0, type: 'free_text', rect: { x: 0.1, y: 0.1, w: 0.4, h: 0.05 },

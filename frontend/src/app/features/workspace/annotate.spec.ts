@@ -1,11 +1,12 @@
 import { provideHttpClient } from '@angular/common/http';
-import { provideHttpClientTesting } from '@angular/common/http/testing';
+import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 
 import { AnnotationsFacade } from '../../abstraction/annotations.facade';
 import { Annotation } from '../../core/models/models';
 import { EditorClipboard } from '../../shared/editor-clipboard.service';
 import { NormRect, OverlayMenuAction } from '../../shared/page-overlay/overlay-model';
+import { arimoMeasure } from '../../core/text-layout';
 import { Annotate } from './annotate';
 
 /**
@@ -387,12 +388,19 @@ describe('Annotate — filling in fields with text boxes', () => {
   const editor = () => html().querySelector<HTMLTextAreaElement>('[data-test=overlay-text-editor]');
   const surface = () => html().querySelector<HTMLElement>('[data-test=page-overlay]')!;
 
-  /** Draw a box: the gesture's pointerdown on the page, then the created draft. */
+  /**
+   * Place a box: a click on the page. The text box tool is click-to-place, so
+   * the overlay's own pointerdown both ends the open editor and emits the new
+   * box — exactly the order the real gesture has. jsdom lays nothing out, so
+   * the page is given a size to click into.
+   */
   function drawBox(index: number): void {
-    surface().dispatchEvent(new PointerEvent('pointerdown', {
-      bubbles: true, clientX: 10, clientY: 10, button: 0,
+    const page = surface();
+    page.getBoundingClientRect = () =>
+      ({ left: 0, top: 0, width: 900, height: 1273, right: 900, bottom: 1273, x: 0, y: 0 }) as DOMRect;
+    page.dispatchEvent(new PointerEvent('pointerdown', {
+      bubbles: true, clientX: 0.1 * 900, clientY: (0.2 + index * 0.05) * 1273, button: 0,
     }));
-    api().onCreated({ shape: 'rect', page: 0, rect: { x: 0.1, y: 0.2 + index * 0.05, w: 0.5, h: 0.03 } });
     fixture.detectChanges();
   }
 
@@ -470,43 +478,368 @@ describe('Annotate — filling in fields with text boxes', () => {
     expect(annotations.all().map((a) => a.id)).toEqual([first.id, second.id]);
   });
 
-  describe('a box is never shorter than one line of its type', () => {
-    // A4 fallback (595 × 842 pt) at the 900 px desk width: 12 pt is 18.15 px,
-    // one 1.25 line is 23 whole px, plus the two 1 px insets → 25 px of a
-    // 1273.6 px page.
-    const fontPx = (12 / 595) * 900;
-    const oneLine = (Math.ceil(fontPx * 1.25) + 2) / ((900 * 842) / 595);
+  describe('click to place; the box is its text\'s size (design contract §3)', () => {
+    // A4 fallback (595 × 842 pt): the page size the facade answers before the
+    // words payload arrives.
+    const W = 595;
+    const H = 842;
+    const measure = arimoMeasure();
+    const box = () => annotations.all()[annotations.all().length - 1];
 
-    it('grows a drag thinner than a line upwards — the words sit on the traced line', () => {
-      api().onCreated({ shape: 'rect', page: 0, rect: { x: 0.1, y: 0.2, w: 0.5, h: 0.005 } });
-      const [box] = annotations.all();
-      expect(box.rect!.h).toBeCloseTo(oneLine, 6);
-      // The bottom edge stays where the drag ended; the top moves up.
-      expect(box.rect!.y + box.rect!.h).toBeCloseTo(0.205, 6);
-      expect(box.rect!.x).toBeCloseTo(0.1, 6);
-      expect(box.rect!.w).toBeCloseTo(0.5, 6);
+    it('puts line 1\'s vertical centre on the click, left edge at the click', () => {
+      api().onCreated({ shape: 'rect', page: 0, rect: { x: 0.1, y: 0.2, w: 0.02, h: 0.02 } });
+      const { rect, lines } = box();
+      expect(rect!.x).toBeCloseTo(0.1, 6);
+      expect(rect!.y).toBeCloseTo(0.2 - (0.6 * 12) / H, 6);
+      expect(rect!.h).toBeCloseTo((1.2 * 12) / H, 6);
+      expect(lines).toEqual(['']);
     });
 
-    it('leaves a drag that was already tall enough exactly as drawn', () => {
-      api().onCreated({ shape: 'rect', page: 0, rect: { x: 0.1, y: 0.2, w: 0.5, h: 0.08 } });
-      expect(annotations.all()[0].rect).toEqual({ x: 0.1, y: 0.2, w: 0.5, h: 0.08 });
+    it('grows as you type, and commits the lines it was drawn from', () => {
+      drawBox(0);
+      type('Yuval Haspel');
+      fixture.detectChanges();
+      const width = (measure('Yuval Haspel', 12) / W) * 900;
+      // Live: the editor is already the text's width (+2 px caret room)
+      // before anything is committed.
+      expect(parseFloat(editor()!.style.width)).toBeCloseTo(width + 2, 1);
+      editor()!.dispatchEvent(new Event('blur'));
+      fixture.detectChanges();
+      const { rect, lines, contents } = box();
+      expect(contents).toBe('Yuval Haspel');
+      expect(lines).toEqual(['Yuval Haspel']);
+      expect(rect!.w).toBeCloseTo(measure('Yuval Haspel', 12) / W, 6);
+      expect(rect!.h).toBeCloseTo((1.2 * 12) / H, 6);
+      const drawn = html().querySelector<HTMLElement>('[data-test=overlay-text]')!;
+      expect(drawn.textContent).toBe('Yuval Haspel');
+      expect(parseFloat(drawn.style.width)).toBeCloseTo(width, 1);
     });
 
-    it('measures the line at the current zoom, so a phone-width page is not a pixel short', () => {
-      // At 437 px the same 12 pt is 8.8 px; 1.25 of it is 11.02 → 12 whole px
-      // + 2 insets = 14 px of a 618.4 px page — a larger fraction than at 900.
-      (fixture.componentInstance as unknown as { onFit(available: number): void }).onFit(437);
-      api().onCreated({ shape: 'rect', page: 0, rect: { x: 0.1, y: 0.2, w: 0.5, h: 0.005 } });
-      const expected = (Math.ceil((12 / 595) * 437 * 1.25) + 2) / ((437 * 842) / 595);
-      expect(annotations.all()[0].rect!.h).toBeCloseTo(expected, 6);
-      expect(expected).toBeGreaterThan(oneLine);
+    it('takes a new line for Enter and grows a line taller', () => {
+      drawBox(0);
+      type('12 Herzl St.\nPetah Tikva');
+      editor()!.dispatchEvent(new Event('blur'));
+      fixture.detectChanges();
+      expect(box().lines).toEqual(['12 Herzl St.', 'Petah Tikva']);
+      expect(box().rect!.h).toBeCloseTo((2 * 1.2 * 12) / H, 6);
     });
 
-    it('stays on the page when the drag hugs the top edge', () => {
-      api().onCreated({ shape: 'rect', page: 0, rect: { x: 0.1, y: 0.001, w: 0.5, h: 0.004 } });
-      const rect = annotations.all()[0].rect!;
-      expect(rect.h).toBeCloseTo(oneLine, 6);
-      expect(rect.y).toBeGreaterThanOrEqual(0);
+    it('breaks only at the page\'s right edge, and shows the break while typing', () => {
+      api().onCreated({ shape: 'rect', page: 0, rect: { x: 0.8, y: 0.3, w: 0.02, h: 0.02 } });
+      fixture.detectChanges();
+      type('one two three four five six');
+      // The editor holds the lines it will be drawn in.
+      expect(editor()!.value.split('\n').length).toBeGreaterThan(1);
+      editor()!.dispatchEvent(new Event('blur'));
+      fixture.detectChanges();
+      const { rect, lines } = box();
+      expect(lines!.length).toBeGreaterThan(1);
+      for (const line of lines!) expect(measure(line, 12)).toBeLessThanOrEqual(0.2 * W + 1e-6);
+      expect(rect!.x + rect!.w).toBeLessThanOrEqual(1);
+    });
+
+    it('stays on the page when the click is at the very bottom', () => {
+      api().onCreated({ shape: 'rect', page: 0, rect: { x: 0.1, y: 0.999, w: 0.02, h: 0.02 } });
+      const { rect } = box();
+      expect(rect!.y + rect!.h).toBeLessThanOrEqual(1);
+      expect(rect!.y).toBeGreaterThanOrEqual(0);
+    });
+
+    it('lays a Hebrew box out right to left', () => {
+      drawBox(0);
+      type('רחוב הרצל 12, פתח תקווה');
+      editor()!.dispatchEvent(new Event('blur'));
+      fixture.detectChanges();
+      const drawn = html().querySelector<HTMLElement>('[data-test=overlay-text]')!;
+      expect(drawn.getAttribute('dir')).toBe('rtl');
+      expect(box().lines).toEqual(['רחוב הרצל 12, פתח תקווה']);
+    });
+
+    it('gives a text box no resize handles — its size is its text\'s', () => {
+      drawBox(0);
+      type('Sized by its text');
+      editor()!.dispatchEvent(new Event('blur'));
+      api().setTool('select');
+      annotations.select(box().id);
+      fixture.detectChanges();
+      expect(html().querySelector('[data-test=overlay-selection]')).toBeTruthy();
+      expect(html().querySelectorAll('[data-test=overlay-handle]').length).toBe(0);
+    });
+
+    it('re-lays the selected box when the font size changes', () => {
+      drawBox(0);
+      type('Bigger');
+      editor()!.dispatchEvent(new Event('blur'));
+      const c = fixture.componentInstance as unknown as {
+        fontSize: { set(v: number): void };
+        applyFontSizeToSelection(): void;
+      };
+      // Under the Text box tool the slider is the *next* box's size: the box
+      // just placed (selected by being added) keeps its own.
+      c.fontSize.set(18);
+      c.applyFontSizeToSelection();
+      expect(box().font_size).toBe(12);
+      api().setTool('select');
+      annotations.select(box().id);
+      c.fontSize.set(24);
+      c.applyFontSizeToSelection();
+      expect(box().font_size).toBe(24);
+      expect(box().rect!.w).toBeCloseTo(measure('Bigger', 24) / W, 6);
+      expect(box().rect!.h).toBeCloseTo((1.2 * 24) / H, 6);
+    });
+
+    it('re-wraps a box moved against the right edge', () => {
+      drawBox(0);
+      type('one two three');
+      editor()!.dispatchEvent(new Event('blur'));
+      const from = box().rect!;
+      const to = { ...from, x: 1 - from.w };
+      (fixture.componentInstance as unknown as {
+        onGeometryChanged(c: { id: string; rect: NormRect; from: NormRect }): void;
+      }).onGeometryChanged({ id: box().id, rect: to, from });
+      expect(box().lines).toEqual(['one two three']);
+      expect(box().rect!.x).toBeCloseTo(to.x, 6);
+      const narrow = { ...from, x: 0.95 };
+      (fixture.componentInstance as unknown as {
+        onGeometryChanged(c: { id: string; rect: NormRect; from: NormRect }): void;
+      }).onGeometryChanged({ id: box().id, rect: narrow, from: box().rect! });
+      expect(box().lines!.length).toBeGreaterThan(1);
+      expect(box().rect!.x + box().rect!.w).toBeLessThanOrEqual(1);
+    });
+
+    it('re-lays a text box whose words are edited in the comments margin', () => {
+      drawBox(0);
+      type('Before');
+      editor()!.dispatchEvent(new Event('blur'));
+      const c = fixture.componentInstance as unknown as {
+        startEditing(id: string): void;
+        editingText: { set(v: string): void };
+        commitEditing(): void;
+      };
+      c.startEditing(box().id);
+      c.editingText.set('After, and longer');
+      c.commitEditing();
+      expect(box().lines).toEqual(['After, and longer']);
+      expect(box().rect!.w).toBeCloseTo(measure('After, and longer', 12) / W, 6);
+    });
+
+    it('draws a FreeText someone else made at its own width, without rewriting it', () => {
+      annotations.add({
+        id: 'foreign', page: 0, type: 'free_text', font_size: 12,
+        rect: { x: 0.1, y: 0.5, w: 0.15, h: 0.05 },
+        contents: 'A foreign note that is longer than its box',
+      });
+      fixture.detectChanges();
+      const drawn = html().querySelector<HTMLElement>('[data-item-id=foreign][data-test=overlay-text]')!;
+      expect(drawn.textContent!.split('\n').length).toBeGreaterThan(1);
+      const item = annotations.all().find((a) => a.id === 'foreign')!;
+      expect(item.lines).toBeUndefined();
+      expect(item.rect).toEqual({ x: 0.1, y: 0.5, w: 0.15, h: 0.05 });
+    });
+
+    it('lays a box out against the page\'s own size under Select, not an A4 guess', () => {
+      const http = TestBed.inject(HttpTestingController);
+      const words = (r: { url: string }) => r.url.endsWith('/documents/doc-1/text-words/');
+      http.match(words); // the Text box tool's own request, left unanswered…
+      annotations.resetForVersion(); // …and a save since, which forgets every size
+      api().setTool('select');
+      fixture.detectChanges();
+      expect(http.match(words)).toEqual([]); // Select on a page with no text box asks for nothing
+      annotations.add({
+        id: 'letter', page: 0, type: 'free_text', font_size: 12,
+        rect: { x: 0.1, y: 0.2, w: 0.2, h: 0.02 }, contents: 'Two\nlines', lines: ['Two', 'lines'],
+      });
+      fixture.detectChanges();
+      // A page with a text box asks for its size under any tool…
+      const req = http.expectOne(words);
+      req.flush({ page: 0, width: 612, height: 792, rotation: 0, has_text: false, words: [] });
+      // …and a move lays it out against 612 × 792, so the file keeps both lines.
+      const from = annotations.all().find((a) => a.id === 'letter')!.rect!;
+      (fixture.componentInstance as unknown as {
+        onGeometryChanged(c: { id: string; rect: NormRect; from: NormRect }): void;
+      }).onGeometryChanged({ id: 'letter', rect: { ...from, x: 0.3 }, from });
+      const moved = annotations.all().find((a) => a.id === 'letter')!;
+      expect(moved.rect!.h).toBeCloseTo((2 * 1.2 * 12) / 792, 6);
+      expect(moved.rect!.w).toBeCloseTo(measure('lines', 12) / 612, 6);
+    });
+
+    it('keeps a box\'s lines when it is moved flush against the right edge', () => {
+      // `x` and `w` travel rounded to six decimals; flush at x = 1 − w, a box
+      // could be left a millionth of the page short of its widest line and
+      // re-wrap ("Date" → "Dat" / "e").
+      const labels = ['Date', 'OK', 'Yes', 'Hello world', 'Yuval Haspel', 'Signature', 'Petah Tikva'];
+      for (const label of labels) {
+        annotations.add({
+          id: label, page: 0, type: 'free_text', font_size: 12,
+          rect: { x: 0.3, y: 0.3, w: 0.1, h: 0.02 }, contents: label, lines: [label],
+        });
+        const c = fixture.componentInstance as unknown as {
+          onGeometryChanged(c: { id: string; rect: NormRect; from: NormRect }): void;
+        };
+        c.onGeometryChanged({ id: label, rect: { x: 0.3, y: 0.3, w: 0.1, h: 0.02 }, from: { x: 0.3, y: 0.3, w: 0.1, h: 0.02 } });
+        const laid = annotations.all().find((a) => a.id === label)!.rect!;
+        c.onGeometryChanged({ id: label, rect: { ...laid, x: 1 - laid.w }, from: laid });
+        expect(annotations.all().find((a) => a.id === label)!.lines).toEqual([label]);
+      }
+    });
+
+    it('edits a box that is already there when the Text box tool clicks on it', () => {
+      drawBox(0);
+      type('Existing');
+      editor()!.dispatchEvent(new Event('blur'));
+      fixture.detectChanges();
+      const id = box().id;
+      // The same spot again — inside the box, not beside it.
+      drawBox(0);
+      expect(annotations.all().filter((a) => a.type === 'free_text').length).toBe(1);
+      expect(api().pageEditingId()).toBe(id);
+      expect(editor()!.value).toBe('Existing');
+    });
+
+    it('gives a box saved before this change its lines when edited in the margin', () => {
+      annotations.add({
+        id: 'legacy', page: 0, type: 'free_text', font_size: 12,
+        rect: { x: 0.1, y: 0.5, w: 0.4, h: 0.019 }, contents: 'Old note',
+      });
+      const c = fixture.componentInstance as unknown as {
+        startEditing(id: string): void;
+        editingText: { set(v: string): void };
+        commitEditing(): void;
+      };
+      c.startEditing('legacy');
+      c.editingText.set('Old note, now longer');
+      c.commitEditing();
+      const item = annotations.all().find((a) => a.id === 'legacy')!;
+      expect(item.lines).toEqual(['Old note, now longer']);
+      expect(item.rect!.w).toBeCloseTo(measure('Old note, now longer', 12) / W, 6);
+    });
+
+    it('shows the selected box\'s own size in the Font size control, however it was selected', () => {
+      const c = fixture.componentInstance as unknown as { fontSize(): number };
+      api().setTool('select');
+      annotations.add({
+        id: 'big', page: 0, type: 'free_text', font_size: 20,
+        rect: { x: 0.1, y: 0.5, w: 0.2, h: 0.03 }, contents: 'Big', lines: ['Big'],
+      });
+      // Selected by the facade (the Comments rail, a right click, Undo) — not
+      // by a click on the page.
+      annotations.select('big');
+      fixture.detectChanges();
+      expect(c.fontSize()).toBe(20);
+    });
+
+    it('leaves a box someone else made alone when the margin editor closes unchanged', () => {
+      annotations.add({
+        id: 'theirs', page: 0, type: 'free_text', font_size: 10,
+        rect: { x: 0.1, y: 0.5, w: 0.3, h: 0.06 }, contents: 'A callout from another app',
+      });
+      const before = annotations.all().find((a) => a.id === 'theirs')!;
+      const c = fixture.componentInstance as unknown as {
+        startEditing(id: string): void;
+        commitEditing(): void;
+      };
+      c.startEditing('theirs');
+      c.commitEditing();
+      expect(annotations.all().find((a) => a.id === 'theirs')).toEqual(before);
+    });
+
+    it('does not open a box that shows no words when the Text box tool clicks on it', () => {
+      annotations.add({
+        id: 'invisible', page: 0, type: 'free_text', font_size: 12,
+        rect: { x: 0.05, y: 0.15, w: 0.4, h: 0.1 }, contents: '',
+      });
+      drawBox(0);
+      expect(api().pageEditingId()).not.toBe('invisible');
+      expect(annotations.all().filter((a) => a.type === 'free_text').length).toBe(2);
+    });
+
+    it('re-lays a box laid out on another page once that page\'s size arrives', () => {
+      const http = TestBed.inject(HttpTestingController);
+      annotations.add({
+        id: 'far', page: 1, type: 'free_text', font_size: 12,
+        rect: { x: 0.1, y: 0.2, w: 0.2, h: 0.02 }, contents: 'Old', lines: ['Old'],
+      });
+      const c = fixture.componentInstance as unknown as {
+        startEditing(id: string): void;
+        editingText: { set(v: string): void };
+        commitEditing(): void;
+      };
+      // Edited from the comments margin while page 1 is showing: page 2's
+      // size is not known, so the box is laid out against the A4 guess…
+      c.startEditing('far');
+      c.editingText.set('One\nTwo\nThree');
+      c.commitEditing();
+      expect(annotations.all().find((a) => a.id === 'far')!.rect!.h).toBeCloseTo((3 * 1.2 * 12) / 842, 6);
+      // …and its page's size is asked for, and the box re-laid when it comes.
+      const req = http.expectOne((r) => r.url.endsWith('/text-words/') && r.params.get('page') === '1');
+      req.flush({ page: 1, width: 842, height: 595, rotation: 0, has_text: false, words: [] });
+      fixture.detectChanges();
+      const far = annotations.all().find((a) => a.id === 'far')!;
+      expect(far.rect!.h).toBeCloseTo((3 * 1.2 * 12) / 595, 6);
+      expect(far.lines).toEqual(['One', 'Two', 'Three']);
+      // One ⌘Z takes back the edit and the correction together.
+      (fixture.componentInstance as unknown as { undo(): void }).undo();
+      expect(annotations.all().find((a) => a.id === 'far')!.contents).toBe('Old');
+    });
+
+    it('does not correct a change Undo has taken back, and does once Redo brings it back', () => {
+      const http = TestBed.inject(HttpTestingController);
+      annotations.add({
+        id: 'theirs', page: 1, type: 'free_text', font_size: 12,
+        rect: { x: 0.1, y: 0.2, w: 0.3, h: 0.05 }, contents: 'A callout',
+      });
+      const before = annotations.all().find((a) => a.id === 'theirs')!;
+      const c = fixture.componentInstance as unknown as {
+        startEditing(id: string): void;
+        editingText: { set(v: string): void };
+        commitEditing(): void;
+        undo(): void;
+        redo(): void;
+      };
+      c.startEditing('theirs');
+      c.editingText.set('A callout\nwith two lines');
+      c.commitEditing();
+      c.undo();
+      expect(annotations.all().find((a) => a.id === 'theirs')).toEqual(before);
+      // The size arrives after the Undo: the box someone else made is left alone.
+      http.expectOne((r) => r.params.get('page') === '1')
+        .flush({ page: 1, width: 842, height: 595, rotation: 0, has_text: false, words: [] });
+      fixture.detectChanges();
+      expect(annotations.all().find((a) => a.id === 'theirs')).toEqual(before);
+      // Redo brings the edit back — and with it, the correction it was owed.
+      c.redo();
+      fixture.detectChanges();
+      const redone = annotations.all().find((a) => a.id === 'theirs')!;
+      expect(redone.lines).toEqual(['A callout', 'with two lines']);
+      expect(redone.rect!.h).toBeCloseTo((2 * 1.2 * 12) / 595, 6);
+    });
+
+    it('waits for a box open on the page to close before correcting it', () => {
+      const http = TestBed.inject(HttpTestingController);
+      http.match(() => true);
+      annotations.resetForVersion(); // right after a save: no page size known
+      drawBox(0);
+      type('Being typed');
+      const id = box().id;
+      http.expectOne((r) => r.params.get('page') === '0')
+        .flush({ page: 0, width: 612, height: 792, rotation: 0, has_text: false, words: [] });
+      fixture.detectChanges();
+      // Still open, and what is being typed is still there.
+      expect(api().pageEditingId()).toBe(id);
+      expect(editor()!.value).toBe('Being typed');
+      editor()!.dispatchEvent(new Event('blur'));
+      fixture.detectChanges();
+      expect(box().rect!.h).toBeCloseTo((1.2 * 12) / 792, 6);
+      expect(box().rect!.w).toBeCloseTo(measure('Being typed', 12) / 612, 6);
+    });
+
+    it('spells a pasted tab out as spaces, in the editor and in the lines', () => {
+      drawBox(0);
+      type('Name\tValue');
+      expect(editor()!.value).toBe('Name    Value');
+      editor()!.dispatchEvent(new Event('blur'));
+      fixture.detectChanges();
+      expect(box().lines).toEqual(['Name    Value']);
     });
   });
 

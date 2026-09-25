@@ -295,7 +295,7 @@
            resized it instead — and the words typed next went to the page body.
            `handlesWhileDrawing` is for the two placement surfaces whose draw
            tool is never left (Sign, the request builder). -->
-      @if (!readonlyMode() && !readonlyHandles() && !item.locked
+      @if (!readonlyMode() && !readonlyHandles() && !item.locked && !item.fixedSize
            && (tool() === 'select' || handlesWhileDrawing())) {
         @for (handle of ['nw', 'ne', 'sw', 'se']; track handle) {
           <button
@@ -320,21 +320,28 @@
       >{{ item.label }}</span>
     }
 
-    <!-- Text drawn where it will be in the file (design contract §4 "text on
-         the page"): same box, same point size, same colour. Editing happens in
-         the same box, so what you type is what you are looking at. -->
+    <!-- Text drawn where it will be in the file (design contract §3 "Text on
+         the page"): the lines the file draws, in the face it draws them in,
+         at the same baselines. The box is the text's own size and never
+         clips. Editing happens in the same box, so what you type is what you
+         are looking at. -->
     @if (item.page === page() && item.text !== undefined && item.rect) {
       @if (editingId() === item.id && !readonlyMode()) {
         <textarea
           #textEditor
           class="page-text page-text-editing"
-          [style.left.px]="px(item.rect.x)"
+          wrap="off"
+          spellcheck="false"
+          [attr.dir]="item.textDir ?? null"
+          [style.left.px]="px(item.rect.x) - (item.textDir === 'rtl' ? 2 : 0)"
           [style.top.px]="pyv(item.rect.y)"
-          [style.width.px]="px(item.rect.w)"
+          [style.width.px]="px(item.rect.w) + 2"
           [style.height.px]="pyv(item.rect.h)"
           [style.font-size.px]="fontPx(item)"
           [style.color]="item.textColor ?? null"
           [value]="item.text"
+          (input)="onTextInput(item, $event)"
+          (compositionend)="onTextInput(item, $event)"
           (keydown)="onTextKeyDown($event)"
           (blur)="onTextBlur(item, $event)"
           (pointerdown)="$event.stopPropagation()"
@@ -346,12 +353,14 @@
       } @else {
         <div
           class="page-text pointer-events-none"
+          [attr.dir]="item.textDir ?? null"
           [style.left.px]="px(item.rect.x)"
           [style.top.px]="pyv(item.rect.y)"
           [style.width.px]="px(item.rect.w)"
           [style.height.px]="pyv(item.rect.h)"
           [style.font-size.px]="fontPx(item)"
           [style.color]="item.textColor ?? null"
+          [attr.data-item-id]="item.id"
           data-test="overlay-text"
         >{{ item.text }}</div>
       }

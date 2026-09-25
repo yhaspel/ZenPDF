@@ -54,6 +54,8 @@ export class AnnotationsFacade {
    * (width) and the scale one line of it takes on the page (height).
    */
   private _pageSizes = signal<Map<number, { width: number; height: number }>>(new Map());
+  /** Pages whose words (and size) are being fetched right now. */
+  private wordsLoading = new Set<number>();
   private _selectedId = signal<string | null>(null);
   private _loading = signal(false);
 
@@ -174,6 +176,11 @@ export class AnnotationsFacade {
     return this._pageSizes().get(page)?.height ?? 842;
   }
 
+  /** Whether `pageWidthFor`/`pageHeightFor` are the page's own, not the A4 guess. */
+  hasPageSize(page: number): boolean {
+    return this._pageSizes().has(page);
+  }
+
   // ------------------------------------------------------------------ //
   // Loading
   // ------------------------------------------------------------------ //
@@ -220,9 +227,13 @@ export class AnnotationsFacade {
   }
 
   loadWords(docId: string, page: number, version?: number | null): void {
-    if (this._words().has(page)) return;
+    // Once per page: every text-box layout on a page whose size has not come
+    // yet asks for it, and each ask was a full request of its own.
+    if (this._words().has(page) || this.wordsLoading.has(page)) return;
+    this.wordsLoading.add(page);
     this.docsSvc.textWords(docId, page, version).subscribe({
       next: (res) => {
+        this.wordsLoading.delete(page);
         this._words.update((map) => new Map(map).set(page, res.words));
         if (res.width && res.height) {
           this._pageSizes.update((map) =>
@@ -231,6 +242,7 @@ export class AnnotationsFacade {
         }
       },
       error: () => {
+        this.wordsLoading.delete(page);
         this._words.update((map) => new Map(map).set(page, []));
       },
     });
@@ -240,6 +252,7 @@ export class AnnotationsFacade {
   resetForVersion(): void {
     this._words.set(new Map());
     this._pageSizes.set(new Map());
+    this.wordsLoading.clear();
   }
 
   // ------------------------------------------------------------------ //
@@ -264,6 +277,21 @@ export class AnnotationsFacade {
       return;
     }
     this.remember();
+    this._drafts.update((map) => new Map(map).set(id, { ...current, ...patch, id }));
+  }
+
+  /**
+   * Correct a mark without a history entry of its own — for a fix-up that
+   * belongs to the change it corrects (a text box laid out before its page's
+   * size had arrived, re-laid when it does). Undo takes back the change and
+   * the correction together, and Redo restores the corrected state.
+   */
+  amend(id: string, patch: Partial<Annotation>): void {
+    const current = this.all().find((a) => a.id === id);
+    if (!current) return;
+    if (Object.entries(patch).every(([key, value]) => same(current[key as keyof Annotation], value))) {
+      return;
+    }
     this._drafts.update((map) => new Map(map).set(id, { ...current, ...patch, id }));
   }
 
@@ -393,6 +421,7 @@ export class AnnotationsFacade {
     this._removed.set(new Set());
     this._words.set(new Map());
     this._pageSizes.set(new Map());
+    this.wordsLoading.clear();
     this._selectedId.set(null);
     this.saving = new Set();
   }

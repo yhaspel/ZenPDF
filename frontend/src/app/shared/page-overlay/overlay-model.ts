@@ -84,6 +84,16 @@ export interface OverlayItem {
   fontSize?: number;
   /** Colour of `text`. Separate from `stroke`: the border may be off. */
   textColor?: string;
+  /**
+   * Paragraph direction of `text` (first strong character). An RTL box lays
+   * its lines out from the right edge, as the file does.
+   */
+  textDir?: 'ltr' | 'rtl';
+  /**
+   * The item's size is derived, not drawn — a text box is always its text's
+   * size — so it gets a selection outline and a move, but no resize handles.
+   */
+  fixedSize?: boolean;
   /** Opaque payload owned by the feature that created the item. */
   data?: Record<string, unknown>;
   locked?: boolean;

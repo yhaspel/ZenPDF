@@ -16,7 +16,14 @@ one place: `..geometry`.
 """
 from __future__ import annotations
 
+import json
+import os
+import re
+import unicodedata
+from functools import lru_cache
+
 import fitz
+from bidi.algorithm import get_display
 
 from ..colors import format_color, parse_color
 from ..exceptions import InvalidParams, UnsupportedFileError
@@ -75,6 +82,102 @@ _SUBTYPE_TO_TYPE = {
 # Marker key written on Stamp annots we built from an uploaded image, so a
 # round-trip can tell them apart from a standard stamp (and re-offer the image).
 _IMAGE_STAMP_KEY = "ZenImageStamp"
+
+# Private key holding the lines a text box was drawn from (JSON array of
+# strings), so a round trip hands the client back exactly the layout it sent.
+_TEXT_LINES_KEY = "ZenLines"
+# How far a text box's drawing was grown past the box the client laid out — the
+# four edges' offsets in unrotated page space — so a read can hand the client
+# its own box back.
+_TEXT_GROW_KEY = "ZenGrow"
+
+# --------------------------------------------------------------------------- #
+# Text boxes: one layout, drawn twice (design contract §3 "Text on the page")
+# --------------------------------------------------------------------------- #
+# The client lays a text box out — it decides the lines, and sizes the box from
+# them — and the file draws exactly those lines, in the same face, at baselines
+# both sides compute from the same formula. Arimo is metric-compatible with
+# Helvetica, covers Hebrew, and its vertical metrics are pinned in CSS with
+# ascent/descent-override, so the browser's first baseline is this one.
+TEXT_FONT_PATH = os.path.normpath(
+    os.path.join(os.path.dirname(__file__), "..", "fonts", "Arimo-Regular.ttf")
+)
+TEXT_LINE_HEIGHT = 1.2
+TEXT_ASCENT = 1854 / 2048
+TEXT_DESCENT = 434 / 2048
+
+
+@lru_cache(maxsize=1)
+def _text_font() -> fitz.Font:
+    return fitz.Font(fontfile=TEXT_FONT_PATH)
+
+
+def text_baseline(index: int, size: float) -> float:
+    """Distance from the box's top to line *index*'s baseline, in points.
+
+    Half the leading above, the ascent, then one line height per line — the
+    CSS inline formatting model for `line-height: 1.2` with pinned metrics.
+    """
+    half_leading = (TEXT_LINE_HEIGHT - (TEXT_ASCENT + TEXT_DESCENT)) / 2 * size
+    return half_leading + TEXT_ASCENT * size + index * TEXT_LINE_HEIGHT * size
+
+
+# The right-to-left script blocks: Hebrew through Arabic Extended-A, the
+# Hebrew/Arabic presentation forms, and the two supplementary RTL ranges.
+_RTL_BLOCKS = ((0x0590, 0x08FF), (0xFB1D, 0xFDFF), (0xFE70, 0xFEFF),
+               (0x10800, 0x10FFF), (0x1E800, 0x1EFFF))
+
+
+def paragraph_is_rtl(text: str) -> bool:
+    """Paragraph direction by its first strong character.
+
+    **The client's rule, character for character** (`paragraphDir` in
+    `core/text-layout.ts`): the screen's `dir` and the file's alignment and bidi
+    base must come from one decision, and JavaScript has no Bidi_Class to share
+    — so both sides use what both can compute. A letter decides (an RTL-block
+    letter → RTL, any other letter → LTR); RLM and ALM are RTL, LRM is LTR;
+    digits, marks, punctuation and format characters are weak and do not.
+    """
+    for ch in text:
+        cp = ord(ch)
+        if cp in (0x200F, 0x061C):
+            return True
+        if cp == 0x200E:
+            return False
+        if not unicodedata.category(ch).startswith("L"):
+            continue
+        return any(lo <= cp <= hi for lo, hi in _RTL_BLOCKS)
+    return False
+
+
+# Scripts whose letters join, so a glyph's shape depends on its neighbours:
+# Arabic (with Syriac, Thaana, N'Ko and their supplements), its presentation
+# forms, and Mongolian.
+_JOINING_BLOCKS = ((0x0600, 0x08FF), (0xFB50, 0xFDFF), (0xFE70, 0xFEFF), (0x1800, 0x18AF))
+_VARIATION_SELECTORS = re.compile("[\ufe00-\ufe0f\U000e0100-\U000e01ef]")
+
+
+def _needs_shaping(lines: list[str]) -> bool:
+    """Whether these lines need shaping the file's writer cannot do.
+
+    `fitz.TextWriter` puts down one glyph per character: no joining (Arabic
+    arrives as disconnected letters), no conjuncts (Indic), no mark positioning
+    (Hebrew points land between letters) — all of which the browser does. Such
+    a box keeps MuPDF's own appearance, which shapes: laid out by MuPDF rather
+    than drawn from the client's lines. A decomposed accent is not a reason:
+    composed (NFC), it is a letter Arimo has.
+    """
+    for line in lines:
+        for ch in unicodedata.normalize("NFC", line):
+            cp = ord(ch)
+            category = unicodedata.category(ch)
+            # A variation selector (an emoji's U+FE0F) is a mark only by
+            # category: it picks a glyph, it is not positioned on one.
+            if category.startswith("M") and not _VARIATION_SELECTORS.match(ch):
+                return True
+            if category.startswith("L") and any(lo <= cp <= hi for lo, hi in _JOINING_BLOCKS):
+                return True
+    return False
 
 
 # --------------------------------------------------------------------------- #
@@ -141,7 +244,10 @@ def _read_annot(annot: fitz.Annot, page_index: int, w: float, h: float,
         "id": info.get("id") or "",
         "page": page_index,
         "type": kind,
-        "rect": {"x": nr.x, "y": nr.y, "w": nr.w, "h": nr.h},
+        # Six decimals, like every other reader in the package: a millionth of
+        # a page, and no float32 residue on the wire.
+        "rect": {"x": round(nr.x, 6), "y": round(nr.y, 6),
+                 "w": round(nr.w, 6), "h": round(nr.h, 6)},
         "color": format_color(colors.get("stroke")),
         "fill": format_color(colors.get("fill")),
         # PyMuPDF answers -1 for "no /CA entry", which means fully opaque.
@@ -179,6 +285,38 @@ def _read_annot(annot: fitz.Annot, page_index: int, w: float, h: float,
         # the user picked); the annot's stroke colour is its border.
         out["color"] = color or out["color"]
         out["align"] = int(getattr(annot, "text_align", 0) or 0)
+        doc = annot.parent.parent
+        kind_, raw = doc.xref_get_key(annot.xref, _TEXT_LINES_KEY)
+        if kind_ == "string":
+            try:
+                lines = json.loads(raw)
+            except ValueError:
+                lines = None
+            # Only while they still spell /Contents. Another editor can change
+            # the text and regenerate the appearance yet keep a key it does
+            # not know — and stale lines would be shown, and drawn back over
+            # the newer text. Breaks and the whitespace at them are the only
+            # difference a layout makes, so that is all the comparison forgives.
+            if (isinstance(lines, list) and all(isinstance(x, str) for x in lines)
+                    and "".join("".join(lines).split())
+                    == "".join(str(out["contents"] or "").split())):
+                out["lines"] = lines
+                # The client's own box, not the drawing's where a fallback
+                # glyph grew it (`_write_text_ap`). Anything odd — a key from
+                # elsewhere, a box that would come out empty or off the page —
+                # and the drawn rect stands: a list that fails to read is
+                # worse than a box a few points wide.
+                grow_kind, grow = doc.xref_get_key(annot.xref, _TEXT_GROW_KEY)
+                if grow_kind == "array":
+                    try:
+                        e0, e1, e2, e3 = (float(v) for v in grow.strip("[]").split())
+                        box = page_rect_to_norm(
+                            *apply_matrix_rect(rect.x0 - e0, rect.y0 - e1,
+                                               rect.x1 - e2, rect.y1 - e3, rot), w, h)
+                        out["rect"] = {"x": round(box.x, 6), "y": round(box.y, 6),
+                                       "w": round(box.w, 6), "h": round(box.h, 6)}
+                    except ValueError:
+                        pass
     elif kind == "stamp":
         doc = annot.parent.parent
         if doc.xref_get_key(annot.xref, _IMAGE_STAMP_KEY)[0] != "null":
@@ -381,6 +519,228 @@ def _write_image_ap(doc: fitz.Document, annot: fitz.Annot, rect: fitz.Rect,
     doc.xref_set_key(annot.xref, _IMAGE_STAMP_KEY, fitz.get_pdf_str(ref))
 
 
+class _TextAP:
+    """A text box's appearance, drawn ahead of the batch (see `_prepare_text_aps`).
+
+    `grow_left`/`grow_right` are how far the drawn lines reach past the box the
+    client sent (display points); zero unless a fallback glyph is wider than the
+    browser's.
+    """
+
+    __slots__ = ("content", "resources", "width", "height", "lines", "border",
+                 "grow_left", "grow_right")
+
+    def __init__(self, content: bytes, resources: str, width: float, height: float,
+                 lines: list[str], border: float = 0.0, grow_left: float = 0.0,
+                 grow_right: float = 0.0) -> None:
+        self.content = content
+        self.resources = resources
+        self.width = width
+        self.height = height
+        self.lines = lines
+        self.border = border
+        self.grow_left = grow_left
+        self.grow_right = grow_right
+
+
+def _text_lines_of(spec: dict) -> list[str] | None:
+    raw = spec.get("lines")
+    if raw is None:
+        return None
+    if not isinstance(raw, list) or not all(isinstance(x, str) for x in raw):
+        raise InvalidParams("'lines' must be a list of strings")
+    # A line break inside a line would be a second line the client never laid
+    # out; the client owns the breaks, so a stray one is flattened, not obeyed.
+    return [x.replace("\r", "").replace("\n", " ") for x in raw] or [""]
+
+
+def _prepare_text_aps(doc: fitz.Document, ops: list[dict]) -> dict[int, _TextAP]:
+    """Draw every text box's lines up front; op index → its appearance.
+
+    `fitz.TextWriter` needs a *page* to write on, and a page is the one thing
+    that must not be created mid-batch: adding or deleting a page invalidates
+    every live `Page`/`Annot` handle, and MuPDF answers a stale handle with a
+    segfault (`_embed_images` has the long version). So — exactly like the
+    image hoist — each box is drawn on a scratch page of its own size before a
+    single annotation handle exists, its content stream and resources are
+    lifted off, and the scratch pages are deleted again. The font object they
+    shared (MuPDF deduplicates by digest) stays in the file, referenced from
+    the appearance streams that will point at it.
+    """
+    jobs: list[tuple[int, float, float, list[str], float, tuple, tuple | None,
+                     float, int, float, float]] = []
+    for i, op in enumerate(ops):
+        if (op or {}).get("action") not in {"add", "update"}:
+            continue
+        spec = (op or {}).get("annotation") or {}
+        if spec.get("type") != "free_text":
+            continue
+        lines = _text_lines_of(spec)
+        if lines is None or _needs_shaping(lines):
+            continue
+        if "rect" not in spec:
+            raise InvalidParams("'free_text' annotations require a rect")
+        norm = _norm_rect(spec["rect"], "rect")
+        page = _page(doc, spec.get("page", 0))
+        pw, ph = page.rect.width, page.rect.height
+        del page
+        jobs.append((
+            i, norm.w * pw, norm.h * ph, lines,
+            float(spec.get("font_size") or 12),
+            parse_color(spec.get("color")) or (0, 0, 0),
+            parse_color(spec.get("fill")),
+            float(spec.get("width") or 0),
+            int(spec.get("align") or 0),
+            # Room between the box and the page's left and right edges — as far
+            # as a line may grow (below).
+            norm.x * pw, max(0.0, (1 - norm.x - norm.w) * pw),
+        ))
+    if not jobs:
+        return {}
+
+    face = _text_font()
+    out: dict[int, _TextAP] = {}
+    scratch_numbers: list[int] = []
+    try:
+        for i, w, h, lines, size, color, fill, border, align, room_left, room_right in jobs:
+            rtl = paragraph_is_rtl("\n".join(lines))
+            end_is_left = rtl or align == 2
+            # Drawn in *visual* order (UAX #9), which is what makes an RTL line
+            # look the same in every viewer. No /ActualText: probed against
+            # MuPDF and Poppler, both re-apply their own bidi to it and hand
+            # back Hebrew reversed; without it both recover the words in
+            # logical order from the glyph positions. Composed (NFC), as the
+            # browser draws a base letter and its accent; without variation
+            # selectors, which choose a presentation the writer cannot give
+            # and which it would otherwise draw as a glyph of their own.
+            composed = [_VARIATION_SELECTORS.sub("", unicodedata.normalize("NFC", line))
+                        for line in lines]
+            visuals = [get_display(line, base_dir="R" if rtl else "L") if line else ""
+                       for line in composed]
+            # The client measured with Arimo's own advances, so for Arimo's
+            # characters this equals its box. A character Arimo lacks (an emoji,
+            # a CJK ideograph, ✔) is drawn in a MuPDF fallback face, which can
+            # be wider than the browser's — and the box would cut the line's end
+            # off. The drawing grows instead, toward the line's end, by exactly
+            # the difference — never past the page's edge, where nothing is
+            # seen anyway (and a rect off the page is one no reader accepts).
+            # Trailing whitespace is not ink and is not counted, as the client
+            # does not count it.
+            ink = max([face.text_length(line.rstrip(), fontsize=size) for line in composed],
+                      default=0.0)
+            grow = ink - w if ink > w + 0.01 else 0.0
+            grow = max(0.0, min(grow, room_left if end_is_left else room_right))
+            w += grow
+            scratch = doc.new_page(width=w, height=h)
+            scratch_numbers.append(scratch.number)
+            # `new_page` writes /MediaBox and /Rotate but not /CropBox, which is
+            # inheritable: a /Pages node carrying one hands it to the scratch
+            # page, TextWriter bakes the offset into the content, and every
+            # glyph lands outside the appearance's BBox — a blank box in the file.
+            doc.xref_set_key(scratch.xref, "CropBox", f"[0 0 {w} {h}]")
+            if fill is not None:
+                scratch.draw_rect(scratch.rect, color=None, fill=fill, width=0)
+            if border > 0:
+                inset = border / 2
+                scratch.draw_rect(fitz.Rect(inset, inset, w - inset, h - inset),
+                                  color=color, width=border)
+            writer = fitz.TextWriter(scratch.rect, color=color)
+            wrote = False
+            for n, visual in enumerate(visuals):
+                if not visual:
+                    continue
+                lw = face.text_length(visual, fontsize=size)
+                if rtl or align == 2:
+                    lx = w - lw
+                elif align == 1:
+                    lx = (w - lw) / 2
+                else:
+                    lx = 0.0
+                writer.append((lx, text_baseline(n, size)), visual, font=face,
+                              fontsize=size)
+                wrote = True
+            if wrote:
+                writer.write_text(scratch)
+            scratch.clean_contents()
+            contents = scratch.get_contents()
+            content = doc.xref_stream(contents[0]) if contents else b""
+            kind, res = doc.xref_get_key(scratch.xref, "Resources")
+            out[i] = _TextAP(content or b"", res if kind != "null" else "<<>>",
+                             w, h, lines, border,
+                             grow_left=grow if end_is_left else 0.0,
+                             grow_right=0.0 if end_is_left else grow)
+            del scratch
+    finally:
+        # One call: each `delete_page` rescans the outline and every link in
+        # the document, which a batch of boxes on a large file paid per box.
+        if scratch_numbers:
+            doc.delete_pages(scratch_numbers)
+    return out
+
+
+def _write_text_ap(page: fitz.Page, annot: fitz.Annot, ap: _TextAP) -> None:
+    """Replace a FreeText's appearance with the lines the client laid out.
+
+    The annotation itself is MuPDF's (so `/Contents`, `/DA`, `/NM` and every
+    viewer's idea of "a FreeText" stay intact); only `/AP /N` is ours. As with
+    `_write_image_ap` the content is drawn at the *displayed* size and a
+    quarter-turn page's rotation goes in `/Matrix`.
+
+    **Raw xref writes only, and only after `annot.update()`.** `set_rect` or
+    `set_info` from here on would mark the annotation dirty, and MuPDF
+    re-synthesises dirty annotations when a later op in the batch loads
+    another page — which would silently put its own Helvetica layout back
+    (the 2026-08-28 stamp lesson).
+
+    `/Rect` must be the box the appearance was drawn at, because a viewer
+    scales the BBox onto it. MuPDF's own rect is right — on a rotated, cropped
+    page too — except where it grew it by half the border on every side, and
+    where a line was drawn longer than the client's box (`_TextAP`). Those two
+    are corrected *relative to MuPDF's rect*, in PDF space: converting the
+    whole rect through `transformation_matrix` loses the CropBox origin on a
+    rotated page (PyMuPDF 1.28), and the box would move on every save.
+    """
+    doc = page.parent
+    kind, current = doc.xref_get_key(annot.xref, "AP/N")
+    if kind != "xref":
+        raise InvalidParams("could not build the text box appearance")
+    ap_xref = int(str(current).split()[0])
+    doc.xref_set_key(ap_xref, "Resources", ap.resources)
+    doc.xref_set_key(ap_xref, "BBox", f"[0 0 {ap.width} {ap.height}]")
+    doc.xref_set_key(ap_xref, "Matrix", _AP_ROTATION[content_rotation(page.rotation)])
+    doc.update_stream(ap_xref, ap.content)
+    if ap.border or ap.grow_left or ap.grow_right:
+        x0, y0, x1, y1 = (float(v) for v in
+                          doc.xref_get_key(annot.xref, "Rect")[1].strip("[]").split())
+        half = ap.border / 2
+        x0, y0, x1, y1 = x0 + half, y0 + half, x1 - half, y1 - half
+        # The growth is along the displayed line. The derotation's linear part
+        # turns it into the unrotated page space (y down) — which edge of the
+        # rect it moves there, and by how much — and PDF space is that, y up.
+        d = page.derotation_matrix
+        edges = [0.0, 0.0, 0.0, 0.0]  # x0 y0 x1 y1, unrotated page space
+        for grow, sign in ((ap.grow_right, 1.0), (ap.grow_left, -1.0)):
+            ux, uy = sign * grow * d.a, sign * grow * d.b
+            edges[0 if ux < 0 else 2] += ux
+            edges[1 if uy < 0 else 3] += uy
+        x0, x1 = x0 + edges[0], x1 + edges[2]
+        y0, y1 = y0 - edges[3], y1 - edges[1]
+        doc.xref_set_key(annot.xref, "Rect", f"[{x0:.4f} {y0:.4f} {x1:.4f} {y1:.4f}]")
+        if any(edges):
+            # What the reader takes off again: the client works with the box it
+            # laid out, not with the drawing's — or an RTL box, grown left,
+            # would creep left by the growth on every edit. Kept in unrotated
+            # page space, where `annot.rect` is, so a page turned later (the
+            # Rotate tool keeps annotations) takes it off the right edge.
+            doc.xref_set_key(annot.xref, _TEXT_GROW_KEY,
+                             "[" + " ".join(f"{e:.4f}" for e in edges) + "]")
+    # ASCII JSON (`\uXXXX` escapes): `get_pdf_str` writes a string with nothing
+    # above U+00FF as PDFDocEncoding bytes, and a no-break space or a soft
+    # hyphen came back as something else — which the freshness check in
+    # `_read_annot` then rightly refused.
+    doc.xref_set_key(annot.xref, _TEXT_LINES_KEY, fitz.get_pdf_str(json.dumps(ap.lines)))
+
+
 def _restore_stamp_rect_and_contents(page: fitz.Page, annot: fitz.Annot,
                                      rect: fitz.Rect, spec: dict) -> None:
     """Undo the two things MuPDF's stamp machinery decides over the caller.
@@ -416,7 +776,8 @@ def _restore_stamp_rect_and_contents(page: fitz.Page, annot: fitz.Annot,
 
 def _add_annotation(page: fitz.Page, spec: dict, author: str,
                     image_xrefs: dict[str, int], *,
-                    title: str | None = None) -> fitz.Annot:
+                    title: str | None = None,
+                    text_ap: _TextAP | None = None) -> fitz.Annot:
     kind = spec.get("type")
     if kind not in ANNOTATION_TYPES:
         raise InvalidParams(f"unknown annotation type '{kind}'")
@@ -444,6 +805,15 @@ def _add_annotation(page: fitz.Page, spec: dict, author: str,
         )
     elif kind == "free_text":
         rect = _rect_of(spec, page)
+        align = int(spec.get("align") or 0)
+        if text_ap is None and not align \
+                and paragraph_is_rtl(str(spec.get("contents") or "")):
+            # MuPDF draws this one (no lines, or text that needs shaping), and
+            # MuPDF left-aligns unless told otherwise — where the editor shows
+            # an RTL paragraph right-aligned. Decided from the text, not from
+            # `lines`: a box drawn this way is stored without them, and its next
+            # move arrives with none.
+            align = 2
         annot = page.add_freetext_annot(
             rect,
             str(spec.get("contents") or ""),
@@ -456,7 +826,7 @@ def _add_annotation(page: fitz.Page, spec: dict, author: str,
             text_color=parse_color(spec.get("color")) or (0, 0, 0),
             fill_color=parse_color(spec.get("fill")),
             border_width=float(spec.get("width") or 0),
-            align=int(spec.get("align") or 0),
+            align=align,
         )
     elif kind == "square":
         annot = page.add_rect_annot(_rect_of(spec, page))
@@ -516,6 +886,8 @@ def _add_annotation(page: fitz.Page, spec: dict, author: str,
 
     _apply_common(annot, spec, author, set_colors=kind != "free_text", title=title)
     annot.update()
+    if kind == "free_text" and text_ap is not None:
+        _write_text_ap(page, annot, text_ap)
     return annot
 
 
@@ -564,10 +936,12 @@ def apply_annotation_ops(data: bytes, *, ops: list[dict], author: str = "Guest",
     try:
         # Must precede everything else: it mutates the page list (see _embed_images).
         image_xrefs = _embed_images(doc, images or {})
+        # Same reason, same place: text boxes are drawn on scratch pages.
+        text_aps = _prepare_text_aps(doc, ops)
         index = _index_by_nm(doc)
         report = {"added": 0, "updated": 0, "deleted": 0, "missing": 0}
 
-        for op in ops:
+        for op_index, op in enumerate(ops):
             action = (op or {}).get("action")
             if action not in {"add", "update", "delete"}:
                 raise InvalidParams(f"unknown annotation action '{action}'")
@@ -612,13 +986,28 @@ def apply_annotation_ops(data: bytes, *, ops: list[dict], author: str = "Guest",
             page = _page(doc, spec.get("page", 0))
             if created and not spec.get("created"):
                 spec = {**spec, "created": created}
-            annot = _add_annotation(page, spec, author, image_xrefs, title=existing_title)
+            annot = _add_annotation(page, spec, author, image_xrefs, title=existing_title,
+                                    text_ap=text_aps.get(op_index))
             doc.xref_set_key(annot.xref, "NM", fitz.get_pdf_str(nm))
             index[nm] = (page.number, annot.xref)
 
+        if text_aps:
+            _subset(doc)
         return doc.tobytes(**_SAVE), report
     finally:
         doc.close()
+
+
+def _subset(doc: fitz.Document) -> None:
+    """Subset fonts on the way out — a full Arimo is ~300 KB per file.
+
+    Document-wide, like Edit mode's save (`content._subset`): MuPDF subsets
+    every embedded font to the glyphs the pages *and* the appearance streams
+    use. Never fatal: an unsubsettable font costs size, not correctness."""
+    try:
+        doc.subset_fonts()
+    except Exception:  # noqa: BLE001
+        pass
 
 
 def flatten_annotations(data: bytes, *, what: str = "annotations") -> bytes:

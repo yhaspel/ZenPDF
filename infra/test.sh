@@ -140,6 +140,24 @@ print(f"deny-list identical across {len(copies)} infra copies")
 PY
 
 echo "======================================================"
+echo " Cross-tree consistency (the page-text face, same bytes)"
+echo "======================================================"
+# Text boxes are set in Arimo on screen and in the saved file, and "the same
+# face" means the same file: the engine embeds the backend copy, the browser
+# fetches the frontend one (design contract §3 "Text on the page"). Checked
+# here and not in pytest for the deny-list's reason — the api container mounts
+# backend/ and nothing else, so a pytest for it could only ever skip, and the
+# skip guard below (rightly) fails the gate on it.
+if ! cmp -s ../backend/apps/pdf_engine/fonts/Arimo-Regular.ttf ../frontend/public/fonts/Arimo-Regular.ttf; then
+  echo "ERROR: backend/apps/pdf_engine/fonts/Arimo-Regular.ttf and"
+  echo "       frontend/public/fonts/Arimo-Regular.ttf differ. The file draws text"
+  echo "       boxes with one and the editor with the other — copy one over the"
+  echo "       other (and regenerate the woff2 from it)."
+  exit 1
+fi
+echo "Arimo-Regular.ttf identical in backend/ and frontend/"
+
+echo "======================================================"
 echo " Backend lint + types (ruff, mypy)"
 echo "======================================================"
 # mypy reached zero in phase 10 and the gate is what keeps it there. It got to

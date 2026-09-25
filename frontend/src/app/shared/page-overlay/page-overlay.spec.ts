@@ -3,7 +3,7 @@ import { HttpTestingController, provideHttpClientTesting } from '@angular/common
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 
 import { OverlayDraft, OverlayItem } from './overlay-model';
-import { PageOverlay } from './page-overlay';
+import { PageOverlay, caretAfterReflow } from './page-overlay';
 
 /**
  * The norm↔screen mapping (§8) and the gestures built on it.
@@ -356,6 +356,26 @@ describe('PageOverlay — text on the page', () => {
     fixture.detectChanges();
     group.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
     expect(asked).toEqual(['a1']);
+  });
+
+  it('does not reflow the text while a composition is open, and does when it ends', () => {
+    fixture.componentRef.setInput('items', [textItem()]);
+    fixture.componentRef.setInput('editingId', 'a1');
+    fixture.componentRef.setInput('textFlow', (_id: string, text: string) => text.replace(' ', '\n'));
+    fixture.detectChanges();
+    const heard: string[] = [];
+    fixture.componentInstance.textInput.subscribe((c) => heard.push(c.text));
+
+    const editor = html().querySelector<HTMLTextAreaElement>('[data-test=overlay-text-editor]')!;
+    editor.value = 'one two';
+    // Mid-composition (a dead key, an IME, Android's keyboard): rewriting the
+    // value would cancel or double what is being composed.
+    editor.dispatchEvent(new InputEvent('input', { isComposing: true }));
+    expect(editor.value).toBe('one two');
+    editor.dispatchEvent(new CompositionEvent('compositionend'));
+    expect(editor.value).toBe('one\ntwo');
+    // The box still heard every keystroke, so it grew while composing.
+    expect(heard).toEqual(['one two', 'one\ntwo']);
   });
 });
 
@@ -832,5 +852,31 @@ describe('PageOverlay — a click is not a move', () => {
     inner.onPointerUp(new PointerEvent('pointerup'));
     expect(moves.length).toBe(1);
     TestBed.resetTestingModule();
+  });
+});
+
+describe('caretAfterReflow', () => {
+  it('keeps the caret after the same characters when a space became a break', () => {
+    const before = 'one two three';
+    const after = 'one two\nthree';
+    expect(caretAfterReflow(before, before.length, after)).toBe(after.length);
+    expect(caretAfterReflow(before, 5, after)).toBe(5); // inside "two"
+  });
+
+  it('follows a break inserted inside a long word', () => {
+    expect(caretAfterReflow('abcdefgh', 8, 'abcd\nefgh')).toBe(9);
+    expect(caretAfterReflow('abcdefgh', 2, 'abcd\nefgh')).toBe(2);
+  });
+
+  it('keeps the caret after a space it had already passed', () => {
+    const before = 'one two ';
+    const after = 'one\ntwo ';
+    expect(caretAfterReflow(before, before.length, after)).toBe(after.length);
+  });
+
+  it('puts the caret after all the spaces a tab became, not inside them', () => {
+    expect(caretAfterReflow('Name\t', 5, 'Name    ')).toBe(8);
+    expect(caretAfterReflow('Name\tValue', 5, 'Name    Value')).toBe(8);
+    expect(caretAfterReflow('Name\tValue', 10, 'Name    Value')).toBe(13);
   });
 });

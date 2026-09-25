@@ -41,6 +41,8 @@ Personas: (a) **guest** — no account, works in a session-scoped workspace with
 | pdf2docx | latest | MIT (archived but functional) | PDF→Word |
 | pymupdf4llm | latest | AGPL (accepted) | PDF→Markdown export |
 | reportlab | **4.4.4** (pinned, `backend/requirements/engine.txt:8`) | BSD | Certificate-of-completion PDF. *Corrected 2026-08-22: this said 5.0.x. The 5.0 major was **deliberately deferred** on scaffold day and never taken — see PROGRESS's Verified pins and Decisions log.* |
+| python-bidi | 0.6.11 | LGPL-3.0 | *Added 2026-09-25.* Unicode bidi (UAX #9) for Annotate text boxes: the engine draws an RTL line in the visual order the browser shows it (`engine/annotations.py`; design contract §3 "Text on the page") |
+| Arimo (font) | v1.341, vendored | OFL-1.1 | *Added 2026-09-25.* The one face text boxes are set in, on screen and in the saved file — same bytes both sides (`backend/apps/pdf_engine/fonts/`, `frontend/public/fonts/`) |
 | Gotenberg | 8.34 (`gotenberg/gotenberg:8`) | MIT | Office/HTML/URL→PDF (LibreOffice + Chromium) |
 | SeaweedFS | `chrislusf/seaweedfs` pinned ⚠ | Apache-2.0 | Local S3-compatible object store (MinIO is archived/dead) |
 | Mailpit | `axllent/mailpit` v1.30 | MIT | Local SMTP capture + web UI |

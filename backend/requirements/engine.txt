@@ -11,3 +11,6 @@ pymupdf4llm==1.28.0
 # 2.33.0 fixes PYSEC-2026-2275; we call Gotenberg and fetch URLs users
 # supply, so the HTTP client is on the hostile path too.
 requests==2.33.0
+# Unicode bidi (UAX #9) for text boxes: the file draws RTL lines in visual
+# order, the way the browser shows them (annotations._prepare_text_aps).
+python-bidi==0.6.11

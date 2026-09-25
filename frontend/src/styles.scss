@@ -1392,33 +1392,69 @@ body > .sr-only[aria-live] {
 .dark .page-thumb { border-color: var(--color-border-strong); }
 .canvas-backdrop { background: var(--color-canvas-backdrop); }
 
-/* ---------- 19. Text drawn on the page (§4 "text on the page") ---------- */
-/* A text annotation has to look on screen like what the file will contain:
-   same box, same point size, same colour, wrapping the same way. The previous
-   badge-above-the-box treatment showed 24 characters in a 10px chip and left
-   the box itself empty, which read as "the text box does not work".
-   Colour comes from the annotation (it is the author's choice and it is baked
-   into the PDF), so it is set inline; everything structural is a token. */
+/* ---------- 19. Text drawn on the page (§3 "Text on the page") ---------- */
+/* One layout, drawn twice. The client decides a text box's lines
+   (`core/text-layout.ts`) and sizes the box from them; this rule draws those
+   lines, and the engine draws the same lines into the file — in the same face
+   (Arimo, vendored; the engine embeds the same bytes), at the same size, with
+   the same 1.2 line height and no inset, so line i's baseline lands at
+   `(1.2 − (A + D))/2 · size + A · size + i · 1.2 · size` on both sides. The
+   ascent/descent overrides pin that baseline across operating systems (a
+   font's own hhea/typo/win choice varies by platform), and kerning and
+   ligatures are off because the file's writer does neither. The box is the
+   text's own size, so nothing ever clips: `overflow: visible`.
+   Colour comes from the annotation (the author's choice, baked into the PDF),
+   so it is set inline; everything structural is here. */
+@font-face {
+  font-family: "Zen Page Text";
+  font-style: normal;
+  font-weight: 400;
+  /* block, not swap: a fallback-font first paint *is* a shift. */
+  font-display: block;
+  src: url("/fonts/Arimo-Regular.woff2") format("woff2"),
+       url("/fonts/Arimo-Regular.ttf") format("truetype");
+  ascent-override: 90.52734375%;  /* 1854/2048 */
+  descent-override: 21.19140625%; /* 434/2048 */
+  line-gap-override: 0%;
+}
 .page-text {
   position: absolute;
   margin: 0;
-  padding: 1px 2px;
+  padding: 0;
   border: 0;
-  overflow: hidden;
-  font-family: var(--font-ui);
-  line-height: 1.25;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
+  font-family: "Zen Page Text";
+  font-weight: 400;
+  font-style: normal;
+  line-height: 1.2;
+  letter-spacing: normal;
+  word-spacing: normal;
+  white-space: pre;
+  overflow: visible;
+  font-kerning: none;
+  font-variant-ligatures: none;
+  font-feature-settings: "kern" 0, "liga" 0, "clig" 0, "calt" 0;
+  font-synthesis: none;
+  text-rendering: optimizeSpeed;
+  text-align: start;
   color: var(--color-ink-strong);
   background: transparent;
 }
 /* While typing: a hairline of the working colour and just enough backing to
    stay legible over dense page content. The page raster underneath is paper,
    so a paper-coloured wash is invisible on an empty area and readable on a
-   busy one — in both themes, because the page itself is white in both. */
+   busy one — in both themes, because the page itself is white in both.
+   No padding and no border (a ring is a box-shadow), so the words sit exactly
+   where they will be drawn. The one exception is 2px at the inline end — the
+   template widens the editor by the same 2px — which is room for the caret
+   after the longest line: without it the textarea scrolls itself one pixel
+   sideways to show the caret, and the words shift while you type. The editor
+   never wraps (`wrap="off"`); only the layout breaks lines. */
 .page-text-editing {
   resize: none;
   outline: none;
+  overflow: hidden;
+  padding-inline-end: 2px;
+  min-width: 4px;
   background: rgb(255 255 255 / 0.92);
   box-shadow: 0 0 0 1.5px var(--color-accent);
   border-radius: 2px;
