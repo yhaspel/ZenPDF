@@ -23,6 +23,8 @@ the screen's and the file's ink — **0.93 device px** (the guard: ≤ 1.25; mos
 each text run's baseline to a whole pixel while MuPDF places it exactly — the spec's own
 prototype measured the same ≤ 0.5 pt (§3).
 
+**On the compose stack (CLI, 2026-09-25).** The spec's first run against `infra/` — Postgres, SeaweedFS, real Celery workers, the Angular dev server — on Playwright 1.61.1's **Chromium 1228** (the sandbox's was 1194): **8 / 8** green first time, tolerances untouched. Over the 40 boxes the ink-bbox delta was 0 device px on 28 and 1 px on 12; the worst shape shift **0.993 px**, vertical, on the Hebrew box at 1.5× (horizontal ≤ 0.099 px everywhere; at 1× every box ≤ 0.053 px); both themes measured identically, as they should — the page is white in both.
+
 **The gate discriminates.** With the engine's baseline deliberately moved by 1.5 pt, all
 four light-theme runs failed; the shape shift read 1.0–3.0 px.
 
