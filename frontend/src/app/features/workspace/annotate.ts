@@ -302,8 +302,12 @@ export class Annotate {
    * sitting ends, so one ⌘Z undoes a sentence rather than a letter.
    */
   private liveText = signal<{ id: string; text: string } | null>(null);
-  /** Text boxes laid out before their page's size arrived (`relayWhenSized`). */
-  private laidOnGuess = signal<ReadonlySet<string>>(new Set());
+  /**
+   * Text boxes laid out before their page's size arrived (`relayWhenSized`):
+   * id → the very object that layout produced, so a correction lands only on
+   * the state it corrects (not on one Undo has since put back).
+   */
+  private laidOnGuess = signal<ReadonlyMap<string, Annotation>>(new Map());
 
   protected readonly stamps = STANDARD_STAMPS;
   protected readonly key = shortcutTitle;
@@ -426,17 +430,31 @@ export class Annotate {
     });
 
     // A page's size arriving re-lays every box that was laid out without it,
-    // as part of the change that laid it out (no Undo step of its own).
+    // as part of the change that laid it out (no Undo step of its own) — but
+    // only while that change is what the box still is: after an Undo it
+    // waits (a Redo brings it back), and while the box is open on the page it
+    // waits for the sitting to end rather than rewrite what is being typed.
     effect(() => {
       const waiting = this.laidOnGuess();
       if (!waiting.size) return;
-      const ready = [...waiting].filter((id) => {
-        const item = untracked(() => this.annotations.all().find((a) => a.id === id));
-        return !item || this.annotations.hasPageSize(item.page);
-      });
-      if (!ready.length) return;
+      const all = this.annotations.all();
+      const editing = this.pageEditingId();
+      const ready: string[] = [];
+      const gone: string[] = [];
+      for (const [id, laid] of waiting) {
+        const item = all.find((a) => a.id === id);
+        if (!item) gone.push(id);
+        else if (item === laid && id !== editing && this.annotations.hasPageSize(item.page)) {
+          ready.push(id);
+        }
+      }
+      if (!ready.length && !gone.length) return;
       untracked(() => {
-        this.laidOnGuess.update((ids) => new Set([...ids].filter((id) => !ready.includes(id))));
+        this.laidOnGuess.update((map) => {
+          const next = new Map(map);
+          for (const id of [...ready, ...gone]) next.delete(id);
+          return next;
+        });
         for (const id of ready) this.relayoutText(id, {}, true);
       });
     });
@@ -731,7 +749,7 @@ export class Annotate {
 
     this.annotations.add(annotation);
     if (tool === 'free_text') {
-      this.relayWhenSized(annotation.id, annotation.page);
+      this.relayWhenSized(annotation);
       this.editOnPage(annotation.id);
     } else if (tool === 'note') {
       this.startEditing(annotation.id);
@@ -836,7 +854,8 @@ export class Annotate {
     const change = { ...patch, contents: text, rect: box.rect, lines: box.lines };
     if (amend) this.annotations.amend(id, change);
     else this.annotations.update(id, change);
-    this.relayWhenSized(id, next.page);
+    const laid = this.annotations.all().find((a) => a.id === id);
+    if (laid) this.relayWhenSized(laid);
   }
 
   /**
@@ -847,10 +866,21 @@ export class Annotate {
    * that lays a box out comes through here: placing, typing, moving, the Font
    * size control, the comments margin, paste and duplicate — on any page.
    */
-  private relayWhenSized(id: string, page: number): void {
-    if (this.annotations.hasPageSize(page)) return;
-    this.laidOnGuess.update((ids) => new Set(ids).add(id));
-    this.annotations.loadWords(this.docId(), page, this.currentSeq());
+  private relayWhenSized(laid: Annotation): void {
+    if (this.annotations.hasPageSize(laid.page)) {
+      // Laid out against the real page: any correction still waiting for
+      // this box is for a state it has left.
+      if (this.laidOnGuess().has(laid.id)) {
+        this.laidOnGuess.update((map) => {
+          const next = new Map(map);
+          next.delete(laid.id);
+          return next;
+        });
+      }
+      return;
+    }
+    this.laidOnGuess.update((map) => new Map(map).set(laid.id, laid));
+    this.annotations.loadWords(this.docId(), laid.page, this.currentSeq());
   }
 
   /**
@@ -1120,7 +1150,7 @@ export class Annotate {
       const box = this.textBox(page, to.x, to.y, laid);
       copy.rect = box.rect;
       copy.lines = box.lines;
-      this.relayWhenSized(copy.id, page);
+      this.relayWhenSized(copy);
     }
     return copy;
   }

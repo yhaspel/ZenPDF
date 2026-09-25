@@ -640,7 +640,8 @@ describe('Annotate — filling in fields with text boxes', () => {
     it('lays a box out against the page\'s own size under Select, not an A4 guess', () => {
       const http = TestBed.inject(HttpTestingController);
       const words = (r: { url: string }) => r.url.endsWith('/documents/doc-1/text-words/');
-      http.match(words); // the Text box tool's own request, left unanswered
+      http.match(words); // the Text box tool's own request, left unanswered…
+      annotations.resetForVersion(); // …and a save since, which forgets every size
       api().setTool('select');
       fixture.detectChanges();
       expect(http.match(words)).toEqual([]); // Select on a page with no text box asks for nothing
@@ -779,6 +780,57 @@ describe('Annotate — filling in fields with text boxes', () => {
       // One ⌘Z takes back the edit and the correction together.
       (fixture.componentInstance as unknown as { undo(): void }).undo();
       expect(annotations.all().find((a) => a.id === 'far')!.contents).toBe('Old');
+    });
+
+    it('does not correct a change Undo has taken back, and does once Redo brings it back', () => {
+      const http = TestBed.inject(HttpTestingController);
+      annotations.add({
+        id: 'theirs', page: 1, type: 'free_text', font_size: 12,
+        rect: { x: 0.1, y: 0.2, w: 0.3, h: 0.05 }, contents: 'A callout',
+      });
+      const before = annotations.all().find((a) => a.id === 'theirs')!;
+      const c = fixture.componentInstance as unknown as {
+        startEditing(id: string): void;
+        editingText: { set(v: string): void };
+        commitEditing(): void;
+        undo(): void;
+        redo(): void;
+      };
+      c.startEditing('theirs');
+      c.editingText.set('A callout\nwith two lines');
+      c.commitEditing();
+      c.undo();
+      expect(annotations.all().find((a) => a.id === 'theirs')).toEqual(before);
+      // The size arrives after the Undo: the box someone else made is left alone.
+      http.expectOne((r) => r.params.get('page') === '1')
+        .flush({ page: 1, width: 842, height: 595, rotation: 0, has_text: false, words: [] });
+      fixture.detectChanges();
+      expect(annotations.all().find((a) => a.id === 'theirs')).toEqual(before);
+      // Redo brings the edit back — and with it, the correction it was owed.
+      c.redo();
+      fixture.detectChanges();
+      const redone = annotations.all().find((a) => a.id === 'theirs')!;
+      expect(redone.lines).toEqual(['A callout', 'with two lines']);
+      expect(redone.rect!.h).toBeCloseTo((2 * 1.2 * 12) / 595, 6);
+    });
+
+    it('waits for a box open on the page to close before correcting it', () => {
+      const http = TestBed.inject(HttpTestingController);
+      http.match(() => true);
+      annotations.resetForVersion(); // right after a save: no page size known
+      drawBox(0);
+      type('Being typed');
+      const id = box().id;
+      http.expectOne((r) => r.params.get('page') === '0')
+        .flush({ page: 0, width: 612, height: 792, rotation: 0, has_text: false, words: [] });
+      fixture.detectChanges();
+      // Still open, and what is being typed is still there.
+      expect(api().pageEditingId()).toBe(id);
+      expect(editor()!.value).toBe('Being typed');
+      editor()!.dispatchEvent(new Event('blur'));
+      fixture.detectChanges();
+      expect(box().rect!.h).toBeCloseTo((1.2 * 12) / 792, 6);
+      expect(box().rect!.w).toBeCloseTo(measure('Being typed', 12) / 612, 6);
     });
 
     it('spells a pasted tab out as spaces, in the editor and in the lines', () => {

@@ -1286,6 +1286,43 @@ def test_growth_never_leaves_the_page(text, x_pt, rtl):
     assert box.x0 >= -0.01 and box.x1 <= 595.01
 
 
+@pytest.mark.parametrize("degrees", [90, 180, 270])
+@pytest.mark.parametrize("text, y_pt", [
+    ("Done ✅✅✅✅✅✅", 4.0),          # growth longer than a line is tall, at the top
+    ("שלום ✅✅✅✅✅✅", 4.0),
+    ("Done ✅", 300.0),
+])
+def test_a_grown_box_reads_back_as_its_own_box_after_the_page_is_turned(text, y_pt,
+                                                                         degrees):
+    """The Rotate tool keeps annotations and changes /Rotate. The growth taken
+    off on read is kept where `annot.rect` is — unrotated page space — so it
+    comes off the right edge whichever way the page is displayed later. Kept
+    as display [left right], it came off the wrong axis, and near an edge
+    produced an off-page rect the annotation list failed on."""
+    from apps.pdf_engine.engine import pages as P
+
+    face = A._text_font()
+    size = 14
+    w = sum(face.text_length(c, fontsize=size) for c in text if face.has_glyph(ord(c))) \
+        + text.count("✅") * size
+    spec = _text_box("tb", 100, y_pt, [text], size)
+    spec["rect"]["w"] = round(w / 595, 6)
+    out, _ = A.apply_annotation_ops(_blank(), ops=_add(spec))
+    turned = P.rotate_pages(out, pages=[0], degrees=degrees)
+    [item] = A.extract_annotations(turned)
+    # The client's box, carried through the turn: unrotated page space on a
+    # /Rotate 0 page is display space, so turn the sent rect the same way.
+    doc = fitz.open(stream=turned, filetype="pdf")
+    page = doc[0]
+    sent = fitz.Rect(100, y_pt, 100 + spec["rect"]["w"] * 595,
+                     y_pt + spec["rect"]["h"] * 842) * page.rotation_matrix
+    dw, dh = page.rect.width, page.rect.height
+    doc.close()
+    for k, v in (("x", sent.x0 / dw), ("y", sent.y0 / dh),
+                 ("w", sent.width / dw), ("h", sent.height / dh)):
+        assert item["rect"][k] == pytest.approx(v, abs=5e-6), (k, item["rect"])
+
+
 def test_an_rtl_box_re_sent_as_read_does_not_move():
     """The client re-lays a box from the rect it read, with its own width. Had
     it been handed the grown rect, an RTL box would creep left by the growth

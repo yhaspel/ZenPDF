@@ -86,8 +86,9 @@ _IMAGE_STAMP_KEY = "ZenImageStamp"
 # Private key holding the lines a text box was drawn from (JSON array of
 # strings), so a round trip hands the client back exactly the layout it sent.
 _TEXT_LINES_KEY = "ZenLines"
-# How far (display points, [left right]) a text box's drawing was grown past the
-# box the client laid out, so a read can hand the client its own box back.
+# How far a text box's drawing was grown past the box the client laid out — the
+# four edges' offsets in unrotated page space — so a read can hand the client
+# its own box back.
 _TEXT_GROW_KEY = "ZenGrow"
 
 # --------------------------------------------------------------------------- #
@@ -301,13 +302,21 @@ def _read_annot(annot: fitz.Annot, page_index: int, w: float, h: float,
                     == "".join(str(out["contents"] or "").split())):
                 out["lines"] = lines
                 # The client's own box, not the drawing's where a fallback
-                # glyph grew it (`_write_text_ap`).
+                # glyph grew it (`_write_text_ap`). Anything odd — a key from
+                # elsewhere, a box that would come out empty or off the page —
+                # and the drawn rect stands: a list that fails to read is
+                # worse than a box a few points wide.
                 grow_kind, grow = doc.xref_get_key(annot.xref, _TEXT_GROW_KEY)
                 if grow_kind == "array":
-                    left, right = (float(v) for v in grow.strip("[]").split())
-                    box = page_rect_to_norm(x0 + left, y0, x1 - right, y1, w, h)
-                    out["rect"] = {"x": round(box.x, 6), "y": round(box.y, 6),
-                                   "w": round(box.w, 6), "h": round(box.h, 6)}
+                    try:
+                        e0, e1, e2, e3 = (float(v) for v in grow.strip("[]").split())
+                        box = page_rect_to_norm(
+                            *apply_matrix_rect(rect.x0 - e0, rect.y0 - e1,
+                                               rect.x1 - e2, rect.y1 - e3, rot), w, h)
+                        out["rect"] = {"x": round(box.x, 6), "y": round(box.y, 6),
+                                       "w": round(box.w, 6), "h": round(box.h, 6)}
+                    except ValueError:
+                        pass
     elif kind == "stamp":
         doc = annot.parent.parent
         if doc.xref_get_key(annot.xref, _IMAGE_STAMP_KEY)[0] != "null":
@@ -705,22 +714,26 @@ def _write_text_ap(page: fitz.Page, annot: fitz.Annot, ap: _TextAP) -> None:
                           doc.xref_get_key(annot.xref, "Rect")[1].strip("[]").split())
         half = ap.border / 2
         x0, y0, x1, y1 = x0 + half, y0 + half, x1 - half, y1 - half
-        # The growth is along the displayed line; the derotation's linear part
-        # turns it into page space (y down), and PDF space is y up.
+        # The growth is along the displayed line. The derotation's linear part
+        # turns it into the unrotated page space (y down) — which edge of the
+        # rect it moves there, and by how much — and PDF space is that, y up.
         d = page.derotation_matrix
+        edges = [0.0, 0.0, 0.0, 0.0]  # x0 y0 x1 y1, unrotated page space
         for grow, sign in ((ap.grow_right, 1.0), (ap.grow_left, -1.0)):
-            if not grow:
-                continue
-            dx, dy = sign * grow * d.a, -sign * grow * d.b
-            x0, x1 = (x0 + dx, x1) if dx < 0 else (x0, x1 + dx)
-            y0, y1 = (y0 + dy, y1) if dy < 0 else (y0, y1 + dy)
+            ux, uy = sign * grow * d.a, sign * grow * d.b
+            edges[0 if ux < 0 else 2] += ux
+            edges[1 if uy < 0 else 3] += uy
+        x0, x1 = x0 + edges[0], x1 + edges[2]
+        y0, y1 = y0 - edges[3], y1 - edges[1]
         doc.xref_set_key(annot.xref, "Rect", f"[{x0:.4f} {y0:.4f} {x1:.4f} {y1:.4f}]")
-    if ap.grow_left or ap.grow_right:
-        # What the reader takes off again: the client works with the box it
-        # laid out, not with the drawing's — or an RTL box, grown left, would
-        # creep left by the growth on every edit.
-        doc.xref_set_key(annot.xref, _TEXT_GROW_KEY,
-                         f"[{ap.grow_left:.4f} {ap.grow_right:.4f}]")
+        if any(edges):
+            # What the reader takes off again: the client works with the box it
+            # laid out, not with the drawing's — or an RTL box, grown left,
+            # would creep left by the growth on every edit. Kept in unrotated
+            # page space, where `annot.rect` is, so a page turned later (the
+            # Rotate tool keeps annotations) takes it off the right edge.
+            doc.xref_set_key(annot.xref, _TEXT_GROW_KEY,
+                             "[" + " ".join(f"{e:.4f}" for e in edges) + "]")
     # ASCII JSON (`\uXXXX` escapes): `get_pdf_str` writes a string with nothing
     # above U+00FF as PDFDocEncoding bytes, and a no-break space or a soft
     # hyphen came back as something else — which the freshness check in
