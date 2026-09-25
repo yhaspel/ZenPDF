@@ -1,7 +1,7 @@
 # Evidence — Annotate text boxes: one layout, drawn twice (2026-09-25)
 
 Owner report: *"Annotate feature is very fragile. Text cut off constantly and shifts when
-PDF is downloaded so text is not exactly aligned."* Spec: `.zen-annotate-text-PROMPT.md`
+PDF is downloaded so text is not exactly aligned."* Spec: `docs/archived/2026-09-25-annotate-text-PROMPT.md`
 (RCA, decisions, acceptance gate). Handoff: `docs/reviews/handoffs/handoff-to-cli-annotate-text-wysiwyg.md`.
 
 Produced by the Cowork sandbox against a **local stack running this branch on both sides**
@@ -13,6 +13,8 @@ with `/api` proxied to it; Playwright on Chromium 1194). Not production.
 | `screen-vs-file.png` | The pixel gate's own measurement, drawn: for four of the eight runs, each box's **screen** ink (overlay screenshot minus the same screenshot with the drawn text hidden) in red over the **file**'s ink (the engine's raster of the saved version minus the same raster without annotations) in blue. Dark = both. Five boxes: 9 pt line, name, two-line address, Hebrew with digits and a comma, a line that reaches the page's right edge and wraps. |
 | `measurements.json` | Every box in every run (2 themes × dpr 0.75 / 1 / 1.5 + 390 px phone = 8 runs × 5 boxes): screen and file ink bboxes (and ink centres, recorded not asserted) in device px, their deltas, and the shape shift (cross-correlation peak, `dx`/`dy`, with its score). |
 | `desktop-1x-light-overlay.png` / `desktop-1x-light-file.png` | The raw pair behind one run: the editor's page as shown, and the saved file as the engine renders it at the same device width. |
+| `annotate-text-evidence.png` | The spec's own picture (§1, §3), delivered with it. **Left:** before this change — the editor's boxes (red outlines) above the same boxes as the downloaded file draws them, in a different face and with every line at a different height. **Right:** the prototype — browser ink (red) over file ink (blue), dark where they coincide. |
+| `freetext_ap_prototype.py` | The spec's prototype (§3): a custom FreeText `/AP /N` drawn line by line with `fitz.TextWriter`, which first measured the ≤ 0.5 pt residual. Kept as delivered; not run by any gate. |
 
 **Result (final full-suite run):** worst ink-bbox delta **1 device px** on any edge of any
 box in any run (the gate: ≤ 1); worst **shape shift** — the cross-correlation peak between

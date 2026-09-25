@@ -802,7 +802,7 @@ def test_format_color_round_trip():
 
 # --------------------------------------------------------------------------- #
 # Text boxes: one layout, drawn twice (design contract §3 "Text on the page";
-# `.zen-annotate-text-PROMPT.md`). The client decides the lines and sizes the
+# `docs/archived/2026-09-25-annotate-text-PROMPT.md`). The client decides the lines and sizes the
 # box from them; the file draws exactly those lines, in Arimo, at the baselines
 # `A.text_baseline` computes — the formula the browser's CSS reproduces.
 # --------------------------------------------------------------------------- #

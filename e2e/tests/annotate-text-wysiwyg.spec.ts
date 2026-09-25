@@ -6,7 +6,7 @@ import { FIXTURES, registerAndLogin } from './helpers';
 
 /**
  * Text boxes: one layout, drawn twice — the screen-vs-file pixel gate
- * (design contract §3 "Text on the page"; `.zen-annotate-text-PROMPT.md` §6.2).
+ * (design contract §3 "Text on the page"; `docs/archived/2026-09-25-annotate-text-PROMPT.md` §6.2).
  *
  * Owner report 2026-09-25: "text cut off constantly and shifts when the PDF is
  * downloaded". The editor and the file used to lay each box out with two
