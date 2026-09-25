@@ -3,7 +3,7 @@ import { HttpTestingController, provideHttpClientTesting } from '@angular/common
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 
 import { OverlayDraft, OverlayItem } from './overlay-model';
-import { PageOverlay } from './page-overlay';
+import { PageOverlay, caretAfterReflow } from './page-overlay';
 
 /**
  * The norm↔screen mapping (§8) and the gestures built on it.
@@ -832,5 +832,25 @@ describe('PageOverlay — a click is not a move', () => {
     inner.onPointerUp(new PointerEvent('pointerup'));
     expect(moves.length).toBe(1);
     TestBed.resetTestingModule();
+  });
+});
+
+describe('caretAfterReflow', () => {
+  it('keeps the caret after the same characters when a space became a break', () => {
+    const before = 'one two three';
+    const after = 'one two\nthree';
+    expect(caretAfterReflow(before, before.length, after)).toBe(after.length);
+    expect(caretAfterReflow(before, 5, after)).toBe(5); // inside "two"
+  });
+
+  it('follows a break inserted inside a long word', () => {
+    expect(caretAfterReflow('abcdefgh', 8, 'abcd\nefgh')).toBe(9);
+    expect(caretAfterReflow('abcdefgh', 2, 'abcd\nefgh')).toBe(2);
+  });
+
+  it('keeps the caret after a space it had already passed', () => {
+    const before = 'one two ';
+    const after = 'one\ntwo ';
+    expect(caretAfterReflow(before, before.length, after)).toBe(after.length);
   });
 });

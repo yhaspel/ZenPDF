@@ -46,6 +46,14 @@ import { WsDrawerHead } from '../../shared/ws-drawer-head';
 import { WsDrawer } from '../../shared/ws-drawer';
 import { FitWidth } from '../../shared/fit-width';
 import { clampPageWidth } from '../../shared/page-fit';
+import {
+  TEXT_CLICK_OFFSET,
+  TextLayout,
+  layoutText,
+  loadPageTextFont,
+  pageTextMeasure,
+  paragraphDir,
+} from '../../core/text-layout';
 
 /** Every palette entry, including the two that are not annotations. */
 export type AnnotateTool = AnnotationType | 'select' | 'crop' | 'tick';
@@ -61,7 +69,10 @@ const GESTURE: Record<AnnotateTool, OverlayTool> = {
   squiggly: 'text',
   note: 'point',
   tick: 'point',
-  free_text: 'rect',
+  // Click to place (design contract §3 "Text on the page"): the box is sized
+  // from its text, so there is nothing to drag out. A drag is a click at its
+  // start — `point` emits on pointerdown.
+  free_text: 'point',
   square: 'rect',
   circle: 'ellipse',
   line: 'line',
@@ -112,15 +123,10 @@ const TICK_STROKES: Record<TickMark, NormPoint[][]> = {
 const TICK_SIZE_PT = 14;
 
 /**
- * `.page-text`'s line-height, and the 1 px insets it draws above and below.
- *
- * The insets are device pixels: they do not scale with the page, which is why
- * one line is measured in the overlay's own pixels at the current zoom and
- * not as a multiple of the point size — a multiple that held at 900 px was a
- * pixel short below about 660, where the phone draws.
+ * A text box whose text is still empty is not zero points wide — the schema
+ * wants a positive width, and the editor needs somewhere to put the caret.
  */
-const TEXT_LINE_HEIGHT = 1.25;
-const TEXT_INSETS_PX = 2;
+const MIN_TEXT_WIDTH_PT = 1;
 
 /**
  * How far a pasted or duplicated mark lands from its original.
@@ -279,6 +285,12 @@ export class Annotate {
    * editor in the margin while the caret is already on the page.
    */
   protected pageEditingId = signal<string | null>(null);
+  /**
+   * What the open text box holds right now, keystroke by keystroke — so the
+   * box grows as you type. Not in the model: the model hears once, when the
+   * sitting ends, so one ⌘Z undoes a sentence rather than a letter.
+   */
+  private liveText = signal<{ id: string; text: string } | null>(null);
 
   protected readonly stamps = STANDARD_STAMPS;
   protected readonly key = shortcutTitle;
@@ -289,6 +301,12 @@ export class Annotate {
   protected readonly gesture = computed<OverlayTool>(() => GESTURE[this.tool()]);
   protected readonly dirty = this.annotations.dirty;
   protected readonly words = computed(() => this.annotations.wordsFor(this.page()));
+  /** Whether the selected mark is a text box — the Font size control applies to it. */
+  protected readonly selectedIsText = computed(() => {
+    if (this.tool() !== 'select') return false;
+    const id = this.annotations.selectedId();
+    return !!id && this.annotations.all().find((a) => a.id === id)?.type === 'free_text';
+  });
   /** The current page's width in points — how a point size becomes pixels. */
   protected readonly pageWidthPt = computed(() => this.annotations.pageWidthFor(this.page()));
 
@@ -360,6 +378,10 @@ export class Annotate {
     this.destroyRef.onDestroy(() => this.shell.reset());
 
     effect(() => this.tool.set(this.initialTool()));
+
+    // The page-text face, fetched when Annotate mounts rather than preloaded
+    // by every page of the site (`loadPageTextFont`).
+    if (this.isBrowser) void loadPageTextFont();
 
     // The text layer is only fetched for the page being marked up, and only
     // when a markup tool is active — a 300-page document must not pull 300
@@ -493,16 +515,29 @@ export class Annotate {
         return { ...base, shape: 'ellipse' };
       case 'note':
         return { ...base, fill: a.color ?? '#D8B25E', label: '❝' };
-      case 'free_text':
+      case 'free_text': {
         // No badge: the words go on the page, at their own size and colour,
-        // where the file will put them.
+        // in the lines the file draws. The box is its text's size — derived,
+        // so it has no resize handles.
+        const size = a.font_size ?? 12;
+        const lines = this.displayLines(a);
+        const text = lines.join('\n');
+        const live = this.liveText()?.id === a.id ? this.liveText()!.text : null;
+        const rect =
+          live !== null && a.rect
+            ? this.textBox(a.page, a.rect.x, a.rect.y, this.layout(a.page, a.rect.x, live, size)).rect
+            : a.rect;
         return {
           ...base,
+          rect,
           stroke: (a.width ?? 0) > 0 ? (a.color ?? '#332D24') : 'none',
-          text: a.contents ?? '',
-          fontSize: a.font_size ?? 12,
+          text,
+          textDir: paragraphDir(live ?? text),
+          fontSize: size,
           textColor: a.color ?? '#332D24',
+          fixedSize: true,
         };
+      }
       case 'stamp':
         // Drawn as the stamp it will be — bordered uppercase words filling
         // the rect — not as an empty outline with its name in a badge above.
@@ -586,10 +621,19 @@ export class Annotate {
       // shared line-width slider was giving every text box a 2pt frame in
       // highlighter yellow, which is the "bold box with no text in it" people
       // reported.
+      //
+      // Click to place: the click is the vertical centre of line 1, so the
+      // box's top sits 0.6 × size above it; its left edge is the click.
+      const size = this.fontSize();
+      const heightPt = this.annotations.pageHeightFor(draft.page);
+      const x = annotation.rect!.x;
+      const y = annotation.rect!.y - (TEXT_CLICK_OFFSET * size) / heightPt;
+      const box = this.textBox(draft.page, x, y, this.layout(draft.page, x, '', size));
       annotation.contents = '';
-      annotation.font_size = this.fontSize();
+      annotation.font_size = size;
       annotation.width = 0;
-      annotation.rect = this.atLeastOneLine(annotation.rect!, draft.page);
+      annotation.rect = box.rect;
+      annotation.lines = box.lines;
     }
     if (tool === 'stamp') {
       annotation.stamp_name = this.stampName();
@@ -638,33 +682,107 @@ export class Annotate {
     };
   }
 
+  // ------------------------------------------------------------------ //
+  // Text boxes: one layout, drawn twice (design contract §3)
+  // ------------------------------------------------------------------ //
+  /** One measurer for the editor: Arimo's advance table, canvas fallback. */
+  private measure = pageTextMeasure();
+
   /**
-   * A text box is never shorter than one line of its type.
+   * Lay a text box's text out, breaking only at the page's right edge.
    *
-   * Filling in a form means tracing its printed lines, and a line on a scan is
-   * a few points tall — thinner than the type about to go into it. The box
-   * clips to its rectangle (§3 "Text on the page"), on screen and in the file
-   * alike, so a thin drag showed the top half of every word and read as the
-   * text being cropped. Grown **upwards** to one line at the chosen size —
-   * the traced line is where a person writes, and words sit on a line, not
-   * under it — and clamped to the page; a drag that was already tall enough
-   * is left exactly as drawn.
-   *
-   * One line is worked out in the overlay's pixels at this zoom, the way the
-   * overlay itself sizes the type (`fontPx`), then taken back to the page:
-   * whole pixels for the line plus the two insets, so the box holds its line
-   * at any render width, the phone's included.
+   * `x` is the box's left edge (normalized); the space to the edge is what a
+   * line may fill. The lines this returns are the lines the file draws.
    */
-  private atLeastOneLine(rect: NormRect, page: number): NormRect {
-    const widthPt = this.pageWidthPt();
+  private layout(page: number, x: number, text: string, sizePt: number): TextLayout {
+    const widthPt = this.annotations.pageWidthFor(page);
+    return layoutText(text, sizePt, Math.max(0, (1 - x) * widthPt), this.measure);
+  }
+
+  /**
+   * The rect a laid-out box occupies with its top-left at (x, y): exactly its
+   * text's size, kept on the page — moved up and left if it would run off the
+   * bottom or the right, never shrunk.
+   */
+  private textBox(
+    page: number,
+    x: number,
+    y: number,
+    laid: TextLayout,
+  ): { rect: NormRect; lines: string[] } {
+    const widthPt = this.annotations.pageWidthFor(page);
     const heightPt = this.annotations.pageHeightFor(page);
-    const fontPx = Math.max(4, (this.fontSize() / widthPt) * this.zoom());
-    const linePx = Math.ceil(fontPx * TEXT_LINE_HEIGHT) + TEXT_INSETS_PX;
-    const boxHeightPx = (this.zoom() * heightPt) / widthPt;
-    const line = linePx / boxHeightPx;
-    if (rect.h >= line) return rect;
-    const h = Math.min(line, 1);
-    return { ...rect, y: Math.max(0, rect.y + rect.h - h), h };
+    const w = Math.min(1, Math.max(laid.widthPt, MIN_TEXT_WIDTH_PT) / widthPt);
+    const h = Math.min(1, laid.heightPt / heightPt);
+    const round = (v: number) => Math.round(v * 1e6) / 1e6;
+    return {
+      rect: {
+        x: round(Math.min(Math.max(0, x), 1 - w)),
+        y: round(Math.min(Math.max(0, y), 1 - h)),
+        w: round(w),
+        h: round(h),
+      },
+      lines: laid.lines,
+    };
+  }
+
+  /**
+   * The lines a text box shows. Its own, when the file (or this session)
+   * laid it out; for a FreeText someone else made, its contents laid out at
+   * the width its rect has — for display only, until it is edited.
+   */
+  private displayLines(a: Annotation): string[] {
+    if (a.lines?.length) return a.lines;
+    const widthPt = this.annotations.pageWidthFor(a.page) * (a.rect?.w ?? 1);
+    return layoutText(a.contents ?? '', a.font_size ?? 12, widthPt, this.measure).lines;
+  }
+
+  /**
+   * Re-lay a text box out from `text` where it now stands, and write the
+   * result — lines, and the rect they size — into the model in one update.
+   */
+  private relayoutText(id: string, patch: Partial<Annotation> = {}): void {
+    const item = this.annotations.all().find((a) => a.id === id);
+    if (item?.type !== 'free_text') return;
+    const next = { ...item, ...patch };
+    const rect = next.rect ?? { x: 0, y: 0, w: 0, h: 0 };
+    const size = next.font_size ?? 12;
+    const text = next.contents ?? '';
+    const box = this.textBox(next.page, rect.x, rect.y, this.layout(next.page, rect.x, text, size));
+    this.annotations.update(id, { ...patch, contents: text, rect: box.rect, lines: box.lines });
+  }
+
+  /**
+   * The on-page editor's reflow hook (`PageOverlay.textFlow`): any soft
+   * break the layout inserted, made hard in the editor itself, so what is
+   * being typed is already in the lines it will be drawn in.
+   */
+  protected flowText = (id: string, text: string): string => {
+    const item = this.annotations.all().find((a) => a.id === id);
+    if (!item?.rect || item.type !== 'free_text') return text;
+    const laid = this.layout(item.page, item.rect.x, text, item.font_size ?? 12);
+    const hard = text.replace(/\r\n?/g, '\n').split('\n').length;
+    return laid.lines.length > hard ? laid.lines.join('\n') : text;
+  };
+
+  protected onPageTextInput(change: { id: string; text: string }): void {
+    this.liveText.set(change);
+  }
+
+  /**
+   * The Font size control. It sets the size the next box is placed at, and
+   * — under Select, once the slider is let go — re-lays the selected text
+   * box at it.
+   */
+  protected applyFontSizeToSelection(): void {
+    // Only a box the person selected with Select. Under the Text box tool the
+    // box just placed is also "selected", and moving the slider there is
+    // choosing the *next* box's size — not re-sizing the last one.
+    if (this.tool() !== 'select') return;
+    const id = this.annotations.selectedId();
+    const item = id ? this.annotations.all().find((a) => a.id === id) : null;
+    if (item?.type !== 'free_text' || item.font_size === this.fontSize()) return;
+    this.relayoutText(item.id, { font_size: this.fontSize() });
   }
 
   /**
@@ -715,11 +833,19 @@ export class Annotate {
       });
       return;
     }
+    if (item.type === 'free_text' && item.lines?.length) {
+      // Moved: the space to the page's edge changed, so the lines may too.
+      this.relayoutText(change.id, { rect });
+      return;
+    }
     this.annotations.update(change.id, { rect });
   }
 
   protected onSelectionChanged(id: string | null): void {
     this.annotations.select(id);
+    // The Font size control shows the selected text box's own size.
+    const item = id ? this.annotations.all().find((a) => a.id === id) : null;
+    if (item?.type === 'free_text' && item.font_size) this.fontSize.set(item.font_size);
   }
 
   /** A double-click on a text box on the page puts the caret in it. */
@@ -728,8 +854,10 @@ export class Annotate {
     this.editOnPage(id);
   }
 
+  /** The sitting ended with different text: lay it out and commit, once. */
   protected onPageTextChanged(change: { id: string; text: string }): void {
-    this.annotations.update(change.id, { contents: change.text });
+    this.liveText.set(null);
+    this.relayoutText(change.id, { contents: change.text });
   }
 
   /**
@@ -743,6 +871,7 @@ export class Annotate {
    */
   protected onPageEditingEnded(id: string): void {
     if (this.pageEditingId() === id) this.pageEditingId.set(null);
+    if (this.liveText()?.id === id) this.liveText.set(null);
     // An empty box left behind is litter — nothing to see, nothing to save,
     // and impossible to select again once it has no border.
     const item = this.annotations.all().find((a) => a.id === id);
@@ -884,6 +1013,13 @@ export class Annotate {
       copy.vertices = source.vertices.map((p) => transformPoint(p, from, to));
     }
     if (source.rect) copy.rect = to;
+    if (copy.type === 'free_text' && copy.lines?.length) {
+      // A text box's size is its text's; re-lay it where the copy lands.
+      const laid = this.layout(page, to.x, copy.lines.join('\n'), copy.font_size ?? 12);
+      const box = this.textBox(page, to.x, to.y, laid);
+      copy.rect = box.rect;
+      copy.lines = box.lines;
+    }
     return copy;
   }
 
@@ -931,7 +1067,14 @@ export class Annotate {
 
   protected commitEditing(): void {
     const id = this.editingId();
-    if (id) this.annotations.update(id, { contents: this.editingText() });
+    const item = id ? this.annotations.all().find((a) => a.id === id) : null;
+    if (id && item?.type === 'free_text' && item.lines?.length) {
+      // A text box's comment *is* its words: edited in the margin, it is
+      // laid out again, or the page would go on showing the old lines.
+      this.relayoutText(id, { contents: this.editingText() });
+    } else if (id) {
+      this.annotations.update(id, { contents: this.editingText() });
+    }
     this.editingId.set(null);
   }
 

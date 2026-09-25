@@ -185,6 +185,15 @@ ANNOTATION = {
         },
         "font_size": {"type": "number", "minimum": 4, "maximum": 96},
         "align": {"enum": [0, 1, 2]},
+        # A text box's lines, as the client laid them out (design contract §3
+        # "Text on the page"). `lines` is what the file draws; `contents`
+        # stays the comment text. Deliberately not cross-checked against
+        # `contents` — the client owns the breaks.
+        "lines": {
+            "type": "array",
+            "items": {"type": "string", "maxLength": 2000},
+            "maxItems": 200,
+        },
         "stamp_name": {"enum": _STAMP_NAMES},
         "image_ref": {"type": "string", "pattern": "^[A-Za-z0-9_-]{6,64}$"},
     },

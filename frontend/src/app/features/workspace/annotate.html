@@ -108,15 +108,18 @@
                class="w-full" data-test="annot-opacity" />
       </div>
 
-      @if (tool() === 'free_text') {
-        <p class="faint text-[11px]" data-test="free-text-hint">
-          Drag a box on the page and type in it. Double-click a box to edit it again.
-        </p>
+      @if (tool() === 'free_text' || selectedIsText()) {
+        @if (tool() === 'free_text') {
+          <p class="faint text-[11px]" data-test="free-text-hint">
+            Click where the text goes and type. Double-click a box to edit it again.
+          </p>
+        }
         <div>
           <label for="annot-font-size" class="kicker">
             Font size — {{ fontSize() }}pt
           </label>
           <input id="annot-font-size" type="range" min="6" max="48" [ngModel]="fontSize()" (ngModelChange)="fontSize.set(+$event)"
+                 (change)="applyFontSizeToSelection()"
                  class="w-full" data-test="annot-font-size" />
         </div>
       }
@@ -246,6 +249,8 @@
           (deleteRequested)="onDeleteRequested($event)"
           (editRequested)="onEditRequested($event)"
           (textChanged)="onPageTextChanged($event)"
+          (textInput)="onPageTextInput($event)"
+          [textFlow]="flowText"
           (editingEnded)="onPageEditingEnded($event)"
           (contextTarget)="onContextTarget($event)"
           (menuAction)="onMenuAction($event)"

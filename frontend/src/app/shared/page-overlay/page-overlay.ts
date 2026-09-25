@@ -181,6 +181,16 @@ export class PageOverlay {
    */
   readonly handlesWhileDrawing = input(false);
   /**
+   * How the owner breaks a text box's lines, if it does.
+   *
+   * Called on every keystroke with the editor's text; returns the text with
+   * any soft breaks the layout inserted made hard. The on-page editor never
+   * wraps by itself (`wrap="off"`), so a line that reaches the page's edge
+   * would otherwise run on past it until the box was committed — this keeps
+   * what is being typed in the lines it will be drawn in.
+   */
+  readonly textFlow = input<((id: string, text: string) => string) | null>(null);
+  /**
    * What the right-click menu should offer for whatever is under the pointer.
    *
    * A **function**, not an array, and that is load-bearing. The overlay has to
@@ -213,6 +223,12 @@ export class PageOverlay {
   /** A double-click on something that carries text: put a caret in it. */
   readonly editRequested = output<string>();
   readonly textChanged = output<{ id: string; text: string }>();
+  /**
+   * The text in the box being typed into, on every keystroke — so the owner
+   * can re-lay the box out and it grows as you type. Not a commit: that is
+   * still `textChanged`, once per sitting, so one ⌘Z undoes a sentence.
+   */
+  readonly textInput = output<{ id: string; text: string }>();
   /**
    * The editor for *this* item closed — its text, if it changed, went out on
    * `textChanged` just before.
@@ -1109,6 +1125,27 @@ export class PageOverlay {
     this.editingEnded.emit(item.id);
   }
 
+  /**
+   * Every keystroke: let the owner lay the box out again (it grows as you
+   * type), and apply any line break its layout inserted — keeping the caret
+   * after the same characters it was after.
+   */
+  protected onTextInput(item: OverlayItem, event: Event): void {
+    const editor = event.target as HTMLTextAreaElement;
+    let value = editor.value;
+    const flow = this.textFlow();
+    if (flow) {
+      const next = flow(item.id, value);
+      if (next !== value) {
+        const caret = caretAfterReflow(value, editor.selectionStart ?? value.length, next);
+        editor.value = next;
+        editor.setSelectionRange(caret, caret);
+        value = next;
+      }
+    }
+    this.textInput.emit({ id: item.id, text: value });
+  }
+
   /** Escape and ⌘/Ctrl+Enter both mean "done"; plain Enter is a new line,
    *  because a text box on a page is a paragraph, not a form field. */
   protected onTextKeyDown(event: KeyboardEvent): void {
@@ -1121,4 +1158,30 @@ export class PageOverlay {
 
   protected trackItem = (_: number, item: OverlayItem): string => item.id;
   protected trackWord = (_: number, word: OverlayWord): number => word.i;
+}
+
+/**
+ * Where a caret belongs after `before` became `after` by a reflow that only
+ * turned whitespace into line breaks, dropped whitespace at a break, or put a
+ * break inside a long word: after the same number of non-whitespace
+ * characters, and after any whitespace the caret was already past.
+ */
+export function caretAfterReflow(before: string, caret: number, after: string): number {
+  const head = before.slice(0, caret);
+  const solid = head.replace(/\s/g, '').length;
+  const trailingSpace = head.length - head.trimEnd().length;
+  let seen = 0;
+  let i = 0;
+  while (i < after.length && seen < solid) {
+    if (!/\s/.test(after[i])) seen++;
+    i++;
+  }
+  // Step over the whitespace the caret had already passed, but never onto the
+  // next word.
+  let skipped = 0;
+  while (i < after.length && skipped < trailingSpace && /\s/.test(after[i])) {
+    i++;
+    skipped++;
+  }
+  return i;
 }

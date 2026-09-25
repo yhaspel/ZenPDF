@@ -798,3 +798,277 @@ def test_format_color_round_trip():
     assert A.format_color([1.0, 0.0, 0.0]) == "#ff0000"
     assert A.format_color(None) is None
     assert A.format_color([0.0]) == "#000000"
+
+
+# --------------------------------------------------------------------------- #
+# Text boxes: one layout, drawn twice (design contract §3 "Text on the page";
+# `.zen-annotate-text-PROMPT.md`). The client decides the lines and sizes the
+# box from them; the file draws exactly those lines, in Arimo, at the baselines
+# `A.text_baseline` computes — the formula the browser's CSS reproduces.
+# --------------------------------------------------------------------------- #
+def _blank(width: float = 595, height: float = 842, rotate: int = 0,
+           pages: int = 1) -> bytes:
+    doc = fitz.open()
+    for _ in range(pages):
+        page = doc.new_page(width=width, height=height)
+        if rotate:
+            page.set_rotation(rotate)
+    try:
+        return doc.tobytes()
+    finally:
+        doc.close()
+
+
+def _text_box(nm: str, x_pt: float, y_pt: float, lines: list[str], size: float,
+              *, page: int = 0, page_w: float = 595, page_h: float = 842,
+              color: str = "#000000") -> dict:
+    """What the client sends: the rect is the lines' own size — widest line by
+    lines × 1.2 × size — rounded to the wire's six decimals."""
+    face = A._text_font()
+    w = max([face.text_length(line, fontsize=size) for line in lines] + [1.0])
+    h = len(lines) * A.TEXT_LINE_HEIGHT * size
+    return {
+        "id": nm, "page": page, "type": "free_text",
+        "rect": {"x": round(x_pt / page_w, 6), "y": round(y_pt / page_h, 6),
+                 "w": round(w / page_w, 6), "h": round(h / page_h, 6)},
+        "lines": lines, "contents": "\n".join(lines),
+        "font_size": size, "color": color, "width": 0,
+    }
+
+
+def _spans(data: bytes, page: int = 0) -> list[dict]:
+    doc = fitz.open(stream=data, filetype="pdf")
+    try:
+        pg = doc[page]
+        return [s for b in pg.get_text("dict")["blocks"] for ln in b.get("lines", [])
+                for s in ln["spans"]]
+    finally:
+        doc.close()
+
+
+def test_text_font_is_arimo_and_covers_hebrew():
+    """The face both sides use has to carry every glyph a Hebrew form needs —
+    a missing glyph is a fallback font, and a fallback font is a shift."""
+    from fontTools.ttLib import TTFont
+
+    font = TTFont(A.TEXT_FONT_PATH)
+    cmap = font.getBestCmap()
+    assert font["name"].getDebugName(1) == "Arimo"
+    assert all(cp in cmap for cp in range(0x05D0, 0x05EB)), "Hebrew letters"
+    assert all(cp in cmap for cp in range(0x20, 0x7F)), "printable ASCII"
+    # The metrics the CSS pins with ascent-/descent-override.
+    assert font["head"].unitsPerEm == 2048
+    assert font["hhea"].ascent == 1854 and font["hhea"].descent == -434
+    assert A.TEXT_ASCENT == 1854 / 2048 and A.TEXT_DESCENT == 434 / 2048
+
+
+def test_the_frontend_serves_the_same_font_bytes():
+    """"Same bytes" is the contract: one face, not two faces that agree."""
+    import hashlib
+    import pathlib
+
+    served = pathlib.Path(A.TEXT_FONT_PATH).parents[4] / "frontend/public/fonts/Arimo-Regular.ttf"
+    if not served.exists():  # the api image ships without the frontend
+        pytest.skip("frontend tree not present")
+    digest = hashlib.sha256
+    assert digest(served.read_bytes()).digest() == \
+        digest(pathlib.Path(A.TEXT_FONT_PATH).read_bytes()).digest()
+
+
+@pytest.mark.parametrize("size", [9, 12, 14, 24])
+@pytest.mark.parametrize("count", [1, 2, 5])
+def test_text_baselines_are_the_formula(size, count):
+    lines = [f"Line {i + 1} AVAWAY fi fl" for i in range(count)]
+    x, y = 72.0, 100.0
+    out, _ = A.apply_annotation_ops(_blank(), ops=_add(_text_box("tb", x, y, lines, size)))
+    spans = [s for s in _spans(out) if s["text"].strip()]
+    assert [s["text"] for s in spans] == lines
+    for i, span in enumerate(spans):
+        assert span["font"].startswith("Arimo")
+        assert span["size"] == pytest.approx(size, abs=0.01)
+        # six-decimal wire rounding of the rect is < 0.001 pt on a 842 pt page
+        assert span["origin"][0] == pytest.approx(x, abs=0.01)
+        assert span["origin"][1] == pytest.approx(y + A.text_baseline(i, size), abs=0.01)
+
+
+def test_text_box_rect_is_the_rect_the_client_sent():
+    spec = _text_box("tb", 100, 52, ["Yuval Haspel"], 12)
+    out, _ = A.apply_annotation_ops(_blank(), ops=_add(spec))
+    [item] = A.extract_annotations(out)
+    assert item["rect"] == spec["rect"]
+    assert item["lines"] == ["Yuval Haspel"]
+    assert item["contents"] == "Yuval Haspel"
+    assert item["font_size"] == 12
+
+
+@pytest.mark.parametrize("size", [9, 12, 24])
+def test_no_glyph_is_clipped(size):
+    """Every span sits inside the box: the box is its text's size, so nothing
+    reaches the edge that the appearance's BBox would cut."""
+    lines = ["12 Herzl St., Petah Tikva", "jg Qy AVAWAY", "רחוב הרצל 12, פתח תקווה"]
+    spec = _text_box("tb", 60, 200, lines, size)
+    out, _ = A.apply_annotation_ops(_blank(), ops=_add(spec))
+    rect = spec["rect"]
+    x0, y0 = rect["x"] * 595, rect["y"] * 842
+    x1, y1 = x0 + rect["w"] * 595, y0 + rect["h"] * 842
+    spans = [s for s in _spans(out) if s["text"].strip()]
+    assert len(spans) == 3
+    for span in spans:
+        bx0, by0, bx1, by1 = span["bbox"]
+        assert bx0 >= x0 - 0.5 and bx1 <= x1 + 0.5, (span["text"], span["bbox"], (x0, x1))
+        assert by0 >= y0 - 0.5 and by1 <= y1 + 0.5, (span["text"], span["bbox"], (y0, y1))
+
+
+def test_hebrew_is_right_aligned_and_extracts_in_logical_spelling():
+    lines = ["רחוב הרצל 12, פתח תקווה", "דירה 4"]
+    spec = _text_box("he", 125, 150, lines, 14)
+    out, _ = A.apply_annotation_ops(_blank(), ops=_add(spec))
+    right = (spec["rect"]["x"] + spec["rect"]["w"]) * 595
+    spans = [s for s in _spans(out) if s["text"].strip()]
+    assert len(spans) == 2
+    for span in spans:
+        # Right edge of every line on the box's right edge (RTL = start is right).
+        assert span["bbox"][2] == pytest.approx(right, abs=0.6)
+    # The short second line is right-aligned, not left.
+    assert spans[1]["bbox"][0] > spans[0]["bbox"][0] + 50
+    text = " ".join(s["text"] for s in spans)
+    # Each word reads in logical order (a reversed word would not match). The
+    # position of "12," relative to the words is the extractor's own bidi
+    # guess and is not asserted.
+    for word in ("רחוב", "הרצל", "פתח", "תקווה", "דירה"):
+        assert word in text, (word, text)
+    [item] = A.extract_annotations(out)
+    assert item["lines"] == lines
+
+
+def test_bidi_visual_order_matches_the_browser():
+    """What the file draws is the UAX #9 visual order for an RTL paragraph —
+    digits stay left-to-right inside the right-to-left line."""
+    from bidi.algorithm import get_display
+
+    visual = get_display("רחוב הרצל 12, פתח תקווה", base_dir="R")
+    assert "12" in visual and "21" not in visual
+    assert visual.endswith("רחוב"[::-1])  # the first word lands at the right
+
+
+def test_paragraph_direction_is_the_first_strong_character():
+    assert A.paragraph_is_rtl("שלום world")
+    assert not A.paragraph_is_rtl("world שלום")
+    assert A.paragraph_is_rtl("12, רחוב")  # digits are weak
+    assert not A.paragraph_is_rtl("")
+    assert not A.paragraph_is_rtl("12 ,")
+
+
+@pytest.mark.parametrize("rotate", [90, 180, 270])
+def test_text_box_reads_upright_on_a_rotated_page(rotate):
+    """Placed on a /Rotate N page the lines read the way the reader sees the
+    page: wide and short, not turned a quarter (or half) turn."""
+    lines = ["Rotated page text", "second line"]
+    turned = _blank(595, 842, rotate=rotate)
+    doc = fitz.open(stream=turned, filetype="pdf")
+    dw, dh = doc[0].rect.width, doc[0].rect.height
+    doc.close()
+    spec = _text_box("rt", 80, 120, lines, 14, page_w=dw, page_h=dh)
+    out, _ = A.apply_annotation_ops(turned, ops=_add(spec))
+    doc = fitz.open(stream=out, filetype="pdf")
+    try:
+        pm = doc[0].get_pixmap(annots=True)
+        xs, ys = [], []
+        for y in range(pm.height):
+            for x in range(pm.width):
+                if sum(pm.pixel(x, y)[:3]) < 384:
+                    xs.append(x / pm.width * dw)
+                    ys.append(y / pm.height * dh)
+    finally:
+        doc.close()
+    assert xs, "nothing rendered"
+    # Upright: ink is wider than tall, and starts at the box's top-left.
+    assert max(xs) - min(xs) > 2 * (max(ys) - min(ys))
+    assert min(xs) == pytest.approx(80, abs=2)
+    assert min(ys) == pytest.approx(120 + A.text_baseline(0, 14) - 14 * 0.75, abs=3)
+    [item] = A.extract_annotations(out)
+    for k in ("x", "y", "w", "h"):
+        assert item["rect"][k] == pytest.approx(spec["rect"][k], abs=2e-6)
+
+
+def test_a_trailing_op_on_another_page_does_not_undo_the_appearance():
+    """The 2026-08-28 lesson: MuPDF re-synthesises *dirty* annotations when a
+    later op loads another page. The text appearance is written with raw xref
+    keys after `update()`, so it has to survive a trailing op elsewhere."""
+    ops = _add(_text_box("tb", 72, 100, ["Survives the batch"], 12))
+    ops += _add({"id": "sq", "page": 1, "type": "square",
+                 "rect": {"x": 0.1, "y": 0.1, "w": 0.1, "h": 0.1}})
+    out, report = A.apply_annotation_ops(_blank(pages=2), ops=ops)
+    assert report["added"] == 2
+    spans = [s for s in _spans(out) if s["text"].strip()]
+    assert [s["font"][:5] for s in spans] == ["Arimo"]
+    assert spans[0]["origin"][1] == pytest.approx(100 + A.text_baseline(0, 12), abs=0.01)
+
+
+def test_updating_a_text_box_redraws_it_from_the_new_lines():
+    first = _text_box("tb", 72, 100, ["before"], 12)
+    out, _ = A.apply_annotation_ops(_blank(), ops=_add(first))
+    second = _text_box("tb", 72, 100, ["after, and", "longer"], 12)
+    out, report = A.apply_annotation_ops(out, ops=[{"action": "update", "annotation": second}])
+    assert report["updated"] == 1
+    assert [s["text"] for s in _spans(out) if s["text"].strip()] == ["after, and", "longer"]
+    [item] = A.extract_annotations(out)
+    assert item["lines"] == ["after, and", "longer"]
+
+
+def test_a_foreign_free_text_round_trips_untouched():
+    """A FreeText made by someone else (no /ZenLines) keeps its own appearance
+    while it is not edited — and reads back without `lines`."""
+    doc = fitz.open()
+    page = doc.new_page()
+    annot = page.add_freetext_annot(fitz.Rect(50, 50, 250, 90), "Foreign note", fontsize=11)
+    annot.set_info(content="Foreign note")
+    annot.update()
+    ap_before = doc.xref_stream(int(doc.xref_get_key(annot.xref, "AP/N")[1].split()[0]))
+    data = doc.tobytes()
+    doc.close()
+
+    out, _ = A.apply_annotation_ops(data, ops=_add(_text_box("mine", 72, 300, ["Mine"], 12)))
+    items = {i["contents"]: i for i in A.extract_annotations(out)}
+    assert "lines" not in items["Foreign note"]
+    assert items["Mine"]["lines"] == ["Mine"]
+    doc = fitz.open(stream=out, filetype="pdf")
+    try:
+        pg = doc[0]
+        foreign = next(a for a in pg.annots() if (a.info or {}).get("content") == "Foreign note")
+        ap_after = doc.xref_stream(int(doc.xref_get_key(foreign.xref, "AP/N")[1].split()[0]))
+    finally:
+        doc.close()
+    assert ap_after == ap_before
+
+
+def test_free_text_without_lines_keeps_the_stock_appearance(fixture_bytes):
+    """An API client that sends no `lines` gets MuPDF's own layout, as before."""
+    spec = {"id": "old", "page": 0, "type": "free_text",
+            "rect": {"x": 0.1, "y": 0.1, "w": 0.4, "h": 0.05},
+            "contents": "No lines sent", "font_size": 12}
+    out, _ = A.apply_annotation_ops(fixture_bytes("text.pdf"), ops=_add(spec))
+    [item] = [i for i in A.extract_annotations(out) if i["id"] == "old"]
+    assert "lines" not in item
+
+
+def test_text_font_is_subset_on_save():
+    """A full Arimo is ~300 KB; a saved file carries only the glyphs it uses."""
+    out, _ = A.apply_annotation_ops(
+        _blank(), ops=_add(_text_box("tb", 72, 100, ["Small file"], 12)))
+    assert len(out) < 40_000, len(out)
+
+
+def test_lines_must_be_strings():
+    spec = _text_box("tb", 72, 100, ["ok"], 12)
+    spec["lines"] = ["ok", 3]
+    with pytest.raises(InvalidParams):
+        A.apply_annotation_ops(_blank(), ops=_add(spec))
+
+
+def test_empty_lines_are_blank_lines_not_errors():
+    spec = _text_box("tb", 72, 100, ["first", "", "third"], 12)
+    out, _ = A.apply_annotation_ops(_blank(), ops=_add(spec))
+    spans = [s for s in _spans(out) if s["text"].strip()]
+    assert [s["text"] for s in spans] == ["first", "third"]
+    assert spans[1]["origin"][1] == pytest.approx(100 + A.text_baseline(2, 12), abs=0.01)

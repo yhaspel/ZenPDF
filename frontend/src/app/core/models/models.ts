@@ -241,6 +241,12 @@ export interface Annotation {
   icon?: string;
   font_size?: number;
   align?: number;
+  /**
+   * A text box's lines as the client laid them out (`core/text-layout.ts`).
+   * What the file draws; `contents` stays the comment text. Absent on a
+   * FreeText someone else made, until it is edited here.
+   */
+  lines?: string[];
   stamp_name?: string;
   image_ref?: string;
 }
