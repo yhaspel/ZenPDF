@@ -862,17 +862,9 @@ def test_text_font_is_arimo_and_covers_hebrew():
     assert A.TEXT_ASCENT == 1854 / 2048 and A.TEXT_DESCENT == 434 / 2048
 
 
-def test_the_frontend_serves_the_same_font_bytes():
-    """"Same bytes" is the contract: one face, not two faces that agree."""
-    import hashlib
-    import pathlib
-
-    served = pathlib.Path(A.TEXT_FONT_PATH).parents[4] / "frontend/public/fonts/Arimo-Regular.ttf"
-    if not served.exists():  # the api image ships without the frontend
-        pytest.skip("frontend tree not present")
-    digest = hashlib.sha256
-    assert digest(served.read_bytes()).digest() == \
-        digest(pathlib.Path(A.TEXT_FONT_PATH).read_bytes()).digest()
+# "Same bytes" — that the frontend serves this very file — is checked by
+# `infra/test.sh`, not here: this suite runs in a container that mounts
+# backend/ only, so a test for it could only skip, and the gate fails on that.
 
 
 @pytest.mark.parametrize("size", [9, 12, 14, 24])
@@ -957,6 +949,22 @@ def test_paragraph_direction_is_the_first_strong_character():
     assert A.paragraph_is_rtl("12, רחוב")  # digits are weak
     assert not A.paragraph_is_rtl("")
     assert not A.paragraph_is_rtl("12 ,")
+
+
+@pytest.mark.parametrize("text, rtl", [
+    # The same table is in `core/text-layout.spec.ts`: the screen's `dir` and
+    # the file's alignment are one decision, made by one rule on both sides.
+    ("‏12 Main St", True),      # RLM decides
+    ("‎שלום", False),           # LRM decides
+    ("١٢ items", False),             # Arabic-Indic digits are weak
+    ("۱۲ items", False),             # so are the extended ones
+    ("﻿Hello", False),          # a BOM is a format character
+    ("ָשלום", True),            # a point is a mark; the letter decides
+    ("𞤀𞤁 12 abc", True),             # Adlam, a supplementary RTL script
+    ("Ωmega", False),
+])
+def test_paragraph_direction_matches_the_clients_rule(text, rtl):
+    assert A.paragraph_is_rtl(text) is rtl
 
 
 @pytest.mark.parametrize("rotate", [90, 180, 270])
@@ -1072,3 +1080,184 @@ def test_empty_lines_are_blank_lines_not_errors():
     spans = [s for s in _spans(out) if s["text"].strip()]
     assert [s["text"] for s in spans] == ["first", "third"]
     assert spans[1]["origin"][1] == pytest.approx(100 + A.text_baseline(2, 12), abs=0.01)
+
+
+def test_text_geometry_is_pinned_to_the_numbers_the_browser_uses():
+    """The tests above measure the file against `A.text_baseline`; this pins
+    `A.text_baseline` itself. The browser reproduces these numbers from CSS
+    (`line-height: 1.2`, the ascent/descent overrides) and
+    `core/text-layout.spec.ts` pins the same ones — so the engine cannot drift
+    from the screen without failing here."""
+    assert A.TEXT_LINE_HEIGHT == 1.2
+    assert A.text_baseline(0, 12) == pytest.approx(11.36015625, abs=1e-9)
+    assert A.text_baseline(1, 12) - A.text_baseline(0, 12) == pytest.approx(14.4, abs=1e-9)
+    # The spec's worked example: a box at y = 52 puts line 1 on 63.36.
+    assert 52 + A.text_baseline(0, 12) == pytest.approx(63.36, abs=0.001)
+
+
+def test_text_is_drawn_in_the_colour_sent():
+    out, _ = A.apply_annotation_ops(
+        _blank(), ops=_add(_text_box("tb", 72, 100, ["Red text"], 12, color="#FF0000")))
+    [span] = [s for s in _spans(out) if s["text"].strip()]
+    assert span["color"] == 0xFF0000
+
+
+@pytest.mark.parametrize("crop", ["[0 0 595 842]", "[50 50 545 792]"])
+def test_an_inherited_cropbox_does_not_move_the_appearance(crop):
+    """/CropBox is inheritable. A scratch page that picked one up from /Pages
+    baked the offset into the appearance and drew every glyph outside its
+    BBox — the box saved blank, or shifted and cut."""
+    doc = fitz.open(stream=_blank(), filetype="pdf")
+    pages_xref = int(doc.xref_get_key(doc.pdf_catalog(), "Pages")[1].split()[0])
+    doc.xref_set_key(pages_xref, "CropBox", crop)
+    doc.xref_set_key(doc[0].xref, "CropBox", "null")
+    dw, dh = doc[0].rect.width, doc[0].rect.height
+    data = doc.tobytes()
+    doc.close()
+    spec = _text_box("tb", 80, 120, ["Inherited crop", "second line"], 14, page_w=dw, page_h=dh)
+    out, _ = A.apply_annotation_ops(data, ops=_add(spec))
+    spans = [s for s in _spans(out) if s["text"].strip()]
+    assert [s["text"] for s in spans] == ["Inherited crop", "second line"]
+    for i, span in enumerate(spans):
+        assert span["origin"][0] == pytest.approx(80, abs=0.01)
+        assert span["origin"][1] == pytest.approx(120 + A.text_baseline(i, 14), abs=0.01)
+
+
+@pytest.mark.parametrize("border", [1, 2])
+def test_a_bordered_text_box_keeps_the_rect_and_size_sent(border):
+    """MuPDF grows a bordered FreeText's /Rect by half the border each side; a
+    viewer then stretched the lines (drawn at the box's size) onto it."""
+    spec = {**_text_box("tb", 100, 200, ["Bordered box", "two lines"], 12), "width": border}
+    out, _ = A.apply_annotation_ops(_blank(), ops=_add(spec))
+    [item] = A.extract_annotations(out)
+    for k in ("x", "y", "w", "h"):
+        assert item["rect"][k] == pytest.approx(spec["rect"][k], abs=2e-6)
+    spans = [s for s in _spans(out) if s["text"].strip()]
+    for i, span in enumerate(spans):
+        assert span["size"] == pytest.approx(12, abs=0.01)
+        assert span["origin"][1] == pytest.approx(200 + A.text_baseline(i, 12), abs=0.01)
+
+
+def test_lines_another_editor_made_stale_are_dropped():
+    """An editor that changes /Contents and redraws the box can keep a key it
+    does not know. Stale lines would show the old text and, on the next save,
+    draw it back over the new — so they are read only while they still spell
+    /Contents, and the box is otherwise treated as someone else's."""
+    out, _ = A.apply_annotation_ops(
+        _blank(), ops=_add(_text_box("tb", 72, 100, ["Meet at 10:00"], 12)))
+    doc = fitz.open(stream=out, filetype="pdf")
+    page = doc[0]
+    annot = next(page.annots())
+    annot.set_info(content="Meet at 14:30 instead")
+    annot.update()
+    edited = doc.tobytes()
+    del annot, page
+    doc.close()
+    [item] = A.extract_annotations(edited)
+    assert item["contents"] == "Meet at 14:30 instead"
+    assert "lines" not in item
+    # …while the client's own breaks, and the whitespace dropped at them, are fine.
+    spec = _text_box("tb", 72, 100, ["Signed on behalf of the", "company"], 12)
+    spec["contents"] = "Signed on behalf of the company"
+    out, _ = A.apply_annotation_ops(_blank(), ops=_add(spec))
+    [item] = A.extract_annotations(out)
+    assert item["lines"] == ["Signed on behalf of the", "company"]
+
+
+@pytest.mark.parametrize("lines, rtl", [
+    (["مرحبا بالعالم", "شكرا"], True),    # Arabic letters join
+    (["שָׁלוֹם עוֹלָם", "דִּירָה"], True),   # Hebrew points are positioned marks
+    (["नमस्ते दुनिया"], False),           # Devanagari conjuncts
+])
+def test_text_that_needs_shaping_keeps_the_stock_appearance(lines, rtl):
+    """TextWriter draws one glyph per character with no shaping: Arabic came
+    out as disconnected letters, points between the letters they belong to.
+    Such a box keeps MuPDF's own appearance, which shapes — stored without
+    lines, like any FreeText this editor did not draw — and an RTL paragraph
+    is right-aligned there, as the editor shows it."""
+    spec = _text_box("tb", 72, 100, lines, 14)
+    spec["rect"]["w"] = 0.4  # the client's measure of these is not Arimo's
+    out, _ = A.apply_annotation_ops(_blank(), ops=_add(spec))
+    [item] = A.extract_annotations(out)
+    assert "lines" not in item
+    assert item["contents"] == "\n".join(lines)
+    spans = [s for s in _spans(out) if s["text"].strip()]
+    assert spans and not [s for s in spans if s["font"].startswith("Arimo")]
+    if rtl:
+        right = 72 + 0.4 * 595
+        assert max(s["bbox"][2] for s in spans) == pytest.approx(right, abs=1.5)
+
+
+@pytest.mark.parametrize("text, browser_em, rtl", [
+    ("Done ✅", 1.0, False),         # Chrome's emoji is 1 em; the file's is wider
+    ("Signed ✔ 12/05", 0.846, False),
+    ("שלום ✅", 1.0, True),
+    ("Done ✔️", 0.846, False),  # a variation selector draws nothing
+])
+def test_a_fallback_glyph_wider_than_the_browsers_grows_the_box(text, browser_em, rtl):
+    """A character Arimo lacks is drawn in a MuPDF fallback face, which can be
+    wider than the browser's — and the box, the client's measure, cut the end
+    of the line off. The box grows toward the line's end instead: right for
+    LTR, left for RTL (its right edge, where the line starts, stays put)."""
+    face = A._text_font()
+    size, x, y = 14, 100.0, 200.0
+    w = sum(face.text_length(c, fontsize=size) for c in text if face.has_glyph(ord(c))) \
+        + browser_em * size
+    spec = _text_box("tb", x, y, [text], size)
+    spec["rect"]["w"] = round(w / 595, 6)
+    out, _ = A.apply_annotation_ops(_blank(), ops=_add(spec))
+    [item] = A.extract_annotations(out)
+    assert item["lines"] == [text]
+    x0, x1 = item["rect"]["x"] * 595, (item["rect"]["x"] + item["rect"]["w"]) * 595
+    if rtl:
+        assert x1 == pytest.approx(x + w, abs=0.01) and x0 < x
+    else:
+        assert x0 == pytest.approx(x, abs=0.01) and x1 > x + w
+    for span in (s for s in _spans(out) if s["text"].strip()):
+        assert span["bbox"][0] >= x0 - 0.5 and span["bbox"][2] <= x1 + 0.5, span
+
+
+def test_a_trailing_space_does_not_grow_the_box():
+    spec = _text_box("tb", 72, 100, ["Hello "], 12)
+    spec["rect"]["w"] = round(A._text_font().text_length("Hello", fontsize=12) / 595, 6)
+    out, _ = A.apply_annotation_ops(_blank(), ops=_add(spec))
+    [item] = A.extract_annotations(out)
+    assert item["rect"] == spec["rect"]
+
+
+def test_decomposed_accents_are_drawn_composed():
+    """"e" + U+0301 is "é" to the browser, which composes it; the file draws
+    the composed letter, which Arimo has — and keeps the lines as sent."""
+    lines = ["Zoë café"]
+    out, _ = A.apply_annotation_ops(_blank(), ops=_add(_text_box("tb", 72, 100, lines, 12)))
+    [span] = [s for s in _spans(out) if s["text"].strip()]
+    assert span["text"] == "Zoë café"
+    assert span["font"].startswith("Arimo")
+    [item] = A.extract_annotations(out)
+    assert item["lines"] == lines
+
+
+def test_several_boxes_in_one_batch_each_draw_their_own_lines():
+    ops = []
+    for i in range(6):
+        ops += _add(_text_box(f"tb{i}", 72, 80 + 60 * i, [f"Box {i}", f"line two of {i}"], 12))
+    out, report = A.apply_annotation_ops(_blank(), ops=ops)
+    assert report["added"] == 6
+    texts = [s["text"] for s in _spans(out) if s["text"].strip()]
+    assert sorted(texts) == sorted(t for i in range(6) for t in (f"Box {i}", f"line two of {i}"))
+    doc = fitz.open(stream=out, filetype="pdf")
+    try:
+        assert doc.page_count == 1  # every scratch page is gone
+    finally:
+        doc.close()
+
+
+def test_a_long_pasted_list_is_within_the_schema():
+    """`lines` is bounded by what `contents` can lay out into. A 200-line cap
+    rejected a pasted list — and every other mark in that save with it."""
+    from apps.pdf_engine.registry import validate_params
+
+    lines = [f"item {i}" for i in range(300)]
+    spec = _text_box("tb", 72, 100, lines[:1], 6)
+    spec["lines"], spec["contents"] = lines, "\n".join(lines)
+    validate_params("annotate_batch", {"ops": _add(spec)})

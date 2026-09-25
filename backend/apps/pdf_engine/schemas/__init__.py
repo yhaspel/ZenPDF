@@ -188,11 +188,14 @@ ANNOTATION = {
         # A text box's lines, as the client laid them out (design contract §3
         # "Text on the page"). `lines` is what the file draws; `contents`
         # stays the comment text. Deliberately not cross-checked against
-        # `contents` — the client owns the breaks.
+        # `contents` — the client owns the breaks. Bounded by what `contents`
+        # can lay out into (5000 characters, a line each at worst, plus the
+        # empty last line): a tighter cap rejected a long pasted list, and
+        # with it every other mark in the same save, on every autosave.
         "lines": {
             "type": "array",
-            "items": {"type": "string", "maxLength": 2000},
-            "maxItems": 200,
+            "items": {"type": "string", "maxLength": 5000},
+            "maxItems": 5001,
         },
         "stamp_name": {"enum": _STAMP_NAMES},
         "image_ref": {"type": "string", "pattern": "^[A-Za-z0-9_-]{6,64}$"},

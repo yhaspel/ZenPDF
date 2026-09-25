@@ -36,10 +36,13 @@ sha256 `e5717ff6c2063b0e596176ddad929b0a98a6d8db694f43a8ba26c99675625b67`.
 
 **The frontend serves the same bytes** — `frontend/public/fonts/Arimo-Regular.ttf`
 is this file, and `Arimo-Regular.woff2` is a lossless woff2 of it (fontTools).
-`test_the_frontend_serves_the_same_font_bytes` fails if they drift; the
+`infra/test.sh` fails the gate if the two `.ttf` copies drift (a pytest could
+not: the api container mounts `backend/` only); the
 metrics above are pinned in `styles.scss` with ascent-/descent-override and in
 `frontend/src/app/core/text-layout.ts`, whose advance-width table is generated
 from this file. Replacing the font means regenerating that table.
 
-The engine subsets it on save, so a saved document carries only the glyphs its
-text boxes use (a few KB), not the whole ~310 KB face.
+The engine subsets fonts on save, so a saved document carries only the glyphs
+its text boxes use (a few KB), not the whole ~310 KB face. Like Edit mode's
+save, it is `Document.subset_fonts()` — every embedded font in the document,
+not only this one; appearance streams keep the glyphs they draw.
