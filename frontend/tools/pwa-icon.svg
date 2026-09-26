@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <!-- App icon, purpose "any": the seal exactly as public/favicon.svg draws it
+       (design contract §1) — vermilion rounded square, stroked Z. Font-free on
+       purpose: the rasterizer cannot resolve web fonts. -->
+  <rect x="1.5" y="1.5" width="29" height="29" rx="7" fill="#B23A26"/>
+  <path d="M10.5 11h11l-11 10h11" fill="none" stroke="#FFFDF7" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

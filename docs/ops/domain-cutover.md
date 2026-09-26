@@ -179,6 +179,11 @@ curl -s https://<apex>/api/health/                                     # status 
 - [ ] Send a real mail to `support@<apex>` and see it arrive. Forwarding
       proven, not assumed — this is the acceptance criterion Phase 11 leaves
       open until it is done.
+- [ ] The app is installable on the new origin, and only there (`AGENTS.md`
+      *Installable app*): from `e2e/`, `node tools/pwa-check.mjs https://<apex>`
+      exits 0. An install is tied to its origin, so a copy installed from
+      `zenpdf.up.railway.app` before the cutover now opens onto a 301. Its owner
+      reinstalls from the apex; nothing in this runbook can move it for them.
 
 ## 4. Search Console (owner)
 
