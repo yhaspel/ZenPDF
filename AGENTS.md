@@ -30,3 +30,16 @@ Non-negotiables (hold even where the contract is silent):
 - Track execution in `PROGRESS.md`; architectural decisions go through `development-plans/01-architecture.md`.
 - Anonymous-first is a product law (architecture §21): no login walls; ownership funnels through `apps/core/principals.py`.
 - Frontend state via signals in facades (`app/abstraction/`); components stay presentation-only.
+
+## Installable app (PWA)
+
+Chrome offers *Install ZenPDF*; the design side is contract §5 *Installable app*. What an agent must not break:
+
+- **Manifest:** `frontend/public/manifest.webmanifest`, linked from `src/index.html` (so every prerendered page carries it).
+- **Worker:** `provideServiceWorker('zen-sw.js')` is in `src/main.ts`, **not** `app.config.ts`, because the prerenderer merges `app.config.ts` and has no `navigator.serviceWorker`. Browser-only providers go in `main.ts`'s `mergeApplicationConfig`.
+- **`public/zen-sw.js` wraps Angular's `ngsw-worker.js`** and stops the fetch event for `/api/` and every other origin before Angular's listener sees it, so those requests run exactly as with no worker. Uploads and pdf.js range reads are not held inside a worker event, and cross-origin requests are not subjected to the worker's own CSP (`connect-src 'self'`). Keep it registered first and keep the rule that narrow.
+- **`ngsw-config.json`:** `index` is `/index.csr.html`, because `outputMode: static` makes `index.html` the *prerendered landing page*, and serving that for every navigation would flash the landing page. **No `dataGroups`, ever**: `/api` is per-user. Verify on production that no `ngsw:*` cache holds an `/api/` key.
+- **nginx:** `zen-sw.js`, `ngsw-worker.js`, `ngsw.json` and `manifest.webmanifest` have their own `no-cache` location **above** the long-cache asset regex, in both `frontend/nginx.conf` and `infra/railway/nginx.railway.conf`.
+- **Icons:** `npm run icons:pwa` rasterizes `tools/pwa-icon*.svg` into `public/icons/` (committed). Changed artwork: **bump `ICON_VERSION`** in `tools/generate-pwa-icons.mjs`, which renames every file and rewrites the references. The script refuses to overwrite changed pixels under an existing name, because `/icons/*.png` is cached immutable for a year.
+- **Updates:** `core/services/app-update.service.ts` reloads at the next navigation once a new version is ready, never on `/app/doc/*`, `/app/sign/new/*` or `/s/*`, and never while a dashboard upload runs. It also asks the worker to check at most every 15 min, since ngsw looks by itself only on a full page load or a worker restart. Silent by design: no prompt. A new unsafe route goes in `UNSAFE_URL` there.
+- **Verify:** from `e2e/`, `node tools/pwa-check.mjs https://zenpdf.up.railway.app` must print an active `sw` (`script` ending `zen-sw.js`), `manifestErrors: []` and `installabilityErrors: []`, and exit 0. `beforeinstallprompt` never fires under automation, so the address-bar icon is confirmed in a real Chrome profile, not by editing the manifest.
