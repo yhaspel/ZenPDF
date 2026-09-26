@@ -1147,6 +1147,7 @@ Handoff programme (the nine CLI prompts from the 2026-08-21 status review) is tr
 
 | Added | Item | Phase | GATE? | Resolved |
 |---|---|---|---|---|
+| 2026-09-26 | **Production serves JavaScript uncompressed, and since the service worker landed every first visit also prefetches the whole app.** Measured on `zenpdf.up.railway.app`: no `content-encoding` on any `.js` even with `Accept-Encoding: gzip, br` (neither nginx config sets `gzip on`, and Railway's edge does not compress). The worker's `app` group prefetches every root chunk once per version: ~2.0 MB raw, 1.22 MB of it the workspace chunk, which the build estimates at ~176 kB compressed. That is kept deliberately, because it is what lets an open tab survive a redeploy, but it now costs every landing-page visitor ~2 MB in the background after the page is idle. **Fix when wanted:** `gzip on; gzip_types text/javascript application/javascript text/css application/json application/manifest+json image/svg+xml;` in both nginx configs, re-measure. Not done in the PWA change because it changes every response's bytes, and it deserves its own gate. | 11 | — | |
 | 2026-09-25 | **A PDF whose annotation hangs off the page cannot be opened in Annotate: the annotation list returns 500.** Pre-existing (`bcba629` reads it the same way), found by the second self-review pass of `fix/annotate-text-wysiwyg`: `_read_annot` normalizes every annotation's rect with the strict `page_rect_to_norm`, whose `NormRect` raises `ValueError` for `x < 0` or `x + w > 1` — and `AnnotationListView` catches only `EngineError`, so one comment placed in the margin by another app (a square at x 560–640 on a 595 pt page reproduces it) takes the whole list down, and Annotate shows no marks. `page_rect_to_norm_clamped` already exists for read models; `_read_annot` and `_quads_of` should use it (a mark read back clamped, not refused). Not fixed in that PR because it predates it and touches every annotation type. | 3 | — | |
 | 2026-09-25 | **Stamps and image stamps on a rotated page with an offset CropBox are saved displaced by the crop origin.** Pre-existing since the 2026-08-28 stamp fix, found by the second self-review pass of `fix/annotate-text-wysiwyg`: `_restore_stamp_rect_and_contents` writes `/Rect` as `rect × ~page.transformation_matrix`, and on a /Rotate 90/180/270 page PyMuPDF 1.28 builds that matrix without the CropBox origin — so a stamp placed on a cropped-then-rotated page reloads 30–80 pt away, and one near the top-left edge can be written off the page (see the row above). Its docstring's probe covered rotation and offset CropBoxes, but never both at once. The text-box path hit the same thing in review and now corrects MuPDF's own rect relatively instead; stamps can do the same (their aspect-fit correction is a resize about a known anchor). | 3 | — | |
 | 2026-09-25 | **A text box's soft breaks become hard newlines as you type, so a box moved left keeps its old wrap and a word inserted mid-paragraph leaves a short line.** Found by the self-review of `fix/annotate-text-wysiwyg` (frontend lens, adversarially confirmed). The on-page editor is `wrap="off"` and only the layout breaks lines, so when a line reaches the page's right edge `flowText` writes the break *into the editor's text* — the only way the textarea can show it. From then on it is indistinguishable from an Enter: the committed `contents` (and the file's `/Contents` comment) carry it, and `layoutText` only ever adds breaks. Measured with ports of `flowText`/`layoutText`: typed at x = 0.75 on A4, *"Signed on behalf of the company by the director"* becomes two lines; dragged to x = 0.10, where it fits on one, it stays two; inserting " today" after "Signed" gives three lines with *"the"* alone on the middle one. **What the file shows is still exactly what the screen shows** — this is an editing wart, not a WYSIWYG one — but the owner's spec (§4.5: "Hard breaks are the user's `\n`; a soft break is inserted only when a line would cross the page's right edge") did not ask for it, while the contract §3 (as delivered) records it as intended. **Owner decision:** accept it as specced in the contract, or have soft breaks tracked separately (the editor rewrites them in and strips them before every re-layout and commit — real work: caret mapping, IME, paste, selection across a break). Not fixed in the PR because it is a design question with two defensible answers. | 3 | — | |
@@ -1270,6 +1271,66 @@ Handoff programme (the nine CLI prompts from the 2026-08-21 status review) is tr
 | 2026-08-20 | **The workspace on a phone is stacked, not designed.** Below `md` the rails now become full-width sections above and below the page (§3 workspace panes) — which makes every control reachable and stops the page scrolling sideways, but it is a rescue, not a phone layout. A designed treatment would probably make the rails drawers with a persistent bottom bar. Worth a designer's eye before any mobile push. | 10 | No | *(2026-08-21: the row above the page now wraps rather than overflowing, so the page no longer scrolls sideways and the app is no longer drawn at ~64 % — but that is a repair, not a design. Row stayed open.)* ✔ **Resolved 2026-08-24** (`feat/mobile-workspace`, prompt 6) — designed, not rescued: the rails are **bottom sheets** over the page (one at a time, grip + title + 44 px close, Escape / scrim, CDK focus trap, body scroll locked, `translateY` only so reduced motion loses nothing), the nine modes are a **persistent bottom bar** carrying an opener for every rail the mode has and, docked at its end, the mode's own Undo/Redo and its primary, and the **page is first** — fit-to-width at 390 with the pane owning the full width. The workspace bar shrinks to back · title · meta · ⋯ · toggle, its six-button cluster moving into a **More** sheet as *one* set of elements through one `<ng-template>`, so there is still exactly one `[data-test=download]` in the DOM at any width. Design contract amended **first** at §2, §3 (a new **Phone workspace** component), §3 headers, §4, §10 and the §11 log, whose "pending, not yet sanctioned" list this emptied. **Desktop is unchanged and it was measured**: the same geometry script over all nine modes, run with `main`'s `frontend/src` checked out and then with the branch's — **0 differences at 768 px, 0 at 1280 px**. Four things the browser found that no test had: the column outgrowing the screen to **1348 px against 844** in the three 900 px-render modes (the sideways assertion stayed green because a scrollbar narrows both of its sides); the **More sheet shipping with no head**; touch targets sized for a desk, the worst of them the comment row's D8 actions at **16 px**; and a focus ring clipped by the sheet's own scroller. See the session log **"2026-08-24 (later) — A designed phone workspace: drawers and a bottom bar"** and `docs/reviews/evidence/mobile-workspace/`. |
 
 ## Session log
+
+**2026-09-26 — ZenPDF is an installable app**
+
+Owner request, verbatim (via the `pwa-installable` skill): *"make Zen PDF an installable chrome app.
+Land this update in production and test is."* Branch `feat/pwa-installable` on `f6566c5`; PR #50, merged as
+`d55b031` (merge commit, four commits kept: install `90d0a20`, updates `7303442`, icon policy
+`06e1939`, docs `f4dabd1`). Contract §5 *Installable app* + §11 row; `AGENTS.md` *Installable app
+(PWA)*; architecture §7; two Decisions-log rows (the wrapped worker; silent update at navigation).
+
+- **What shipped.** `public/manifest.webmanifest`; the seal as `any` (72–512) and full-bleed
+  `maskable` (180/192/512, the 180 being the apple-touch-icon) PNGs from `tools/pwa-icon*.svg`;
+  Angular's service worker **wrapped by `public/zen-sw.js`**, whose first listener ends the fetch
+  event for `/api/**` and other origins so the browser performs them as with no worker; `index`
+  `/index.csr.html`; no `dataGroups`; nginx `no-cache` for `zen-sw.js`/`ngsw-worker.js`/`ngsw.json`/
+  the manifest in both configs; `AppUpdateService` (reload at the next navigation outside
+  `/app/doc/*`, `/app/sign/new/*`, `/s/*` and never mid-upload; a worker check at most every 15
+  min); `npm run icons:pwa`, which refuses to overwrite changed pixels (`ICON_VERSION` renames).
+- **Two things the skill's recipe did not cover, found by reading, not by failure.** (1) sharp
+  renders a viewBox-only SVG at its 32-unit size and upscales, so the generator passes `density`.
+  (2) ngsw looks for a new version only on a full page load or a worker restart (`handleFetch` /
+  `initialize` in `ngsw-worker.js`), so without the 15-min check an SPA tab could stay stale for
+  days. Also: ngsw notifies only tabs it has assigned to a version, and a tab loaded before the
+  worker existed is assigned on its first non-`/api` fetch. The first live-proof run failed on
+  exactly that, and the proof was corrected to model a returning visitor (recorded in the
+  Decisions row as a known limit).
+- **Gate (pre-merge, final tree).** `./infra/test.sh --e2e` exit 0: backend **1258 / 6 skipped**,
+  unit **678 / 69 files** (20 new; removing the route/upload guards turns 10 red, removing the
+  throttle 1), Playwright **96 / 1 skipped**. `npm run build`, `verify:prerender` and `ng lint`
+  green. The icon generator's three modes run in a scratch copy: unchanged → 11 × "unchanged";
+  a one-digit colour change → exit 1, every PNG byte-identical; `ICON_VERSION = 2` → renamed set,
+  both references rewritten, old set removed, second run a no-op.
+- **Local proofs against the real worker.** Build behind `nginx.railway.conf`: `pwa-check` exit 0.
+  Live update (v1 served, v2 published under an open tab, router driven by `pushState` +
+  `popstate`): from `/merge-pdf` the next navigation reloaded onto v2 and `/about` after it did
+  not; from `/s/tok1`, `/s/tok2` and `/app/doc/d1?mode=annotate` stayed on v1, `/about` reloaded
+  onto v2, `/contact` did not. Build behind `frontend/nginx.conf` on the compose network with the
+  real API, in a worker-controlled tab: guest upload **201** and `…/content/` **200** both
+  `fromServiceWorker() === false` (13/13 `/api` responses), `viewer-*.min.mjs` and
+  `pdf.worker-*.min.mjs` served **by** the worker as `text/javascript`, page drew 1056×1494, 73
+  cache entries, **0 under `/api`**.
+- **Production (all six services SUCCESS on `d55b031`; bundle `main-YRIDWD57.js` →
+  `main-EN7G747P.js`).** `/zen-sw.js`, `/ngsw-worker.js`, `/ngsw.json`, `/manifest.webmanifest`
+  answer 200 `no-cache` with their types (`application/manifest+json` for the manifest); icons
+  `public, immutable`. `node tools/pwa-check.mjs https://zenpdf.up.railway.app` → sw `zen-sw.js`,
+  `manifestErrors: []`, `installabilityErrors: []`, exit 0, 2.9 s, no console errors. The
+  worker-controlled guest flow repeated on production: upload 201 and content 200 bypassed the
+  worker (13/13), pdf.js modules from it, page drew 1056×1494, 52 cache entries, 0 under `/api`.
+  **Real Chrome 153** (installed Chrome, persistent profile, `--enable-automation` removed):
+  `beforeinstallprompt` fired 337 ms after load, `platforms: ["web"]`, the tab controlled by
+  `zen-sw.js`. The address-bar icon itself is toolbar UI no tool here can see, so the owner
+  confirms it by eye. **`@smoke` against production: 5 passed, 2 environmental**, which is the
+  baseline: `phase-8:135` polls Mailpit, which production does not have; `phase-8:91` showed
+  *"Request was throttled"* in-suite and **passes standalone in 3.1 s**.
+- **One install origin.** Production is only `zenpdf.up.railway.app` (http 301s to https); the
+  domain cutover runbook now says an install is tied to its origin and re-checks installability
+  on the apex.
+- **Noticed, not changed.** `/theme-boot.js` has no hash yet is served `public, immutable` for a
+  year (pre-existing; for returning visitors the worker now re-fetches it cache-busted when its
+  hash in `ngsw.json` changes). JS is served uncompressed, which the worker's prefetch makes
+  costlier: Human review queue, 2026-09-26.
 
 **2026-09-25 — Text boxes: one layout, drawn twice**
 
