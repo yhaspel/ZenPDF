@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <!-- App icon, purpose "maskable" (and the iOS apple-touch-icon, which cannot
+       be transparent). Full bleed with no corner radius: the launcher's mask
+       *is* the seal's rounded square. The Z is scaled by 32/29 so it keeps the
+       share of the tile it has inside the seal; its outer edge sits ~30% from
+       the centre, inside the 40% safe zone. -->
+  <rect width="32" height="32" fill="#B23A26"/>
+  <path d="M10.5 11h11l-11 10h11" transform="translate(16 16) scale(1.1034) translate(-16 -16)" fill="none" stroke="#FFFDF7" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
