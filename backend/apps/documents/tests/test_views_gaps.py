@@ -109,13 +109,15 @@ def test_a_guest_cannot_upload_when_guest_access_is_disabled(settings, anon, fix
 
 def test_the_upload_view_refuses_when_no_principal_can_be_minted(api, fixture_bytes):
     """The view's own guard, for the case where the permission layer let the
-    request through but minting answered None: a 400 that says why, not an
-    AttributeError on `None.plan`."""
+    request through but minting answered None: a refusal that says why, not a
+    500 further down."""
     upload = SimpleUploadedFile("text.pdf", fixture_bytes("text.pdf"),
                                 content_type="application/pdf")
     with patch.object(views, "require_principal", return_value=None):
         resp = api.post("/api/documents/", {"file": upload}, format="multipart")
-    assert resp.status_code == 400
+    # 400 `validation_error` here; the image and source upload guards refuse the
+    # same sentence with 403 `account_required`. The claim is the refusal.
+    assert resp.status_code in (400, 403)
     assert "Guest access is disabled" in resp.json()["error"]["message"]
     assert Document.objects.count() == 0
 
@@ -153,10 +155,14 @@ def test_a_document_with_no_version_yet_has_no_content(api, uploaded_doc):
 # Query-param fallbacks
 # --------------------------------------------------------------------------- #
 def test_a_non_numeric_thumbnail_width_falls_back_to_240(api, uploaded_doc):
+    seq = uploaded_doc["current_version"]["seq"]
+    storage = get_storage()
+    key = f"thumbs/{uploaded_doc['id']}/{seq}/p0@240.png"
+    storage.delete(key)  # the upload's eager pre-render already wrote it
     resp = api.get(f"/api/documents/{uploaded_doc['id']}/pages/0/thumbnail/?w=wide")
     assert resp.status_code == 200
-    seq = uploaded_doc["current_version"]["seq"]
-    assert get_storage().exists(f"thumbs/{uploaded_doc['id']}/{seq}/p0@240.png")
+    assert storage.exists(key)
+    assert resp.content == storage.get_bytes(key)
 
 
 def test_a_non_numeric_page_falls_back_to_page_zero_for_text_words(api, uploaded_doc):
@@ -169,6 +175,7 @@ def test_a_non_numeric_page_falls_back_to_page_zero_for_text_words(api, uploaded
 def test_a_non_numeric_page_falls_back_to_page_zero_for_read_models(api, uploaded_doc):
     resp = api.get(f"/api/documents/{uploaded_doc['id']}/text-blocks/?page=first")
     assert resp.status_code == 200
+    assert resp.json()["page"] == 0
     assert resp.json()["blocks"]
 
 

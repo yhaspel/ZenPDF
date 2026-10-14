@@ -10,6 +10,7 @@ runs and stopping halfway would leave orphans that nothing can ever find.
 import io
 import json
 import logging
+import os
 import zipfile
 from unittest.mock import patch
 
@@ -23,11 +24,19 @@ pytestmark = pytest.mark.django_db
 SEAL_KEY = "sign/00000000-0000-0000-0000-000000000000/final.pdf"
 
 
-def _read_export(user) -> tuple[dict, list[str]]:
+def _export_bytes(user) -> bytes:
+    """`export_zip` leaves its temp file for the view to stream and unlink;
+    these tests bypass the view, so they unlink it themselves."""
     path, _name = export_zip(user)
-    with open(path, "rb") as fh:
-        content = fh.read()
-    with zipfile.ZipFile(io.BytesIO(content)) as archive:
+    try:
+        with open(path, "rb") as fh:
+            return fh.read()
+    finally:
+        os.unlink(path)
+
+
+def _read_export(user) -> tuple[dict, list[str]]:
+    with zipfile.ZipFile(io.BytesIO(_export_bytes(user))) as archive:
         return json.loads(archive.read("manifest.json")), archive.namelist()
 
 
@@ -106,9 +115,7 @@ def test_a_completed_envelope_whose_seal_exists_is_in_the_zip(api, user, uploade
     get_storage().put_bytes(SEAL_KEY, b"%PDF-1.7 sealed")
     try:
         _completed_request(api, uploaded_doc, user, final_key=SEAL_KEY)
-        path, _ = export_zip(user)
-        with open(path, "rb") as fh:
-            archive = zipfile.ZipFile(io.BytesIO(fh.read()))
+        archive = zipfile.ZipFile(io.BytesIO(_export_bytes(user)))
         assert archive.read("signed/Lease.pdf") == b"%PDF-1.7 sealed"
     finally:
         get_storage().delete(SEAL_KEY)

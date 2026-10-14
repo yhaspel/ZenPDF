@@ -43,10 +43,10 @@ def _doc(uploaded_doc) -> Document:
     return Document.objects.get(id=uploaded_doc["id"])
 
 
-def _upload_png(api) -> str:
+def _upload_png(api, size=(20, 10)) -> str:
     import fitz
 
-    pix = fitz.Pixmap(fitz.csRGB, fitz.IRect(0, 0, 20, 10))
+    pix = fitz.Pixmap(fitz.csRGB, fitz.IRect(0, 0, *size))
     pix.set_rect(pix.irect, (0, 0, 255))
     upload = SimpleUploadedFile("logo.png", pix.tobytes("png"), content_type="image/png")
     resp = api.post("/api/uploads/image/", {"file": upload}, format="multipart")
@@ -158,8 +158,10 @@ def test_replace_image_swaps_the_image_on_the_page(api, user, uploaded_doc):
     assert add.status == Job.Status.SUCCEEDED, add.error_message
     images = api.get(f"/api/documents/{document.id}/images/?page=0").json()["images"]
     assert len(images) == 1
+    assert (images[0]["width"], images[0]["height"]) == (20, 10)
 
-    second = _upload_png(api)
+    # A different size, so a replace that left the old image in place shows.
+    second = _upload_png(api, size=(40, 30))
     replace = _job(user, document, type_="replace_image",
                    params={"page": 0, "xref": images[0]["xref"], "image_ref": second})
     run_operation(str(replace.id))
@@ -170,6 +172,7 @@ def test_replace_image_swaps_the_image_on_the_page(api, user, uploaded_doc):
     assert document.current_version.label == "Replaced image"
     after = api.get(f"/api/documents/{document.id}/images/?page=0").json()["images"]
     assert len(after) == 1
+    assert (after[0]["width"], after[0]["height"]) == (40, 30)
 
 
 def test_edit_link_rewrites_the_link_target(api, user, uploaded_doc):
