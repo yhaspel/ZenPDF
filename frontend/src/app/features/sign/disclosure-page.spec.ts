@@ -1,9 +1,11 @@
-import { provideHttpClient } from '@angular/common/http';
+import { provideHttpClient, withInterceptors } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { Title } from '@angular/platform-browser';
 import { provideRouter } from '@angular/router';
 
+import { authInterceptor } from '../../core/interceptors/auth.interceptor';
+import { TokenService } from '../../core/services/token.service';
 import { DisclosurePage } from './disclosure-page';
 
 /**
@@ -23,11 +25,19 @@ describe('DisclosurePage', () => {
   };
 
   beforeEach(() => {
+    localStorage.clear();
     document.querySelector('link[rel="canonical"]')?.remove();
     TestBed.configureTestingModule({
       imports: [DisclosurePage],
-      providers: [provideHttpClient(), provideHttpClientTesting(), provideRouter([])],
+      // The app's own interceptor, and an account signed in: a credential
+      // that could leak onto this page's request.
+      providers: [
+        provideHttpClient(withInterceptors([authInterceptor])),
+        provideHttpClientTesting(),
+        provideRouter([]),
+      ],
     });
+    TestBed.inject(TokenService).set('an-access-token', 'a-refresh-token');
     http = TestBed.inject(HttpTestingController);
     fixture = TestBed.createComponent(DisclosurePage);
     fixture.detectChanges();
@@ -36,6 +46,8 @@ describe('DisclosurePage', () => {
   afterEach(() => {
     http.verify();
     TestBed.resetTestingModule();
+    // The token was stored in localStorage, which outlives this TestBed.
+    localStorage.clear();
   });
 
   const root = () => fixture.nativeElement as HTMLElement;
