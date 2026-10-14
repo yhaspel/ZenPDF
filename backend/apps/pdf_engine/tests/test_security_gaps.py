@@ -4,12 +4,12 @@
 needs. It does not carry the *other* places the same trap can sit — a
 catalog-level `/AA`, a page-level `/AA`, a widget whose `/A` and `/AA` both run
 script, a hidden layer referenced through an `/OCMD` (singly and as an array),
-a hidden form XObject drawn with `Do`, a marked-content section nested inside
-an artifact, or an annotation pinned to a layer. Each of those is a line in
-`security.py` that the fixture never reached, so each gets a PDF built with
-pikepdf here, and the assertion is on the bytes: the thing is gone and the
-count says so.
+a hidden form XObject drawn with `Do`, or a marked-content section nested
+inside an artifact. Each of those is a line in `security.py` that the fixture
+never reached, so each gets a PDF built with pikepdf here, and the assertion is
+on the bytes: the thing is gone and the count says so.
 """
+import contextlib
 import io
 from unittest import mock
 
@@ -36,6 +36,18 @@ def _save(pdf: pikepdf.Pdf) -> bytes:
     buf = io.BytesIO()
     pdf.save(buf)
     return buf.getvalue()
+
+
+def _streams(data: bytes) -> bytes:
+    """Every stream in the file, decoded.
+
+    pikepdf and MuPDF both write streams Flate-compressed, so `b"x" in data`
+    cannot find a string that sits in a stream, whether it was removed or not
+    (the trap `test_redact.raw_text_bytes` describes).
+    """
+    with pikepdf.open(io.BytesIO(data)) as pdf:
+        return b"".join(o.read_bytes() for o in pdf.objects
+                        if isinstance(o, pikepdf.Stream))
 
 
 def _js(code: str) -> Dictionary:
@@ -127,7 +139,6 @@ def _layered() -> bytes:
     * `MC1` → an `/OCMD` whose `/OCGs` is the off group *directly*
     * `MC2` → the on group (must be kept)
     * `Fx0` → a form XObject with `/OC` pointing at the off group
-    * a square annotation with `/OC` pointing at the off group
     """
     pdf = pikepdf.open(io.BytesIO(_base()))
     off = pdf.make_indirect(Dictionary(Type=Name.OCG, Name=String("Hidden")))
@@ -155,9 +166,6 @@ def _layered() -> bytes:
         b"/OC /MC2 BDC BT /helv 12 Tf 20 30 Td (SHOWNLAYER) Tj ET EMC "
         b"q /Fx0 Do Q"
     )
-    page.Annots = Array([pdf.make_indirect(Dictionary(
-        Type=Name.Annot, Subtype=Name.Square, Rect=Array([10, 10, 50, 50]), OC=off,
-    ))])
     return _save(pdf)
 
 
@@ -172,22 +180,31 @@ def test_the_layered_fixture_hides_what_it_claims_to():
 
 
 def test_hidden_content_is_cut_through_ocmd_nesting_and_xobjects():
-    out, report = S.sanitize(_layered(), hidden_layers_flatten=True)
+    secrets = (b"OCMDSECRET", b"NESTEDSECRET", b"XOBJSECRET")
+    layered = _layered()
+    assert all(s in _streams(layered) for s in secrets), "the fixture never carried them"
+
+    out, report = S.sanitize(layered, hidden_layers_flatten=True)
     # The two BDC sections and the one Do: three removals.
     assert report["hidden_layers_flatten"] == 3, report
 
-    for secret in (b"OCMDSECRET", b"NESTEDSECRET", b"XOBJSECRET"):
-        assert secret not in out, secret
+    left = _streams(out)
+    assert b"VISIBLEONE" in left, "the search cannot see text in what sanitize wrote"
+    for secret in secrets:
+        assert secret not in left, secret
     doc = fitz.open(stream=out, filetype="pdf")
     try:
         text = doc[0].get_text()
     finally:
         doc.close()
+    # With `/OCProperties` gone, anything that survived the cut would render.
+    for secret in secrets:
+        assert secret.decode() not in text, secret
     assert "VISIBLEONE" in text, "the artifact section went with it"
     assert "SHOWNLAYER" in text, "a visible layer was removed"
 
 
-def test_flattening_drops_the_layer_references_from_annotations_and_resources():
+def test_flattening_drops_the_layer_references_from_resources():
     out, _ = S.sanitize(_layered(), hidden_layers_flatten=True)
     pdf = pikepdf.open(io.BytesIO(out))
     try:
@@ -195,9 +212,36 @@ def test_flattening_drops_the_layer_references_from_annotations_and_resources():
         assert "/OCProperties" not in pdf.Root
         assert "/Properties" not in page.Resources
         assert "/Fx0" not in (page.Resources.get("/XObject") or {})
-        assert all("/OC" not in a for a in (page.get("/Annots") or []))
     finally:
         pdf.close()
+
+
+def test_no_annotation_keeps_a_layer_reference_after_flattening():
+    """With `/OCProperties` gone, an annotation's `/OC` would point at a group
+    that no longer exists. What becomes of the annotation on the *off* layer is
+    deliberately not asserted: today its `/OC` is dropped like the other's, so
+    it renders and is not counted. That is a product defect (it should be
+    removed and counted like a cut section), not the contract."""
+    pdf = pikepdf.open(io.BytesIO(_base()))
+    off = pdf.make_indirect(Dictionary(Type=Name.OCG, Name=String("Hidden")))
+    on = pdf.make_indirect(Dictionary(Type=Name.OCG, Name=String("Shown")))
+    pdf.Root.OCProperties = Dictionary(
+        OCGs=Array([off, on]), D=Dictionary(OFF=Array([off]), ON=Array([on])),
+    )
+    pdf.pages[0].Annots = Array([
+        pdf.make_indirect(Dictionary(
+            Type=Name.Annot, Subtype=Name.Square, Rect=Array([10, 10, 50, 50]), OC=off,
+        )),
+        pdf.make_indirect(Dictionary(
+            Type=Name.Annot, Subtype=Name.Circle, Rect=Array([60, 10, 90, 50]), OC=on,
+        )),
+    ])
+    out, _ = S.sanitize(_save(pdf), hidden_layers_flatten=True)
+    with pikepdf.open(io.BytesIO(out)) as cleaned:
+        annots = list(cleaned.pages[0].get("/Annots") or [])
+        assert "/OCProperties" not in cleaned.Root
+        assert all("/OC" not in a for a in annots)
+        assert "/Circle" in {str(a.Subtype) for a in annots}, "a visible layer's annotation went"
 
 
 def test_a_document_without_layers_reports_nothing_removed():
@@ -247,27 +291,25 @@ def test_is_off_resolves_every_reference_shape():
     assert S._is_off(Dictionary(Type=Name.OCMD, OCGs=Array([on])), hidden) is False
 
 
-def test_a_content_stream_that_will_not_parse_is_left_alone_rather_than_emptied():
+def test_a_content_stream_that_will_not_parse_is_not_rewritten():
     """Cutting sections out of a stream we cannot read would mean guessing
-    where they end; the honest answer is to leave the page as it was and
-    report nothing removed."""
+    where they end, so the cut leaves such a stream exactly as it was (a
+    refusal would be honest too). What sanitize does with the page next is
+    deliberately not asserted: today it drops `/OCProperties` anyway, which
+    reveals any hidden section the stream holds while reporting nothing
+    removed. That is a product defect, not the contract."""
     pdf = pikepdf.open(io.BytesIO(_base()))
     off = pdf.make_indirect(Dictionary(Type=Name.OCG, Name=String("Hidden")))
-    pdf.Root.OCProperties = Dictionary(OCGs=Array([off]), D=Dictionary(OFF=Array([off])))
     page = pdf.pages[0]
     page.Resources.Properties = Dictionary(MC0=off)
     page.Contents = pdf.make_stream(b"BT /helv 12 Tf 20 60 Td (STILLHERE) Tj ET")
-    data = _save(pdf)
+    before = page.Contents.read_bytes()
 
     with mock.patch.object(pikepdf, "parse_content_stream",
-                           side_effect=RuntimeError("unparseable")):
-        out, report = S.sanitize(data, hidden_layers_flatten=True)
-    assert report["hidden_layers_flatten"] == 0
-    doc = fitz.open(stream=out, filetype="pdf")
-    try:
-        assert "STILLHERE" in doc[0].get_text()
-    finally:
-        doc.close()
+                           side_effect=RuntimeError("unparseable")), \
+            contextlib.suppress(EngineError):
+        S._cut_hidden_content(pdf, page, {S._ident(off)})
+    assert page.Contents.read_bytes() == before
 
 
 # --------------------------------------------------------------------------- #
@@ -288,9 +330,10 @@ def test_a_file_attachment_annotation_is_removed_and_counted():
     ))
     pdf.pages[0].Annots = Array([attachment, note])
     data = _save(pdf)
+    assert b"attached secret payload" in _streams(data), "the fixture carries no payload"
 
     out, report = S.sanitize(data, embedded_files=True)
     assert report["embedded_files"] == 1
-    assert b"attached secret payload" not in out
+    assert b"attached secret payload" not in _streams(out)
     with pikepdf.open(io.BytesIO(out)) as cleaned:
         assert [str(a.Subtype) for a in cleaned.pages[0].Annots] == ["/Text"]

@@ -105,11 +105,13 @@ def test_a_file_that_is_not_a_container_is_not_inspected(monkeypatch):
 
 
 def test_directory_entries_do_not_count_against_the_budget(monkeypatch):
-    """A docx carries a directory entry per folder; they hold no bytes."""
+    """A docx carries a directory entry per folder. They are skipped by
+    `is_dir()`, not measured, so one here carries bytes: read, it would take
+    the 10 bytes of content to 18, over the budget of 16."""
     monkeypatch.setattr(C, "MAX_ARCHIVE_UNCOMPRESSED_BYTES", 16)
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w") as archive:
-        archive.writestr("word/", "")
+        archive.writestr("word/", b"x" * 8)
         archive.writestr("word/media/", "")
         archive.writestr("word/document.xml", "0123456789")
     C.check_archive(buf.getvalue(), "small.docx")  # 10 bytes of content: fine

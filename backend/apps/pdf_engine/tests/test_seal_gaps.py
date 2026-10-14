@@ -80,6 +80,12 @@ def test_the_report_calls_the_level_b_t_only_when_a_timestamper_was_used(fixture
     assert sign.call_args.kwargs["timestamper"] is stamper
     assert report["level"] == "B-T" and report["timestamped"] is True
 
+    with mock.patch.object(SEAL, "_timestamper", return_value=None), \
+            mock.patch("pyhanko.sign.signers.sign_pdf") as sign:
+        _out, report = SEAL.seal(fixture_bytes("text.pdf"), reason="test")
+    assert sign.call_args.kwargs["timestamper"] is None
+    assert report["level"] == "B-B" and report["timestamped"] is False
+
 
 # --------------------------------------------------------------------------- #
 # Sealing
