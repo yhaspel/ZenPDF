@@ -1160,6 +1160,7 @@ Handoff programme (the nine CLI prompts from the 2026-08-21 status review) is tr
 | 2026-10-14 | **`/verify-email` tells the user their link expired whenever verification fails for any reason, a 503, a network error or a 429 included.** `features/legal/verify-email-page.ts:77` sends every error of `POST /api/users/verify/` to "That link has expired … ask for a new one from your settings" (template `:40-47`), with nothing to retry. A 429 is easy to hit: the `throttle_auth_<ip>` bucket (10 a minute) is shared by login, refresh, register, logout, delete-account, verify/send, verify and unsubscribe. A link that is still valid is sent to the capped resend instead of a retry. Against the contract's "errors say what happened and what to do next". **Low.** — Found by the test-gap sweep's self-review (finding F2-3); the 503 test no longer pins the expired copy. Not fixed in the sweep's PR by design. | 9 | — | |
 | 2026-10-14 | **Every toast is a dismiss `<button>` carrying `role="status"` or `role="alert"`, so the live role replaces the button role.** `shared/toast-host.ts:26-27`. ARIA in HTML does not allow those roles on a button. The accessibility tree exposes an alert, not a button, so a screen-reader user is never told the toast can be pressed to dismiss it. axe classes this as `aria-allowed-role` (best practice, minor), and the e2e axe gate passes. Fix shape: put the live region on a wrapper and the button inside it. **Low.** — Found by the test-gap sweep's self-review (finding F4-6); the test now reads the role from the toast or whatever wraps it. Not fixed in the sweep's PR by design. | 10 | — | |
 | 2026-10-14 | **Five small backend inconsistencies, all reproduced, all low.** Found by the test-gap sweep's self-review, each where a new test had pinned it or could not see it (findings B4-1, B4-4, B4-2, B3-4 and B2-4): (a) **a zero-size image is refused as "too large".** `core/assets.py:133-134` answers a header that claims width or height 0 with "That image is too large to process.", so a person may shrink a tiny file and retry in vain. (b) **The JPEG header walk does not skip 0xFF fill bytes** (`core/assets.py:89-95`), which ITU-T T.81 B.1.1.2 allows before any marker. A decodable JPEG with fill bytes is refused as "could not be read" as a stamp, an inserted image or an image signature. (c) **`oversized_accounts` drops every account whose tier quota is 0** (`core/management/commands/oversized_accounts.py:39-40`, `if not quota: continue`). With that configuration, the storage shortlist the runbook relies on hides the accounts furthest over quota. (d) **The documents upload guard answers "Guest access is disabled" with 400 `validation_error`** (`documents/views.py:256`), where the image and source guards and the guest mint answer 403 `account_required`. Latent: the default `IsPrincipal` answers 401 before any of the three runs. (e) **`_append_failure_reason` can show the owner developer text** (`esign/tasks.py:295`). `EngineError`'s constructor fills `.message` from the class docstring or code (`pdf_engine/exceptions.py:16`), so the fixed-sentence fallback never fires for an error raised without copy. Latent: no caller raises one today. Not fixed in the sweep's PR by design. | 3/8/10 | — | |
+| 2026-10-14 | **Spec files feed Tailwind's class scan, so a test-only change can change production CSS.** Measured on the test-gap sweep's deploy (PR #51, `18e1b9f`). The main bundle was unchanged (`main-EN7G747P.js`), but the stylesheet went from `styles-EHMZCFYK.css` to `styles-JPPVYFOB.css` (61 641 → 61 858 bytes) by exactly one rule, `.sepia{--tw-sepia: sepia(100%);filter:…}`. The cause is `theme.service.spec.ts:135`, which stores `'sepia'` as an unknown theme value. Tailwind v4's automatic source detection scans every file that is not gitignored, `*.spec.ts` included. Harmless here, since no markup uses the class, but it means "specs are excluded from the build" holds for the JavaScript and not for the CSS. A future test that happens to contain a utility name in a string ships that rule to production. Fix shape: `@source not "./app/**/*.spec.ts";` (or the equivalent glob) in `frontend/src/tailwind.css`, then confirm a build of `main` reproduces `styles-EHMZCFYK.css`. **Low.** Not done in the sweep's PR, which may not change config. | 10 | — | |
 | 2026-09-26 | **Production serves JavaScript uncompressed, and since the service worker landed every first visit also prefetches the whole app.** Measured on `zenpdf.up.railway.app`: no `content-encoding` on any `.js` even with `Accept-Encoding: gzip, br` (neither nginx config sets `gzip on`, and Railway's edge does not compress). The worker's `app` group prefetches every root chunk once per version: ~2.0 MB raw, 1.22 MB of it the workspace chunk, which the build estimates at ~176 kB compressed. That is kept deliberately, because it is what lets an open tab survive a redeploy, but it now costs every landing-page visitor ~2 MB in the background after the page is idle. **Fix when wanted:** `gzip on; gzip_types text/javascript application/javascript text/css application/json application/manifest+json image/svg+xml;` in both nginx configs, re-measure. Not done in the PWA change because it changes every response's bytes, and it deserves its own gate. | 11 | — | |
 | 2026-09-25 | **A PDF whose annotation hangs off the page cannot be opened in Annotate: the annotation list returns 500.** Pre-existing (`bcba629` reads it the same way), found by the second self-review pass of `fix/annotate-text-wysiwyg`: `_read_annot` normalizes every annotation's rect with the strict `page_rect_to_norm`, whose `NormRect` raises `ValueError` for `x < 0` or `x + w > 1` — and `AnnotationListView` catches only `EngineError`, so one comment placed in the margin by another app (a square at x 560–640 on a 595 pt page reproduces it) takes the whole list down, and Annotate shows no marks. `page_rect_to_norm_clamped` already exists for read models; `_read_annot` and `_quads_of` should use it (a mark read back clamped, not refused). Not fixed in that PR because it predates it and touches every annotation type. | 3 | — | |
 | 2026-09-25 | **Stamps and image stamps on a rotated page with an offset CropBox are saved displaced by the crop origin.** Pre-existing since the 2026-08-28 stamp fix, found by the second self-review pass of `fix/annotate-text-wysiwyg`: `_restore_stamp_rect_and_contents` writes `/Rect` as `rect × ~page.transformation_matrix`, and on a /Rotate 90/180/270 page PyMuPDF 1.28 builds that matrix without the CropBox origin — so a stamp placed on a cropped-then-rotated page reloads 30–80 pt away, and one near the top-left edge can be written off the page (see the row above). Its docstring's probe covered rotation and offset CropBoxes, but never both at once. The text-box path hit the same thing in review and now corrects MuPDF's own rect relatively instead; stamps can do the same (their aspect-fit correction is a resize about a known anchor). | 3 | — | |
@@ -1292,7 +1293,8 @@ patch's sha256 matched the handoff's (`3a951fa3…78d32`), and `git am -3` appli
 `27e8a56`: 56 files, 10 433 insertions, 0 deletions, every path a spec, a `tests/test_*.py` or
 `docs/reviews/`. The scope grep printed nothing, then and over the final branch. Branch `test-gap-sweep`
 holds the sandbox commit, eight self-review commits (`aa53fe2`…`af8ac63`, test files only), TRACKING and
-this record.
+this record. PR #51 was squash-merged as `18e1b9f` (2026-10-14 05:10:56 UTC); the prompt is archived at
+`docs/archived/2026-10-14-handoff-to-cli-test-gap-sweep.md`.
 
 - **The count, measured.** "778" is the sweep's own sum: +407 backend, taken from the sandbox's passed
   counts (1 241 → 1 648), and +371 frontend. Collected here, the 19 pytest files hold **405** tests
@@ -1393,6 +1395,38 @@ this record.
   - Playwright **96 passed / 1 skipped** (the `isDevServer` 404 at `phase-11:164`), as on `main`.
   - The build's main bundle is `main-EN7G747P.js`, the name production already serves. With zero product
     source, the deploy cannot change it.
+- **Production (step 6): unchanged in behaviour, and one stylesheet rule richer.** All six services
+  deployed `18e1b9f` (created 05:10:58, all `SUCCESS` by 05:14:52 UTC; `railway deployment list`).
+  - `/api/health/`: `status: ok`, with `db`, `redis`, `storage`, `gotenberg` and `workers` all `true`.
+  - **The main bundle hash did not change, and that is correct.** It was `main-EN7G747P.js` before and
+    after; with zero product source the content-hashed build is identical. A local build of `main`
+    (`80772f0`) reproduces both `main-EN7G747P.js` and the old stylesheet exactly. The handoff expected a
+    new hash. The rebuild is proven instead by `ngsw.json`'s build timestamp, which moved from 2026-09-26
+    09:31:51 to **2026-10-14 05:11:39 UTC**.
+  - **The stylesheet did change** (`styles-EHMZCFYK.css` → `styles-JPPVYFOB.css`, 61 641 → 61 858
+    bytes), by exactly **one rule, `.sepia`**. Tailwind v4's automatic source detection scans spec files
+    too, and `theme.service.spec.ts:135` stores `'sepia'` as an unknown theme value. No product markup
+    uses the class, so behaviour is unchanged. But "specs are excluded from the build" holds for JS, not
+    for CSS: Human review queue, 2026-10-14.
+  - **`@smoke` against production: 5 passed, 2 environmental, 0 real**, the same count as the last
+    production run.
+    - `phase-8:135` stopped at registration in-suite, because the per-IP auth throttle is shared with
+      `phase-0`/`phase-2b`. Standalone it registers and fails exactly where it always does on production,
+      `no mail arrived for …@e2e.local`: there is no Mailpit there.
+    - `smoke-viewer` hit the guest throttle in-suite ("Request was throttled. Expected available in 28
+      seconds."). Standalone it **passed in 3.6 s and drew the page, canvas 1056×1494, 64 distinct
+      colours**.
+    - Last time the second environmental failure was `phase-8:91`, which passed now: the same throttle
+      lands on whichever guest flow comes third.
+  - `node tools/pwa-check.mjs https://zenpdf.up.railway.app`: sw `zen-sw.js` (state `activating`, which
+    the tool accepts as active for a fresh profile), `manifestErrors: []`, `installabilityErrors: []`,
+    exit 0, twice.
+  - Landing in a fresh isolated context, light and dark at 1280 and at a true 390 × 844 (dpr 3, mobile).
+    No horizontal overflow (`scrollWidth` equals the viewport at both widths); paper `rgb(245, 241, 230)`
+    in light and `rgb(23, 19, 16)` with `html.dark` in dark. It loads `main-EN7G747P.js` and
+    `styles-JPPVYFOB.css`, and the theme toggle is present. The console had no errors and no warnings;
+    DevTools listed one pre-existing Issue, that the landing filter `<input>` has no `id` or `name`
+    (markup this merge does not touch).
 - **Noticed, not changed.** `frontend/` has no `.dockerignore`, so the dev image copies the host's darwin
   `node_modules`. The 8 GB Docker VM now also hosts another project's eleven containers (about 1.6 GB),
   and its swap was full (160 kB free). Under that pressure Gotenberg's Chromium hung once
