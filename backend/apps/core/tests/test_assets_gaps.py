@@ -118,9 +118,16 @@ def test_a_jpeg_without_a_frame_header_is_unreadable():
     assert header_dimensions(truncated) is None
     # SOI then a segment with an impossible (<2) length.
     assert header_dimensions(b"\xff\xd8\xff\xe0\x00\x01" + b"\x00" * 8) is None
-    # Padding bytes before a marker are skipped; a stray RST marker is stepped
-    # over; with no SOF anywhere the answer is still None.
+    # Past a stray RST marker and filler bytes to EOI: with no SOF anywhere the
+    # answer is still None.
     assert header_dimensions(b"\xff\xd8\xff\xd0\x00\x00\xff\xd9\x00\x00") is None
+
+
+def test_the_jpeg_marker_walk_steps_over_rst_markers_and_filler_bytes():
+    # SOI, a stray RST0, two non-0xFF filler bytes, then SOF0 (5 high, 9 wide):
+    # only if both skips work does the walk reach the frame header behind them.
+    data = b"\xff\xd8\xff\xd0\x00\x00\xff\xc0\x00\x11\x08\x00\x05\x00\x09" + b"\x00" * 12
+    assert header_dimensions(data) == (9, 5)
 
 
 def test_something_that_is_neither_png_nor_jpeg_has_no_dimensions():
@@ -156,9 +163,13 @@ def test_a_header_claiming_too_many_pixels_is_refused_without_decoding():
     pixmap.assert_not_called()
 
 
-def test_a_header_claiming_zero_pixels_is_refused():
-    with pytest.raises(ImageRejected, match="too large"):
-        normalize_png(_png_with_header(0, 10), max_bytes=1 << 20)
+def test_a_header_claiming_zero_pixels_is_refused_without_decoding():
+    # The message is not pinned: today a zero size is told it is "too large",
+    # which it is not.
+    with patch("fitz.Pixmap") as pixmap:
+        with pytest.raises(ImageRejected):
+            normalize_png(_png_with_header(0, 10), max_bytes=1 << 20)
+    pixmap.assert_not_called()
 
 
 def test_a_png_the_decoder_cannot_read_is_refused():
@@ -323,8 +334,10 @@ def test_sniff_recognizes_only_png_and_jpeg():
     assert assets.sniff(b"") is None
 
 
-def test_the_fixture_png_helper_agrees_with_pillow():
-    """Guard the local helpers: a hand-rolled PNG that Pillow cannot open
-    would make every refusal test above pass for the wrong reason."""
-    with Image.open(io.BytesIO(_png(3, 2))) as img:
-        assert img.size == (3, 2)
+def test_the_ihdr_splicing_helper_writes_the_claimed_dimensions():
+    """Guard the one hand-rolled helper: a mis-spliced IHDR would send the
+    refusal tests above down the 'could not be read' branch instead of the
+    dimension check."""
+    data = _png_with_header(7, 3)
+    assert assets.sniff(data) == "image/png"
+    assert header_dimensions(data) == (7, 3)

@@ -5,8 +5,11 @@ one makes a different promise about what happens next: `guest_purge` still
 deletes the rows (expiry means gone, and a blob nothing points at is a cost,
 not a leak); `exports_purge` and `jobs_purge` keep the row, because the row is
 the only pointer to a blob that is still there and deleting it would strand
-the bytes for ever; `trash_purge` counts a storage fault as *failed* rather
-than *kept*, so a sweep that is quietly failing every night is visible;
+the bytes for ever; `trash_purge` counts a database fault on the row delete as
+*failed* rather than *kept*, so a sweep that is quietly failing every night is
+visible (a failed blob delete never reaches it: `DocumentDetailView._purge`
+swallows that, still refunds the bytes and drops the row, so the document
+counts as *purged*);
 `account_assets_purge` skips an account whose prefix cannot be listed and
 carries on to the next. These tests pin each promise, with the log line that
 an operator would grep for.
@@ -195,7 +198,7 @@ def test_trash_purge_keeps_a_document_under_a_signature_request(
     assert f"trash_purge: kept {uploaded_doc['id']} (still referenced)" in sweep_log.text
 
 
-def test_trash_purge_counts_a_storage_fault_as_failed_not_kept(
+def test_trash_purge_counts_a_row_delete_fault_as_failed_not_kept(
         api, uploaded_doc, settings, sweep_log):
     """`_purge` swallows a single blob delete failing; a database fault on the
     row delete is what reaches the sweep. It must be reported as a failure."""
