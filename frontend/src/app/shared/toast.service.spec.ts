@@ -92,10 +92,12 @@ describe('ToastService', () => {
 
   it('does not resurrect or disturb anything when a dismissed toast expires', () => {
     toasts.info('gone early');
-    toasts.info('stays');
+    // Outlives the dismissed toast's timer, so a stale dismiss that took the
+    // wrong toast with it would show.
+    toasts.info('stays', 10_000);
     const [early] = toasts.toasts();
     toasts.dismiss(early.id);
     vi.advanceTimersByTime(4500);
-    expect(messages()).toEqual([]);
+    expect(messages()).toEqual(['stays']);
   });
 });

@@ -53,9 +53,12 @@ describe('ToastHost', () => {
     toasts.show('Done', type);
     fixture.detectChanges();
     const [toast] = rendered();
-    expect(toast.getAttribute('role')).toBe(role);
+    // The live role is read from the toast or whatever wraps it: on the
+    // <button> itself it replaces the button role, so it may move outward.
+    const live = toast.closest('[role]');
+    expect(live?.getAttribute('role')).toBe(role);
     expect(toast.getAttribute('data-test')).toBe(`toast-${type}`);
-    expect(toast.getAttribute('aria-atomic')).toBe('true');
+    expect(live?.getAttribute('aria-atomic')).toBe('true');
     expect(toast.textContent?.trim()).toBe('Done');
     expect(toast.getAttribute('aria-label')).toBe('Done — dismiss');
     if (cssClass) expect(toast.classList.contains(cssClass)).toBe(true);

@@ -14,6 +14,7 @@ import { ViewerTabOrder } from './viewer-tab-order';
   schemas: [CUSTOM_ELEMENTS_SCHEMA],
   template: `
     <button type="button" tabindex="0" data-test="back">Back</button>
+    <button type="button" tabindex="3" data-test="outside">Not the viewer's</button>
     <ngx-extended-pdf-viewer zenViewerTabOrder>
       <button type="button" tabindex="1" data-test="zoom">Zoom</button>
       <button type="button" tabindex="2" data-test="next">Next</button>
@@ -49,7 +50,7 @@ describe('ViewerTabOrder', () => {
     expect(el('page').tabIndex).toBe(152);
   });
 
-  it('flattens every positive tabindex to 0 once a page renders', () => {
+  it('flattens every positive tabindex in the viewer to 0 once a page renders', () => {
     el('zoom').parentElement!.dispatchEvent(new CustomEvent('pageRendered'));
     expect(el('zoom').tabIndex).toBe(0);
     expect(el('next').tabIndex).toBe(0);
@@ -67,6 +68,9 @@ describe('ViewerTabOrder', () => {
     el('zoom').parentElement!.dispatchEvent(new CustomEvent('pageRendered'));
     expect(el('untouched').hasAttribute('tabindex')).toBe(false);
     expect(el('back').getAttribute('tabindex')).toBe('0');
+    // A positive tabindex outside the viewer is not the vendor's, so it is not
+    // the directive's to flatten.
+    expect(el('outside').tabIndex).toBe(3);
   });
 
   it('is idempotent across repeated paints', () => {
