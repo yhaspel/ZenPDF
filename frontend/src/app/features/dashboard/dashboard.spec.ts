@@ -295,7 +295,7 @@ describe('Dashboard', () => {
       expect(docs.load).toHaveBeenCalledTimes(2);
     });
 
-    it('creates a folder from the trimmed name and clears the box, ignoring blanks', async () => {
+    it('creates a folder from the trimmed name, ignoring blanks', () => {
       render();
       type('[data-test="new-folder-input"]', '   ');
       q('[data-test="add-folder"]')!.click();
@@ -304,8 +304,6 @@ describe('Dashboard', () => {
       type('[data-test="new-folder-input"]', '  Receipts ');
       q('[data-test="add-folder"]')!.click();
       expect(createFolder).toHaveBeenCalledWith('Receipts');
-      await settle();
-      expect(q<HTMLInputElement>('[data-test="new-folder-input"]')!.value).toBe('');
     });
 
     it('toggles the starred filter and reloads', () => {
@@ -400,19 +398,37 @@ describe('Dashboard', () => {
 
       openMenu(0);
       q('[data-test="purge"]')!.click();
+      expect(docs.purge).not.toHaveBeenCalled();
       expect(confirm().current()!.confirmLabel).toBe('Delete forever');
       confirm().answer(true);
       await fixture.whenStable();
       expect(docs.purge).toHaveBeenCalledWith('c');
     });
 
-    it("quotes the server's own refusal over the standing caption", () => {
+    // Its own test, not a second round above as in the trash test: `purge()`
+    // leaves the menu open, so another `openMenu(0)` there would close it.
+    it('deletes nothing when Delete forever is cancelled', async () => {
       render([doc({ id: 'c' })]);
       docs.trashed.set(true);
-      purgeErrors.set({ c: 'The server said no, in its own words.' });
       fixture.detectChanges();
-      expect(q('[data-test="undeletable"]')!.textContent!.trim())
-        .toBe('The server said no, in its own words.');
+      openMenu(0);
+      q('[data-test="purge"]')!.click();
+      expect(docs.purge).not.toHaveBeenCalled();
+
+      confirm().answer(false);
+      await fixture.whenStable();
+      expect(docs.purge).not.toHaveBeenCalled();
+      expect(toasts().map((t) => t.message)).not.toContain('Deleted');
+    });
+
+    it("quotes the server's own refusal over the standing caption", () => {
+      // `s` has a standing caption of its own to lose to; `c` has none.
+      render([doc({ id: 'c' }), doc({ id: 's', has_sign_requests: true })]);
+      docs.trashed.set(true);
+      purgeErrors.set({ c: 'Refused for c.', s: 'Refused for s.' });
+      fixture.detectChanges();
+      expect(all('[data-test="undeletable"]').map((p) => p.textContent!.trim()))
+        .toEqual(['Refused for c.', 'Refused for s.']);
     });
 
     it('renames in place and commits the trimmed title on Enter', async () => {

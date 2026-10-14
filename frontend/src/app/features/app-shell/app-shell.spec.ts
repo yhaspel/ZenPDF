@@ -151,5 +151,9 @@ describe('AppShell', () => {
     await router.navigateByUrl('/app/sign/new/abc123');
     fixture.detectChanges();
     expect(q('header.hdr')).not.toBeNull();
+
+    await router.navigateByUrl('/app/sign/abc123');
+    fixture.detectChanges();
+    expect(q('header.hdr')).not.toBeNull();
   });
 });

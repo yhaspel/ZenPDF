@@ -84,11 +84,14 @@ describe('VerifyEmailPage', () => {
     expect(el.querySelector('[data-test="verified"]')).toBeNull();
   });
 
-  it('treats a server failure the same way rather than hanging on the spinner', () => {
+  it('does not hang on the spinner, or claim success, when the server fails', () => {
+    // Only that it settles, and not on success. The wording is not pinned: the
+    // expired copy shown today is wrong for a link a 503 never judged.
     const el = render('tok-123');
     http.expectOne('/api/users/verify/').flush(null, { status: 503, statusText: 'Unavailable' });
     fixture.detectChanges();
-    expect(el.querySelector('[data-test="verify-failed"]')).not.toBeNull();
+    expect(el.querySelector('[data-test="verified"]')).toBeNull();
+    expect(el.querySelector('h1')).not.toBeNull();
     expect(el.textContent).not.toContain('One moment');
   });
 
