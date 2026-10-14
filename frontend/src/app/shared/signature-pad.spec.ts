@@ -269,10 +269,16 @@ describe('SignaturePad', () => {
 
     it('clears the name and the preview together', async () => {
       switchTo('type');
+      // `[ngModel]` writes the DOM value on a microtask: let its first-change
+      // write of '' land now, or it blanks the name typed next and the input
+      // reads '' before Clear is ever pressed.
+      await Promise.resolve();
       typeName('Ana');
       await settle();
+      expect(el<HTMLInputElement>('sig-text').value).toBe('Ana');
       el('sig-clear').click();
       fixture.detectChanges();
+      await Promise.resolve(); // the cleared model reaches the input a microtask later
       expect(el<HTMLInputElement>('sig-text').value).toBe('');
       expect(el('sig-preview')).toBeNull();
       expect(el<HTMLButtonElement>('sig-use').disabled).toBe(true);

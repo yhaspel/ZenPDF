@@ -14,6 +14,17 @@ import { ClientErrorHandler } from './client-errors';
 describe('ClientErrorHandler', () => {
   let fetchSpy: ReturnType<typeof vi.fn>;
   let handler: ClientErrorHandler;
+  let initialUrl = '';
+
+  // The suite runs with `isolate: false`, so every later spec file in this
+  // worker shares this jsdom: the URL these tests set has to be put back.
+  beforeAll(() => {
+    initialUrl = location.pathname + location.search + location.hash;
+  });
+
+  afterAll(() => {
+    window.history.replaceState(null, '', initialUrl);
+  });
 
   beforeEach(() => {
     fetchSpy = vi.fn(() => Promise.resolve(new Response(null, { status: 202 })));

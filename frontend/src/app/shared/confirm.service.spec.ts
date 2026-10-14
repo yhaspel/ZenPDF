@@ -58,14 +58,15 @@ describe('ConfirmService', () => {
     expect(confirm.current()).toBeNull();
   });
 
-  it('holds one request at a time: a second ask replaces the first', async () => {
-    void confirm.ask('first');
-    const second = confirm.ask('second');
-    expect(confirm.current()?.message).toBe('second');
+  it('shows one request at a time, and the answer settles the one shown', async () => {
+    const asked = { first: confirm.ask('first'), second: confirm.ask('second') };
+    // Which of the two shows, and what becomes of the other, is deliberately
+    // not pinned here: today the second replaces the first and the first is
+    // never settled (its caller hangs), which is a defect, not a contract —
+    // see the reviewer's note on ConfirmService.ask() (issue 5).
+    const shown = confirm.current()?.message as keyof typeof asked;
+    expect(Object.keys(asked)).toContain(shown);
     confirm.answer(true);
-    await expect(second).resolves.toBe(true);
-    // What happens to the replaced promise is deliberately not pinned here:
-    // today it is never settled (its caller hangs), which is a defect, not a
-    // contract — see the reviewer's note on ConfirmService.ask().
+    await expect(asked[shown]).resolves.toBe(true);
   });
 });

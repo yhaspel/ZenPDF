@@ -128,7 +128,10 @@ describe('ConfirmHost', () => {
     void ask('first');
     void ask('second');
     expect(fixture.nativeElement.querySelectorAll('[data-test=confirm-host]')).toHaveLength(1);
-    expect(fixture.nativeElement.querySelector('[role=dialog]').textContent).toContain('second');
+    // Which of the two it asks is not pinned: today the second replaces the
+    // first and orphans its promise, a defect (reviewer's note, issue 5).
+    const dialog = fixture.nativeElement.querySelector('[role=dialog]') as HTMLElement;
+    expect(dialog.getAttribute('aria-label')).toMatch(/^(first|second)$/);
   });
 
   describe('typed confirmation', () => {

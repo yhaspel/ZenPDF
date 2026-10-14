@@ -174,12 +174,17 @@ describe('ThemeService', () => {
 
   it('survives a storage that refuses to write', () => {
     const theme = service();
-    const setItem = Storage.prototype.setItem;
-    Storage.prototype.setItem = () => { throw new DOMException('QuotaExceededError'); };
+    // Patch whichever object answers `setItem`: jsdom's `Storage.prototype` on
+    // node 24, the own-property stub `test-setup.ts` installs on node 25.
+    const owner: { setItem: Storage['setItem'] } =
+      Object.hasOwn(localStorage, 'setItem') ? localStorage : Storage.prototype;
+    const setItem = owner.setItem;
+    owner.setItem = () => { throw new DOMException('QuotaExceededError'); };
     try {
+      expect(() => localStorage.setItem('probe', 'x')).toThrow();
       expect(() => theme.set('dark')).not.toThrow();
     } finally {
-      Storage.prototype.setItem = setItem;
+      owner.setItem = setItem;
     }
     TestBed.tick();
     expect(theme.preference()).toBe('dark');

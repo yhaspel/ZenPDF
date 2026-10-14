@@ -10,9 +10,12 @@ import { ZenModal } from './modal.directive';
     <button type="button" data-test="opener" (click)="open.set(true)">Open</button>
     <input data-test="behind" />
     @if (open()) {
-      <!-- A scrim around the dialog, as every product modal has: the trap
-           attaches its anchors beside the host element at construction, which
-           needs a parent to attach them to. -->
+      <!-- The dialog nested in a scrim: the trap attaches its anchors beside
+           the host element at construction, which needs a parent to attach
+           them to. Not every product modal has this shape: the Tool-options
+           (workspace.html) and Add-link (edit.html) dialogs put zenModal on
+           the @if root, where the anchors never attach (reviewer's note,
+           issue 7). This spec covers only the nested shape. -->
       <div class="scrim">
         <div zenModal role="dialog" aria-modal="true" aria-label="A dialog"
              data-test="dialog" (zenModalEscape)="escapes = escapes + 1">
