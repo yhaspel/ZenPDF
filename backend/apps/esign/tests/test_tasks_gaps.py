@@ -136,13 +136,18 @@ def test_a_field_past_the_end_of_the_document_is_skipped_not_fatal(sent):
 
 
 def test_a_signature_field_with_no_image_is_left_blank(sent):
-    """An unfilled optional signature must not make the burn reach for a
-    storage key that does not exist."""
+    """An unfilled signature box must not make the burn reach into storage,
+    and nothing is drawn into it."""
+    source = _source(sent)  # outside the patch: any read inside it is the burn's
     storage = get_storage()
     with mock.patch.object(storage, "get_bytes", wraps=storage.get_bytes) as get:
-        out = tasks._burn_fields(_source(sent), sent)
-    assert out[:5] == b"%PDF-"
-    assert not any("fields/" in str(c.args[0]) for c in get.call_args_list)
+        out = tasks._burn_fields(source, sent)
+    get.assert_not_called()
+    doc = fitz.open(stream=out, filetype="pdf")
+    try:
+        assert not doc[0].get_images(), "something was drawn into the empty box"
+    finally:
+        doc.close()
 
 
 def test_a_signature_image_is_drawn_into_the_page(sent):
@@ -253,7 +258,11 @@ def test_an_engine_error_with_copy_is_shown_to_the_owner_verbatim():
     assert reason == "The document has 2001 pages; the limit is 2000."
 
 
-def test_an_engine_error_with_no_copy_gets_the_fixed_sentence():
+def test_an_engine_error_whose_message_is_blank_gets_the_fixed_sentence():
+    # Blanked by hand: the constructor never leaves `.message` empty. A real
+    # copy-less `EngineError()` carries its class docstring, and a subclass
+    # without one its `code`, and today that developer text reaches the owner
+    # verbatim. That is a separate defect, deliberately not asserted either way.
     exc = EngineError("x")
     exc.message = ""
     assert tasks._append_failure_reason(exc) == tasks._APPEND_GENERIC_REASON

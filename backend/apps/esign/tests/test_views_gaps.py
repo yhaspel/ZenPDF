@@ -129,16 +129,22 @@ def test_a_saved_signature_must_be_a_signature_or_initials(api):
 
 
 def test_an_image_the_normalizer_rejects_is_a_400_not_a_500(api):
-    from apps.core.assets import ImageRejected
+    """Well-formed base64 of a GIF: the decoder accepts it, the normalizer
+    does not.
 
-    with mock.patch("apps.esign.views.SG.normalize_signature",
-                    side_effect=ImageRejected("Only PNG and JPEG images are "
-                                              "supported.")):
-        resp = api.post("/api/signatures/",
-                        {"method": "draw", "image": _data_url(_ink())},
-                        format="json")
-    assert resp.status_code == 400
-    assert "Only PNG and JPEG" in resp.json()["error"]["message"]
+    The real normalizer, not a mock: it refuses with `InvalidParams` and never
+    with `ImageRejected`. The `ImageRejected` this endpoint can really raise
+    comes from `store_image`, after the `try`, and is a 500 today (issue 3 in
+    docs/reviews/2026-10-14-test-gap-sweep.md); it is not covered here."""
+    resp = api.post("/api/signatures/",
+                    {"method": "draw",
+                     "image": _data_url(b"GIF89a" + b"\x00" * 64)},
+                    format="json")
+    assert resp.status_code == 400, resp.content
+    # Exact, so the data-URL decoder's "That signature image could not be
+    # read." cannot pass for the normalizer's refusal.
+    assert resp.json()["error"]["message"] == "That image could not be read."
+    assert SavedSignature.objects.count() == 0
 
 
 def test_an_upload_over_the_tier_cap_is_refused_before_it_is_decoded(api, settings):
@@ -409,6 +415,14 @@ def test_a_nudge_to_a_suppressed_address_is_reported_as_skipped(api, sent):
     assert mail.outbox == []
     assert not SignRequest.objects.get(id=sent["id"]).audit_events.filter(
         type="reminder_sent").exists()
+
+    # …and the allowance is still there: once the address is unsuppressed, the
+    # very next nudge goes rather than being skipped as "already reminded today".
+    core_mail.unsuppress_hash(core_mail.address_hash("signer@example.com"))
+    again = api.post(f"/api/sign-requests/{sent['id']}/remind/", format="json")
+    assert again.status_code == 200
+    assert again.json()["reminded"] == ["signer@example.com"], \
+        "the nudge that never went burnt the once-a-day allowance"
 
 
 def test_the_owner_reads_the_audit_trail_with_its_chain(api, sent):
